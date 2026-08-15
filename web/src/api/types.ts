@@ -38,6 +38,15 @@ export interface Instrument extends JsonRecord {
   sector: string;
 }
 
+export interface StatsResponse extends JsonRecord {
+  predictions?: number;
+  paper_trades?: number;
+  outcomes?: number;
+  replay_runs?: number;
+  replay_samples?: number;
+  calibration_results?: number;
+}
+
 export type Prediction = JsonRecord & {
   prediction_id: string;
   symbol?: string;
@@ -85,9 +94,21 @@ export type ReplayRun = JsonRecord & {
   samples?: ReplaySample[];
 };
 
+export interface PerformanceMetrics extends JsonRecord {
+  resolved_actionable?: number;
+}
+
 export type PerformanceSummary = JsonRecord & {
   scope?: JsonRecord;
-  metrics?: JsonRecord;
+  status?: string;
+  source_type?: SourceType;
+  model_id?: string | null;
+  prompt_version?: string | null;
+  window_start?: string | null;
+  window_end?: string | null;
+  sample_count?: number;
+  actionable_count?: number;
+  metrics?: PerformanceMetrics;
 };
 
 export type PerformanceBuckets = JsonRecord & {

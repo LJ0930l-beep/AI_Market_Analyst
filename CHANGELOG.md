@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Phase 4 - P4-T03 Dashboard and operational health
+
+- Added real read-only Dashboard and Settings/Health surfaces backed by independent local API requests.
+- Added reusable loading, empty, unavailable and degraded panel states with scoped retry controls.
+- Added provider/news routing, local model, database-count, instrument-roster, Prediction-ledger and live-performance views.
+- Connected the newest returned Prediction to the TimeProvenanceRail without inventing re-evaluation timestamps.
+- Kept zero-resolved live performance explicitly degraded and made `metrics.resolved_actionable` the authoritative resolved count.
+- Fixed native browser `fetch` invocation so the API client works in Chrome as well as test environments.
+- Verification: 46 Python tests and 15 frontend tests PASS; lint/typecheck/build/compile/dependency checks PASS; dependency audits report 0 vulnerabilities.
+- Live desktop and 390x844 mobile QA PASS with real local API responses, no horizontal overflow and no browser console warnings/errors.
+
 ### Phase 4 - P4-T02 frontend foundation
 
 - Added the Vite React + TypeScript frontend workspace and reproducible lockfile.

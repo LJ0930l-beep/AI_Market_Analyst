@@ -20,6 +20,7 @@ import type {
   ProviderHealthResponse,
   ReplayRun,
   ReplayRunFilters,
+  StatsResponse,
 } from "./types";
 
 type QueryValue = string | number | boolean | null | undefined;
@@ -78,6 +79,7 @@ export interface MarketApiClient {
   health(signal?: AbortSignal): Promise<HealthResponse>;
   providerHealth(signal?: AbortSignal): Promise<ProviderHealthResponse>;
   modelHealth(signal?: AbortSignal): Promise<ModelHealthResponse>;
+  stats(signal?: AbortSignal): Promise<StatsResponse>;
   instruments(signal?: AbortSignal): Promise<Instrument[]>;
   instrumentSnapshot(symbol: string, signal?: AbortSignal): Promise<Record<string, unknown>>;
   instrumentNews(symbol: string, signal?: AbortSignal): Promise<Record<string, unknown>>;
@@ -97,6 +99,11 @@ export interface MarketApiClient {
   replayRun(runId: string, signal?: AbortSignal): Promise<ReplayRun>;
   followPrediction(predictionId: string, request?: FollowRequest, signal?: AbortSignal): Promise<FollowResponse>;
 }
+
+export type ApplicationShellApiClient = Pick<
+  MarketApiClient,
+  "health" | "providerHealth" | "modelHealth" | "stats" | "instruments" | "predictions" | "performanceSummary"
+>;
 
 export function serializeQuery(params: QueryParams): string {
   const query = new URLSearchParams();
@@ -156,7 +163,9 @@ export class ApiClient implements MarketApiClient {
       requestInit.signal = options.signal;
     }
 
-    const response = await this.fetchImpl(`${this.baseUrl}${path}${serializeQuery(options.query ?? {})}`, requestInit);
+    // Detach the implementation before calling it so native window.fetch receives no ApiClient receiver.
+    const fetchImpl = this.fetchImpl;
+    const response = await fetchImpl(`${this.baseUrl}${path}${serializeQuery(options.query ?? {})}`, requestInit);
     const responseText = await response.text();
     let payload: unknown;
     if (responseText) {
@@ -183,6 +192,10 @@ export class ApiClient implements MarketApiClient {
 
   modelHealth(signal?: AbortSignal): Promise<ModelHealthResponse> {
     return this.request<ModelHealthResponse>("/health/model", { signal });
+  }
+
+  stats(signal?: AbortSignal): Promise<StatsResponse> {
+    return this.request<StatsResponse>("/stats", { signal });
   }
 
   instruments(signal?: AbortSignal): Promise<Instrument[]> {

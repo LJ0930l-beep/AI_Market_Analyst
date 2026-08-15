@@ -4,7 +4,7 @@
 
 Phase 4 - Product UI and interaction.
 
-Current task: `P4-T03` - implement the first real product surfaces: Dashboard, Settings/Health and shared live/degraded status components.
+Current task: `P4-T04` - implement Asset Detail and the evidence-first analysis workflow.
 
 ## Phase 4 task graph
 
@@ -13,7 +13,7 @@ Current task: `P4-T03` - implement the first real product surfaces: Dashboard, S
    - No frontend work and no core financial-rule changes.
 2. `P4-T02` React + TypeScript application foundation - ACCEPTED
    - Frontend workspace, routing, design tokens, typed API client, local dev proxy, build/lint/typecheck/test commands.
-3. `P4-T03` Dashboard, Settings/Health and shared status components
+3. `P4-T03` Dashboard, Settings/Health and shared status components - ACCEPTED
    - Provider/model/database health, market summary shell, loading/error/stale/degraded states.
 4. `P4-T04` Asset Detail and analysis workflow
    - Instrument search, quote/quant/news/event views, charts, Signal Card and validity/horizon/re-evaluation/invalidation display.

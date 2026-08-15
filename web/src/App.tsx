@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { NavLink, Route, Routes, useLocation, useParams } from "react-router-dom";
 
-import { apiClient as defaultApiClient, type MarketApiClient } from "./api/client";
+import { apiClient as defaultApiClient, type ApplicationShellApiClient } from "./api/client";
 import type { HealthResponse } from "./api/types";
 import { HealthStatus, type BackendHealthState } from "./components/HealthStatus";
 import { TimeProvenanceRail } from "./components/TimeProvenanceRail";
+import { DashboardPage, EMPTY_DASHBOARD_PROVENANCE, type DashboardProvenance } from "./pages/DashboardPage";
+import { SettingsHealthPage } from "./pages/SettingsHealthPage";
 
 interface NavigationItem {
   label: string;
@@ -24,7 +26,7 @@ const navigationItems: NavigationItem[] = [
 ];
 
 export interface ApplicationShellProps {
-  apiClient?: Pick<MarketApiClient, "health">;
+  apiClient?: ApplicationShellApiClient;
 }
 
 function NavigationLinks() {
@@ -128,19 +130,16 @@ function NotFoundPage() {
   );
 }
 
-function WorkspaceRoutes() {
+function WorkspaceRoutes({
+  apiClient,
+  onProvenanceChange,
+}: {
+  apiClient: ApplicationShellApiClient;
+  onProvenanceChange: (provenance: DashboardProvenance) => void;
+}) {
   return (
     <Routes>
-      <Route
-        index
-        element={
-          <PlaceholderPage
-            description="The shared research workstation is ready for data-backed dashboard work."
-            nextTask="P4-T03"
-            title="Dashboard"
-          />
-        }
-      />
+      <Route index element={<DashboardPage apiClient={apiClient} onProvenanceChange={onProvenanceChange} />} />
       <Route
         path="watchlist"
         element={<PlaceholderPage description="A focused place for saved instruments will live here." title="Watchlist" />}
@@ -162,16 +161,7 @@ function WorkspaceRoutes() {
         path="replay"
         element={<PlaceholderPage description="Replay run provenance will be inspected here." title="Replay lab" />}
       />
-      <Route
-        path="settings"
-        element={
-          <PlaceholderPage
-            description="Connection settings and separate backend, provider and model health views will live here."
-            nextTask="P4-T03"
-            title="Settings / health"
-          />
-        }
-      />
+      <Route path="settings" element={<SettingsHealthPage apiClient={apiClient} />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
@@ -181,6 +171,14 @@ export function ApplicationShell({ apiClient = defaultApiClient }: ApplicationSh
   const location = useLocation();
   const [healthState, setHealthState] = useState<BackendHealthState>("loading");
   const [health, setHealth] = useState<HealthResponse>();
+  const [provenance, setProvenance] = useState<DashboardProvenance>(EMPTY_DASHBOARD_PROVENANCE);
+  const handleProvenanceChange = useCallback((next: DashboardProvenance) => setProvenance(next), []);
+
+  useEffect(() => {
+    if (location.pathname !== "/") {
+      setProvenance(EMPTY_DASHBOARD_PROVENANCE);
+    }
+  }, [location.pathname]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -221,11 +219,17 @@ export function ApplicationShell({ apiClient = defaultApiClient }: ApplicationSh
         </header>
         <main className="workspace-main" id="main-content" tabIndex={-1}>
           <div className="route-surface">
-            <WorkspaceRoutes />
+            <WorkspaceRoutes apiClient={apiClient} onProvenanceChange={handleProvenanceChange} />
           </div>
           <aside className="provenance-column" aria-label="Time and provenance">
             <TimeProvenanceRail
-              footer={<p>This neutral example is ready for real signal values in later Phase 4 tasks.</p>}
+              generatedAt={provenance.generatedAt}
+              reevaluateAt={provenance.reevaluateAt}
+              expiresAt={provenance.expiresAt}
+              dataSource={provenance.dataSource}
+              model={provenance.model}
+              state={provenance.state}
+              footer={<p>{provenance.footer}</p>}
             />
           </aside>
         </main>

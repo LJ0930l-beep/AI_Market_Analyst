@@ -38,6 +38,18 @@ describe("ApiClient", () => {
     expect(serializeQuery({ empty: "", missing: undefined, valid: "value" })).toBe("?valid=value");
   });
 
+  it("invokes fetch as a plain function without binding the ApiClient as this", async () => {
+    const fetchImpl: FetchMock = function (this: unknown) {
+      if (this !== undefined) {
+        throw new TypeError("Illegal invocation");
+      }
+      return Promise.resolve(response({ predictions: 1 }));
+    };
+    const client = new ApiClient({ baseUrl: "http://localhost:8000", fetchImpl });
+
+    await expect(client.stats()).resolves.toEqual({ predictions: 1 });
+  });
+
   it("decodes the structured API error contract", async () => {
     const errorPayload: { error: ApiErrorPayload } = {
       error: {
@@ -63,5 +75,17 @@ describe("ApiClient", () => {
         context: { symbol: "NOPE" },
       });
     }
+  });
+
+  it("requests typed stored counts from the stats endpoint", async () => {
+    const fetchImpl = vi.fn<FetchMock>().mockResolvedValue(
+      response({ predictions: 12, paper_trades: 3, unknown_counter: 2 }),
+    );
+    const client = new ApiClient({ baseUrl: "http://localhost:8000", fetchImpl });
+
+    const stats = await client.stats();
+
+    expect(stats).toEqual({ predictions: 12, paper_trades: 3, unknown_counter: 2 });
+    expect(fetchImpl).toHaveBeenCalledWith("http://localhost:8000/stats", expect.objectContaining({ method: "GET" }));
   });
 });

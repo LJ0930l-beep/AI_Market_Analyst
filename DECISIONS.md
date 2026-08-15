@@ -41,3 +41,9 @@ Phase 4 uses an injectable FastAPI app factory while preserving existing success
 Date: 2026-08-15
 
 The local UI uses a restrained research-ledger identity rather than a broker terminal or generic dashboard. Mineral/paper surfaces, ruled structure, local system fonts and a reusable time/provenance rail make data age and signal validity visible. The interface avoids fake data, gradients, trading language and decorative motion; responsive and reduced-motion behavior are part of the foundation.
+
+## ADR-008 - Operational health and performance evidence remain separate
+
+Date: 2026-08-15
+
+Dashboard panels query backend, provider, model, database counts and performance independently so one failure does not erase unrelated evidence. Backend connectivity never implies model or provider availability. For performance, `metrics.resolved_actionable` is the only resolved-sample count; total Prediction or actionable counts cannot be presented as resolved outcomes. Missing or zero resolved samples remain visibly degraded and PRELIMINARY.

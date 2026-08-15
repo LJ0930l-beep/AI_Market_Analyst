@@ -3,29 +3,29 @@ import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import { ApplicationShell } from "./App";
-import type { MarketApiClient } from "./api/client";
-import type { HealthResponse } from "./api/types";
+import type { ApplicationShellApiClient } from "./api/client";
+import { createFakeClient, fakeHealth } from "./test/fakeClient";
 
-const connectedHealth: HealthResponse = {
-  status: "ok",
-  phase: 4,
-  api_version: "0.4.0",
-  product: "AI Market Analyst",
-  real_orders: false,
-  private_keys: false,
-};
-
-function renderShell(initialEntry: string, health: Pick<MarketApiClient, "health">) {
+function renderShell(initialEntry: string, client: ApplicationShellApiClient) {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
-      <ApplicationShell apiClient={health} />
+      <ApplicationShell apiClient={client} />
     </MemoryRouter>,
   );
 }
 
+function backendStatusRegion(): HTMLElement {
+  const heading = screen.getByRole("heading", { name: "Backend status" });
+  const region = heading.closest("section");
+  if (!region) {
+    throw new Error("backend status region was not rendered");
+  }
+  return region;
+}
+
 describe("application shell", () => {
   it("renders semantic navigation, skip navigation and current route state", () => {
-    const client = { health: vi.fn().mockResolvedValue(connectedHealth) };
+    const client = createFakeClient();
     renderShell("/predictions", client);
 
     const navigation = screen.getByRole("navigation", { name: "Primary navigation" });
@@ -36,27 +36,27 @@ describe("application shell", () => {
   });
 
   it("shows a distinct loading health state", () => {
-    const pending = new Promise<HealthResponse>(() => undefined);
-    const client = { health: vi.fn().mockReturnValue(pending) };
+    const pending = new Promise<typeof fakeHealth>(() => undefined);
+    const client = createFakeClient({ health: vi.fn().mockReturnValue(pending) });
     renderShell("/", client);
 
-    expect(screen.getByRole("status")).toHaveTextContent("Checking backend");
+    expect(within(backendStatusRegion()).getByRole("status")).toHaveTextContent("Checking backend");
     expect(screen.getByText(/model and provider status is separate/i)).toBeInTheDocument();
   });
 
   it("shows a distinct connected health state without claiming model health", async () => {
-    const client = { health: vi.fn().mockResolvedValue(connectedHealth) };
+    const client = createFakeClient();
     renderShell("/", client);
 
-    expect(await screen.findByRole("status")).toHaveTextContent("Backend connected");
+    expect(await within(backendStatusRegion()).findByRole("status")).toHaveTextContent("Backend connected");
     expect(screen.getByText(/API health is available; model and provider status is separate/i)).toBeInTheDocument();
   });
 
   it("shows a distinct unavailable health state", async () => {
-    const client = { health: vi.fn().mockRejectedValue(new Error("offline")) };
+    const client = createFakeClient({ health: vi.fn().mockRejectedValue(new Error("offline")) });
     renderShell("/", client);
 
-    expect(await screen.findByRole("status")).toHaveTextContent("Backend unavailable");
+    expect(await within(backendStatusRegion()).findByRole("status")).toHaveTextContent("Backend unavailable");
     expect(screen.getByText(/model and provider status is unknown/i)).toBeInTheDocument();
   });
 });
