@@ -35,3 +35,9 @@ The 45 final `repair_failed` replay samples remain part of the audit trail and i
 Date: 2026-08-15
 
 Phase 4 uses an injectable FastAPI app factory while preserving existing successful endpoint shapes. New failures use structured error codes. UI read paths are backed by explicit SQLite query helpers, and Follow remains paper-only, idempotent and limited to non-expired LONG/SHORT Predictions. This contract is accepted before creating the React frontend.
+
+## ADR-007 - Research-ledger frontend identity
+
+Date: 2026-08-15
+
+The local UI uses a restrained research-ledger identity rather than a broker terminal or generic dashboard. Mineral/paper surfaces, ruled structure, local system fonts and a reusable time/provenance rail make data age and signal validity visible. The interface avoids fake data, gradients, trading language and decorative motion; responsive and reduced-motion behavior are part of the foundation.

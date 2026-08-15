@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Phase 4 - P4-T02 frontend foundation
+
+- Added the Vite React + TypeScript frontend workspace and reproducible lockfile.
+- Added a typed API client with structured errors, filters and cancellation support.
+- Added the responsive accessible research-ledger shell and all Phase 4 route placeholders.
+- Added backend health loading/connected/unavailable states and TimeProvenanceRail.
+- Added lint, typecheck, Vitest and production build commands.
+- Upgraded vulnerable router/test dependencies; full and production audits report 0 vulnerabilities.
+- Verification: lint/typecheck/build PASS, 7 frontend tests PASS, desktop/mobile visual QA PASS.
+
 ### Phase 4 - P4-T01 backend product API contract
 
 - Added an injectable Phase 4 FastAPI app factory and local configurable CORS.

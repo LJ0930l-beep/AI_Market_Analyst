@@ -4,14 +4,14 @@
 
 Phase 4 - Product UI and interaction.
 
-Current task: `P4-T02` - establish the React + TypeScript application foundation and typed API client over the accepted P4-T01 contract.
+Current task: `P4-T03` - implement the first real product surfaces: Dashboard, Settings/Health and shared live/degraded status components.
 
 ## Phase 4 task graph
 
 1. `P4-T01` Backend product API contract - ACCEPTED
    - Structured response envelopes/errors, CORS for local UI, missing read/detail/filter endpoints and API contract tests.
    - No frontend work and no core financial-rule changes.
-2. `P4-T02` React + TypeScript application foundation
+2. `P4-T02` React + TypeScript application foundation - ACCEPTED
    - Frontend workspace, routing, design tokens, typed API client, local dev proxy, build/lint/typecheck/test commands.
 3. `P4-T03` Dashboard, Settings/Health and shared status components
    - Provider/model/database health, market summary shell, loading/error/stale/degraded states.

@@ -9,3 +9,7 @@ data/*.sqlite3
 data/*.db
 *.log
 *.egg-info/
+web/node_modules/
+web/dist/
+web/coverage/
+web/.vite/
