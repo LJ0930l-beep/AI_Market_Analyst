@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Phase 4 - P4-T04b Asset Detail and explicit analysis
+
+- Added instrument and timeframe controls with independent snapshot/news request states.
+- Added a local SVG candlestick and volume chart rendered only from returned OHLCV evidence.
+- Added an explicit POST analysis workflow; page reads never create Predictions.
+- Added a Signal Card with exact raw confidence, returned validity/horizon/re-evaluation fields, reason codes and model/provider provenance.
+- Kept raw model/context payloads out of the DOM and removed all Follow/price-level affordances for WAIT.
+- Verification: 49 Python tests and 24 frontend tests PASS; lint/typecheck/build/dependency/diff checks PASS; dependency audits report 0 vulnerabilities.
+- Live desktop and 390x844 mobile QA PASS; initial load kept Predictions at 0, one explicit analysis saved one WAIT and zero PaperTrades, with no browser console warnings/errors.
+
 ### Phase 4 - P4-T04a read-only market snapshot
 
 - Replaced the side-effecting GET snapshot path with provider fetch plus deterministic Python quant only.

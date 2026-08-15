@@ -88,4 +88,31 @@ describe("ApiClient", () => {
     expect(stats).toEqual({ predictions: 12, paper_trades: 3, unknown_counter: 2 });
     expect(fetchImpl).toHaveBeenCalledWith("http://localhost:8000/stats", expect.objectContaining({ method: "GET" }));
   });
+
+  it("encodes snapshot filters and sends the explicit analysis body", async () => {
+    const fetchImpl = vi
+      .fn<FetchMock>()
+      .mockResolvedValueOnce(response({ symbol: "NVDA", timeframe: "4h", bars: [] }))
+      .mockResolvedValueOnce(response({ signal: { action: "WAIT" } }));
+    const client = new ApiClient({ baseUrl: "http://localhost:8000", fetchImpl });
+    const controller = new AbortController();
+
+    await client.instrumentSnapshot("NVDA", { timeframe: "4h", limit: 120 }, controller.signal);
+    await client.analysis("NVDA", { timeframe: "4h", limit: 120 }, controller.signal);
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      "http://localhost:8000/instruments/NVDA/snapshot?timeframe=4h&limit=120",
+      expect.objectContaining({ method: "GET", signal: controller.signal }),
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:8000/analysis/NVDA",
+      expect.objectContaining({
+        method: "POST",
+        signal: controller.signal,
+        body: JSON.stringify({ timeframe: "4h", limit: 120 }),
+      }),
+    );
+  });
 });

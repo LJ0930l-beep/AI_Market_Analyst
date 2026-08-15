@@ -6,7 +6,7 @@ Updated: 2026-08-15
 
 - Target: V1.0 Final Acceptance through Phase 7.
 - Active phase: Phase 4.
-- Active task: P4-T04b planning - Asset Detail frontend and explicit analysis workflow.
+- Active task: P4-T05 planning and delegation to the persistent `luna-max` thread.
 - Blockers: none.
 - Sole developer: `luna-max` (one persistent thread, serial tasks).
 
@@ -28,7 +28,7 @@ Phase 3 evidence:
 
 - Historical-news replay is capability-limited and marked `technical_only`.
 - The formal Phase 3 run is `COMPLETED_WITH_ERRORS`; no zero-error claim is made.
-- Dashboard and Settings/Health are live read-only product surfaces; the remaining Phase 4 workflow pages still use honest placeholders.
+- Dashboard, Settings/Health and Asset Detail are live product surfaces; the remaining Phase 4 workflow pages still use honest placeholders.
 
 ## Phase 4 progress
 
@@ -60,7 +60,16 @@ Phase 3 evidence:
 - GET snapshot now accepts normalized timeframe/bounded history, returns real ascending OHLCV bars plus quote/quant/provider provenance, and performs no news/model work.
 - Repeated snapshot GETs leave every SQLite count unchanged; explicit POST analysis still persists exactly one Prediction.
 - Backend verification: 49 tests PASS, compile check PASS, `pip check` PASS and diff check PASS.
+- P4-T04b Asset Detail frontend: PASS.
+- Added instrument/timeframe controls with independently loaded read-only snapshot and news evidence.
+- Added a dependency-free SVG OHLCV candlestick/volume chart using only backend-returned bars.
+- Analysis is explicit: initial page load creates no Prediction; Run analysis persists one Prediction, including WAIT coverage results.
+- Signal Card exposes an audited field whitelist, exact raw confidence and returned time/provenance without rendering raw model/context payloads.
+- WAIT renders no entry, stop or targets and offers no Follow action.
+- Frontend verification: lint PASS, typecheck PASS, 24 tests PASS, production build PASS and both dependency audits at 0 vulnerabilities.
+- Full regression: 49 Python tests PASS and `pip check` PASS.
+- Live QA: initial Asset Detail load left Predictions at 0; one explicit analysis produced one saved WAIT and zero PaperTrades. Desktop and 390x844 mobile had no horizontal overflow; browser console had no warnings/errors.
 
 ## Next action
 
-Delegate P4-T04b to the same `luna-max` thread, then verify explicit Analyze, real OHLCV rendering and Signal validity/provenance behavior.
+Delegate P4-T05 to the same `luna-max` thread, then verify filtered Prediction detail, paper-only idempotent Follow, PaperTrade ledger and PRELIMINARY-aware performance/calibration views.

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-export type AsyncResourceStatus = "loading" | "ready" | "unavailable";
+export type AsyncResourceStatus = "idle" | "loading" | "ready" | "unavailable";
 
 export interface AsyncResource<T> {
   status: AsyncResourceStatus;
@@ -21,12 +21,17 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
 
-export function useAsyncResource<T>(loader: ResourceLoader<T>): AsyncResource<T> {
+export function useAsyncResource<T>(loader: ResourceLoader<T>, enabled = true): AsyncResource<T> {
   const [attempt, setAttempt] = useState(0);
-  const [state, setState] = useState<ResourceState<T>>({ status: "loading" });
+  const [state, setState] = useState<ResourceState<T>>({ status: enabled ? "loading" : "idle" });
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
 
   useEffect(() => {
+    if (!enabled) {
+      setState({ status: "idle" });
+      return;
+    }
+
     const controller = new AbortController();
     let active = true;
     setState({ status: "loading" });
@@ -47,7 +52,7 @@ export function useAsyncResource<T>(loader: ResourceLoader<T>): AsyncResource<T>
       active = false;
       controller.abort();
     };
-  }, [attempt, loader]);
+  }, [attempt, enabled, loader]);
 
   return { ...state, retry };
 }

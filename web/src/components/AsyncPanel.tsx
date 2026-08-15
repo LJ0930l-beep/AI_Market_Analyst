@@ -81,7 +81,12 @@ export function AsyncPanel({
       </header>
       <div className="async-panel__body">
         {state === "loading" ? <PanelMessage state={state} message="Request in progress." title={title} /> : null}
-        {state === "empty" ? <PanelMessage state={state} message={emptyMessage} onRetry={onRetry} title={title} /> : null}
+        {state === "empty" ? (
+          <>
+            <PanelMessage state={state} message={emptyMessage} onRetry={onRetry} title={title} />
+            {children}
+          </>
+        ) : null}
         {state === "unavailable" ? (
           <PanelMessage
             error={error}

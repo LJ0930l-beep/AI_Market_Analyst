@@ -4,12 +4,12 @@
 
 Phase 4 - Product UI and interaction.
 
-Current task: `P4-T04` - implement Asset Detail and the evidence-first analysis workflow.
+Current task: `P4-T05` - implement Predictions, Follow/Paper Trades and Performance workflows.
 
 P4-T04 execution split:
 
 - `P4-T04a` read-only market snapshot API - ACCEPTED: real OHLCV/quote/quant/provider provenance with zero Prediction side effects.
-- `P4-T04b` Asset Detail frontend: instrument/timeframe controls, truthful charts/news/quant, explicit Analyze and Signal Card workflow.
+- `P4-T04b` Asset Detail frontend - ACCEPTED: instrument/timeframe controls, truthful charts/news/quant, explicit Analyze and Signal Card workflow.
 
 ## Phase 4 task graph
 
@@ -20,7 +20,7 @@ P4-T04 execution split:
    - Frontend workspace, routing, design tokens, typed API client, local dev proxy, build/lint/typecheck/test commands.
 3. `P4-T03` Dashboard, Settings/Health and shared status components - ACCEPTED
    - Provider/model/database health, market summary shell, loading/error/stale/degraded states.
-4. `P4-T04` Asset Detail and analysis workflow
+4. `P4-T04` Asset Detail and analysis workflow - ACCEPTED
    - Instrument search, quote/quant/news/event views, charts, Signal Card and validity/horizon/re-evaluation/invalidation display.
 5. `P4-T05` Predictions, Follow/Paper Trades and Performance
    - Filters/details, PaperTrade-only Follow semantics, outcome metrics, calibration reliability/buckets and PRELIMINARY state.

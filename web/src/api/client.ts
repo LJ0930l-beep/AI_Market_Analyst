@@ -6,6 +6,8 @@ import type {
   FollowResponse,
   HealthResponse,
   Instrument,
+  InstrumentNews,
+  MarketSnapshot,
   ModelHealthResponse,
   Outcome,
   OutcomeFilters,
@@ -20,6 +22,7 @@ import type {
   ProviderHealthResponse,
   ReplayRun,
   ReplayRunFilters,
+  SnapshotFilters,
   StatsResponse,
 } from "./types";
 
@@ -81,8 +84,9 @@ export interface MarketApiClient {
   modelHealth(signal?: AbortSignal): Promise<ModelHealthResponse>;
   stats(signal?: AbortSignal): Promise<StatsResponse>;
   instruments(signal?: AbortSignal): Promise<Instrument[]>;
-  instrumentSnapshot(symbol: string, signal?: AbortSignal): Promise<Record<string, unknown>>;
-  instrumentNews(symbol: string, signal?: AbortSignal): Promise<Record<string, unknown>>;
+  instrumentSnapshot(symbol: string, signal?: AbortSignal): Promise<MarketSnapshot>;
+  instrumentSnapshot(symbol: string, filters?: SnapshotFilters, signal?: AbortSignal): Promise<MarketSnapshot>;
+  instrumentNews(symbol: string, signal?: AbortSignal): Promise<InstrumentNews>;
   analysis(symbol: string, request?: AnalysisRequest, signal?: AbortSignal): Promise<AnalysisResult>;
   predictions(filters?: PredictionFilters, signal?: AbortSignal): Promise<Prediction[]>;
   prediction(predictionId: string, signal?: AbortSignal): Promise<Prediction>;
@@ -102,7 +106,16 @@ export interface MarketApiClient {
 
 export type ApplicationShellApiClient = Pick<
   MarketApiClient,
-  "health" | "providerHealth" | "modelHealth" | "stats" | "instruments" | "predictions" | "performanceSummary"
+  | "health"
+  | "providerHealth"
+  | "modelHealth"
+  | "stats"
+  | "instruments"
+  | "instrumentSnapshot"
+  | "instrumentNews"
+  | "analysis"
+  | "predictions"
+  | "performanceSummary"
 >;
 
 export function serializeQuery(params: QueryParams): string {
@@ -126,6 +139,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function encodePathSegment(value: string): string {
   return encodeURIComponent(value);
+}
+
+function isAbortSignal(value: unknown): value is AbortSignal {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "aborted" in value &&
+    "addEventListener" in value
+  );
 }
 
 export class ApiClient implements MarketApiClient {
@@ -202,12 +224,21 @@ export class ApiClient implements MarketApiClient {
     return this.request<Instrument[]>("/instruments", { signal });
   }
 
-  instrumentSnapshot(symbol: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
-    return this.request<Record<string, unknown>>(`/instruments/${encodePathSegment(symbol)}/snapshot`, { signal });
+  instrumentSnapshot(
+    symbol: string,
+    filtersOrSignal: SnapshotFilters | AbortSignal = {},
+    signal?: AbortSignal,
+  ): Promise<MarketSnapshot> {
+    const filters = isAbortSignal(filtersOrSignal) ? undefined : filtersOrSignal;
+    const requestSignal = isAbortSignal(filtersOrSignal) ? filtersOrSignal : signal;
+    return this.request<MarketSnapshot>(`/instruments/${encodePathSegment(symbol)}/snapshot`, {
+      query: filters,
+      signal: requestSignal,
+    });
   }
 
-  instrumentNews(symbol: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
-    return this.request<Record<string, unknown>>(`/instruments/${encodePathSegment(symbol)}/news`, { signal });
+  instrumentNews(symbol: string, signal?: AbortSignal): Promise<InstrumentNews> {
+    return this.request<InstrumentNews>(`/instruments/${encodePathSegment(symbol)}/news`, { signal });
   }
 
   analysis(symbol: string, request: AnalysisRequest = {}, signal?: AbortSignal): Promise<AnalysisResult> {

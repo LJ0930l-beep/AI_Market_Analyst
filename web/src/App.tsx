@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { NavLink, Route, Routes, useLocation, useParams } from "react-router-dom";
+import { NavLink, Route, Routes, useLocation } from "react-router-dom";
 
 import { apiClient as defaultApiClient, type ApplicationShellApiClient } from "./api/client";
 import type { HealthResponse } from "./api/types";
 import { HealthStatus, type BackendHealthState } from "./components/HealthStatus";
 import { TimeProvenanceRail } from "./components/TimeProvenanceRail";
 import { DashboardPage, EMPTY_DASHBOARD_PROVENANCE, type DashboardProvenance } from "./pages/DashboardPage";
+import { AssetDetailPage } from "./pages/AssetDetailPage";
 import { SettingsHealthPage } from "./pages/SettingsHealthPage";
 
 interface NavigationItem {
@@ -30,12 +31,18 @@ export interface ApplicationShellProps {
 }
 
 function NavigationLinks() {
+  const location = useLocation();
   return (
     <ul className="nav-list">
       {navigationItems.map((item) => (
         <li key={item.to}>
           <NavLink
-            className={({ isActive }) => `nav-entry${isActive ? " nav-entry--active" : ""}`}
+            aria-current={
+              item.to === "/assets/NVDA" && location.pathname.startsWith("/assets/") ? "page" : undefined
+            }
+            className={({ isActive }) =>
+              `nav-entry${isActive || (item.to === "/assets/NVDA" && location.pathname.startsWith("/assets/")) ? " nav-entry--active" : ""}`
+            }
             end={item.end}
             to={item.to}
           >
@@ -82,6 +89,16 @@ function routeLabel(pathname: string): string {
   if (pathname === "/") {
     return "Dashboard";
   }
+  if (pathname.startsWith("/assets/")) {
+    const routeSymbol = pathname.slice("/assets/".length).split("/")[0];
+    let symbol = routeSymbol;
+    try {
+      symbol = decodeURIComponent(routeSymbol);
+    } catch {
+      symbol = routeSymbol;
+    }
+    return symbol ? `Asset detail / ${symbol.toUpperCase()}` : "Asset detail";
+  }
   const matchingItem = navigationItems.find((item) => item.to !== "/" && pathname.startsWith(item.to));
   return matchingItem?.label ?? "Workspace";
 }
@@ -110,17 +127,6 @@ function PlaceholderPage({ title, description, nextTask = "a later Phase 4 task"
   );
 }
 
-function AssetDetailPlaceholder() {
-  const { symbol } = useParams<{ symbol: string }>();
-  const displaySymbol = symbol?.toUpperCase() ?? "instrument";
-  return (
-    <PlaceholderPage
-      description={`The ${displaySymbol} context route is reserved for instrument evidence, analysis and signal details.`}
-      title={`Asset detail / ${displaySymbol}`}
-    />
-  );
-}
-
 function NotFoundPage() {
   return (
     <PlaceholderPage
@@ -144,7 +150,7 @@ function WorkspaceRoutes({
         path="watchlist"
         element={<PlaceholderPage description="A focused place for saved instruments will live here." title="Watchlist" />}
       />
-      <Route path="assets/:symbol" element={<AssetDetailPlaceholder />} />
+      <Route path="assets/:symbol" element={<AssetDetailPage apiClient={apiClient} onProvenanceChange={onProvenanceChange} />} />
       <Route
         path="predictions"
         element={<PlaceholderPage description="Prediction records will be browsable here with their evidence and validity." title="Predictions" />}

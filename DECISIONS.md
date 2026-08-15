@@ -53,3 +53,9 @@ Dashboard panels query backend, provider, model, database counts and performance
 Date: 2026-08-15
 
 `GET /instruments/{symbol}/snapshot` is a strictly read-only provider-plus-quant path. It may return actual OHLCV, quote, deterministic indicators and provider freshness, but it cannot invoke news, a model, Signal construction or persistence. Only the explicit `POST /analysis/{symbol}` workflow may create a Prediction, including a WAIT Prediction.
+
+## ADR-010 - Asset analysis is explicit and Signal rendering is allowlisted
+
+Date: 2026-08-15
+
+Asset Detail loads snapshot and news evidence without analysis side effects. A Prediction is created only after the user explicitly runs analysis. The Signal Card renders an allowlist of typed product fields and preserves raw confidence exactly; raw model responses and serialized context never enter the DOM. WAIT remains a saved Prediction for coverage and auditability, but has no entry, stop, targets, Follow control, PaperTrade or broker implication.

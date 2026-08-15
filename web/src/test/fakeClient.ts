@@ -1,7 +1,16 @@
 import { vi } from "vitest";
 
 import type { ApplicationShellApiClient } from "../api/client";
-import type { HealthResponse, Instrument, Prediction, ProviderHealthResponse, StatsResponse } from "../api/types";
+import type {
+  AnalysisResult,
+  HealthResponse,
+  Instrument,
+  InstrumentNews,
+  MarketSnapshot,
+  Prediction,
+  ProviderHealthResponse,
+  StatsResponse,
+} from "../api/types";
 
 export const fakeHealth: HealthResponse = {
   status: "ok",
@@ -51,6 +60,62 @@ export const fakeStats: StatsResponse = {
   unknown_counter: 2,
 };
 
+export const fakeSnapshot: MarketSnapshot = {
+  symbol: "NVDA",
+  timeframe: "1h",
+  response_time: "2030-01-02T12:05:00Z",
+  data_as_of: "2030-01-02T12:00:00Z",
+  provider_snapshot: {
+    provider: "fixture_market",
+    fetched_at: "2030-01-02T12:05:00Z",
+    data_as_of: "2030-01-02T12:00:00Z",
+    stale: false,
+    error_code: null,
+  },
+  quote: { timestamp: "2030-01-02T12:00:00Z", price: 100, change_pct: 1.2, high: 102, low: 98 },
+  quant: { symbol: "NVDA", timeframe: "1h", price: 100, support: 96, resistance: 104, market_regime: "trend" },
+  time_policy: null,
+  bars: [
+    { timestamp: "2030-01-02T11:00:00Z", open: 98, high: 101, low: 97, close: 100, volume: 1200 },
+    { timestamp: "2030-01-02T12:00:00Z", open: 100, high: 102, low: 99, close: 101, volume: 1400 },
+  ],
+};
+
+export const fakeNews: InstrumentNews = {
+  provider: "fixture_news",
+  fetched_at: "2030-01-02T12:05:00Z",
+  available: true,
+  error_code: null,
+  events: [],
+  clusters: [],
+};
+
+export const fakeAnalysis: AnalysisResult = {
+  instrument: { symbol: "NVDA", asset_type: "equity", exchange: "NASDAQ", quote_currency: "USD" },
+  timeframe: "1h",
+  response_time: "2030-01-02T12:06:00Z",
+  data_as_of: "2030-01-02T12:00:00Z",
+  provider_snapshot: fakeSnapshot.provider_snapshot,
+  quote: fakeSnapshot.quote,
+  quant: fakeSnapshot.quant,
+  news: fakeNews,
+  time_policy: null,
+  model: { provider: "none", available: false, error_code: "MODEL_NOT_CONFIGURED" },
+  signal: {
+    prediction_id: "prediction-analysis",
+    action: "WAIT",
+    generated_at: "2030-01-02T12:06:00Z",
+    signal_valid_until: "2030-01-02T13:06:00Z",
+    reevaluate_at: "2030-01-02T12:21:00Z",
+    raw_confidence: 0.4,
+    source_type: "live",
+    model_id: "none",
+    parse_status: "MODEL_NOT_CONFIGURED",
+    summary: "WAIT: local model is not configured.",
+    reason_codes: ["MODEL_NOT_CONFIGURED"],
+  },
+};
+
 export function createFakeClient(overrides: Partial<ApplicationShellApiClient> = {}): ApplicationShellApiClient {
   const defaults: ApplicationShellApiClient = {
     health: vi.fn().mockResolvedValue(fakeHealth),
@@ -58,6 +123,9 @@ export function createFakeClient(overrides: Partial<ApplicationShellApiClient> =
     modelHealth: vi.fn().mockResolvedValue({ provider: "ollama", available: true }),
     stats: vi.fn().mockResolvedValue(fakeStats),
     instruments: vi.fn().mockResolvedValue([fakeInstrument]),
+    instrumentSnapshot: vi.fn().mockResolvedValue(fakeSnapshot),
+    instrumentNews: vi.fn().mockResolvedValue(fakeNews),
+    analysis: vi.fn().mockResolvedValue(fakeAnalysis),
     predictions: vi.fn().mockResolvedValue([fakePrediction]),
     performanceSummary: vi.fn().mockResolvedValue({
       scope: { source_type: "live" },

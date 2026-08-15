@@ -38,6 +38,172 @@ export interface Instrument extends JsonRecord {
   sector: string;
 }
 
+export interface ProviderSnapshot extends JsonRecord {
+  provider?: string;
+  fetched_at?: string;
+  data_as_of?: string;
+  stale?: boolean;
+  error_code?: string | null;
+}
+
+export interface MarketQuote extends JsonRecord {
+  timestamp?: string;
+  price?: number;
+  change_pct?: number | null;
+  high?: number | null;
+  low?: number | null;
+}
+
+export interface MarketBar extends JsonRecord {
+  timestamp: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface QuantFacts extends JsonRecord {
+  symbol?: string;
+  timeframe?: Timeframe;
+  timestamp?: string;
+  price?: number;
+  ema20?: number;
+  ema50?: number;
+  rsi14?: number;
+  macd?: number;
+  macd_signal?: number;
+  atr14?: number;
+  volume_ratio?: number;
+  support?: number;
+  resistance?: number;
+  market_regime?: string;
+  trend_score?: number;
+  momentum_score?: number;
+}
+
+export interface SnapshotFilters {
+  timeframe?: Timeframe;
+  limit?: number;
+}
+
+export interface MarketSnapshot extends JsonRecord {
+  symbol: string;
+  timeframe: Timeframe;
+  response_time?: string;
+  data_as_of?: string;
+  provider_snapshot?: ProviderSnapshot;
+  quote?: MarketQuote;
+  quant?: QuantFacts;
+  time_policy?: null;
+  bars?: MarketBar[];
+}
+
+export interface NewsEvent extends JsonRecord {
+  id?: string;
+  source?: string;
+  published_at?: string;
+  title?: string;
+  symbols?: string[];
+  summary_raw?: string | null;
+  url?: string | null;
+  category?: string;
+  sentiment?: number;
+  importance?: number;
+  credibility?: number;
+  impact_horizon?: string;
+  dedupe_hash?: string | null;
+}
+
+export interface NewsCluster extends JsonRecord {
+  cluster_id?: string;
+  symbols?: string[];
+  title?: string;
+  event_ids?: string[];
+  sentiment?: number;
+  importance?: number;
+}
+
+export interface InstrumentNews extends JsonRecord {
+  provider?: string;
+  fetched_at?: string;
+  available?: boolean;
+  error_code?: string | null;
+  events?: NewsEvent[];
+  clusters?: NewsCluster[];
+}
+
+export interface TimePolicy extends JsonRecord {
+  timeframe?: string;
+  signal_validity_minutes?: number[];
+  holding_horizon_minutes?: number[];
+  reevaluate_minutes?: number[];
+  allowed_values?: JsonRecord;
+  volatility_ratio?: number;
+  market_regime?: string;
+  event_risk?: boolean;
+  reason_codes?: string[];
+}
+
+export interface ModelStatus extends JsonRecord {
+  provider?: string;
+  available?: boolean;
+  error_code?: string | null;
+  model_id?: string;
+  model_version?: string | null;
+  prompt_version?: string | null;
+  parse_status?: string;
+}
+
+export interface AnalysisInstrument extends JsonRecord {
+  symbol?: string;
+  asset_type?: string;
+  exchange?: string;
+  currency?: string;
+  quote_currency?: string;
+  timezone?: string;
+  trading_hours?: string;
+  sector?: string;
+}
+
+export interface SignalProposal extends JsonRecord {
+  prediction_id?: string;
+  instrument?: AnalysisInstrument;
+  analysis_timeframe?: Timeframe;
+  generated_at?: string;
+  action?: Action;
+  entry_low?: number | null;
+  entry_high?: number | null;
+  stop?: number | null;
+  tp1?: number | null;
+  tp2?: number | null;
+  signal_validity_minutes?: number;
+  signal_valid_until?: string;
+  expected_hold_minutes?: number;
+  expected_hold_until?: string;
+  max_hold_minutes?: number;
+  max_hold_until?: string;
+  reevaluate_at?: string;
+  invalidation?: string[];
+  raw_confidence?: number;
+  reason_codes?: string[];
+  summary?: string;
+  model_id?: string;
+  model_version?: string | null;
+  prompt_version?: string | null;
+  input_hash?: string | null;
+  data_as_of?: string | null;
+  parse_status?: string;
+  latency_ms?: number | null;
+  source_type?: SourceType;
+  replay_run_id?: string | null;
+  calibrated_confidence?: number | null;
+  calibration_version?: string | null;
+  calibration_scope?: string | null;
+  calibration_sample_size?: number | null;
+  calibration_fallback?: string | null;
+}
+
 export interface StatsResponse extends JsonRecord {
   predictions?: number;
   paper_trades?: number;
@@ -134,10 +300,18 @@ export type PredictionCalibration = JsonRecord & {
 };
 
 export type AnalysisResult = JsonRecord & {
-  signal?: JsonRecord;
-  instrument?: JsonRecord;
-  quote?: JsonRecord;
-  quant?: JsonRecord;
+  instrument?: AnalysisInstrument;
+  timeframe?: Timeframe;
+  response_time?: string;
+  data_as_of?: string;
+  provider_snapshot?: ProviderSnapshot;
+  quote?: MarketQuote;
+  quant?: QuantFacts;
+  news?: InstrumentNews;
+  time_policy?: TimePolicy | null;
+  model?: ModelStatus;
+  signal?: SignalProposal;
+  input_hash?: string;
 };
 
 export interface PaginationFilters {
