@@ -1,0 +1,273 @@
+{
+  "source": "data\\phase2-real-smoke-qwen.json",
+  "records": [
+    {
+      "symbol": "AAPL",
+      "parse_status": "valid",
+      "input_hash": "f596a7841909caaa9cfff6f0bf226ad226eff66b4b21dfbf23f9ac83239e3157",
+      "errors": [],
+      "raw_fields": [
+        "action",
+        "confidence_raw",
+        "entry_preference",
+        "entry_zone",
+        "holding_horizon_minutes",
+        "invalidation",
+        "re_evaluate_minutes",
+        "risk_factors",
+        "signal_validity_minutes",
+        "stop",
+        "thesis",
+        "tp1",
+        "tp2"
+      ],
+      "action": "WAIT",
+      "validated_response": {
+        "action": "WAIT",
+        "confidence_raw": 0.0,
+        "entry_preference": "none",
+        "entry_zone": null,
+        "stop": null,
+        "tp1": null,
+        "tp2": null,
+        "signal_validity_minutes": 120,
+        "holding_horizon_minutes": 1440,
+        "re_evaluate_minutes": 60,
+        "invalidation": [],
+        "thesis": [
+          "insufficient evidence"
+        ],
+        "risk_factors": [
+          "high_impact_event_cap",
+          "event_risk_or_range_regime"
+        ]
+      }
+    },
+    {
+      "symbol": "NVDA",
+      "parse_status": "valid",
+      "input_hash": "f2f226b8dcbcf4a4d6853c2683f5749bc85754b47de2818f31c2f1eff5571197",
+      "errors": [],
+      "raw_fields": [
+        "action",
+        "confidence_raw",
+        "entry_preference",
+        "entry_zone",
+        "holding_horizon_minutes",
+        "invalidation",
+        "re_evaluate_minutes",
+        "risk_factors",
+        "signal_validity_minutes",
+        "stop",
+        "thesis",
+        "tp1",
+        "tp2"
+      ],
+      "action": "WAIT",
+      "validated_response": {
+        "action": "WAIT",
+        "confidence_raw": 0.0,
+        "entry_preference": "none",
+        "entry_zone": null,
+        "stop": null,
+        "tp1": null,
+        "tp2": null,
+        "signal_validity_minutes": 120,
+        "holding_horizon_minutes": 1440,
+        "re_evaluate_minutes": 60,
+        "invalidation": [],
+        "thesis": [
+          "insufficient evidence"
+        ],
+        "risk_factors": [
+          "event_risk_or_range_regime"
+        ]
+      }
+    },
+    {
+      "symbol": "TSLA",
+      "parse_status": "valid",
+      "input_hash": "7cba478c50c8eab61ffdeaedf7b44faa1b04dacfdae78e1de47a1e7488d551e8",
+      "errors": [],
+      "raw_fields": [
+        "action",
+        "confidence_raw",
+        "entry_preference",
+        "entry_zone",
+        "holding_horizon_minutes",
+        "invalidation",
+        "re_evaluate_minutes",
+        "risk_factors",
+        "signal_validity_minutes",
+        "stop",
+        "thesis",
+        "tp1",
+        "tp2"
+      ],
+      "action": "WAIT",
+      "validated_response": {
+        "action": "WAIT",
+        "confidence_raw": 0.0,
+        "entry_preference": "none",
+        "entry_zone": null,
+        "stop": null,
+        "tp1": null,
+        "tp2": null,
+        "signal_validity_minutes": 120,
+        "holding_horizon_minutes": 1440,
+        "re_evaluate_minutes": 60,
+        "invalidation": [],
+        "thesis": [
+          "insufficient evidence"
+        ],
+        "risk_factors": [
+          "high impact negative sentiment event",
+          "earnings miss with negative cash flow and margin slide"
+        ]
+      }
+    },
+    {
+      "symbol": "AMD",
+      "parse_status": "valid",
+      "input_hash": "f4319e52f10580d61b7ce2eacff8098d4fbfc06030a17ef04d4eb182b76b823a",
+      "errors": [],
+      "raw_fields": [
+        "action",
+        "confidence_raw",
+        "entry_preference",
+        "entry_zone",
+        "holding_horizon_minutes",
+        "invalidation",
+        "re_evaluate_minutes",
+        "risk_factors",
+        "signal_validity_minutes",
+        "stop",
+        "thesis",
+        "tp1",
+        "tp2"
+      ],
+      "action": "WAIT",
+      "validated_response": {
+        "action": "WAIT",
+        "confidence_raw": 0.0,
+        "entry_preference": "none",
+        "entry_zone": null,
+        "stop": null,
+        "tp1": null,
+        "tp2": null,
+        "signal_validity_minutes": 90,
+        "holding_horizon_minutes": 1440,
+        "re_evaluate_minutes": 45,
+        "invalidation": [],
+        "thesis": [
+          "insufficient evidence"
+        ],
+        "risk_factors": [
+          "no clear directional edge"
+        ]
+      }
+    },
+    {
+      "symbol": "BTCUSDT",
+      "parse_status": "valid",
+      "input_hash": "9b33a69ae598d505b2170a1cfafc346ad30945be4936474b36509417ca4f321f",
+      "errors": [],
+      "raw_fields": [
+        "action",
+        "confidence_raw",
+        "entry_preference",
+        "entry_zone",
+        "holding_horizon_minutes",
+        "invalidation",
+        "re_evaluate_minutes",
+        "risk_factors",
+        "signal_validity_minutes",
+        "stop",
+        "thesis",
+        "tp1",
+        "tp2"
+      ],
+      "action": "SHORT",
+      "validated_response": {
+        "action": "SHORT",
+        "confidence_raw": 72.5,
+        "entry_preference": "pullback",
+        "entry_zone": {
+          "low": 62400.0,
+          "high": 63100.0
+        },
+        "stop": 63250.0,
+        "tp1": 61800.0,
+        "tp2": 60900.0,
+        "signal_validity_minutes": 120,
+        "holding_horizon_minutes": 1440,
+        "re_evaluate_minutes": 60,
+        "invalidation": [
+          "trend_score exceeds 0.05",
+          "breakout above 63617.45 with volume spike",
+          "news sentiment shifts to positive >0.2"
+        ],
+        "thesis": [
+          "BTCUSDT in confirmed bear_trend regime with trend_score -0.109, EMA20 below EMA50, and MACD negative divergence supports short bias",
+          "price near support zone 62535.24 offers risk-reward entry via pullback strategy",
+          "risk events absent but technical structure favors downside continuation"
+        ],
+        "risk_factors": [
+          "news clusters show neutral sentiment (0.0) limiting directional conviction",
+          "market_regime bear_trend is moderate strength requiring confirmation of trend_score threshold",
+          "volatility_ratio 0.37 suggests potential for rapid stop-out if reversal occurs"
+        ]
+      }
+    },
+    {
+      "symbol": "ETHUSDT",
+      "parse_status": "valid",
+      "input_hash": "6862158e0a44d3d11897ec658b73dc7bb28789b42ec859842a7892f75651e237",
+      "errors": [],
+      "raw_fields": [
+        "action",
+        "confidence_raw",
+        "entry_preference",
+        "entry_zone",
+        "holding_horizon_minutes",
+        "invalidation",
+        "re_evaluate_minutes",
+        "risk_factors",
+        "signal_validity_minutes",
+        "stop",
+        "thesis",
+        "tp1",
+        "tp2"
+      ],
+      "action": "WAIT",
+      "validated_response": {
+        "action": "WAIT",
+        "confidence_raw": 0.0,
+        "entry_preference": "none",
+        "entry_zone": null,
+        "stop": null,
+        "tp1": null,
+        "tp2": null,
+        "signal_validity_minutes": 120,
+        "holding_horizon_minutes": 1440,
+        "re_evaluate_minutes": 60,
+        "invalidation": [],
+        "thesis": [
+          "insufficient evidence"
+        ],
+        "risk_factors": [
+          "no clear directional edge"
+        ]
+      }
+    }
+  ],
+  "observed_actions": [
+    "SHORT",
+    "WAIT"
+  ],
+  "missing_actions": [
+    "LONG"
+  ],
+  "pass": true,
+  "errors": 0
+}

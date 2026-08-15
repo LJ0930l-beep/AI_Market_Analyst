@@ -1,0 +1,6 @@
+# Phase 2 deliberately has no mandatory third-party runtime dependency.
+# The stdlib Yahoo Chart fallback, Binance Public REST, Google News RSS,
+# Ollama HTTP adapter, SQLite store, and Fixture mode work without packages.
+# Optional integrations are isolated behind provider boundaries:
+#   pip install -e ".[api]"     # FastAPI + Uvicorn
+#   pip install -e ".[market]"  # public Yahoo Finance provider

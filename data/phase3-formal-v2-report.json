@@ -1,0 +1,2132 @@
+{
+  "phase": 3,
+  "source_type": "replay",
+  "run_id": "replay-20260815042457-71ec330d",
+  "latency_ms": {
+    "count": 255,
+    "mean": 4269.329501960784,
+    "median": 4343.49,
+    "p95": 6404.909
+  },
+  "global": {
+    "status": "PRELIMINARY",
+    "sample_count": 255,
+    "actionable_count": 191,
+    "resolved_actionable": 191,
+    "pending_actionable": 0,
+    "wait_count": 64,
+    "invalid_count": 45,
+    "wins": 70,
+    "losses": 121,
+    "flats": 0,
+    "win_rate": 0.36649214659685864,
+    "avg_r": 0.37160853420163936,
+    "expectancy_r": 0.37160853420163936,
+    "profit_factor": 1.5957363294257028,
+    "max_drawdown_r": -19.49962848984528,
+    "mfe_r_avg": 1.7661551132715572,
+    "mfe_r_median": 1.2806892305495818,
+    "mfe_r_p90": 3.6200012207031564,
+    "mae_r_avg": -1.3331791400270736,
+    "mae_r_median": -1.1779318313113822,
+    "mae_r_p90": 0.0,
+    "timeout_count": 6,
+    "timeout_rate": 0.031413612565445025,
+    "coverage": 0.7490196078431373,
+    "action_rate": 0.7490196078431373,
+    "wait_rate": 0.25098039215686274,
+    "brier_raw": 0.29783499507853406,
+    "brier_calibrated": 0.24788204802899663,
+    "ece_raw": 0.24237591623036647,
+    "ece_calibrated": 0.03332176067334475,
+    "confidence_buckets": [
+      {
+        "bucket": "0.50-0.60",
+        "count": 61,
+        "raw_avg_confidence": 0.5619999999999999,
+        "empirical_win_rate": 0.4426229508196721,
+        "calibrated_confidence": 0.5619999999999999
+      },
+      {
+        "bucket": "0.60-0.70",
+        "count": 104,
+        "raw_avg_confidence": 0.6,
+        "empirical_win_rate": 0.3076923076923077,
+        "calibrated_confidence": 0.6
+      },
+      {
+        "bucket": "<0.50",
+        "count": 26,
+        "raw_avg_confidence": 0.09185384615384616,
+        "empirical_win_rate": 0.4230769230769231,
+        "calibrated_confidence": 0.3331703859235139
+      }
+    ],
+    "scope": {
+      "source_type": "replay"
+    },
+    "window_start": null,
+    "window_end": null
+  },
+  "groups": {
+    "asset_type": [
+      {
+        "value": "crypto",
+        "metrics": {
+          "status": "PRELIMINARY",
+          "sample_count": 83,
+          "actionable_count": 43,
+          "resolved_actionable": 43,
+          "pending_actionable": 0,
+          "wait_count": 40,
+          "invalid_count": 45,
+          "wins": 16,
+          "losses": 27,
+          "flats": 0,
+          "win_rate": 0.37209302325581395,
+          "avg_r": 0.45948454378636666,
+          "expectancy_r": 0.45948454378636666,
+          "profit_factor": 1.7317716808449544,
+          "max_drawdown_r": -11.0,
+          "mfe_r_avg": 1.904946098034694,
+          "mfe_r_median": 1.594107452339696,
+          "mfe_r_p90": 3.8910784667260834,
+          "mae_r_avg": -1.0526329432167965,
+          "mae_r_median": -1.0956442278403848,
+          "mae_r_p90": -0.12007696007695094,
+          "timeout_count": 1,
+          "timeout_rate": 0.023255813953488372,
+          "coverage": 0.5180722891566265,
+          "action_rate": 0.5180722891566265,
+          "wait_rate": 0.4819277108433735,
+          "brier_raw": 0.2722313823255814,
+          "brier_calibrated": 0.21762769435212978,
+          "ece_raw": 0.19333023255813953,
+          "ece_calibrated": 0.015469922595548802,
+          "confidence_buckets": [
+            {
+              "bucket": "0.50-0.60",
+              "count": 24,
+              "raw_avg_confidence": 0.5627916666666667,
+              "empirical_win_rate": 0.5,
+              "calibrated_confidence": 0.5627916666666667
+            },
+            {
+              "bucket": "0.60-0.70",
+              "count": 18,
+              "raw_avg_confidence": 0.6,
+              "empirical_win_rate": 0.2222222222222222,
+              "calibrated_confidence": 0.6
+            },
+            {
+              "bucket": "<0.50",
+              "count": 1,
+              "raw_avg_confidence": 0.0062,
+              "empirical_win_rate": 0,
+              "calibrated_confidence": 0.38756294585136275
+            }
+          ],
+          "scope": {
+            "source_type": "replay",
+            "asset_type": "crypto"
+          },
+          "window_start": null,
+          "window_end": null
+        }
+      },
+      {
+        "value": "equity",
+        "metrics": {
+          "status": "PRELIMINARY",
+          "sample_count": 172,
+          "actionable_count": 148,
+          "resolved_actionable": 148,
+          "pending_actionable": 0,
+          "wait_count": 24,
+          "invalid_count": 45,
+          "wins": 54,
+          "losses": 94,
+          "flats": 0,
+          "win_rate": 0.36486486486486486,
+          "avg_r": 0.34607699087634697,
+          "expectancy_r": 0.34607699087634697,
+          "profit_factor": 1.5558744459505105,
+          "max_drawdown_r": -16.791943771368885,
+          "mfe_r_avg": 1.7258307055363216,
+          "mfe_r_median": 1.2028771929304254,
+          "mfe_r_p90": 3.5386635812950558,
+          "mae_r_avg": -1.4146891836949242,
+          "mae_r_median": -1.2193130323558954,
+          "mae_r_p90": 0.0,
+          "timeout_count": 5,
+          "timeout_rate": 0.033783783783783786,
+          "coverage": 0.8604651162790697,
+          "action_rate": 0.8604651162790697,
+          "wait_rate": 0.13953488372093023,
+          "brier_raw": 0.30527388256756754,
+          "brier_calibrated": 0.25667216429997824,
+          "ece_raw": 0.2567094594594594,
+          "ece_calibrated": 0.04749772270417191,
+          "confidence_buckets": [
+            {
+              "bucket": "0.50-0.60",
+              "count": 37,
+              "raw_avg_confidence": 0.5614864864864865,
+              "empirical_win_rate": 0.40540540540540543,
+              "calibrated_confidence": 0.5614864864864865
+            },
+            {
+              "bucket": "0.60-0.70",
+              "count": 86,
+              "raw_avg_confidence": 0.6,
+              "empirical_win_rate": 0.32558139534883723,
+              "calibrated_confidence": 0.6
+            },
+            {
+              "bucket": "<0.50",
+              "count": 25,
+              "raw_avg_confidence": 0.09528,
+              "empirical_win_rate": 0.44,
+              "calibrated_confidence": 0.31736714216069295
+            }
+          ],
+          "scope": {
+            "source_type": "replay",
+            "asset_type": "equity"
+          },
+          "window_start": null,
+          "window_end": null
+        }
+      }
+    ],
+    "symbol": [
+      {
+        "value": "AAPL",
+        "metrics": {
+          "status": "PRELIMINARY",
+          "sample_count": 43,
+          "actionable_count": 36,
+          "resolved_actionable": 36,
+          "pending_actionable": 0,
+          "wait_count": 7,
+          "invalid_count": 45,
+          "wins": 13,
+          "losses": 23,
+          "flats": 0,
+          "win_rate": 0.3611111111111111,
+          "avg_r": 0.18903628202138023,
+          "expectancy_r": 0.18903628202138023,
+          "profit_factor": 1.3114988404501848,
+          "max_drawdown_r": -6.0,
+          "mfe_r_avg": 1.2589345162520797,
+          "mfe_r_median": 0.788417258241115,
+          "mfe_r_p90": 2.882862703997348,
+          "mae_r_avg": -1.055096506254914,
+          "mae_r_median": -1.1789860258650915,
+          "mae_r_p90": 0.0,
+          "timeout_count": 2,
+          "timeout_rate": 0.05555555555555555,
+          "coverage": 0.8372093023255814,
+          "action_rate": 0.8372093023255814,
+          "wait_rate": 0.16279069767441862,
+          "brier_raw": 0.3364129416666667,
+          "brier_calibrated": 0.26854083860710914,
+          "ece_raw": 0.33732222222222225,
+          "ece_calibrated": 0.03898875847678662,
+          "confidence_buckets": [
+            {
+              "bucket": "0.50-0.60",
+              "count": 9,
+              "raw_avg_confidence": 0.5685555555555556,
+              "empirical_win_rate": 0.3333333333333333,
+              "calibrated_confidence": 0.5685555555555556
+            },
+            {
+              "bucket": "0.60-0.70",
+              "count": 19,
+              "raw_avg_confidence": 0.6,
+              "empirical_win_rate": 0.2631578947368421,
+              "calibrated_confidence": 0.6
+            },
+            {
+              "bucket": "<0.50",
+              "count": 8,
+              "raw_avg_confidence": 0.171675,
+              "empirical_win_rate": 0.625,
+              "calibrated_confidence": 0.3221223526343245
+            }
+          ],
+          "scope": {
+            "source_type": "replay",
+            "symbol": "AAPL"
+          },
+          "window_start": null,
+          "window_end": null
+        }
+      },
+      {
+        "value": "AMD",
+        "metrics": {
+          "status": "PRELIMINARY",
+          "sample_count": 40,
+          "actionable_count": 36,
+          "resolved_actionable": 36,
+          "pending_actionable": 0,
+          "wait_count": 4,
+          "invalid_count": 45,
+          "wins": 16,
+          "losses": 20,
+          "flats": 0,
+          "win_rate": 0.4444444444444444,
+          "avg_r": 0.6447307552290997,
+          "expectancy_r": 0.6447307552290997,
+          "profit_factor": 2.1605153594123796,
+          "max_drawdown_r": -8.543082105149352,
+          "mfe_r_avg": 2.183664365914052,
+          "mfe_r_median": 1.586252292069064,
+          "mfe_r_p90": 4.462953240239191,
+          "mae_r_avg": -1.4536346462753702,
+          "mae_r_median": -1.201641135823976,
+          "mae_r_p90": 0.0,
+          "timeout_count": 0,
+          "timeout_rate": 0.0,
+          "coverage": 0.9,
+          "action_rate": 0.9,
+          "wait_rate": 0.1,
+          "brier_raw": 0.32855637722222225,
+          "brier_calibrated": 0.31043245269025893,
+          "ece_raw": 0.2495888888888889,
+          "ece_calibrated": 0.1465414188836724,
+          "confidence_buckets": [
+            {
+              "bucket": "0.50-0.60",
+              "count": 10,
+              "raw_avg_confidence": 0.5636,
+              "empirical_win_rate": 0.4,
+              "calibrated_confidence": 0.5636
+            },
+            {
+              "bucket": "0.60-0.70",
+              "count": 19,
+              "raw_avg_confidence": 0.6,
+              "empirical_win_rate": 0.42105263157894735,
+              "calibrated_confidence": 0.6
+            },
+            {
+              "bucket": "<0.50",
+              "count": 7,
+              "raw_avg_confidence": 0.007257142857142857,
+              "empirical_win_rate": 0.5714285714285714,
+              "calibrated_confidence": 0.29790302556077203
+            }
+          ],
+          "scope": {
+            "source_type": "replay",
+            "symbol": "AMD"
+          },
+          "window_start": null,
+          "window_end": null
+        }
+      },
+      {
+        "value": "BTCUSDT",
+        "metrics": {
+          "status": "PRELIMINARY",
+          "sample_count": 46,
+          "actionable_count": 22,
+          "resolved_actionable": 22,
+          "pending_actionable": 0,
+          "wait_count": 24,
+          "invalid_count": 45,
+          "wins": 6,
+          "losses": 16,
+          "flats": 0,
+          "win_rate": 0.2727272727272727,
+          "avg_r": 0.2403915530418845,
+          "expectancy_r": 0.2403915530418845,
+          "profit_factor": 1.3305383854325912,
+          "max_drawdown_r": -9.0,
+          "mfe_r_avg": 1.8176197471716211,
+          "mfe_r_median": 0.7553343118250977,
+          "mfe_r_p90": 3.098154790006863,
+          "mae_r_avg": -1.1812310161176662,
+          "mae_r_median": -1.183483356395135,
+          "mae_r_p90": -0.15818557213978418,
+          "timeout_count": 1,
+          "timeout_rate": 0.045454545454545456,
+          "coverage": 0.4782608695652174,
+          "action_rate": 0.4782608695652174,
+          "wait_rate": 0.5217391304347826,
+          "brier_raw": 0.2980105454545455,
+          "brier_calibrated": 0.19446137797539956,
+          "ece_raw": 0.3044545454545455,
+          "ece_calibrated": 0.13210683559089786,
+          "confidence_buckets": [
+            {
+              "bucket": "0.50-0.60",
+              "count": 14,
+              "raw_avg_confidence": 0.5641428571428572,
+              "empirical_win_rate": 0.42857142857142855,
+              "calibrated_confidence": 0.5641428571428572
+            },
+            {
+              "bucket": "0.60-0.70",
+              "count": 8,
+              "raw_avg_confidence": 0.6,
+              "empirical_win_rate": 0,
+              "calibrated_confidence": 0.6
+            }
+          ],
+          "scope": {
+            "source_type": "replay",
+            "symbol": "BTCUSDT"
+          },
+          "window_start": null,
+          "window_end": null
+        }
+      },
+      {
+        "value": "ETHUSDT",
+        "metrics": {
+          "status": "PRELIMINARY",
+          "sample_count": 37,
+          "actionable_count": 21,
+          "resolved_actionable": 21,
+          "pending_actionable": 0,
+          "wait_count": 16,
+          "invalid_count": 45,
+          "wins": 10,
+          "losses": 11,
+          "flats": 0,
+          "win_rate": 0.47619047619047616,
+          "avg_r": 0.6890105340901098,
+          "expectancy_r": 0.6890105340901098,
+          "profit_factor": 2.315383746899301,
+          "max_drawdown_r": -4.454545454545455,
+          "mfe_r_avg": 1.9964308465579128,
+          "mfe_r_median": 1.7748038267225417,
+          "mfe_r_p90": 4.340250228867796,
+          "mae_r_avg": -0.9179111525587423,
+          "mae_r_median": -1.0286336756925014,
+          "mae_r_p90": -0.14814814814814886,
+          "timeout_count": 0,
+          "timeout_rate": 0.0,
+          "coverage": 0.5675675675675675,
+          "action_rate": 0.5675675675675675,
+          "wait_rate": 0.43243243243243246,
+          "brier_raw": 0.24522464,
+          "brier_calibrated": 0.24189716865156144,
+          "ece_raw": 0.11415238095238094,
+          "ece_calibrated": 0.10672112911386444,
+          "confidence_buckets": [
+            {
+              "bucket": "0.50-0.60",
+              "count": 10,
+              "raw_avg_confidence": 0.5609,
+              "empirical_win_rate": 0.6,
+              "calibrated_confidence": 0.5609
+            },
+            {
+              "bucket": "0.60-0.70",
+              "count": 10,
+              "raw_avg_confidence": 0.6,
+              "empirical_win_rate": 0.4,
+              "calibrated_confidence": 0.6
+            },
+            {
+              "bucket": "<0.50",
+              "count": 1,
+              "raw_avg_confidence": 0.0062,
+              "empirical_win_rate": 0,
+              "calibrated_confidence": 0.3694693470766117
+            }
+          ],
+          "scope": {
+            "source_type": "replay",
+            "symbol": "ETHUSDT"
+          },
+          "window_start": null,
+          "window_end": null
+        }
+      },
+      {
+        "value": "NVDA",
+        "metrics": {
+          "status": "PRELIMINARY",
+          "sample_count": 43,
+          "actionable_count": 34,
+          "resolved_actionable": 34,
+          "pending_actionable": 0,
+          "wait_count": 9,
+          "invalid_count": 45,
+          "wins": 8,
+          "losses": 26,
+          "flats": 0,
+          "win_rate": 0.23529411764705882,
+          "avg_r": -0.4046138132694355,
+          "expectancy_r": -0.4046138132694355,
+          "profit_factor": 0.4708896288015074,
+          "max_drawdown_r": -18.622487601331603,
+          "mfe_r_avg": 1.154731176711804,
+          "mfe_r_median": 0.8023851263544067,
+          "mfe_r_p90": 2.6777434015175734,
+          "mae_r_avg": -1.630358437829372,
+          "mae_r_median": -1.3603768850181703,
+          "mae_r_p90": -0.11017732334222272,
+          "timeout_count": 2,
+          "timeout_rate": 0.058823529411764705,
+          "coverage": 0.7906976744186046,
+          "action_rate": 0.7906976744186046,
+          "wait_rate": 0.20930232558139536,
+          "brier_raw": 0.28300467705882354,
+          "brier_calibrated": 0.20671536219975756,
+          "ece_raw": 0.3212,
+          "ece_calibrated": 0.0722536257794445,
+          "confidence_buckets": [
+            {
+              "bucket": "0.50-0.60",
+              "count": 8,
+              "raw_avg_confidence": 0.5445,
+              "empirical_win_rate": 0.125,
+              "calibrated_confidence": 0.5445
+            },
+            {
+              "bucket": "0.60-0.70",
+              "count": 21,
+              "raw_avg_confidence": 0.6,
+              "empirical_win_rate": 0.2857142857142857,
+              "calibrated_confidence": 0.6
+            },
+            {
+              "bucket": "<0.50",
+              "count": 5,
+              "raw_avg_confidence": 0.00704,
+              "empirical_win_rate": 0.2,
+              "calibrated_confidence": 0.3075477434265033
+            }
+          ],
+          "scope": {
+            "source_type": "replay",
+            "symbol": "NVDA"
+          },
+          "window_start": null,
+          "window_end": null
+        }
+      },
+      {
+        "value": "TSLA",
+        "metrics": {
+          "status": "PRELIMINARY",
+          "sample_count": 46,
+          "actionable_count": 42,
+          "resolved_actionable": 42,
+          "pending_actionable": 0,
+          "wait_count": 4,
+          "invalid_count": 45,
+          "wins": 17,
+          "losses": 25,
+          "flats": 0,
+          "win_rate": 0.40476190476190477,
+          "avg_r": 0.8323964514248305,
+          "expectancy_r": 0.8323964514248305,
+          "profit_factor": 2.43900307359212,
+          "max_drawdown_r": -3.135740535938922,
+          "mfe_r_avg": 2.1959172536474645,
+          "mfe_r_median": 1.3866261610424213,
+          "mfe_r_p90": 3.4749459162409524,
+          "mae_r_avg": -1.5149402573704742,
+          "mae_r_median": -1.2565564331940604,
+          "mae_r_p90": -0.10200267174917776,
+          "timeout_count": 1,
+          "timeout_rate": 0.023809523809523808,
+          "coverage": 0.9130434782608695,
+          "action_rate": 0.9130434782608695,
+          "wait_rate": 0.08695652173913043,
+          "brier_raw": 0.2766542885714286,
+          "brier_calibrated": 0.24085998844999457,
+          "ece_raw": 0.20503333333333332,
+          "ece_calibrated": 0.06683809170814359,
+          "confidence_buckets": [
+            {
+              "bucket": "0.50-0.60",
+              "count": 10,
+              "raw_avg_confidence": 0.5666,
+              "empirical_win_rate": 0.7,
+              "calibrated_confidence": 0.5666
+            },
+            {
+              "bucket": "0.60-0.70",
+              "count": 27,
+              "raw_avg_confidence": 0.6,
+              "empirical_win_rate": 0.3333333333333333,
+              "calibrated_confidence": 0.6
+            },
+            {
+              "bucket": "<0.50",
+              "count": 5,
+              "raw_avg_confidence": 0.18452000000000002,
+              "empirical_win_rate": 0.2,
+              "calibrated_confidence": 0.3379238130537612
+            }
+          ],
+          "scope": {
+            "source_type": "replay",
+            "symbol": "TSLA"
+          },
+          "window_start": null,
+          "window_end": null
+        }
+      }
+    ],
+    "timeframe": [
+      {
+        "value": "1h",
+        "metrics": {
+          "status": "PRELIMINARY",
+          "sample_count": 121,
+          "actionable_count": 71,
+          "resolved_actionable": 71,
+          "pending_actionable": 0,
+          "wait_count": 50,
+          "invalid_count": 45,
+          "wins": 23,
+          "losses": 48,
+          "flats": 0,
+          "win_rate": 0.323943661971831,
+          "avg_r": 0.050584638982344804,
+          "expectancy_r": 0.050584638982344804,
+          "profit_factor": 1.0778359794620382,
+          "max_drawdown_r": -9.527911083061717,
+          "mfe_r_avg": 1.398366255361121,
+          "mfe_r_median": 1.207998046875,
+          "mfe_r_p90": 3.365423728813566,
+          "mae_r_avg": -1.543744009225827,
+          "mae_r_median": -1.2294216506521414,
+          "mae_r_p90": 0.0,
+          "timeout_count": 6,
+          "timeout_rate": 0.08450704225352113,
+          "coverage": 0.5867768595041323,
+          "action_rate": 0.5867768595041323,
+          "wait_rate": 0.4132231404958678,
+          "brier_raw": 0.3222334649295775,
+          "brier_calibrated": 0.2462131478340744,
+          "ece_raw": 0.30885492957746474,
+          "ece_calibrated": 0.019971598158260162,
+          "confidence_buckets": [
+            {
+              "bucket": "0.50-0.60",
+              "count": 21,
+              "raw_avg_confidence": 0.563047619047619,
+              "empirical_win_rate": 0.38095238095238093,
+              "calibrated_confidence": 0.563047619047619
+            },
+            {
+              "bucket": "0.60-0.70",
+              "count": 39,
+              "raw_avg_confidence": 0.6,
+              "empirical_win_rate": 0.23076923076923078,
+              "calibrated_confidence": 0.6
+            },
+            {
+              "bucket": "<0.50",
+              "count": 11,
+              "raw_avg_confidence": 0.20866363636363636,
+              "empirical_win_rate": 0.5454545454545454,
+              "calibrated_confidence": 0.34391526013009116
+            }
+          ],
+          "scope": {
+            "source_type": "replay",
+            "timeframe": "1h"
+          },
+          "window_start": null,
+          "window_end": null
+        }
+      },
+      {
+        "value": "4h",
+        "metrics": {
+          "status": "PRELIMINARY",
+          "sample_count": 134,
+          "actionable_count": 120,
+          "resolved_actionable": 120,
+          "pending_actionable": 0,
+          "wait_count": 14,
+          "invalid_count": 45,
+          "wins": 47,
+          "losses": 73,
+          "flats": 0,
+          "win_rate": 0.39166666666666666,
+          "avg_r": 0.5615476722063887,
+          "expectancy_r": 0.5615476722063887,
+          "profit_factor": 1.9230920639009128,
+          "max_drawdown_r": -12.0,
+          "mfe_r_avg": 1.9837635208685653,
+          "mfe_r_median": 1.4652504912899356,
+          "mfe_r_p90": 3.80557973042678,
+          "mae_r_avg": -1.2085949257511444,
+          "mae_r_median": -1.1538592246601096,
+          "mae_r_p90": -0.006588141898440827,
+          "timeout_count": 0,
+          "timeout_rate": 0.0,
+          "coverage": 0.8955223880597015,
+          "action_rate": 0.8955223880597015,
+          "wait_rate": 0.1044776119402985,
+          "brier_raw": 0.28339923375,
+          "brier_calibrated": 0.24886948064432565,
+          "ece_raw": 0.2030425,
+          "ece_calibrated": 0.06485366464871095,
+          "confidence_buckets": [
+            {
+              "bucket": "0.50-0.60",
+              "count": 40,
+              "raw_avg_confidence": 0.56145,
+              "empirical_win_rate": 0.475,
+              "calibrated_confidence": 0.56145
+            },
+            {
+              "bucket": "0.60-0.70",
+              "count": 65,
+              "raw_avg_confidence": 0.6,
+              "empirical_win_rate": 0.35384615384615387,
+              "calibrated_confidence": 0.6
+            },
+            {
+              "bucket": "<0.50",
+              "count": 15,
+              "raw_avg_confidence": 0.006193333333333333,
+              "empirical_win_rate": 0.3333333333333333,
+              "calibrated_confidence": 0.3268130020179557
+            }
+          ],
+          "scope": {
+            "source_type": "replay",
+            "timeframe": "4h"
+          },
+          "window_start": null,
+          "window_end": null
+        }
+      }
+    ],
+    "action": [
+      {
+        "value": "LONG",
+        "metrics": {
+          "status": "PRELIMINARY",
+          "sample_count": 79,
+          "actionable_count": 79,
+          "resolved_actionable": 79,
+          "pending_actionable": 0,
+          "wait_count": 0,
+          "invalid_count": 45,
+          "wins": 33,
+          "losses": 46,
+          "flats": 0,
+          "win_rate": 0.4177215189873418,
+          "avg_r": 0.30272374356698273,
+          "expectancy_r": 0.30272374356698273,
+          "profit_factor": 1.5301916291194062,
+          "max_drawdown_r": -10.163948513298298,
+          "mfe_r_avg": 1.6347902511831376,
+          "mfe_r_median": 1.5629466817485302,
+          "mfe_r_p90": 2.928842156120685,
+          "mae_r_avg": -1.135205042151911,
+          "mae_r_median": -1.0956442278403848,
+          "mae_r_p90": 0.0,
+          "timeout_count": 4,
+          "timeout_rate": 0.05063291139240506,
+          "coverage": 1.0,
+          "action_rate": 1.0,
+          "wait_rate": 0.0,
+          "brier_raw": 0.3109025925316456,
+          "brier_calibrated": 0.27858371221658634,
+          "ece_raw": 0.23254810126582276,
+          "ece_calibrated": 0.11683652244356657,
+          "confidence_buckets": [
+            {
+              "bucket": "0.50-0.60",
+              "count": 23,
+              "raw_avg_confidence": 0.5594782608695652,
+              "empirical_win_rate": 0.5217391304347826,
+              "calibrated_confidence": 0.5594782608695652
+            },
+            {
+              "bucket": "0.60-0.70",
+              "count": 41,
+              "raw_avg_confidence": 0.6,
+              "empirical_win_rate": 0.34146341463414637,
+              "calibrated_confidence": 0.6
+            },
+            {
+              "bucket": "<0.50",
+              "count": 15,
+              "raw_avg_confidence": 0.0064466666666666665,
+              "empirical_win_rate": 0.4666666666666667,
+              "calibrated_confidence": 0.3008849965437752
+            }
+          ],
+          "scope": {
+            "source_type": "replay",
+            "action": "LONG"
+          },
+          "window_start": null,
+          "window_end": null
+        }
+      },
+      {
+        "value": "SHORT",
+        "metrics": {
+          "status": "PRELIMINARY",
+          "sample_count": 112,
+          "actionable_count": 112,
+          "resolved_actionable": 112,
+          "pending_actionable": 0,
+          "wait_count": 0,
+          "invalid_count": 45,
+          "wins": 37,
+          "losses": 75,
+          "flats": 0,
+          "win_rate": 0.33035714285714285,
+          "avg_r": 0.42019691331001324,
+          "expectancy_r": 0.42019691331001324,
+          "profit_factor": 1.6356699898239222,
+          "max_drawdown_r": -17.0,
+          "mfe_r_avg": 1.8588142570660675,
+          "mfe_r_median": 0.8243025861992757,
+          "mfe_r_p90": 3.9208647151019393,
+          "mae_r_avg": -1.4728215840640184,
+          "mae_r_median": -1.319039834512247,
+          "mae_r_p90": -0.1020026717491777,
+          "timeout_count": 2,
+          "timeout_rate": 0.017857142857142856,
+          "coverage": 1.0,
+          "action_rate": 1.0,
+          "wait_rate": 0.0,
+          "brier_raw": 0.288617671875,
+          "brier_calibrated": 0.2262264098966789,
+          "ece_raw": 0.2493080357142857,
+          "ece_calibrated": 0.025585973075293866,
+          "confidence_buckets": [
+            {
+              "bucket": "0.50-0.60",
+              "count": 38,
+              "raw_avg_confidence": 0.5635263157894737,
+              "empirical_win_rate": 0.39473684210526316,
+              "calibrated_confidence": 0.5635263157894737
+            },
+            {
+              "bucket": "0.60-0.70",
+              "count": 63,
+              "raw_avg_confidence": 0.6,
+              "empirical_win_rate": 0.2857142857142857,
+              "calibrated_confidence": 0.6
+            },
+            {
+              "bucket": "<0.50",
+              "count": 11,
+              "raw_avg_confidence": 0.20831818181818182,
+              "empirical_win_rate": 0.36363636363636365,
+              "calibrated_confidence": 0.3559431159324367
+            }
+          ],
+          "scope": {
+            "source_type": "replay",
+            "action": "SHORT"
+          },
+          "window_start": null,
+          "window_end": null
+        }
+      },
+      {
+        "value": "WAIT",
+        "metrics": {
+          "status": "PRELIMINARY",
+          "sample_count": 64,
+          "actionable_count": 0,
+          "resolved_actionable": 0,
+          "pending_actionable": 0,
+          "wait_count": 64,
+          "invalid_count": 45,
+          "wins": 0,
+          "losses": 0,
+          "flats": 0,
+          "win_rate": null,
+          "avg_r": null,
+          "expectancy_r": null,
+          "profit_factor": null,
+          "max_drawdown_r": 0.0,
+          "mfe_r_avg": null,
+          "mfe_r_median": null,
+          "mfe_r_p90": null,
+          "mae_r_avg": null,
+          "mae_r_median": null,
+          "mae_r_p90": null,
+          "timeout_count": 0,
+          "timeout_rate": null,
+          "coverage": 0.0,
+          "action_rate": 0.0,
+          "wait_rate": 1.0,
+          "brier_raw": null,
+          "brier_calibrated": null,
+          "ece_raw": null,
+          "ece_calibrated": null,
+          "confidence_buckets": [],
+          "scope": {
+            "source_type": "replay",
+            "action": "WAIT"
+          },
+          "window_start": null,
+          "window_end": null
+        }
+      }
+    ],
+    "regime": [
+      {
+        "value": "bear_trend",
+        "metrics": {
+          "status": "PRELIMINARY",
+          "sample_count": 125,
+          "actionable_count": 112,
+          "resolved_actionable": 112,
+          "pending_actionable": 0,
+          "wait_count": 13,
+          "invalid_count": 45,
+          "wins": 37,
+          "losses": 75,
+          "flats": 0,
+          "win_rate": 0.33035714285714285,
+          "avg_r": 0.42019691331001324,
+          "expectancy_r": 0.42019691331001324,
+          "profit_factor": 1.6356699898239222,
+          "max_drawdown_r": -17.0,
+          "mfe_r_avg": 1.8588142570660675,
+          "mfe_r_median": 0.8243025861992757,
+          "mfe_r_p90": 3.9208647151019393,
+          "mae_r_avg": -1.4728215840640184,
+          "mae_r_median": -1.319039834512247,
+          "mae_r_p90": -0.1020026717491777,
+          "timeout_count": 2,
+          "timeout_rate": 0.017857142857142856,
+          "coverage": 0.896,
+          "action_rate": 0.896,
+          "wait_rate": 0.104,
+          "brier_raw": 0.288617671875,
+          "brier_calibrated": 0.2262264098966789,
+          "ece_raw": 0.2493080357142857,
+          "ece_calibrated": 0.025585973075293866,
+          "confidence_buckets": [
+            {
+              "bucket": "0.50-0.60",
+              "count": 38,
+              "raw_avg_confidence": 0.5635263157894737,
+              "empirical_win_rate": 0.39473684210526316,
+              "calibrated_confidence": 0.5635263157894737
+            },
+            {
+              "bucket": "0.60-0.70",
+              "count": 63,
+              "raw_avg_confidence": 0.6,
+              "empirical_win_rate": 0.2857142857142857,
+              "calibrated_confidence": 0.6
+            },
+            {
+              "bucket": "<0.50",
+              "count": 11,
+              "raw_avg_confidence": 0.20831818181818182,
+              "empirical_win_rate": 0.36363636363636365,
+              "calibrated_confidence": 0.3559431159324367
+            }
+          ],
+          "scope": {
+            "source_type": "replay",
+            "regime": "bear_trend"
+          },
+          "window_start": null,
+          "window_end": null
+        }
+      },
+      {
+        "value": "bull_trend",
+        "metrics": {
+          "status": "PRELIMINARY",
+          "sample_count": 98,
+          "actionable_count": 79,
+          "resolved_actionable": 79,
+          "pending_actionable": 0,
+          "wait_count": 19,
+          "invalid_count": 45,
+          "wins": 33,
+          "losses": 46,
+          "flats": 0,
+          "win_rate": 0.4177215189873418,
+          "avg_r": 0.30272374356698273,
+          "expectancy_r": 0.30272374356698273,
+          "profit_factor": 1.5301916291194062,
+          "max_drawdown_r": -10.163948513298298,
+          "mfe_r_avg": 1.6347902511831376,
+          "mfe_r_median": 1.5629466817485302,
+          "mfe_r_p90": 2.928842156120685,
+          "mae_r_avg": -1.135205042151911,
+          "mae_r_median": -1.0956442278403848,
+          "mae_r_p90": 0.0,
+          "timeout_count": 4,
+          "timeout_rate": 0.05063291139240506,
+          "coverage": 0.8061224489795918,
+          "action_rate": 0.8061224489795918,
+          "wait_rate": 0.19387755102040816,
+          "brier_raw": 0.3109025925316456,
+          "brier_calibrated": 0.27858371221658634,
+          "ece_raw": 0.23254810126582276,
+          "ece_calibrated": 0.11683652244356657,
+          "confidence_buckets": [
+            {
+              "bucket": "0.50-0.60",
+              "count": 23,
+              "raw_avg_confidence": 0.5594782608695652,
+              "empirical_win_rate": 0.5217391304347826,
+              "calibrated_confidence": 0.5594782608695652
+            },
+            {
+              "bucket": "0.60-0.70",
+              "count": 41,
+              "raw_avg_confidence": 0.6,
+              "empirical_win_rate": 0.34146341463414637,
+              "calibrated_confidence": 0.6
+            },
+            {
+              "bucket": "<0.50",
+              "count": 15,
+              "raw_avg_confidence": 0.0064466666666666665,
+              "empirical_win_rate": 0.4666666666666667,
+              "calibrated_confidence": 0.3008849965437752
+            }
+          ],
+          "scope": {
+            "source_type": "replay",
+            "regime": "bull_trend"
+          },
+          "window_start": null,
+          "window_end": null
+        }
+      },
+      {
+        "value": "range",
+        "metrics": {
+          "status": "PRELIMINARY",
+          "sample_count": 32,
+          "actionable_count": 0,
+          "resolved_actionable": 0,
+          "pending_actionable": 0,
+          "wait_count": 32,
+          "invalid_count": 45,
+          "wins": 0,
+          "losses": 0,
+          "flats": 0,
+          "win_rate": null,
+          "avg_r": null,
+          "expectancy_r": null,
+          "profit_factor": null,
+          "max_drawdown_r": 0.0,
+          "mfe_r_avg": null,
+          "mfe_r_median": null,
+          "mfe_r_p90": null,
+          "mae_r_avg": null,
+          "mae_r_median": null,
+          "mae_r_p90": null,
+          "timeout_count": 0,
+          "timeout_rate": null,
+          "coverage": 0.0,
+          "action_rate": 0.0,
+          "wait_rate": 1.0,
+          "brier_raw": null,
+          "brier_calibrated": null,
+          "ece_raw": null,
+          "ece_calibrated": null,
+          "confidence_buckets": [],
+          "scope": {
+            "source_type": "replay",
+            "regime": "range"
+          },
+          "window_start": null,
+          "window_end": null
+        }
+      }
+    ],
+    "model_id": [
+      {
+        "value": "qwen3.5:4b",
+        "metrics": {
+          "status": "PRELIMINARY",
+          "sample_count": 255,
+          "actionable_count": 191,
+          "resolved_actionable": 191,
+          "pending_actionable": 0,
+          "wait_count": 64,
+          "invalid_count": 45,
+          "wins": 70,
+          "losses": 121,
+          "flats": 0,
+          "win_rate": 0.36649214659685864,
+          "avg_r": 0.37160853420163936,
+          "expectancy_r": 0.37160853420163936,
+          "profit_factor": 1.5957363294257028,
+          "max_drawdown_r": -19.49962848984528,
+          "mfe_r_avg": 1.7661551132715572,
+          "mfe_r_median": 1.2806892305495818,
+          "mfe_r_p90": 3.6200012207031564,
+          "mae_r_avg": -1.3331791400270736,
+          "mae_r_median": -1.1779318313113822,
+          "mae_r_p90": 0.0,
+          "timeout_count": 6,
+          "timeout_rate": 0.031413612565445025,
+          "coverage": 0.7490196078431373,
+          "action_rate": 0.7490196078431373,
+          "wait_rate": 0.25098039215686274,
+          "brier_raw": 0.29783499507853406,
+          "brier_calibrated": 0.24788204802899663,
+          "ece_raw": 0.24237591623036647,
+          "ece_calibrated": 0.03332176067334475,
+          "confidence_buckets": [
+            {
+              "bucket": "0.50-0.60",
+              "count": 61,
+              "raw_avg_confidence": 0.5619999999999999,
+              "empirical_win_rate": 0.4426229508196721,
+              "calibrated_confidence": 0.5619999999999999
+            },
+            {
+              "bucket": "0.60-0.70",
+              "count": 104,
+              "raw_avg_confidence": 0.6,
+              "empirical_win_rate": 0.3076923076923077,
+              "calibrated_confidence": 0.6
+            },
+            {
+              "bucket": "<0.50",
+              "count": 26,
+              "raw_avg_confidence": 0.09185384615384616,
+              "empirical_win_rate": 0.4230769230769231,
+              "calibrated_confidence": 0.3331703859235139
+            }
+          ],
+          "scope": {
+            "source_type": "replay",
+            "model_id": "qwen3.5:4b"
+          },
+          "window_start": null,
+          "window_end": null
+        }
+      }
+    ],
+    "prompt_version": [
+      {
+        "value": "phase2-json-v8",
+        "metrics": {
+          "status": "PRELIMINARY",
+          "sample_count": 255,
+          "actionable_count": 191,
+          "resolved_actionable": 191,
+          "pending_actionable": 0,
+          "wait_count": 64,
+          "invalid_count": 45,
+          "wins": 70,
+          "losses": 121,
+          "flats": 0,
+          "win_rate": 0.36649214659685864,
+          "avg_r": 0.37160853420163936,
+          "expectancy_r": 0.37160853420163936,
+          "profit_factor": 1.5957363294257028,
+          "max_drawdown_r": -19.49962848984528,
+          "mfe_r_avg": 1.7661551132715572,
+          "mfe_r_median": 1.2806892305495818,
+          "mfe_r_p90": 3.6200012207031564,
+          "mae_r_avg": -1.3331791400270736,
+          "mae_r_median": -1.1779318313113822,
+          "mae_r_p90": 0.0,
+          "timeout_count": 6,
+          "timeout_rate": 0.031413612565445025,
+          "coverage": 0.7490196078431373,
+          "action_rate": 0.7490196078431373,
+          "wait_rate": 0.25098039215686274,
+          "brier_raw": 0.29783499507853406,
+          "brier_calibrated": 0.24788204802899663,
+          "ece_raw": 0.24237591623036647,
+          "ece_calibrated": 0.03332176067334475,
+          "confidence_buckets": [
+            {
+              "bucket": "0.50-0.60",
+              "count": 61,
+              "raw_avg_confidence": 0.5619999999999999,
+              "empirical_win_rate": 0.4426229508196721,
+              "calibrated_confidence": 0.5619999999999999
+            },
+            {
+              "bucket": "0.60-0.70",
+              "count": 104,
+              "raw_avg_confidence": 0.6,
+              "empirical_win_rate": 0.3076923076923077,
+              "calibrated_confidence": 0.6
+            },
+            {
+              "bucket": "<0.50",
+              "count": 26,
+              "raw_avg_confidence": 0.09185384615384616,
+              "empirical_win_rate": 0.4230769230769231,
+              "calibrated_confidence": 0.3331703859235139
+            }
+          ],
+          "scope": {
+            "source_type": "replay",
+            "prompt_version": "phase2-json-v8"
+          },
+          "window_start": null,
+          "window_end": null
+        }
+      }
+    ],
+    "source_type": [
+      {
+        "value": "replay",
+        "metrics": {
+          "status": "PRELIMINARY",
+          "sample_count": 255,
+          "actionable_count": 191,
+          "resolved_actionable": 191,
+          "pending_actionable": 0,
+          "wait_count": 64,
+          "invalid_count": 45,
+          "wins": 70,
+          "losses": 121,
+          "flats": 0,
+          "win_rate": 0.36649214659685864,
+          "avg_r": 0.37160853420163936,
+          "expectancy_r": 0.37160853420163936,
+          "profit_factor": 1.5957363294257028,
+          "max_drawdown_r": -19.49962848984528,
+          "mfe_r_avg": 1.7661551132715572,
+          "mfe_r_median": 1.2806892305495818,
+          "mfe_r_p90": 3.6200012207031564,
+          "mae_r_avg": -1.3331791400270736,
+          "mae_r_median": -1.1779318313113822,
+          "mae_r_p90": 0.0,
+          "timeout_count": 6,
+          "timeout_rate": 0.031413612565445025,
+          "coverage": 0.7490196078431373,
+          "action_rate": 0.7490196078431373,
+          "wait_rate": 0.25098039215686274,
+          "brier_raw": 0.29783499507853406,
+          "brier_calibrated": 0.24788204802899663,
+          "ece_raw": 0.24237591623036647,
+          "ece_calibrated": 0.03332176067334475,
+          "confidence_buckets": [
+            {
+              "bucket": "0.50-0.60",
+              "count": 61,
+              "raw_avg_confidence": 0.5619999999999999,
+              "empirical_win_rate": 0.4426229508196721,
+              "calibrated_confidence": 0.5619999999999999
+            },
+            {
+              "bucket": "0.60-0.70",
+              "count": 104,
+              "raw_avg_confidence": 0.6,
+              "empirical_win_rate": 0.3076923076923077,
+              "calibrated_confidence": 0.6
+            },
+            {
+              "bucket": "<0.50",
+              "count": 26,
+              "raw_avg_confidence": 0.09185384615384616,
+              "empirical_win_rate": 0.4230769230769231,
+              "calibrated_confidence": 0.3331703859235139
+            }
+          ],
+          "scope": {
+            "source_type": "replay"
+          },
+          "window_start": null,
+          "window_end": null
+        }
+      }
+    ]
+  },
+  "replay_runs": [
+    {
+      "run_id": "replay-20260815042457-71ec330d",
+      "created_at": "2026-08-15T04:24:57.895887+00:00",
+      "model_id": "qwen3.5:4b",
+      "prompt_version": "phase2-json-v8",
+      "symbols": [
+        "AAPL",
+        "NVDA",
+        "TSLA",
+        "AMD",
+        "BTCUSDT",
+        "ETHUSDT"
+      ],
+      "timeframes": [
+        "1h",
+        "4h"
+      ],
+      "sampling_policy": {
+        "deterministic_seed": 42,
+        "min_history_bars": 120,
+        "news_history_available": false,
+        "order": "as_of_utc_then_symbol_then_timeframe"
+      },
+      "manifest_hash": "517ae96c02f19e3e58720d793b927a06cf771154f14ef23a956806d0962759a5",
+      "status": "COMPLETED_WITH_ERRORS",
+      "counts": {
+        "actionable": 191,
+        "completed": 255,
+        "errors": 45,
+        "outcomes": 191,
+        "planned": 300,
+        "resolved_actionable": 191,
+        "sample_rows": 300,
+        "wait": 64
+      },
+      "config": {
+        "db_path": "data\\phase3-real-qwen-formal-v2.sqlite3",
+        "manifest_path": "data\\phase3-real-qwen-formal-v2.manifest.json",
+        "samples": 300,
+        "seed": 42
+      },
+      "completed_at": "2026-08-15T05:06:28.707905+00:00",
+      "error_code": "sample_errors"
+    }
+  ],
+  "calibrations": [
+    {
+      "calibration_id": "739a53eb90155f876e512900",
+      "version": "cal-v1-qwen3.5-4b",
+      "scope": {
+        "model_id": "qwen3.5:4b",
+        "prompt_version": "phase2-json-v8",
+        "source_type": "replay"
+      },
+      "method": "empirical_beta_shrinkage",
+      "params": {
+        "alpha": 5.0,
+        "beta": 5.0,
+        "min_sample": 100
+      },
+      "sample_count": 191,
+      "trained_until": null,
+      "brier_raw": 0.29783499507853406,
+      "brier_calibrated": 0.24788204802899663,
+      "ece_raw": 0.24237591623036647,
+      "ece_calibrated": 0.03332176067334475,
+      "status": "ACTIVE",
+      "fallback": null,
+      "created_at": "2026-08-15T05:08:18.555118+00:00",
+      "buckets": [
+        {
+          "lower": 0.5,
+          "upper": 0.6,
+          "n": 61,
+          "wins": 27,
+          "empirical_rate": 0.4426229508196721,
+          "shrunk_rate": 0.4507042253521127
+        },
+        {
+          "lower": 0.6,
+          "upper": 0.7,
+          "n": 104,
+          "wins": 32,
+          "empirical_rate": 0.3076923076923077,
+          "shrunk_rate": 0.32456140350877194
+        },
+        {
+          "lower": 0.7,
+          "upper": 0.8,
+          "n": 0,
+          "wins": 0,
+          "empirical_rate": null,
+          "shrunk_rate": 0.5
+        },
+        {
+          "lower": 0.8,
+          "upper": 0.9,
+          "n": 0,
+          "wins": 0,
+          "empirical_rate": null,
+          "shrunk_rate": 0.5
+        },
+        {
+          "lower": 0.9,
+          "upper": 1.0,
+          "n": 0,
+          "wins": 0,
+          "empirical_rate": null,
+          "shrunk_rate": 0.5
+        }
+      ]
+    }
+  ],
+  "performance_snapshots": [
+    {
+      "snapshot_id": 10,
+      "scope": {
+        "source_type": "replay"
+      },
+      "window_start": null,
+      "window_end": null,
+      "sample_count": 255,
+      "actionable_count": 191,
+      "metrics": {
+        "action_rate": 0.7490196078431373,
+        "actionable_count": 191,
+        "avg_r": 0.37160853420163936,
+        "brier_calibrated": 0.2629829275250662,
+        "brier_raw": 0.29783499507853406,
+        "confidence_buckets": [
+          {
+            "bucket": "0.50-0.60",
+            "calibrated_confidence": 0.5604642857142857,
+            "count": 61,
+            "empirical_win_rate": 0.4426229508196721,
+            "raw_avg_confidence": 0.5619999999999999
+          },
+          {
+            "bucket": "0.60-0.70",
+            "calibrated_confidence": 0.6,
+            "count": 104,
+            "empirical_win_rate": 0.3076923076923077,
+            "raw_avg_confidence": 0.6
+          },
+          {
+            "bucket": "<0.50",
+            "calibrated_confidence": 0.32165583470109554,
+            "count": 26,
+            "empirical_win_rate": 0.4230769230769231,
+            "raw_avg_confidence": 0.09185384615384616
+          }
+        ],
+        "coverage": 0.7490196078431373,
+        "ece_calibrated": 0.07305848090199835,
+        "ece_raw": 0.24237591623036647,
+        "expectancy_r": 0.37160853420163936,
+        "flats": 0,
+        "invalid_count": 45,
+        "losses": 121,
+        "mae_r_avg": -1.3331791400270736,
+        "mae_r_median": -1.1779318313113822,
+        "mae_r_p90": 0.0,
+        "max_drawdown_r": -19.49962848984528,
+        "mfe_r_avg": 1.7661551132715572,
+        "mfe_r_median": 1.2806892305495818,
+        "mfe_r_p90": 3.6200012207031564,
+        "pending_actionable": 0,
+        "profit_factor": 1.5957363294257028,
+        "resolved_actionable": 191,
+        "sample_count": 255,
+        "scope": {
+          "source_type": "replay"
+        },
+        "status": "PRELIMINARY",
+        "timeout_count": 6,
+        "timeout_rate": 0.031413612565445025,
+        "wait_count": 64,
+        "wait_rate": 0.25098039215686274,
+        "win_rate": 0.36649214659685864,
+        "window_end": null,
+        "window_start": null,
+        "wins": 70
+      },
+      "model_id": null,
+      "prompt_version": null,
+      "source_type": "replay",
+      "created_at": "2026-08-15T05:08:10.076195+00:00",
+      "status": "PRELIMINARY"
+    },
+    {
+      "snapshot_id": 9,
+      "scope": {
+        "source_type": "replay",
+        "timeframe": "4h"
+      },
+      "window_start": null,
+      "window_end": null,
+      "sample_count": 134,
+      "actionable_count": 120,
+      "metrics": {
+        "action_rate": 0.8955223880597015,
+        "actionable_count": 120,
+        "avg_r": 0.5615476722063887,
+        "brier_calibrated": 0.2524080351809479,
+        "brier_raw": 0.28339923375,
+        "confidence_buckets": [
+          {
+            "bucket": "0.50-0.60",
+            "calibrated_confidence": 0.5590952380952381,
+            "count": 40,
+            "empirical_win_rate": 0.475,
+            "raw_avg_confidence": 0.56145
+          },
+          {
+            "bucket": "0.60-0.70",
+            "calibrated_confidence": 0.6,
+            "count": 65,
+            "empirical_win_rate": 0.35384615384615387,
+            "raw_avg_confidence": 0.6
+          },
+          {
+            "bucket": "<0.50",
+            "calibrated_confidence": 0.29680036748237226,
+            "count": 15,
+            "empirical_win_rate": 0.3333333333333333,
+            "raw_avg_confidence": 0.006193333333333333
+          }
+        ],
+        "coverage": 0.8955223880597015,
+        "ece_calibrated": 0.06220850176275395,
+        "ece_raw": 0.2030425,
+        "expectancy_r": 0.5615476722063887,
+        "flats": 0,
+        "invalid_count": 45,
+        "losses": 73,
+        "mae_r_avg": -1.2085949257511444,
+        "mae_r_median": -1.1538592246601096,
+        "mae_r_p90": -0.006588141898440827,
+        "max_drawdown_r": -12.0,
+        "mfe_r_avg": 1.9837635208685653,
+        "mfe_r_median": 1.4652504912899356,
+        "mfe_r_p90": 3.80557973042678,
+        "pending_actionable": 0,
+        "profit_factor": 1.9230920639009128,
+        "resolved_actionable": 120,
+        "sample_count": 134,
+        "scope": {
+          "source_type": "replay",
+          "timeframe": "4h"
+        },
+        "status": "PRELIMINARY",
+        "timeout_count": 0,
+        "timeout_rate": 0.0,
+        "wait_count": 14,
+        "wait_rate": 0.1044776119402985,
+        "win_rate": 0.39166666666666666,
+        "window_end": null,
+        "window_start": null,
+        "wins": 47
+      },
+      "model_id": null,
+      "prompt_version": null,
+      "source_type": "replay",
+      "created_at": "2026-08-15T05:08:10.071195+00:00",
+      "status": "PRELIMINARY"
+    },
+    {
+      "snapshot_id": 8,
+      "scope": {
+        "source_type": "replay",
+        "timeframe": "1h"
+      },
+      "window_start": null,
+      "window_end": null,
+      "sample_count": 121,
+      "actionable_count": 71,
+      "metrics": {
+        "action_rate": 0.5867768595041323,
+        "actionable_count": 71,
+        "avg_r": 0.050584638982344804,
+        "brier_calibrated": 0.28085598500808295,
+        "brier_raw": 0.3222334649295775,
+        "confidence_buckets": [
+          {
+            "bucket": "0.50-0.60",
+            "calibrated_confidence": 0.5645714285714286,
+            "count": 21,
+            "empirical_win_rate": 0.38095238095238093,
+            "raw_avg_confidence": 0.563047619047619
+          },
+          {
+            "bucket": "0.60-0.70",
+            "calibrated_confidence": 0.6,
+            "count": 39,
+            "empirical_win_rate": 0.23076923076923078,
+            "raw_avg_confidence": 0.6
+          },
+          {
+            "bucket": "<0.50",
+            "calibrated_confidence": 0.347449244079016,
+            "count": 11,
+            "empirical_win_rate": 0.5454545454545454,
+            "raw_avg_confidence": 0.20866363636363636
+          }
+        ],
+        "coverage": 0.5867768595041323,
+        "ece_calibrated": 0.10052380371566409,
+        "ece_raw": 0.30885492957746474,
+        "expectancy_r": 0.050584638982344804,
+        "flats": 0,
+        "invalid_count": 45,
+        "losses": 48,
+        "mae_r_avg": -1.543744009225827,
+        "mae_r_median": -1.2294216506521414,
+        "mae_r_p90": 0.0,
+        "max_drawdown_r": -9.527911083061717,
+        "mfe_r_avg": 1.398366255361121,
+        "mfe_r_median": 1.207998046875,
+        "mfe_r_p90": 3.365423728813566,
+        "pending_actionable": 0,
+        "profit_factor": 1.0778359794620382,
+        "resolved_actionable": 71,
+        "sample_count": 121,
+        "scope": {
+          "source_type": "replay",
+          "timeframe": "1h"
+        },
+        "status": "PRELIMINARY",
+        "timeout_count": 6,
+        "timeout_rate": 0.08450704225352113,
+        "wait_count": 50,
+        "wait_rate": 0.4132231404958678,
+        "win_rate": 0.323943661971831,
+        "window_end": null,
+        "window_start": null,
+        "wins": 23
+      },
+      "model_id": null,
+      "prompt_version": null,
+      "source_type": "replay",
+      "created_at": "2026-08-15T05:08:10.061197+00:00",
+      "status": "PRELIMINARY"
+    },
+    {
+      "snapshot_id": 7,
+      "scope": {
+        "source_type": "replay",
+        "symbol": "TSLA"
+      },
+      "window_start": null,
+      "window_end": null,
+      "sample_count": 46,
+      "actionable_count": 42,
+      "metrics": {
+        "action_rate": 0.9130434782608695,
+        "actionable_count": 42,
+        "avg_r": 0.8323964514248305,
+        "brier_calibrated": 0.24793198788618845,
+        "brier_raw": 0.2766542885714286,
+        "confidence_buckets": [
+          {
+            "bucket": "0.50-0.60",
+            "calibrated_confidence": 0.5611666666666667,
+            "count": 10,
+            "empirical_win_rate": 0.7,
+            "raw_avg_confidence": 0.5666
+          },
+          {
+            "bucket": "0.60-0.70",
+            "calibrated_confidence": 0.6,
+            "count": 27,
+            "empirical_win_rate": 0.3333333333333333,
+            "raw_avg_confidence": 0.6
+          },
+          {
+            "bucket": "<0.50",
+            "calibrated_confidence": 0.33151968238093404,
+            "count": 5,
+            "empirical_win_rate": 0.2,
+            "raw_avg_confidence": 0.18452000000000002
+          }
+        ],
+        "coverage": 0.9130434782608695,
+        "ece_calibrated": 0.111162728582759,
+        "ece_raw": 0.20503333333333332,
+        "expectancy_r": 0.8323964514248305,
+        "flats": 0,
+        "invalid_count": 45,
+        "losses": 25,
+        "mae_r_avg": -1.5149402573704742,
+        "mae_r_median": -1.2565564331940604,
+        "mae_r_p90": -0.10200267174917776,
+        "max_drawdown_r": -3.135740535938922,
+        "mfe_r_avg": 2.1959172536474645,
+        "mfe_r_median": 1.3866261610424213,
+        "mfe_r_p90": 3.4749459162409524,
+        "pending_actionable": 0,
+        "profit_factor": 2.43900307359212,
+        "resolved_actionable": 42,
+        "sample_count": 46,
+        "scope": {
+          "source_type": "replay",
+          "symbol": "TSLA"
+        },
+        "status": "PRELIMINARY",
+        "timeout_count": 1,
+        "timeout_rate": 0.023809523809523808,
+        "wait_count": 4,
+        "wait_rate": 0.08695652173913043,
+        "win_rate": 0.40476190476190477,
+        "window_end": null,
+        "window_start": null,
+        "wins": 17
+      },
+      "model_id": null,
+      "prompt_version": null,
+      "source_type": "replay",
+      "created_at": "2026-08-15T05:08:10.042196+00:00",
+      "status": "PRELIMINARY"
+    },
+    {
+      "snapshot_id": 6,
+      "scope": {
+        "source_type": "replay",
+        "symbol": "NVDA"
+      },
+      "window_start": null,
+      "window_end": null,
+      "sample_count": 43,
+      "actionable_count": 34,
+      "metrics": {
+        "action_rate": 0.7906976744186046,
+        "actionable_count": 34,
+        "avg_r": -0.4046138132694355,
+        "brier_calibrated": 0.2764422021003504,
+        "brier_raw": 0.28300467705882354,
+        "confidence_buckets": [
+          {
+            "bucket": "0.50-0.60",
+            "calibrated_confidence": 0.5412,
+            "count": 8,
+            "empirical_win_rate": 0.125,
+            "raw_avg_confidence": 0.5445
+          },
+          {
+            "bucket": "0.60-0.70",
+            "calibrated_confidence": 0.6,
+            "count": 21,
+            "empirical_win_rate": 0.2857142857142857,
+            "raw_avg_confidence": 0.6
+          },
+          {
+            "bucket": "<0.50",
+            "calibrated_confidence": 0.2653350966868587,
+            "count": 5,
+            "empirical_win_rate": 0.2,
+            "raw_avg_confidence": 0.00704
+          }
+        ],
+        "coverage": 0.7906976744186046,
+        "ece_calibrated": 0.24295995450030178,
+        "ece_raw": 0.3212,
+        "expectancy_r": -0.4046138132694355,
+        "flats": 0,
+        "invalid_count": 45,
+        "losses": 26,
+        "mae_r_avg": -1.630358437829372,
+        "mae_r_median": -1.3603768850181703,
+        "mae_r_p90": -0.11017732334222272,
+        "max_drawdown_r": -18.622487601331603,
+        "mfe_r_avg": 1.154731176711804,
+        "mfe_r_median": 0.8023851263544067,
+        "mfe_r_p90": 2.6777434015175734,
+        "pending_actionable": 0,
+        "profit_factor": 0.4708896288015074,
+        "resolved_actionable": 34,
+        "sample_count": 43,
+        "scope": {
+          "source_type": "replay",
+          "symbol": "NVDA"
+        },
+        "status": "PRELIMINARY",
+        "timeout_count": 2,
+        "timeout_rate": 0.058823529411764705,
+        "wait_count": 9,
+        "wait_rate": 0.20930232558139536,
+        "win_rate": 0.23529411764705882,
+        "window_end": null,
+        "window_start": null,
+        "wins": 8
+      },
+      "model_id": null,
+      "prompt_version": null,
+      "source_type": "replay",
+      "created_at": "2026-08-15T05:08:10.031687+00:00",
+      "status": "PRELIMINARY"
+    },
+    {
+      "snapshot_id": 5,
+      "scope": {
+        "source_type": "replay",
+        "symbol": "ETHUSDT"
+      },
+      "window_start": null,
+      "window_end": null,
+      "sample_count": 37,
+      "actionable_count": 21,
+      "metrics": {
+        "action_rate": 0.5675675675675675,
+        "actionable_count": 21,
+        "avg_r": 0.6890105340901098,
+        "brier_calibrated": 0.21419391844845606,
+        "brier_raw": 0.24522464,
+        "confidence_buckets": [
+          {
+            "bucket": "0.50-0.60",
+            "calibrated_confidence": 0.5525,
+            "count": 10,
+            "empirical_win_rate": 0.6,
+            "raw_avg_confidence": 0.5609
+          },
+          {
+            "bucket": "0.60-0.70",
+            "calibrated_confidence": 0.6,
+            "count": 10,
+            "empirical_win_rate": 0.4,
+            "raw_avg_confidence": 0.6
+          },
+          {
+            "bucket": "<0.50",
+            "calibrated_confidence": 0.3832687767140245,
+            "count": 1,
+            "empirical_win_rate": 0,
+            "raw_avg_confidence": 0.0062
+          }
+        ],
+        "coverage": 0.5675675675675675,
+        "ece_calibrated": 0.10526520019706742,
+        "ece_raw": 0.11415238095238094,
+        "expectancy_r": 0.6890105340901098,
+        "flats": 0,
+        "invalid_count": 45,
+        "losses": 11,
+        "mae_r_avg": -0.9179111525587423,
+        "mae_r_median": -1.0286336756925014,
+        "mae_r_p90": -0.14814814814814886,
+        "max_drawdown_r": -4.454545454545455,
+        "mfe_r_avg": 1.9964308465579128,
+        "mfe_r_median": 1.7748038267225417,
+        "mfe_r_p90": 4.340250228867796,
+        "pending_actionable": 0,
+        "profit_factor": 2.315383746899301,
+        "resolved_actionable": 21,
+        "sample_count": 37,
+        "scope": {
+          "source_type": "replay",
+          "symbol": "ETHUSDT"
+        },
+        "status": "PRELIMINARY",
+        "timeout_count": 0,
+        "timeout_rate": 0.0,
+        "wait_count": 16,
+        "wait_rate": 0.43243243243243246,
+        "win_rate": 0.47619047619047616,
+        "window_end": null,
+        "window_start": null,
+        "wins": 10
+      },
+      "model_id": null,
+      "prompt_version": null,
+      "source_type": "replay",
+      "created_at": "2026-08-15T05:08:10.022686+00:00",
+      "status": "PRELIMINARY"
+    },
+    {
+      "snapshot_id": 4,
+      "scope": {
+        "source_type": "replay",
+        "symbol": "BTCUSDT"
+      },
+      "window_start": null,
+      "window_end": null,
+      "sample_count": 46,
+      "actionable_count": 22,
+      "metrics": {
+        "action_rate": 0.4782608695652174,
+        "actionable_count": 22,
+        "avg_r": 0.2403915530418845,
+        "brier_calibrated": 0.19932614610444843,
+        "brier_raw": 0.2980105454545455,
+        "confidence_buckets": [
+          {
+            "bucket": "0.50-0.60",
+            "calibrated_confidence": 0.5641428571428572,
+            "count": 14,
+            "empirical_win_rate": 0.42857142857142855,
+            "raw_avg_confidence": 0.5641428571428572
+          },
+          {
+            "bucket": "0.60-0.70",
+            "calibrated_confidence": 0.6,
+            "count": 8,
+            "empirical_win_rate": 0,
+            "raw_avg_confidence": 0.6
+          }
+        ],
+        "coverage": 0.4782608695652174,
+        "ece_calibrated": 0.13702320731535916,
+        "ece_raw": 0.3044545454545455,
+        "expectancy_r": 0.2403915530418845,
+        "flats": 0,
+        "invalid_count": 45,
+        "losses": 16,
+        "mae_r_avg": -1.1812310161176662,
+        "mae_r_median": -1.183483356395135,
+        "mae_r_p90": -0.15818557213978418,
+        "max_drawdown_r": -9.0,
+        "mfe_r_avg": 1.8176197471716211,
+        "mfe_r_median": 0.7553343118250977,
+        "mfe_r_p90": 3.098154790006863,
+        "pending_actionable": 0,
+        "profit_factor": 1.3305383854325912,
+        "resolved_actionable": 22,
+        "sample_count": 46,
+        "scope": {
+          "source_type": "replay",
+          "symbol": "BTCUSDT"
+        },
+        "status": "PRELIMINARY",
+        "timeout_count": 1,
+        "timeout_rate": 0.045454545454545456,
+        "wait_count": 24,
+        "wait_rate": 0.5217391304347826,
+        "win_rate": 0.2727272727272727,
+        "window_end": null,
+        "window_start": null,
+        "wins": 6
+      },
+      "model_id": null,
+      "prompt_version": null,
+      "source_type": "replay",
+      "created_at": "2026-08-15T05:08:10.013685+00:00",
+      "status": "PRELIMINARY"
+    },
+    {
+      "snapshot_id": 3,
+      "scope": {
+        "source_type": "replay",
+        "symbol": "AMD"
+      },
+      "window_start": null,
+      "window_end": null,
+      "sample_count": 40,
+      "actionable_count": 36,
+      "metrics": {
+        "action_rate": 0.9,
+        "actionable_count": 36,
+        "avg_r": 0.6447307552290997,
+        "brier_calibrated": 0.30625418132623977,
+        "brier_raw": 0.32855637722222225,
+        "confidence_buckets": [
+          {
+            "bucket": "0.50-0.60",
+            "calibrated_confidence": 0.570375,
+            "count": 10,
+            "empirical_win_rate": 0.4,
+            "raw_avg_confidence": 0.5636
+          },
+          {
+            "bucket": "0.60-0.70",
+            "calibrated_confidence": 0.6,
+            "count": 19,
+            "empirical_win_rate": 0.42105263157894735,
+            "raw_avg_confidence": 0.6
+          },
+          {
+            "bucket": "<0.50",
+            "calibrated_confidence": 0.23727369898534692,
+            "count": 7,
+            "empirical_win_rate": 0.5714285714285714,
+            "raw_avg_confidence": 0.007257142857142857
+          }
+        ],
+        "coverage": 0.9,
+        "ece_calibrated": 0.09596665886884466,
+        "ece_raw": 0.2495888888888889,
+        "expectancy_r": 0.6447307552290997,
+        "flats": 0,
+        "invalid_count": 45,
+        "losses": 20,
+        "mae_r_avg": -1.4536346462753702,
+        "mae_r_median": -1.201641135823976,
+        "mae_r_p90": 0.0,
+        "max_drawdown_r": -8.543082105149352,
+        "mfe_r_avg": 2.183664365914052,
+        "mfe_r_median": 1.586252292069064,
+        "mfe_r_p90": 4.462953240239191,
+        "pending_actionable": 0,
+        "profit_factor": 2.1605153594123796,
+        "resolved_actionable": 36,
+        "sample_count": 40,
+        "scope": {
+          "source_type": "replay",
+          "symbol": "AMD"
+        },
+        "status": "PRELIMINARY",
+        "timeout_count": 0,
+        "timeout_rate": 0.0,
+        "wait_count": 4,
+        "wait_rate": 0.1,
+        "win_rate": 0.4444444444444444,
+        "window_end": null,
+        "window_start": null,
+        "wins": 16
+      },
+      "model_id": null,
+      "prompt_version": null,
+      "source_type": "replay",
+      "created_at": "2026-08-15T05:08:10.004104+00:00",
+      "status": "PRELIMINARY"
+    },
+    {
+      "snapshot_id": 2,
+      "scope": {
+        "source_type": "replay",
+        "symbol": "AAPL"
+      },
+      "window_start": null,
+      "window_end": null,
+      "sample_count": 43,
+      "actionable_count": 36,
+      "metrics": {
+        "action_rate": 0.8372093023255814,
+        "actionable_count": 36,
+        "avg_r": 0.18903628202138023,
+        "brier_calibrated": 0.2919211879221038,
+        "brier_raw": 0.3364129416666667,
+        "confidence_buckets": [
+          {
+            "bucket": "0.50-0.60",
+            "calibrated_confidence": 0.5645714285714286,
+            "count": 9,
+            "empirical_win_rate": 0.3333333333333333,
+            "raw_avg_confidence": 0.5685555555555556
+          },
+          {
+            "bucket": "0.60-0.70",
+            "calibrated_confidence": 0.6,
+            "count": 19,
+            "empirical_win_rate": 0.2631578947368421,
+            "raw_avg_confidence": 0.6
+          },
+          {
+            "bucket": "<0.50",
+            "calibrated_confidence": 0.28349140908557613,
+            "count": 8,
+            "empirical_win_rate": 0.625,
+            "raw_avg_confidence": 0.171675
+          }
+        ],
+        "coverage": 0.8372093023255814,
+        "ece_calibrated": 0.14812905682070016,
+        "ece_raw": 0.33732222222222225,
+        "expectancy_r": 0.18903628202138023,
+        "flats": 0,
+        "invalid_count": 45,
+        "losses": 23,
+        "mae_r_avg": -1.055096506254914,
+        "mae_r_median": -1.1789860258650915,
+        "mae_r_p90": 0.0,
+        "max_drawdown_r": -6.0,
+        "mfe_r_avg": 1.2589345162520797,
+        "mfe_r_median": 0.788417258241115,
+        "mfe_r_p90": 2.882862703997348,
+        "pending_actionable": 0,
+        "profit_factor": 1.3114988404501848,
+        "resolved_actionable": 36,
+        "sample_count": 43,
+        "scope": {
+          "source_type": "replay",
+          "symbol": "AAPL"
+        },
+        "status": "PRELIMINARY",
+        "timeout_count": 2,
+        "timeout_rate": 0.05555555555555555,
+        "wait_count": 7,
+        "wait_rate": 0.16279069767441862,
+        "win_rate": 0.3611111111111111,
+        "window_end": null,
+        "window_start": null,
+        "wins": 13
+      },
+      "model_id": null,
+      "prompt_version": null,
+      "source_type": "replay",
+      "created_at": "2026-08-15T05:08:09.993076+00:00",
+      "status": "PRELIMINARY"
+    },
+    {
+      "snapshot_id": 1,
+      "scope": {
+        "model_id": "qwen3.5:4b",
+        "prompt_version": "phase2-json-v8",
+        "source_type": "replay"
+      },
+      "window_start": null,
+      "window_end": null,
+      "sample_count": 255,
+      "actionable_count": 191,
+      "metrics": {
+        "action_rate": 0.7490196078431373,
+        "actionable_count": 191,
+        "avg_r": 0.37160853420163936,
+        "brier_calibrated": 0.2629829275250662,
+        "brier_raw": 0.29783499507853406,
+        "confidence_buckets": [
+          {
+            "bucket": "0.50-0.60",
+            "calibrated_confidence": 0.5604642857142857,
+            "count": 61,
+            "empirical_win_rate": 0.4426229508196721,
+            "raw_avg_confidence": 0.5619999999999999
+          },
+          {
+            "bucket": "0.60-0.70",
+            "calibrated_confidence": 0.6,
+            "count": 104,
+            "empirical_win_rate": 0.3076923076923077,
+            "raw_avg_confidence": 0.6
+          },
+          {
+            "bucket": "<0.50",
+            "calibrated_confidence": 0.32165583470109554,
+            "count": 26,
+            "empirical_win_rate": 0.4230769230769231,
+            "raw_avg_confidence": 0.09185384615384616
+          }
+        ],
+        "coverage": 0.7490196078431373,
+        "ece_calibrated": 0.07305848090199835,
+        "ece_raw": 0.24237591623036647,
+        "expectancy_r": 0.37160853420163936,
+        "flats": 0,
+        "invalid_count": 45,
+        "losses": 121,
+        "mae_r_avg": -1.3331791400270736,
+        "mae_r_median": -1.1779318313113822,
+        "mae_r_p90": 0.0,
+        "max_drawdown_r": -19.49962848984528,
+        "mfe_r_avg": 1.7661551132715572,
+        "mfe_r_median": 1.2806892305495818,
+        "mfe_r_p90": 3.6200012207031564,
+        "pending_actionable": 0,
+        "profit_factor": 1.5957363294257028,
+        "resolved_actionable": 191,
+        "sample_count": 255,
+        "scope": {
+          "model_id": "qwen3.5:4b",
+          "prompt_version": "phase2-json-v8",
+          "source_type": "replay"
+        },
+        "status": "PRELIMINARY",
+        "timeout_count": 6,
+        "timeout_rate": 0.031413612565445025,
+        "wait_count": 64,
+        "wait_rate": 0.25098039215686274,
+        "win_rate": 0.36649214659685864,
+        "window_end": null,
+        "window_start": null,
+        "wins": 70
+      },
+      "model_id": "qwen3.5:4b",
+      "prompt_version": "phase2-json-v8",
+      "source_type": "replay",
+      "created_at": "2026-08-15T05:06:28.528792+00:00",
+      "status": "PRELIMINARY"
+    }
+  ]
+}

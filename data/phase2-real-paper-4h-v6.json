@@ -1,0 +1,420 @@
+{
+  "phase": 2,
+  "mode": "real_historical_replay",
+  "model": "qwen3.5:4b",
+  "results": [
+    {
+      "symbol": "NVDA",
+      "provider": {
+        "provider": "provider_chain",
+        "fetched_at": "2026-08-14T17:57:56.496482+00:00",
+        "data_as_of": "2026-08-14T12:00:00+00:00",
+        "stale": false,
+        "error_code": null
+      },
+      "analysis_anchor": "2026-08-14T12:00:00+00:00",
+      "future_bar": {
+        "timestamp": "2026-08-14T16:00:00+00:00",
+        "open": 225.63999938964844,
+        "high": 225.7100067138672,
+        "low": 224.9499969482422,
+        "close": 225.46270751953125,
+        "volume": 8327779.0
+      },
+      "quant": {
+        "symbol": "NVDA",
+        "timeframe": "4h",
+        "timestamp": "2026-08-14T12:00:00+00:00",
+        "price": 225.64999389648438,
+        "ema20": 217.91760343110496,
+        "ema50": 211.8543463769948,
+        "rsi14": 67.05047115961133,
+        "macd": 5.182655954750317,
+        "macd_signal": 4.654784962353365,
+        "atr14": 3.9617691040039062,
+        "volume_ratio": 0.8671470801877255,
+        "support": 197.5,
+        "resistance": 227.49000549316406,
+        "market_regime": "bull_trend",
+        "trend_score": 0.7154983078941191,
+        "momentum_score": 0.14385241592009157
+      },
+      "news": {
+        "provider": "google_news_rss",
+        "fetched_at": "2026-08-14T17:58:00.259236+00:00",
+        "available": true,
+        "error_code": null,
+        "events": [
+          {
+            "id": "a53090473012d99ca3f81b8d",
+            "source": "Benzinga",
+            "published_at": "2026-08-14T09:58:34+00:00",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Insights Into NVIDIA's Performance Versus Peers In Semiconductors & Semiconductor Equipment Sector - - Benzinga",
+            "summary_raw": "Insights Into NVIDIA's Performance Versus Peers In Semiconductors & Semiconductor Equipment Sector - Benzinga",
+            "url": "https://news.google.com/rss/articles/CBMi0wFBVV95cUxOUVFaYzM2UWZ3LVBtZWZLd0hwcm9aWW1ZZ05telNiWWQ3bTlxcjYyQS1JNzhZU1A4aHQxYU9QNlYwb3BFcGRzalVXSzRWdHpTMXp5dzJ2d282U18yY0ZQRVluS3VVOGhpSDJ3aUtoLVJJd2Z5d0J2X3owMFNfYVNTcnA0Vlhmd2EzeW5pSDhISEhVR1F2TU9KNDdYMDhvdjZpc1hWN29nYzdsaU56XzZDa2ZPM2N3UVdxOTU5QmYyeU5lLVd3bFZGMVFyeGthMzhPaWpn?oc=5",
+            "category": "regulation",
+            "sentiment": 0.0,
+            "importance": 85,
+            "credibility": 85,
+            "impact_horizon": "1-4w",
+            "dedupe_hash": "a5866aeada59468933329b77697754b68a70dd2d0b80d6dc9cf6e255a723249c"
+          },
+          {
+            "id": "d69045d5c5ea96bd623a1ffa",
+            "source": "GuruFocus",
+            "published_at": "2026-08-14T03:23:11+00:00",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "NVIDIA's (NVDA) New Developments with TSMC: Feynman Generation I - GuruFocus",
+            "summary_raw": "NVIDIA's (NVDA) New Developments with TSMC: Feynman Generation I GuruFocus",
+            "url": "https://news.google.com/rss/articles/CBMiqgFBVV95cUxOVEZhbzhxZElNTC1JLXlVSVZBeURfRldDYVpOZW1KaVdRRGUtREs2S0FxcHJYbnI0THNqdXhwQUw4Q1h4TUtCSVJVTmE1Vl95TTRMYUtzNlFGZi1jaEEtXzdnRWNqMHBvcGdIWDhUNlBBX29JTnZqSUpYWElNeVhNWVhETElEbTRtb2FVb3dfYWRPNjFuRWxPR3cwU2gySW90WnVRRk5PZE1Ddw?oc=5",
+            "category": "other",
+            "sentiment": 0.0,
+            "importance": 30,
+            "credibility": 60,
+            "impact_horizon": "unknown",
+            "dedupe_hash": "5805e147d0a4b1d77e95040a55c86b719eb3630a696ea238ce5674310ae6fb87"
+          },
+          {
+            "id": "f88caaa3274841a8abb4d46d",
+            "source": "TechStock²",
+            "published_at": "2026-08-13T13:12:51+00:00",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Nvidia Stock (NVDA) Gains 3% in Premarket Amid Analyst Target $563 Below Current Level—Potential Caution Flag - TechStock²",
+            "summary_raw": "Nvidia Stock (NVDA) Gains 3% in Premarket Amid Analyst Target $563 Below Current Level—Potential Caution Flag TechStock²",
+            "url": "https://news.google.com/rss/articles/CBMilAFBVV95cUxPRWNtazBQcTFPdVB2VURMdVJpcnl0X0FJZW5teVVQUHpvWFU2cWUwOFFsSzhUZVhqSDMzdER5Q2FabTdDTVJkUHdiLWkyT0ZEZkdPNzlpczNoeklZVktLcHRFM3NEeWluY3RyZjdaVEgtdjJQV0Mya1UzM2VISEdQRGlpc2tCRXczeFFFTUc0c05oM2JX?oc=5",
+            "category": "analyst",
+            "sentiment": 0.0,
+            "importance": 55,
+            "credibility": 60,
+            "impact_horizon": "intraday",
+            "dedupe_hash": "3e8589416c14c4f36b9283a1301e6913561fd58556132aa5e8e4679ee2115529"
+          },
+          {
+            "id": "d802f38c2ee63740fbd7f025",
+            "source": "Benzinga",
+            "published_at": "2026-08-13T09:58:39+00:00",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Comparing NVIDIA With Industry Competitors In Semiconductors & Semiconductor Equipment Industry - NVI - Benzinga",
+            "summary_raw": "Comparing NVIDIA With Industry Competitors In Semiconductors & Semiconductor Equipment Industry - NVI Benzinga",
+            "url": "https://news.google.com/rss/articles/CBMizwFBVV95cUxQQnZNQzVSd2NmY2VDZk9xVmtPT0VTNWQ0bnNxOHRpMVF3T1RRQndYendfd2NNODlHWjRqTTBjN1ZkekdPcUlLclFhMUNsNVNrUVVLRUJsSFFZb2F4UjRLemtZUmV1RURYdmVOV0Vzd3VpUVNDRWllVlRIZnMyaGNXZnlEUjIxVS1XMmJNUDRyaXZoT3ZfM0w2VkZjUEFkMlNCT29iZHBJY2dnMkVOenBIWElTNlVveHJrZE1PT09LOXhLNEFkS3VkX0NkU3NDZkk?oc=5",
+            "category": "other",
+            "sentiment": 0.0,
+            "importance": 30,
+            "credibility": 60,
+            "impact_horizon": "unknown",
+            "dedupe_hash": "5be6a23f9e2c62e5752337da05246512a623378bf7488155cff7a497e70e94ac"
+          },
+          {
+            "id": "6748525eab9927ef78c83e33",
+            "source": "The Globe and Mail",
+            "published_at": "2026-08-10T21:25:17+00:00",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Why NXP Semiconductors Stock Dropped 18.5% in July - The Globe and Mail",
+            "summary_raw": "Why NXP Semiconductors Stock Dropped 18.5% in July The Globe and Mail",
+            "url": "https://news.google.com/rss/articles/CBMizgFBVV95cUxNcm1rTU15UFVBT2hkSVoxbWFQNHNxeVRDcnpNNkRsY21memw1XzdvU2ROT013ZUp6c2pveGllWUhEeWVxSTFjU2l4RG9zQlJfWjlYQXlHTmc3SE5pOU5JTk5Pd3pkTjM3enh0S0doRHVlMDFKM1YwMFdYTUtxQTAxT0lFclhOcGhjRnA1Um1zWGNqMllMMjdocEsydkIySVp3clBmZ21LNnZrcFRPU0VuVGdPSmVIQ0tLQ3BLeGVoY1dLV1FNenMxOXFGSnV4dw?oc=5",
+            "category": "other",
+            "sentiment": -0.3333333333333333,
+            "importance": 30,
+            "credibility": 60,
+            "impact_horizon": "unknown",
+            "dedupe_hash": "f947a3322997aaec3eb7cd2bd5538f8d4be55db867ccc1b312aba4d079685623"
+          },
+          {
+            "id": "aeca22f99ad11871186d8538",
+            "source": "The Motley Fool",
+            "published_at": "2026-08-09T08:05:00+00:00",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Cathie Wood's Ark Piled Into Nvidia and Taiwan Semiconductor After Meta's Earnings Miss. Here's What It Signals for Artificial Intelligence (AI) Stocks. - The Motley Fool",
+            "summary_raw": "Cathie Wood's Ark Piled Into Nvidia and Taiwan Semiconductor After Meta's Earnings Miss. Here's What It Signals for Artificial Intelligence (AI) Stocks. The Motley Fool",
+            "url": "https://news.google.com/rss/articles/CBMimAFBVV95cUxPb0d5bGJQOS1EY1FQUjMzcDRnZEVod1NwS2dJRUhraElXbTY3aXQ5Zk5uOXRJWDd2NUxIaEprejl5a2VjWTF0VS1BNlZQWnRUTnF6OG9mQl95YjgwMUtfNmRiNlpiWXRmOHctVXZ6NEI3WERiNkdwWVFJZjRRYjRVdk5aeWlTeElvR3dVeWtVX2l0ckRmVG9kNg?oc=5",
+            "category": "earnings",
+            "sentiment": -0.3333333333333333,
+            "importance": 80,
+            "credibility": 60,
+            "impact_horizon": "1-3d",
+            "dedupe_hash": "54b1eea81d2cd18da542dc865d5a1d3ce6e73518c9ca89ba17236db927cc2dcf"
+          },
+          {
+            "id": "00a522e43a07e047ffddd948",
+            "source": "Yahoo Finance",
+            "published_at": "2026-07-27T07:00:00+00:00",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "AI Chips Today - NVIDIA and Silvaco Partner to Elevate Semiconductor Design - Yahoo Finance",
+            "summary_raw": "AI Chips Today - NVIDIA and Silvaco Partner to Elevate Semiconductor Design Yahoo Finance",
+            "url": "https://news.google.com/rss/articles/CBMimAFBVV95cUxPMTZzQVBPYUNxRkhHVEVQLVJ4cF91Ml9yUmdwRlVLeDgtQlU2Slc1YkNvM0JOcWs3YzhLUEFsbTdYOWF2S2lqSDZaN000YjEzUmc5c1hucHFRQWhpQkFMVGN4TFhPc2Etbnd3UE1kQzNlaEF6a0hnYUtpMXBudWZuOGdWYWRnSDFzai11c3Y4UGVtRlNtcHRILQ?oc=5",
+            "category": "other",
+            "sentiment": 0.0,
+            "importance": 30,
+            "credibility": 60,
+            "impact_horizon": "unknown",
+            "dedupe_hash": "82e4f076bdc180efa697b0b0204bd93fc6d0e7d37790d89392d645206cb5a9e3"
+          },
+          {
+            "id": "cec22799f60b1a920502b49d",
+            "source": "24/7 Wall St.",
+            "published_at": "2026-07-20T07:00:00+00:00",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Jensen Huang Thinks Semiconductors Will Be the Largest Industry in the World “By Far\" — and This Might Be Key to Getting Nvidia Stock to $500 - 24/7 Wall St.",
+            "summary_raw": "Jensen Huang Thinks Semiconductors Will Be the Largest Industry in the World “By Far\" — and This Might Be Key to Getting Nvidia Stock to $500 24/7 Wall St.",
+            "url": "https://news.google.com/rss/articles/CBMijAJBVV95cUxPWVZMeHN3dTAtaVhTRTBxTDlpM2pnNllYVUk2YVZzUmVHZWhmWDlVWGRhUFlUZlNCR1duSzVqV1dUVlNNRUFjdlNuSjlkMmJjZjd2OENDMVJMb25STEtQb3JjLVBiRzlrU0o0el9pYWQ1cVAzcmtURFE4T01FdFZIR3lOSWNaZ0RIVFRtV0RKV01qbHh1TVZSYTB0bHNfazZ3aC03aGw3MDRpdXRyel92dFVNOW1LNjhVTnpFYXA3QzNRc0lyNW9sck1jVWc4Zms0UUpjVW5pZDdOc2hodGxGbFI2ZVpwc1lVZFRsVmhwUkRyWTcyUnhvbFIzdTBXRWMxcDVwcXNOY1JkTllq?oc=5",
+            "category": "other",
+            "sentiment": 0.0,
+            "importance": 30,
+            "credibility": 60,
+            "impact_horizon": "unknown",
+            "dedupe_hash": "a22852d6133478124290b04ef0a46d06ce998208376a2360f61d7a0f18e6e5fb"
+          },
+          {
+            "id": "2746d15c1048616cbbdb9d56",
+            "source": "NVIDIA Newsroom",
+            "published_at": "2026-05-31T07:00:00+00:00",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "NVIDIA and TSMC Bring AI Into Fabs to Advance Semiconductor Design and Manufacturing - NVIDIA Newsroom",
+            "summary_raw": "NVIDIA and TSMC Bring AI Into Fabs to Advance Semiconductor Design and Manufacturing NVIDIA Newsroom",
+            "url": "https://news.google.com/rss/articles/CBMiuwFBVV95cUxNNWhpUkRjY2Z5cE85UmpLWnpPMWVsS3Q3X3VXUE1EOEQ3aTROZkhMM3g5YV9ldWdhVGxiVjFYN0YxTWJxcGppdGpJaXVjeGhaMzg5aFlQWXB4azZGekltYnBvMkJPUXpzdWpES0dhYVBkaTkzVHA2c3lJODZNbHRtSEF1V09GWUtoaXhXT1drUlg4RnlGVzZnQ2FydzFUSzdVMlFYWDg2bGFEaXBMcG9LYndnMFBvTWliZW1R?oc=5",
+            "category": "other",
+            "sentiment": 0.0,
+            "importance": 30,
+            "credibility": 60,
+            "impact_horizon": "unknown",
+            "dedupe_hash": "86b351391f76c00c8e37af4e43bca40b8fb0ab078a1c7196658db10db07e7983"
+          },
+          {
+            "id": "63f2f3fa3c83491b481a3ab6",
+            "source": "io-fund.com",
+            "published_at": "2026-04-30T07:00:00+00:00",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Is Nvidia Stock a Buy? Why Semiconductor Strength May Signal a Market Top - io-fund.com",
+            "summary_raw": "Is Nvidia Stock a Buy? Why Semiconductor Strength May Signal a Market Top io-fund.com",
+            "url": "https://news.google.com/rss/articles/CBMihwFBVV95cUxNZ2ZYMmU2M2dObGhfaDZFMmlBZmJ3aDVWbHJtQUtBaW9oWVByVVlTRnZWVi1XeHVoVUlZT240TnM4WEJrRnM4Rmk4SGhlN1o4ZGN1eFp5NFZJYVJpcXRrdnZTdU1aNmdvT1dGTWI1cGRPZkhDWGxwcXdEaTRBc0xBWnRvMDlNOVE?oc=5",
+            "category": "other",
+            "sentiment": 0.0,
+            "importance": 30,
+            "credibility": 60,
+            "impact_horizon": "unknown",
+            "dedupe_hash": "716bb182447a35b7ea5eed3e3135b12baade38aa14091f493a4949a5290652bf"
+          }
+        ],
+        "clusters": [
+          {
+            "cluster_id": "64390c067e4c6115e7f21232",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Insights Into NVIDIA's Performance Versus Peers In Semiconductors & Semiconductor Equipment Sector - - Benzinga",
+            "event_ids": [
+              "a53090473012d99ca3f81b8d"
+            ],
+            "sentiment": 0.0,
+            "importance": 85
+          },
+          {
+            "cluster_id": "72f72bcf0589acde67b8b300",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Cathie Wood's Ark Piled Into Nvidia and Taiwan Semiconductor After Meta's Earnings Miss. Here's What It Signals for Artificial Intelligence (AI) Stocks. - The Motley Fool",
+            "event_ids": [
+              "aeca22f99ad11871186d8538"
+            ],
+            "sentiment": -0.3333,
+            "importance": 80
+          },
+          {
+            "cluster_id": "d0ea4d51a38c2e0e205f0dc5",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Nvidia Stock (NVDA) Gains 3% in Premarket Amid Analyst Target $563 Below Current Level—Potential Caution Flag - TechStock²",
+            "event_ids": [
+              "f88caaa3274841a8abb4d46d"
+            ],
+            "sentiment": 0.0,
+            "importance": 55
+          },
+          {
+            "cluster_id": "d7bacdce6ac18d7df14b1126",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "NVIDIA's (NVDA) New Developments with TSMC: Feynman Generation I - GuruFocus",
+            "event_ids": [
+              "d69045d5c5ea96bd623a1ffa"
+            ],
+            "sentiment": 0.0,
+            "importance": 30
+          },
+          {
+            "cluster_id": "9987567dd80e8cc8df3aa106",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Comparing NVIDIA With Industry Competitors In Semiconductors & Semiconductor Equipment Industry - NVI - Benzinga",
+            "event_ids": [
+              "d802f38c2ee63740fbd7f025"
+            ],
+            "sentiment": 0.0,
+            "importance": 30
+          },
+          {
+            "cluster_id": "97df7f74386c43278f7a082f",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Why NXP Semiconductors Stock Dropped 18.5% in July - The Globe and Mail",
+            "event_ids": [
+              "6748525eab9927ef78c83e33"
+            ],
+            "sentiment": -0.3333,
+            "importance": 30
+          },
+          {
+            "cluster_id": "4a72ae1732661c18a18b83a2",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "AI Chips Today - NVIDIA and Silvaco Partner to Elevate Semiconductor Design - Yahoo Finance",
+            "event_ids": [
+              "00a522e43a07e047ffddd948"
+            ],
+            "sentiment": 0.0,
+            "importance": 30
+          },
+          {
+            "cluster_id": "16772541cc5625c2d8d7b6fb",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Jensen Huang Thinks Semiconductors Will Be the Largest Industry in the World “By Far\" — and This Might Be Key to Getting Nvidia Stock to $500 - 24/7 Wall St.",
+            "event_ids": [
+              "cec22799f60b1a920502b49d"
+            ],
+            "sentiment": 0.0,
+            "importance": 30
+          },
+          {
+            "cluster_id": "2d0202f4853366354bc131b2",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "NVIDIA and TSMC Bring AI Into Fabs to Advance Semiconductor Design and Manufacturing - NVIDIA Newsroom",
+            "event_ids": [
+              "2746d15c1048616cbbdb9d56"
+            ],
+            "sentiment": 0.0,
+            "importance": 30
+          },
+          {
+            "cluster_id": "d5f3633a2b4c7b4f221e0ad9",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Is Nvidia Stock a Buy? Why Semiconductor Strength May Signal a Market Top - io-fund.com",
+            "event_ids": [
+              "63f2f3fa3c83491b481a3ab6"
+            ],
+            "sentiment": 0.0,
+            "importance": 30
+          }
+        ]
+      },
+      "model": {
+        "model_id": "qwen3.5:4b",
+        "model_version": "qwen3.5:4b",
+        "prompt_version": "phase2-json-v5",
+        "input_hash": "f6cab7e90da904d99805577b2906a2e4e5c9cc216ea6e29be59bcaea05a3a1e7",
+        "latency_ms": 7136.196,
+        "raw_response": "{\"action\":\"WAIT\",\"confidence_raw\":0,\"entry_preference\":\"none\",\"entry_zone\":null,\"stop\":null,\"tp1\":null,\"tp2\":null,\"signal_validity_minutes\":180,\"holding_horizon_minutes\":4320,\"re_evaluate_minutes\":90,\"invalidation\":[],\"thesis\":[\"insufficient evidence\"],\"risk_factors\":[\"event_risk_or_range_regime\"]}",
+        "parse_status": "valid",
+        "error_code": null,
+        "input_tokens_est": 2807,
+        "output_chars": 299
+      },
+      "signal": {
+        "prediction_id": "llm-20260814120000000000",
+        "instrument": {
+          "symbol": "NVDA",
+          "asset_type": "equity",
+          "exchange": "NASDAQ",
+          "currency": "USD",
+          "timezone": "America/New_York",
+          "trading_hours": "regular",
+          "sector": "Semiconductors"
+        },
+        "analysis_timeframe": "4h",
+        "generated_at": "2026-08-14T12:00:00+00:00",
+        "action": "WAIT",
+        "entry_low": null,
+        "entry_high": null,
+        "stop": null,
+        "tp1": null,
+        "tp2": null,
+        "signal_validity_minutes": 180,
+        "signal_valid_until": "2026-08-14T15:00:00+00:00",
+        "expected_hold_minutes": 4320,
+        "expected_hold_until": "2026-08-17T12:00:00+00:00",
+        "max_hold_minutes": 4320,
+        "max_hold_until": "2026-08-17T12:00:00+00:00",
+        "reevaluate_at": "2026-08-14T13:30:00+00:00",
+        "invalidation": [
+          "new context required before entry"
+        ],
+        "raw_confidence": 0.0,
+        "reason_codes": [
+          "structured_model_output",
+          "regime:bull_trend"
+        ],
+        "summary": "WAIT: insufficient evidence Risks: event_risk_or_range_regime.",
+        "model_id": "qwen3.5:4b",
+        "model_version": "qwen3.5:4b",
+        "prompt_version": "phase2-json-v5",
+        "input_hash": "f6cab7e90da904d99805577b2906a2e4e5c9cc216ea6e29be59bcaea05a3a1e7",
+        "data_as_of": "2026-08-14T12:00:00+00:00",
+        "context_json": "{\"analysis_time\":{\"timeframe\":\"4h\",\"timestamp\":\"2026-08-14T12:00:00+00:00\"},\"history\":{},\"instrument\":{\"asset_type\":\"equity\",\"exchange\":\"NASDAQ\",\"quote_currency\":\"USD\",\"symbol\":\"NVDA\",\"trading_hours\":\"regular\"},\"market_context\":{\"news_available\":true,\"news_provider\":\"google_news_rss\"},\"news\":[{\"category\":\"regulation\",\"credibility\":85,\"dedupe_hash\":\"a5866aeada59468933329b77697754b68a70dd2d0b80d6dc9cf6e255a723249c\",\"id\":\"a53090473012d99ca3f81b8d\",\"impact_horizon\":\"1-4w\",\"importance\":85,\"published_at\":\"2026-08-14T09:58:34+00:00\",\"sentiment\":0.0,\"source\":\"Benzinga\",\"summary_raw\":\"Insights Into NVIDIA's Performance Versus Peers In Semiconductors & Semiconductor Equipment Sector - Benzinga\",\"symbols\":[\"NVDA\"],\"title\":\"Insights Into NVIDIA's Performance Versus Peers In Semiconductors & Semiconductor Equipment Sector - - Benzinga\",\"url\":\"https://news.google.com/rss/articles/CBMi0wFBVV95cUxOUVFaYzM2UWZ3LVBtZWZLd0hwcm9aWW1ZZ05telNiWWQ3bTlxcjYyQS1JNzhZU1A4aHQxYU9QNlYwb3BFcGRzalVXSzRWdHpTMXp5dzJ2d282U18yY0ZQRVluS3VVOGhpSDJ3aUtoLVJJd2Z5d0J2X3owMFNfYVNTcnA0Vlhmd2EzeW5pSDhISEhVR1F2TU9KNDdYMDhvdjZpc1hWN29nYzdsaU56XzZDa2ZPM2N3UVdxOTU5QmYyeU5lLVd3bFZGMVFyeGthMzhPaWpn?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"5805e147d0a4b1d77e95040a55c86b719eb3630a696ea238ce5674310ae6fb87\",\"id\":\"d69045d5c5ea96bd623a1ffa\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-14T03:23:11+00:00\",\"sentiment\":0.0,\"source\":\"GuruFocus\",\"summary_raw\":\"NVIDIA's (NVDA) New Developments with TSMC: Feynman Generation I GuruFocus\",\"symbols\":[\"NVDA\"],\"title\":\"NVIDIA's (NVDA) New Developments with TSMC: Feynman Generation I - GuruFocus\",\"url\":\"https://news.google.com/rss/articles/CBMiqgFBVV95cUxOVEZhbzhxZElNTC1JLXlVSVZBeURfRldDYVpOZW1KaVdRRGUtREs2S0FxcHJYbnI0THNqdXhwQUw4Q1h4TUtCSVJVTmE1Vl95TTRMYUtzNlFGZi1jaEEtXzdnRWNqMHBvcGdIWDhUNlBBX29JTnZqSUpYWElNeVhNWVhETElEbTRtb2FVb3dfYWRPNjFuRWxPR3cwU2gySW90WnVRRk5PZE1Ddw?oc=5\"},{\"category\":\"analyst\",\"credibility\":60,\"dedupe_hash\":\"3e8589416c14c4f36b9283a1301e6913561fd58556132aa5e8e4679ee2115529\",\"id\":\"f88caaa3274841a8abb4d46d\",\"impact_horizon\":\"intraday\",\"importance\":55,\"published_at\":\"2026-08-13T13:12:51+00:00\",\"sentiment\":0.0,\"source\":\"TechStock\\u00b2\",\"summary_raw\":\"Nvidia Stock (NVDA) Gains 3% in Premarket Amid Analyst Target $563 Below Current Level\\u2014Potential Caution Flag TechStock\\u00b2\",\"symbols\":[\"NVDA\"],\"title\":\"Nvidia Stock (NVDA) Gains 3% in Premarket Amid Analyst Target $563 Below Current Level\\u2014Potential Caution Flag - TechStock\\u00b2\",\"url\":\"https://news.google.com/rss/articles/CBMilAFBVV95cUxPRWNtazBQcTFPdVB2VURMdVJpcnl0X0FJZW5teVVQUHpvWFU2cWUwOFFsSzhUZVhqSDMzdER5Q2FabTdDTVJkUHdiLWkyT0ZEZkdPNzlpczNoeklZVktLcHRFM3NEeWluY3RyZjdaVEgtdjJQV0Mya1UzM2VISEdQRGlpc2tCRXczeFFFTUc0c05oM2JX?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"5be6a23f9e2c62e5752337da05246512a623378bf7488155cff7a497e70e94ac\",\"id\":\"d802f38c2ee63740fbd7f025\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-13T09:58:39+00:00\",\"sentiment\":0.0,\"source\":\"Benzinga\",\"summary_raw\":\"Comparing NVIDIA With Industry Competitors In Semiconductors & Semiconductor Equipment Industry - NVI Benzinga\",\"symbols\":[\"NVDA\"],\"title\":\"Comparing NVIDIA With Industry Competitors In Semiconductors & Semiconductor Equipment Industry - NVI - Benzinga\",\"url\":\"https://news.google.com/rss/articles/CBMizwFBVV95cUxQQnZNQzVSd2NmY2VDZk9xVmtPT0VTNWQ0bnNxOHRpMVF3T1RRQndYendfd2NNODlHWjRqTTBjN1ZkekdPcUlLclFhMUNsNVNrUVVLRUJsSFFZb2F4UjRLemtZUmV1RURYdmVOV0Vzd3VpUVNDRWllVlRIZnMyaGNXZnlEUjIxVS1XMmJNUDRyaXZoT3ZfM0w2VkZjUEFkMlNCT29iZHBJY2dnMkVOenBIWElTNlVveHJrZE1PT09LOXhLNEFkS3VkX0NkU3NDZkk?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"f947a3322997aaec3eb7cd2bd5538f8d4be55db867ccc1b312aba4d079685623\",\"id\":\"6748525eab9927ef78c83e33\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-10T21:25:17+00:00\",\"sentiment\":-0.3333333333333333,\"source\":\"The Globe and Mail\",\"summary_raw\":\"Why NXP Semiconductors Stock Dropped 18.5% in July The Globe and Mail\",\"symbols\":[\"NVDA\"],\"title\":\"Why NXP Semiconductors Stock Dropped 18.5% in July - The Globe and Mail\",\"url\":\"https://news.google.com/rss/articles/CBMizgFBVV95cUxNcm1rTU15UFVBT2hkSVoxbWFQNHNxeVRDcnpNNkRsY21memw1XzdvU2ROT013ZUp6c2pveGllWUhEeWVxSTFjU2l4RG9zQlJfWjlYQXlHTmc3SE5pOU5JTk5Pd3pkTjM3enh0S0doRHVlMDFKM1YwMFdYTUtxQTAxT0lFclhOcGhjRnA1Um1zWGNqMllMMjdocEsydkIySVp3clBmZ21LNnZrcFRPU0VuVGdPSmVIQ0tLQ3BLeGVoY1dLV1FNenMxOXFGSnV4dw?oc=5\"},{\"category\":\"earnings\",\"credibility\":60,\"dedupe_hash\":\"54b1eea81d2cd18da542dc865d5a1d3ce6e73518c9ca89ba17236db927cc2dcf\",\"id\":\"aeca22f99ad11871186d8538\",\"impact_horizon\":\"1-3d\",\"importance\":80,\"published_at\":\"2026-08-09T08:05:00+00:00\",\"sentiment\":-0.3333333333333333,\"source\":\"The Motley Fool\",\"summary_raw\":\"Cathie Wood's Ark Piled Into Nvidia and Taiwan Semiconductor After Meta's Earnings Miss. Here's What It Signals for Artificial Intelligence (AI) Stocks. The Motley Fool\",\"symbols\":[\"NVDA\"],\"title\":\"Cathie Wood's Ark Piled Into Nvidia and Taiwan Semiconductor After Meta's Earnings Miss. Here's What It Signals for Artificial Intelligence (AI) Stocks. - The Motley Fool\",\"url\":\"https://news.google.com/rss/articles/CBMimAFBVV95cUxPb0d5bGJQOS1EY1FQUjMzcDRnZEVod1NwS2dJRUhraElXbTY3aXQ5Zk5uOXRJWDd2NUxIaEprejl5a2VjWTF0VS1BNlZQWnRUTnF6OG9mQl95YjgwMUtfNmRiNlpiWXRmOHctVXZ6NEI3WERiNkdwWVFJZjRRYjRVdk5aeWlTeElvR3dVeWtVX2l0ckRmVG9kNg?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"82e4f076bdc180efa697b0b0204bd93fc6d0e7d37790d89392d645206cb5a9e3\",\"id\":\"00a522e43a07e047ffddd948\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-07-27T07:00:00+00:00\",\"sentiment\":0.0,\"source\":\"Yahoo Finance\",\"summary_raw\":\"AI Chips Today - NVIDIA and Silvaco Partner to Elevate Semiconductor Design Yahoo Finance\",\"symbols\":[\"NVDA\"],\"title\":\"AI Chips Today - NVIDIA and Silvaco Partner to Elevate Semiconductor Design - Yahoo Finance\",\"url\":\"https://news.google.com/rss/articles/CBMimAFBVV95cUxPMTZzQVBPYUNxRkhHVEVQLVJ4cF91Ml9yUmdwRlVLeDgtQlU2Slc1YkNvM0JOcWs3YzhLUEFsbTdYOWF2S2lqSDZaN000YjEzUmc5c1hucHFRQWhpQkFMVGN4TFhPc2Etbnd3UE1kQzNlaEF6a0hnYUtpMXBudWZuOGdWYWRnSDFzai11c3Y4UGVtRlNtcHRILQ?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"a22852d6133478124290b04ef0a46d06ce998208376a2360f61d7a0f18e6e5fb\",\"id\":\"cec22799f60b1a920502b49d\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-07-20T07:00:00+00:00\",\"sentiment\":0.0,\"source\":\"24/7 Wall St.\",\"summary_raw\":\"Jensen Huang Thinks Semiconductors Will Be the Largest Industry in the World \\u201cBy Far\\\" \\u2014 and This Might Be Key to Getting Nvidia Stock to $500 24/7 Wall St.\",\"symbols\":[\"NVDA\"],\"title\":\"Jensen Huang Thinks Semiconductors Will Be the Largest Industry in the World \\u201cBy Far\\\" \\u2014 and This Might Be Key to Getting Nvidia Stock to $500 - 24/7 Wall St.\",\"url\":\"https://news.google.com/rss/articles/CBMijAJBVV95cUxPWVZMeHN3dTAtaVhTRTBxTDlpM2pnNllYVUk2YVZzUmVHZWhmWDlVWGRhUFlUZlNCR1duSzVqV1dUVlNNRUFjdlNuSjlkMmJjZjd2OENDMVJMb25STEtQb3JjLVBiRzlrU0o0el9pYWQ1cVAzcmtURFE4T01FdFZIR3lOSWNaZ0RIVFRtV0RKV01qbHh1TVZSYTB0bHNfazZ3aC03aGw3MDRpdXRyel92dFVNOW1LNjhVTnpFYXA3QzNRc0lyNW9sck1jVWc4Zms0UUpjVW5pZDdOc2hodGxGbFI2ZVpwc1lVZFRsVmhwUkRyWTcyUnhvbFIzdTBXRWMxcDVwcXNOY1JkTllq?oc=5\"}],\"price\":{\"change_pct\":0.12423959948673069,\"high\":227.49000549316406,\"last\":225.64999389648438,\"low\":224.5},\"provider_snapshot\":{\"data_as_of\":\"2026-08-14T12:00:00+00:00\",\"error_code\":null,\"fetched_at\":\"2026-08-14T17:57:56.496482+00:00\",\"provider\":\"provider_chain\",\"stale\":false},\"quant\":{\"atr14\":3.9617691040039062,\"ema20\":217.91760343110496,\"ema50\":211.8543463769948,\"macd\":5.182655954750317,\"macd_signal\":4.654784962353365,\"market_regime\":\"bull_trend\",\"momentum_score\":0.14385241592009157,\"price\":225.64999389648438,\"resistance\":227.49000549316406,\"rsi14\":67.05047115961133,\"support\":197.5,\"symbol\":\"NVDA\",\"timeframe\":\"4h\",\"timestamp\":\"2026-08-14T12:00:00+00:00\",\"trend_score\":0.7154983078941191,\"volume_ratio\":0.8671470801877255},\"risk_events\":[],\"time_policy\":{\"allowed_values\":{\"holding_horizon_minutes\":[4320],\"reevaluate_minutes\":[90,120,240],\"signal_validity_minutes\":[180,240]},\"event_risk\":true,\"holding_horizon_minutes\":[4320,4320],\"market_regime\":\"bull_trend\",\"reason_codes\":[\"timeframe_baseline\",\"elevated_atr_shorten_validity\",\"high_impact_event_cap\"],\"reevaluate_minutes\":[90,240],\"signal_validity_minutes\":[180,240],\"timeframe\":\"4h\",\"volatility_ratio\":1.7557}}",
+        "raw_model_response": "{\"action\":\"WAIT\",\"confidence_raw\":0,\"entry_preference\":\"none\",\"entry_zone\":null,\"stop\":null,\"tp1\":null,\"tp2\":null,\"signal_validity_minutes\":180,\"holding_horizon_minutes\":4320,\"re_evaluate_minutes\":90,\"invalidation\":[],\"thesis\":[\"insufficient evidence\"],\"risk_factors\":[\"event_risk_or_range_regime\"]}",
+        "parse_status": "valid",
+        "latency_ms": 7136.196
+      },
+      "paper_trade_followed": false,
+      "outcome": null
+    }
+  ],
+  "failures": [
+    {
+      "symbol": "BTCUSDT",
+      "error": "repair failed: invalid structured JSON: invalidation must be a list of non-empty strings",
+      "error_type": "LLMError"
+    }
+  ],
+  "counts": {
+    "instruments": 1,
+    "market_snapshots": 1,
+    "predictions": 1,
+    "paper_trades": 0,
+    "outcomes": 0,
+    "news_events": 10,
+    "provider_snapshots": 1,
+    "model_runs": 1
+  }
+}

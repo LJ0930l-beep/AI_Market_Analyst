@@ -1,0 +1,821 @@
+{
+  "phase": 2,
+  "mode": "real_historical_replay",
+  "model": "qwen3.5:4b",
+  "results": [
+    {
+      "symbol": "NVDA",
+      "provider": {
+        "provider": "provider_chain",
+        "fetched_at": "2026-08-14T18:03:14.161915+00:00",
+        "data_as_of": "2026-08-14T17:30:00+00:00",
+        "stale": false,
+        "error_code": null
+      },
+      "analysis_anchor": "2026-08-14T17:30:00+00:00",
+      "future_bar": {
+        "timestamp": "2026-08-14T18:03:39+00:00",
+        "open": 225.47000122070312,
+        "high": 225.47000122070312,
+        "low": 225.47000122070312,
+        "close": 225.47000122070312,
+        "volume": 0.0
+      },
+      "quant": {
+        "symbol": "NVDA",
+        "timeframe": "1h",
+        "timestamp": "2026-08-14T17:30:00+00:00",
+        "price": 225.4949951171875,
+        "ema20": 224.14714843381532,
+        "ema50": 220.6685697864082,
+        "rsi14": 60.13910684223419,
+        "macd": 1.4776778579553138,
+        "macd_signal": 1.6201777703283577,
+        "atr14": 1.579465593610491,
+        "volume_ratio": 0.7968970027023231,
+        "support": 216.89280700683594,
+        "resistance": 227.49000549316406,
+        "market_regime": "bull_trend",
+        "trend_score": 0.3940953905187006,
+        "momentum_score": 0.04655817256198347
+      },
+      "news": {
+        "provider": "google_news_rss",
+        "fetched_at": "2026-08-14T18:03:18.855330+00:00",
+        "available": true,
+        "error_code": null,
+        "events": [
+          {
+            "id": "a53090473012d99ca3f81b8d",
+            "source": "Benzinga",
+            "published_at": "2026-08-14T09:58:34+00:00",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Insights Into NVIDIA's Performance Versus Peers In Semiconductors & Semiconductor Equipment Sector - - Benzinga",
+            "summary_raw": "Insights Into NVIDIA's Performance Versus Peers In Semiconductors & Semiconductor Equipment Sector - Benzinga",
+            "url": "https://news.google.com/rss/articles/CBMi0wFBVV95cUxOUVFaYzM2UWZ3LVBtZWZLd0hwcm9aWW1ZZ05telNiWWQ3bTlxcjYyQS1JNzhZU1A4aHQxYU9QNlYwb3BFcGRzalVXSzRWdHpTMXp5dzJ2d282U18yY0ZQRVluS3VVOGhpSDJ3aUtoLVJJd2Z5d0J2X3owMFNfYVNTcnA0Vlhmd2EzeW5pSDhISEhVR1F2TU9KNDdYMDhvdjZpc1hWN29nYzdsaU56XzZDa2ZPM2N3UVdxOTU5QmYyeU5lLVd3bFZGMVFyeGthMzhPaWpn?oc=5",
+            "category": "regulation",
+            "sentiment": 0.0,
+            "importance": 85,
+            "credibility": 85,
+            "impact_horizon": "1-4w",
+            "dedupe_hash": "a5866aeada59468933329b77697754b68a70dd2d0b80d6dc9cf6e255a723249c"
+          },
+          {
+            "id": "d69045d5c5ea96bd623a1ffa",
+            "source": "GuruFocus",
+            "published_at": "2026-08-14T03:23:11+00:00",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "NVIDIA's (NVDA) New Developments with TSMC: Feynman Generation I - GuruFocus",
+            "summary_raw": "NVIDIA's (NVDA) New Developments with TSMC: Feynman Generation I GuruFocus",
+            "url": "https://news.google.com/rss/articles/CBMiqgFBVV95cUxOVEZhbzhxZElNTC1JLXlVSVZBeURfRldDYVpOZW1KaVdRRGUtREs2S0FxcHJYbnI0THNqdXhwQUw4Q1h4TUtCSVJVTmE1Vl95TTRMYUtzNlFGZi1jaEEtXzdnRWNqMHBvcGdIWDhUNlBBX29JTnZqSUpYWElNeVhNWVhETElEbTRtb2FVb3dfYWRPNjFuRWxPR3cwU2gySW90WnVRRk5PZE1Ddw?oc=5",
+            "category": "other",
+            "sentiment": 0.0,
+            "importance": 30,
+            "credibility": 60,
+            "impact_horizon": "unknown",
+            "dedupe_hash": "5805e147d0a4b1d77e95040a55c86b719eb3630a696ea238ce5674310ae6fb87"
+          },
+          {
+            "id": "f88caaa3274841a8abb4d46d",
+            "source": "TechStock²",
+            "published_at": "2026-08-13T13:12:51+00:00",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Nvidia Stock (NVDA) Gains 3% in Premarket Amid Analyst Target $563 Below Current Level—Potential Caution Flag - TechStock²",
+            "summary_raw": "Nvidia Stock (NVDA) Gains 3% in Premarket Amid Analyst Target $563 Below Current Level—Potential Caution Flag TechStock²",
+            "url": "https://news.google.com/rss/articles/CBMilAFBVV95cUxPRWNtazBQcTFPdVB2VURMdVJpcnl0X0FJZW5teVVQUHpvWFU2cWUwOFFsSzhUZVhqSDMzdER5Q2FabTdDTVJkUHdiLWkyT0ZEZkdPNzlpczNoeklZVktLcHRFM3NEeWluY3RyZjdaVEgtdjJQV0Mya1UzM2VISEdQRGlpc2tCRXczeFFFTUc0c05oM2JX?oc=5",
+            "category": "analyst",
+            "sentiment": 0.0,
+            "importance": 55,
+            "credibility": 60,
+            "impact_horizon": "intraday",
+            "dedupe_hash": "3e8589416c14c4f36b9283a1301e6913561fd58556132aa5e8e4679ee2115529"
+          },
+          {
+            "id": "d802f38c2ee63740fbd7f025",
+            "source": "Benzinga",
+            "published_at": "2026-08-13T09:58:39+00:00",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Comparing NVIDIA With Industry Competitors In Semiconductors & Semiconductor Equipment Industry - NVI - Benzinga",
+            "summary_raw": "Comparing NVIDIA With Industry Competitors In Semiconductors & Semiconductor Equipment Industry - NVI Benzinga",
+            "url": "https://news.google.com/rss/articles/CBMizwFBVV95cUxQQnZNQzVSd2NmY2VDZk9xVmtPT0VTNWQ0bnNxOHRpMVF3T1RRQndYendfd2NNODlHWjRqTTBjN1ZkekdPcUlLclFhMUNsNVNrUVVLRUJsSFFZb2F4UjRLemtZUmV1RURYdmVOV0Vzd3VpUVNDRWllVlRIZnMyaGNXZnlEUjIxVS1XMmJNUDRyaXZoT3ZfM0w2VkZjUEFkMlNCT29iZHBJY2dnMkVOenBIWElTNlVveHJrZE1PT09LOXhLNEFkS3VkX0NkU3NDZkk?oc=5",
+            "category": "other",
+            "sentiment": 0.0,
+            "importance": 30,
+            "credibility": 60,
+            "impact_horizon": "unknown",
+            "dedupe_hash": "5be6a23f9e2c62e5752337da05246512a623378bf7488155cff7a497e70e94ac"
+          },
+          {
+            "id": "6748525eab9927ef78c83e33",
+            "source": "The Globe and Mail",
+            "published_at": "2026-08-10T21:25:17+00:00",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Why NXP Semiconductors Stock Dropped 18.5% in July - The Globe and Mail",
+            "summary_raw": "Why NXP Semiconductors Stock Dropped 18.5% in July The Globe and Mail",
+            "url": "https://news.google.com/rss/articles/CBMizgFBVV95cUxNcm1rTU15UFVBT2hkSVoxbWFQNHNxeVRDcnpNNkRsY21memw1XzdvU2ROT013ZUp6c2pveGllWUhEeWVxSTFjU2l4RG9zQlJfWjlYQXlHTmc3SE5pOU5JTk5Pd3pkTjM3enh0S0doRHVlMDFKM1YwMFdYTUtxQTAxT0lFclhOcGhjRnA1Um1zWGNqMllMMjdocEsydkIySVp3clBmZ21LNnZrcFRPU0VuVGdPSmVIQ0tLQ3BLeGVoY1dLV1FNenMxOXFGSnV4dw?oc=5",
+            "category": "other",
+            "sentiment": -0.3333333333333333,
+            "importance": 30,
+            "credibility": 60,
+            "impact_horizon": "unknown",
+            "dedupe_hash": "f947a3322997aaec3eb7cd2bd5538f8d4be55db867ccc1b312aba4d079685623"
+          },
+          {
+            "id": "aeca22f99ad11871186d8538",
+            "source": "The Motley Fool",
+            "published_at": "2026-08-09T08:05:00+00:00",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Cathie Wood's Ark Piled Into Nvidia and Taiwan Semiconductor After Meta's Earnings Miss. Here's What It Signals for Artificial Intelligence (AI) Stocks. - The Motley Fool",
+            "summary_raw": "Cathie Wood's Ark Piled Into Nvidia and Taiwan Semiconductor After Meta's Earnings Miss. Here's What It Signals for Artificial Intelligence (AI) Stocks. The Motley Fool",
+            "url": "https://news.google.com/rss/articles/CBMimAFBVV95cUxPb0d5bGJQOS1EY1FQUjMzcDRnZEVod1NwS2dJRUhraElXbTY3aXQ5Zk5uOXRJWDd2NUxIaEprejl5a2VjWTF0VS1BNlZQWnRUTnF6OG9mQl95YjgwMUtfNmRiNlpiWXRmOHctVXZ6NEI3WERiNkdwWVFJZjRRYjRVdk5aeWlTeElvR3dVeWtVX2l0ckRmVG9kNg?oc=5",
+            "category": "earnings",
+            "sentiment": -0.3333333333333333,
+            "importance": 80,
+            "credibility": 60,
+            "impact_horizon": "1-3d",
+            "dedupe_hash": "54b1eea81d2cd18da542dc865d5a1d3ce6e73518c9ca89ba17236db927cc2dcf"
+          },
+          {
+            "id": "00a522e43a07e047ffddd948",
+            "source": "Yahoo Finance",
+            "published_at": "2026-07-27T07:00:00+00:00",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "AI Chips Today - NVIDIA and Silvaco Partner to Elevate Semiconductor Design - Yahoo Finance",
+            "summary_raw": "AI Chips Today - NVIDIA and Silvaco Partner to Elevate Semiconductor Design Yahoo Finance",
+            "url": "https://news.google.com/rss/articles/CBMimAFBVV95cUxPMTZzQVBPYUNxRkhHVEVQLVJ4cF91Ml9yUmdwRlVLeDgtQlU2Slc1YkNvM0JOcWs3YzhLUEFsbTdYOWF2S2lqSDZaN000YjEzUmc5c1hucHFRQWhpQkFMVGN4TFhPc2Etbnd3UE1kQzNlaEF6a0hnYUtpMXBudWZuOGdWYWRnSDFzai11c3Y4UGVtRlNtcHRILQ?oc=5",
+            "category": "other",
+            "sentiment": 0.0,
+            "importance": 30,
+            "credibility": 60,
+            "impact_horizon": "unknown",
+            "dedupe_hash": "82e4f076bdc180efa697b0b0204bd93fc6d0e7d37790d89392d645206cb5a9e3"
+          },
+          {
+            "id": "cec22799f60b1a920502b49d",
+            "source": "24/7 Wall St.",
+            "published_at": "2026-07-20T07:00:00+00:00",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Jensen Huang Thinks Semiconductors Will Be the Largest Industry in the World “By Far\" — and This Might Be Key to Getting Nvidia Stock to $500 - 24/7 Wall St.",
+            "summary_raw": "Jensen Huang Thinks Semiconductors Will Be the Largest Industry in the World “By Far\" — and This Might Be Key to Getting Nvidia Stock to $500 24/7 Wall St.",
+            "url": "https://news.google.com/rss/articles/CBMijAJBVV95cUxPWVZMeHN3dTAtaVhTRTBxTDlpM2pnNllYVUk2YVZzUmVHZWhmWDlVWGRhUFlUZlNCR1duSzVqV1dUVlNNRUFjdlNuSjlkMmJjZjd2OENDMVJMb25STEtQb3JjLVBiRzlrU0o0el9pYWQ1cVAzcmtURFE4T01FdFZIR3lOSWNaZ0RIVFRtV0RKV01qbHh1TVZSYTB0bHNfazZ3aC03aGw3MDRpdXRyel92dFVNOW1LNjhVTnpFYXA3QzNRc0lyNW9sck1jVWc4Zms0UUpjVW5pZDdOc2hodGxGbFI2ZVpwc1lVZFRsVmhwUkRyWTcyUnhvbFIzdTBXRWMxcDVwcXNOY1JkTllq?oc=5",
+            "category": "other",
+            "sentiment": 0.0,
+            "importance": 30,
+            "credibility": 60,
+            "impact_horizon": "unknown",
+            "dedupe_hash": "a22852d6133478124290b04ef0a46d06ce998208376a2360f61d7a0f18e6e5fb"
+          },
+          {
+            "id": "2746d15c1048616cbbdb9d56",
+            "source": "NVIDIA Newsroom",
+            "published_at": "2026-05-31T07:00:00+00:00",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "NVIDIA and TSMC Bring AI Into Fabs to Advance Semiconductor Design and Manufacturing - NVIDIA Newsroom",
+            "summary_raw": "NVIDIA and TSMC Bring AI Into Fabs to Advance Semiconductor Design and Manufacturing NVIDIA Newsroom",
+            "url": "https://news.google.com/rss/articles/CBMiuwFBVV95cUxNNWhpUkRjY2Z5cE85UmpLWnpPMWVsS3Q3X3VXUE1EOEQ3aTROZkhMM3g5YV9ldWdhVGxiVjFYN0YxTWJxcGppdGpJaXVjeGhaMzg5aFlQWXB4azZGekltYnBvMkJPUXpzdWpES0dhYVBkaTkzVHA2c3lJODZNbHRtSEF1V09GWUtoaXhXT1drUlg4RnlGVzZnQ2FydzFUSzdVMlFYWDg2bGFEaXBMcG9LYndnMFBvTWliZW1R?oc=5",
+            "category": "other",
+            "sentiment": 0.0,
+            "importance": 30,
+            "credibility": 60,
+            "impact_horizon": "unknown",
+            "dedupe_hash": "86b351391f76c00c8e37af4e43bca40b8fb0ab078a1c7196658db10db07e7983"
+          },
+          {
+            "id": "63f2f3fa3c83491b481a3ab6",
+            "source": "io-fund.com",
+            "published_at": "2026-04-30T07:00:00+00:00",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Is Nvidia Stock a Buy? Why Semiconductor Strength May Signal a Market Top - io-fund.com",
+            "summary_raw": "Is Nvidia Stock a Buy? Why Semiconductor Strength May Signal a Market Top io-fund.com",
+            "url": "https://news.google.com/rss/articles/CBMihwFBVV95cUxNZ2ZYMmU2M2dObGhfaDZFMmlBZmJ3aDVWbHJtQUtBaW9oWVByVVlTRnZWVi1XeHVoVUlZT240TnM4WEJrRnM4Rmk4SGhlN1o4ZGN1eFp5NFZJYVJpcXRrdnZTdU1aNmdvT1dGTWI1cGRPZkhDWGxwcXdEaTRBc0xBWnRvMDlNOVE?oc=5",
+            "category": "other",
+            "sentiment": 0.0,
+            "importance": 30,
+            "credibility": 60,
+            "impact_horizon": "unknown",
+            "dedupe_hash": "716bb182447a35b7ea5eed3e3135b12baade38aa14091f493a4949a5290652bf"
+          }
+        ],
+        "clusters": [
+          {
+            "cluster_id": "64390c067e4c6115e7f21232",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Insights Into NVIDIA's Performance Versus Peers In Semiconductors & Semiconductor Equipment Sector - - Benzinga",
+            "event_ids": [
+              "a53090473012d99ca3f81b8d"
+            ],
+            "sentiment": 0.0,
+            "importance": 85
+          },
+          {
+            "cluster_id": "72f72bcf0589acde67b8b300",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Cathie Wood's Ark Piled Into Nvidia and Taiwan Semiconductor After Meta's Earnings Miss. Here's What It Signals for Artificial Intelligence (AI) Stocks. - The Motley Fool",
+            "event_ids": [
+              "aeca22f99ad11871186d8538"
+            ],
+            "sentiment": -0.3333,
+            "importance": 80
+          },
+          {
+            "cluster_id": "d0ea4d51a38c2e0e205f0dc5",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Nvidia Stock (NVDA) Gains 3% in Premarket Amid Analyst Target $563 Below Current Level—Potential Caution Flag - TechStock²",
+            "event_ids": [
+              "f88caaa3274841a8abb4d46d"
+            ],
+            "sentiment": 0.0,
+            "importance": 55
+          },
+          {
+            "cluster_id": "d7bacdce6ac18d7df14b1126",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "NVIDIA's (NVDA) New Developments with TSMC: Feynman Generation I - GuruFocus",
+            "event_ids": [
+              "d69045d5c5ea96bd623a1ffa"
+            ],
+            "sentiment": 0.0,
+            "importance": 30
+          },
+          {
+            "cluster_id": "9987567dd80e8cc8df3aa106",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Comparing NVIDIA With Industry Competitors In Semiconductors & Semiconductor Equipment Industry - NVI - Benzinga",
+            "event_ids": [
+              "d802f38c2ee63740fbd7f025"
+            ],
+            "sentiment": 0.0,
+            "importance": 30
+          },
+          {
+            "cluster_id": "97df7f74386c43278f7a082f",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Why NXP Semiconductors Stock Dropped 18.5% in July - The Globe and Mail",
+            "event_ids": [
+              "6748525eab9927ef78c83e33"
+            ],
+            "sentiment": -0.3333,
+            "importance": 30
+          },
+          {
+            "cluster_id": "4a72ae1732661c18a18b83a2",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "AI Chips Today - NVIDIA and Silvaco Partner to Elevate Semiconductor Design - Yahoo Finance",
+            "event_ids": [
+              "00a522e43a07e047ffddd948"
+            ],
+            "sentiment": 0.0,
+            "importance": 30
+          },
+          {
+            "cluster_id": "16772541cc5625c2d8d7b6fb",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Jensen Huang Thinks Semiconductors Will Be the Largest Industry in the World “By Far\" — and This Might Be Key to Getting Nvidia Stock to $500 - 24/7 Wall St.",
+            "event_ids": [
+              "cec22799f60b1a920502b49d"
+            ],
+            "sentiment": 0.0,
+            "importance": 30
+          },
+          {
+            "cluster_id": "2d0202f4853366354bc131b2",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "NVIDIA and TSMC Bring AI Into Fabs to Advance Semiconductor Design and Manufacturing - NVIDIA Newsroom",
+            "event_ids": [
+              "2746d15c1048616cbbdb9d56"
+            ],
+            "sentiment": 0.0,
+            "importance": 30
+          },
+          {
+            "cluster_id": "d5f3633a2b4c7b4f221e0ad9",
+            "symbols": [
+              "NVDA"
+            ],
+            "title": "Is Nvidia Stock a Buy? Why Semiconductor Strength May Signal a Market Top - io-fund.com",
+            "event_ids": [
+              "63f2f3fa3c83491b481a3ab6"
+            ],
+            "sentiment": 0.0,
+            "importance": 30
+          }
+        ]
+      },
+      "model": {
+        "model_id": "qwen3.5:4b",
+        "model_version": "qwen3.5:4b",
+        "prompt_version": "phase2-json-v6",
+        "input_hash": "769ac03b32a3f8dd555f660e367bc722f9b1fbb68021f3b9635c4afb706400da",
+        "latency_ms": 7008.46,
+        "raw_response": "{\"action\":\"WAIT\",\"confidence_raw\":0,\"entry_preference\":\"none\",\"entry_zone\":null,\"stop\":null,\"tp1\":null,\"tp2\":null,\"signal_validity_minutes\":120,\"holding_horizon_minutes\":1440,\"re_evaluate_minutes\":60,\"invalidation\":[],\"thesis\":[\"insufficient evidence\"],\"risk_factors\":[\"event_risk_or_range_regime\"]}",
+        "parse_status": "valid",
+        "error_code": null,
+        "input_tokens_est": 2904,
+        "output_chars": 299
+      },
+      "signal": {
+        "prediction_id": "llm-20260814173000000000",
+        "instrument": {
+          "symbol": "NVDA",
+          "asset_type": "equity",
+          "exchange": "NASDAQ",
+          "currency": "USD",
+          "timezone": "America/New_York",
+          "trading_hours": "regular",
+          "sector": "Semiconductors"
+        },
+        "analysis_timeframe": "1h",
+        "generated_at": "2026-08-14T17:30:00+00:00",
+        "action": "WAIT",
+        "entry_low": null,
+        "entry_high": null,
+        "stop": null,
+        "tp1": null,
+        "tp2": null,
+        "signal_validity_minutes": 120,
+        "signal_valid_until": "2026-08-14T19:30:00+00:00",
+        "expected_hold_minutes": 1440,
+        "expected_hold_until": "2026-08-15T17:30:00+00:00",
+        "max_hold_minutes": 4320,
+        "max_hold_until": "2026-08-17T17:30:00+00:00",
+        "reevaluate_at": "2026-08-14T18:30:00+00:00",
+        "invalidation": [
+          "new context required before entry"
+        ],
+        "raw_confidence": 0.0,
+        "reason_codes": [
+          "structured_model_output",
+          "regime:bull_trend"
+        ],
+        "summary": "WAIT: insufficient evidence Risks: event_risk_or_range_regime.",
+        "model_id": "qwen3.5:4b",
+        "model_version": "qwen3.5:4b",
+        "prompt_version": "phase2-json-v6",
+        "input_hash": "769ac03b32a3f8dd555f660e367bc722f9b1fbb68021f3b9635c4afb706400da",
+        "data_as_of": "2026-08-14T17:30:00+00:00",
+        "context_json": "{\"analysis_time\":{\"timeframe\":\"1h\",\"timestamp\":\"2026-08-14T17:30:00+00:00\"},\"history\":{},\"instrument\":{\"asset_type\":\"equity\",\"exchange\":\"NASDAQ\",\"quote_currency\":\"USD\",\"symbol\":\"NVDA\",\"trading_hours\":\"regular\"},\"market_context\":{\"news_available\":true,\"news_provider\":\"google_news_rss\"},\"news\":[{\"category\":\"regulation\",\"credibility\":85,\"dedupe_hash\":\"a5866aeada59468933329b77697754b68a70dd2d0b80d6dc9cf6e255a723249c\",\"id\":\"a53090473012d99ca3f81b8d\",\"impact_horizon\":\"1-4w\",\"importance\":85,\"published_at\":\"2026-08-14T09:58:34+00:00\",\"sentiment\":0.0,\"source\":\"Benzinga\",\"summary_raw\":\"Insights Into NVIDIA's Performance Versus Peers In Semiconductors & Semiconductor Equipment Sector - Benzinga\",\"symbols\":[\"NVDA\"],\"title\":\"Insights Into NVIDIA's Performance Versus Peers In Semiconductors & Semiconductor Equipment Sector - - Benzinga\",\"url\":\"https://news.google.com/rss/articles/CBMi0wFBVV95cUxOUVFaYzM2UWZ3LVBtZWZLd0hwcm9aWW1ZZ05telNiWWQ3bTlxcjYyQS1JNzhZU1A4aHQxYU9QNlYwb3BFcGRzalVXSzRWdHpTMXp5dzJ2d282U18yY0ZQRVluS3VVOGhpSDJ3aUtoLVJJd2Z5d0J2X3owMFNfYVNTcnA0Vlhmd2EzeW5pSDhISEhVR1F2TU9KNDdYMDhvdjZpc1hWN29nYzdsaU56XzZDa2ZPM2N3UVdxOTU5QmYyeU5lLVd3bFZGMVFyeGthMzhPaWpn?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"5805e147d0a4b1d77e95040a55c86b719eb3630a696ea238ce5674310ae6fb87\",\"id\":\"d69045d5c5ea96bd623a1ffa\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-14T03:23:11+00:00\",\"sentiment\":0.0,\"source\":\"GuruFocus\",\"summary_raw\":\"NVIDIA's (NVDA) New Developments with TSMC: Feynman Generation I GuruFocus\",\"symbols\":[\"NVDA\"],\"title\":\"NVIDIA's (NVDA) New Developments with TSMC: Feynman Generation I - GuruFocus\",\"url\":\"https://news.google.com/rss/articles/CBMiqgFBVV95cUxOVEZhbzhxZElNTC1JLXlVSVZBeURfRldDYVpOZW1KaVdRRGUtREs2S0FxcHJYbnI0THNqdXhwQUw4Q1h4TUtCSVJVTmE1Vl95TTRMYUtzNlFGZi1jaEEtXzdnRWNqMHBvcGdIWDhUNlBBX29JTnZqSUpYWElNeVhNWVhETElEbTRtb2FVb3dfYWRPNjFuRWxPR3cwU2gySW90WnVRRk5PZE1Ddw?oc=5\"},{\"category\":\"analyst\",\"credibility\":60,\"dedupe_hash\":\"3e8589416c14c4f36b9283a1301e6913561fd58556132aa5e8e4679ee2115529\",\"id\":\"f88caaa3274841a8abb4d46d\",\"impact_horizon\":\"intraday\",\"importance\":55,\"published_at\":\"2026-08-13T13:12:51+00:00\",\"sentiment\":0.0,\"source\":\"TechStock\\u00b2\",\"summary_raw\":\"Nvidia Stock (NVDA) Gains 3% in Premarket Amid Analyst Target $563 Below Current Level\\u2014Potential Caution Flag TechStock\\u00b2\",\"symbols\":[\"NVDA\"],\"title\":\"Nvidia Stock (NVDA) Gains 3% in Premarket Amid Analyst Target $563 Below Current Level\\u2014Potential Caution Flag - TechStock\\u00b2\",\"url\":\"https://news.google.com/rss/articles/CBMilAFBVV95cUxPRWNtazBQcTFPdVB2VURMdVJpcnl0X0FJZW5teVVQUHpvWFU2cWUwOFFsSzhUZVhqSDMzdER5Q2FabTdDTVJkUHdiLWkyT0ZEZkdPNzlpczNoeklZVktLcHRFM3NEeWluY3RyZjdaVEgtdjJQV0Mya1UzM2VISEdQRGlpc2tCRXczeFFFTUc0c05oM2JX?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"5be6a23f9e2c62e5752337da05246512a623378bf7488155cff7a497e70e94ac\",\"id\":\"d802f38c2ee63740fbd7f025\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-13T09:58:39+00:00\",\"sentiment\":0.0,\"source\":\"Benzinga\",\"summary_raw\":\"Comparing NVIDIA With Industry Competitors In Semiconductors & Semiconductor Equipment Industry - NVI Benzinga\",\"symbols\":[\"NVDA\"],\"title\":\"Comparing NVIDIA With Industry Competitors In Semiconductors & Semiconductor Equipment Industry - NVI - Benzinga\",\"url\":\"https://news.google.com/rss/articles/CBMizwFBVV95cUxQQnZNQzVSd2NmY2VDZk9xVmtPT0VTNWQ0bnNxOHRpMVF3T1RRQndYendfd2NNODlHWjRqTTBjN1ZkekdPcUlLclFhMUNsNVNrUVVLRUJsSFFZb2F4UjRLemtZUmV1RURYdmVOV0Vzd3VpUVNDRWllVlRIZnMyaGNXZnlEUjIxVS1XMmJNUDRyaXZoT3ZfM0w2VkZjUEFkMlNCT29iZHBJY2dnMkVOenBIWElTNlVveHJrZE1PT09LOXhLNEFkS3VkX0NkU3NDZkk?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"f947a3322997aaec3eb7cd2bd5538f8d4be55db867ccc1b312aba4d079685623\",\"id\":\"6748525eab9927ef78c83e33\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-10T21:25:17+00:00\",\"sentiment\":-0.3333333333333333,\"source\":\"The Globe and Mail\",\"summary_raw\":\"Why NXP Semiconductors Stock Dropped 18.5% in July The Globe and Mail\",\"symbols\":[\"NVDA\"],\"title\":\"Why NXP Semiconductors Stock Dropped 18.5% in July - The Globe and Mail\",\"url\":\"https://news.google.com/rss/articles/CBMizgFBVV95cUxNcm1rTU15UFVBT2hkSVoxbWFQNHNxeVRDcnpNNkRsY21memw1XzdvU2ROT013ZUp6c2pveGllWUhEeWVxSTFjU2l4RG9zQlJfWjlYQXlHTmc3SE5pOU5JTk5Pd3pkTjM3enh0S0doRHVlMDFKM1YwMFdYTUtxQTAxT0lFclhOcGhjRnA1Um1zWGNqMllMMjdocEsydkIySVp3clBmZ21LNnZrcFRPU0VuVGdPSmVIQ0tLQ3BLeGVoY1dLV1FNenMxOXFGSnV4dw?oc=5\"},{\"category\":\"earnings\",\"credibility\":60,\"dedupe_hash\":\"54b1eea81d2cd18da542dc865d5a1d3ce6e73518c9ca89ba17236db927cc2dcf\",\"id\":\"aeca22f99ad11871186d8538\",\"impact_horizon\":\"1-3d\",\"importance\":80,\"published_at\":\"2026-08-09T08:05:00+00:00\",\"sentiment\":-0.3333333333333333,\"source\":\"The Motley Fool\",\"summary_raw\":\"Cathie Wood's Ark Piled Into Nvidia and Taiwan Semiconductor After Meta's Earnings Miss. Here's What It Signals for Artificial Intelligence (AI) Stocks. The Motley Fool\",\"symbols\":[\"NVDA\"],\"title\":\"Cathie Wood's Ark Piled Into Nvidia and Taiwan Semiconductor After Meta's Earnings Miss. Here's What It Signals for Artificial Intelligence (AI) Stocks. - The Motley Fool\",\"url\":\"https://news.google.com/rss/articles/CBMimAFBVV95cUxPb0d5bGJQOS1EY1FQUjMzcDRnZEVod1NwS2dJRUhraElXbTY3aXQ5Zk5uOXRJWDd2NUxIaEprejl5a2VjWTF0VS1BNlZQWnRUTnF6OG9mQl95YjgwMUtfNmRiNlpiWXRmOHctVXZ6NEI3WERiNkdwWVFJZjRRYjRVdk5aeWlTeElvR3dVeWtVX2l0ckRmVG9kNg?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"82e4f076bdc180efa697b0b0204bd93fc6d0e7d37790d89392d645206cb5a9e3\",\"id\":\"00a522e43a07e047ffddd948\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-07-27T07:00:00+00:00\",\"sentiment\":0.0,\"source\":\"Yahoo Finance\",\"summary_raw\":\"AI Chips Today - NVIDIA and Silvaco Partner to Elevate Semiconductor Design Yahoo Finance\",\"symbols\":[\"NVDA\"],\"title\":\"AI Chips Today - NVIDIA and Silvaco Partner to Elevate Semiconductor Design - Yahoo Finance\",\"url\":\"https://news.google.com/rss/articles/CBMimAFBVV95cUxPMTZzQVBPYUNxRkhHVEVQLVJ4cF91Ml9yUmdwRlVLeDgtQlU2Slc1YkNvM0JOcWs3YzhLUEFsbTdYOWF2S2lqSDZaN000YjEzUmc5c1hucHFRQWhpQkFMVGN4TFhPc2Etbnd3UE1kQzNlaEF6a0hnYUtpMXBudWZuOGdWYWRnSDFzai11c3Y4UGVtRlNtcHRILQ?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"a22852d6133478124290b04ef0a46d06ce998208376a2360f61d7a0f18e6e5fb\",\"id\":\"cec22799f60b1a920502b49d\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-07-20T07:00:00+00:00\",\"sentiment\":0.0,\"source\":\"24/7 Wall St.\",\"summary_raw\":\"Jensen Huang Thinks Semiconductors Will Be the Largest Industry in the World \\u201cBy Far\\\" \\u2014 and This Might Be Key to Getting Nvidia Stock to $500 24/7 Wall St.\",\"symbols\":[\"NVDA\"],\"title\":\"Jensen Huang Thinks Semiconductors Will Be the Largest Industry in the World \\u201cBy Far\\\" \\u2014 and This Might Be Key to Getting Nvidia Stock to $500 - 24/7 Wall St.\",\"url\":\"https://news.google.com/rss/articles/CBMijAJBVV95cUxPWVZMeHN3dTAtaVhTRTBxTDlpM2pnNllYVUk2YVZzUmVHZWhmWDlVWGRhUFlUZlNCR1duSzVqV1dUVlNNRUFjdlNuSjlkMmJjZjd2OENDMVJMb25STEtQb3JjLVBiRzlrU0o0el9pYWQ1cVAzcmtURFE4T01FdFZIR3lOSWNaZ0RIVFRtV0RKV01qbHh1TVZSYTB0bHNfazZ3aC03aGw3MDRpdXRyel92dFVNOW1LNjhVTnpFYXA3QzNRc0lyNW9sck1jVWc4Zms0UUpjVW5pZDdOc2hodGxGbFI2ZVpwc1lVZFRsVmhwUkRyWTcyUnhvbFIzdTBXRWMxcDVwcXNOY1JkTllq?oc=5\"}],\"price\":{\"change_pct\":0.16657782877296246,\"high\":225.66259765625,\"last\":225.4949951171875,\"low\":225.0998992919922},\"provider_snapshot\":{\"data_as_of\":\"2026-08-14T17:30:00+00:00\",\"error_code\":null,\"fetched_at\":\"2026-08-14T18:03:14.161915+00:00\",\"provider\":\"provider_chain\",\"stale\":false},\"quant\":{\"atr14\":1.579465593610491,\"ema20\":224.14714843381532,\"ema50\":220.6685697864082,\"macd\":1.4776778579553138,\"macd_signal\":1.6201777703283577,\"market_regime\":\"bull_trend\",\"momentum_score\":0.04655817256198347,\"price\":225.4949951171875,\"resistance\":227.49000549316406,\"rsi14\":60.13910684223419,\"support\":216.89280700683594,\"symbol\":\"NVDA\",\"timeframe\":\"1h\",\"timestamp\":\"2026-08-14T17:30:00+00:00\",\"trend_score\":0.3940953905187006,\"volume_ratio\":0.7968970027023231},\"risk_events\":[],\"time_policy\":{\"allowed_values\":{\"holding_horizon_minutes\":[1440,2160,2880,4320],\"reevaluate_minutes\":[60,90,120,240],\"signal_validity_minutes\":[120,180,240]},\"event_risk\":true,\"holding_horizon_minutes\":[1440,4320],\"market_regime\":\"bull_trend\",\"reason_codes\":[\"timeframe_baseline\",\"trend_regime_allowed_extension\",\"high_impact_event_cap\"],\"reevaluate_minutes\":[60,240],\"signal_validity_minutes\":[120,240],\"timeframe\":\"1h\",\"volatility_ratio\":0.7004}}",
+        "raw_model_response": "{\"action\":\"WAIT\",\"confidence_raw\":0,\"entry_preference\":\"none\",\"entry_zone\":null,\"stop\":null,\"tp1\":null,\"tp2\":null,\"signal_validity_minutes\":120,\"holding_horizon_minutes\":1440,\"re_evaluate_minutes\":60,\"invalidation\":[],\"thesis\":[\"insufficient evidence\"],\"risk_factors\":[\"event_risk_or_range_regime\"]}",
+        "parse_status": "valid",
+        "latency_ms": 7008.46
+      },
+      "paper_trade_followed": false,
+      "outcome": null
+    },
+    {
+      "symbol": "BTCUSDT",
+      "provider": {
+        "provider": "provider_chain",
+        "fetched_at": "2026-08-14T18:03:26.193565+00:00",
+        "data_as_of": "2026-08-14T17:00:00+00:00",
+        "stale": false,
+        "error_code": null
+      },
+      "analysis_anchor": "2026-08-14T17:00:00+00:00",
+      "future_bar": {
+        "timestamp": "2026-08-14T18:00:00+00:00",
+        "open": 63013.7,
+        "high": 63040.0,
+        "low": 62958.0,
+        "close": 63032.01,
+        "volume": 48.98789
+      },
+      "quant": {
+        "symbol": "BTCUSDT",
+        "timeframe": "1h",
+        "timestamp": "2026-08-14T17:00:00+00:00",
+        "price": 63013.69,
+        "ema20": 63062.80512209437,
+        "ema50": 63346.861987853765,
+        "rsi14": 45.898294635641456,
+        "macd": -158.99384302739054,
+        "macd_signal": -177.4724596650615,
+        "atr14": 242.90000000000094,
+        "volume_ratio": 1.4383744722052236,
+        "support": 62535.24,
+        "resistance": 63640.0,
+        "market_regime": "bear_trend",
+        "trend_score": -0.11210376364572949,
+        "momentum_score": 0.014766186941739257
+      },
+      "news": {
+        "provider": "google_news_rss",
+        "fetched_at": "2026-08-14T18:03:27.229528+00:00",
+        "available": true,
+        "error_code": null,
+        "events": [
+          {
+            "id": "4cea7a675a73018fca747ad0",
+            "source": "Binance",
+            "published_at": "2026-08-13T15:22:01+00:00",
+            "symbols": [
+              "BTCUSDT"
+            ],
+            "title": "Crypto Olsson(@Janni_Olsson)'s insights - Binance",
+            "summary_raw": "Crypto Olsson(@Janni_Olsson)'s insights Binance",
+            "url": "https://news.google.com/rss/articles/CBMiaEFVX3lxTFBJY0EySnJYSVU1eHF2c3pDQ0duVDFHcFJpOG1jVXhQLXh0cFloVzRVUUNxRGR4TkExQ19sTjQzTDJERFQ3djlTSEk1WDRGOExIRE85WlZXXzYzTWdlRE5ScUZiLVFaQ2Fs?oc=5",
+            "category": "other",
+            "sentiment": 0.0,
+            "importance": 30,
+            "credibility": 60,
+            "impact_horizon": "unknown",
+            "dedupe_hash": "d6081700772a574ea4a43f6d56aa5dac783626d01a6cff54b7f7241a859b6ee1"
+          },
+          {
+            "id": "c8b0b69e7d91f75ae78302d9",
+            "source": "Binance",
+            "published_at": "2026-08-12T16:03:07+00:00",
+            "symbols": [
+              "BTCUSDT"
+            ],
+            "title": "Crypto GainGear(@CryptoGainGear)'s insights - Binance",
+            "summary_raw": "Crypto GainGear(@CryptoGainGear)'s insights Binance",
+            "url": "https://news.google.com/rss/articles/CBMiZEFVX3lxTFBHYVRyeF9McVFFZUQtVDVKM1k3N2d1bll2aUFfYVZpNWNSa1hhSHg3QmZWQ005bmZueFZhaVBkZkRSZ3k5Tkg2b1g3U3dKZng3TkJfX3pLMVR2V05Da0xicXk0TEM?oc=5",
+            "category": "other",
+            "sentiment": 0.0,
+            "importance": 30,
+            "credibility": 60,
+            "impact_horizon": "unknown",
+            "dedupe_hash": "f99f0582cfd0fd2165d94260cb289e12aeb5fd429ae82ffcd6ca9e1ca1a4fc3e"
+          },
+          {
+            "id": "fce22fc3b4d11e8f93f1898e",
+            "source": "TradingView",
+            "published_at": "2026-08-11T08:48:18+00:00",
+            "symbols": [
+              "BTCUSDT"
+            ],
+            "title": "Never Trust Crypto Pumps Until You Check These Signals for BINANCE:BTCUSDT by MadWhale - TradingView",
+            "summary_raw": "Never Trust Crypto Pumps Until You Check These Signals for BINANCE:BTCUSDT by MadWhale TradingView",
+            "url": "https://news.google.com/rss/articles/CBMiqgFBVV95cUxNd3lyNUZySXk4WGdvc1NVVnV5aHhlOGhKLW81aXo1MDFWRVhQZnJIRXA0U0JQOGY1d1FCNHJMZHZkNURCdGNFOTRyZTNubmhMUXFDcjhWSjZvaGdpa0FnZ2UtM0JKckZveFRZdE1EVmEzWnNBRkN6UDFBeWZwVXNucnNCMHFwYmJNTzRRRWE3R1ZXSnM1dWIyZzM0ZGo3aDdGX3FUMWVFaUhJQQ?oc=5",
+            "category": "other",
+            "sentiment": 0.0,
+            "importance": 30,
+            "credibility": 60,
+            "impact_horizon": "unknown",
+            "dedupe_hash": "0e1d7602d77de3738e1e4393c3ae19273fa6cf0059083b1b749d8fd8ad6eabbb"
+          },
+          {
+            "id": "97b71f115524a5fa40de0103",
+            "source": "TradingView",
+            "published_at": "2026-08-10T10:11:32+00:00",
+            "symbols": [
+              "BTCUSDT"
+            ],
+            "title": "BINANCE:BTCUSDT Chart Image by Crypto-Check- - TradingView",
+            "summary_raw": "BINANCE:BTCUSDT Chart Image by Crypto-Check- TradingView",
+            "url": "https://news.google.com/rss/articles/CBMiUEFVX3lxTE9ucl9zMXB1SDktMWYwUEFwU0NyekNXZC16YUhsTHNNMllkUjAteENvMFEtWWJJSi1nU21qSDFfdmNuZUFWUW52VkVicjZqT0hI?oc=5",
+            "category": "other",
+            "sentiment": 0.0,
+            "importance": 30,
+            "credibility": 60,
+            "impact_horizon": "unknown",
+            "dedupe_hash": "108efcb631cb265cf40f5878fc6492d7a3024640b56b86b7c15772cd90233053"
+          },
+          {
+            "id": "aff362cf133b48a2b2c1b6fe",
+            "source": "TradingView",
+            "published_at": "2026-06-28T07:00:00+00:00",
+            "symbols": [
+              "BTCUSDT"
+            ],
+            "title": "Will Bitcoin price recover in July? - TradingView",
+            "summary_raw": "Will Bitcoin price recover in July? TradingView",
+            "url": "https://news.google.com/rss/articles/CBMinwFBVV95cUxNcllXMXRaYl9vNGo0a1Z6QUVhdVljc1UwRVZwT3JzNzlKckphU2lFUnA2N2p1eGtoVzZSVTBkMFNSN3VHU0IxQ09KR2tQWWJRaU55T2NHdEJNUGFyYXZ0Q0c4VUhEaHc1VVp0b1JOc3BKRW5CWmdhSlI2NTJoQVBmTXJkaTRud2JpbXFBSWtzTzRtMXRBbjVmZFNpNW52Z1k?oc=5",
+            "category": "other",
+            "sentiment": 0.0,
+            "importance": 30,
+            "credibility": 60,
+            "impact_horizon": "unknown",
+            "dedupe_hash": "af4a98426c0245b8fa69e2198d9c53e80bc94029205dc368a3404bc1460def90"
+          },
+          {
+            "id": "0574b7e7b8d3db842f923937",
+            "source": "TradingView",
+            "published_at": "2026-06-04T07:00:00+00:00",
+            "symbols": [
+              "BTCUSDT"
+            ],
+            "title": "Bitcoin: Bulls, Bears, and Pigs for BITUNIX:BTCUSDT.P by EXCAVO - TradingView",
+            "summary_raw": "Bitcoin: Bulls, Bears, and Pigs for BITUNIX:BTCUSDT.P by EXCAVO TradingView",
+            "url": "https://news.google.com/rss/articles/CBMiigFBVV95cUxPQW9GTXp5UkcyaTEzcjR3UUJWYm5QQnYzYmhXdFdFbEU1S2RFay1MclN3X2ozelpFQ1N5Z0xqajduZjJfVWNCaUJ4VnQtU01Cejh6WDZ2dm5uYi13QVB6MHJXYUxKOHNkUFVUekNrMUZZRTJOXzdSdWVfVVZyVEZPNzQ3dnJ4alYzUmc?oc=5",
+            "category": "other",
+            "sentiment": 0.0,
+            "importance": 30,
+            "credibility": 60,
+            "impact_horizon": "unknown",
+            "dedupe_hash": "b789b431ba44e44efe940c5ab0e2f23a26801cb5a03e9479411c002a1405829f"
+          },
+          {
+            "id": "a4c1dd77124adbf65db18b12",
+            "source": "Finviz",
+            "published_at": "2026-04-30T03:31:28+00:00",
+            "symbols": [
+              "BTCUSDT"
+            ],
+            "title": "Crypto Bitcoin / Tether BTC/USDT Chart 5 Minutes - Finviz",
+            "summary_raw": "Crypto Bitcoin / Tether BTC/USDT Chart 5 Minutes Finviz",
+            "url": "https://news.google.com/rss/articles/CBMiZEFVX3lxTE9PMTNZWl9HSm5vclVRejU3bjRWRlhkMTRRTWYtZDZsblpzR0dpM2xJUGRST044LVRXZVRuek5FS29weHdWZVlZMDVDSk9aR2lVVkRyNWh5OXhDNW96eU9pOUx4SWw?oc=5",
+            "category": "other",
+            "sentiment": 0.0,
+            "importance": 30,
+            "credibility": 60,
+            "impact_horizon": "unknown",
+            "dedupe_hash": "ed7bf5d1f0ff5aaad8b29e009f080e0541218b1a3d96a15a16436e60c9d16570"
+          },
+          {
+            "id": "30676c7f74d241093152b937",
+            "source": "The Cryptonomist",
+            "published_at": "2026-04-01T07:00:00+00:00",
+            "symbols": [
+              "BTCUSDT"
+            ],
+            "title": "Bitcoin crypto today Analysis: 24h outlook for BTCUSDT - The Cryptonomist",
+            "summary_raw": "Bitcoin crypto today Analysis: 24h outlook for BTCUSDT The Cryptonomist",
+            "url": "https://news.google.com/rss/articles/CBMid0FVX3lxTE5oMnZxQVNtWXphT3AyOW1FODJLUE85VFo2bTFaVEdCbHZhNVlSeVlqdW5acDRrdVRhcTlMWTBvWHQtZ0FmWFNoOUxicm1EQV9tZHVaRWR1OXBTSjNvZjlVa3l5Z1hHaERkVVhMQ0FoWmQ3WThSeU1J?oc=5",
+            "category": "other",
+            "sentiment": 0.0,
+            "importance": 30,
+            "credibility": 60,
+            "impact_horizon": "unknown",
+            "dedupe_hash": "36d17614666dc76442c6c7c507e5841bca05d48fa5a1b284b27eaa893fa11b3a"
+          },
+          {
+            "id": "35369810ecc3f407f83cbeff",
+            "source": "KuCoin",
+            "published_at": "2026-02-22T07:32:07+00:00",
+            "symbols": [
+              "BTCUSDT"
+            ],
+            "title": "Futures Trading Rules - KuCoin",
+            "summary_raw": "Futures Trading Rules KuCoin",
+            "url": "https://news.google.com/rss/articles/CBMia0FVX3lxTE5aMm9LMnN5MXpSa2d4bmViUlpSSGY1cW9WVnJVb2c3MUMwTDEtaDJtOEMzZ2ltdzRvZWlJUF9WYnhlbnBMLUxSU2Q0QUw5eGxfNDFnNDhOck1BUEEyRU9PeGlEYWpKc2N5NHNB?oc=5",
+            "category": "other",
+            "sentiment": 0.0,
+            "importance": 30,
+            "credibility": 60,
+            "impact_horizon": "unknown",
+            "dedupe_hash": "d98f07fae9afb9b014bd0ce4c414dd8cd84e06f8e0a6b4e7289a1c8ba748965c"
+          },
+          {
+            "id": "b885751fd5ebabcde133780d",
+            "source": "Binance",
+            "published_at": "2025-11-12T08:00:00+00:00",
+            "symbols": [
+              "BTCUSDT"
+            ],
+            "title": "Bitcoin (BTCUSDT) Completing Corrective Wave C 📊 - Binance",
+            "summary_raw": "Bitcoin (BTCUSDT) Completing Corrective Wave C 📊 Binance",
+            "url": "https://news.google.com/rss/articles/CBMiY0FVX3lxTFBhYUJVQ25Hbjh4N3c2WG00dGhfczlNOFBCSjd1TjBsa2RVVmVwNjhmWXBoemVzNThvYldFOGxFNmJfQmVrQlRBYU40VGk1OC1ieS14N0hLNmdTWXdDeE8zdk52WQ?oc=5",
+            "category": "other",
+            "sentiment": 0.0,
+            "importance": 30,
+            "credibility": 60,
+            "impact_horizon": "unknown",
+            "dedupe_hash": "43737c7f71a9dafd7a4c4020985bb37a4a27aa5fdc3d9f76a46aa8a1f4f2030c"
+          }
+        ],
+        "clusters": [
+          {
+            "cluster_id": "973da4057a3cd5b57a6fe6bd",
+            "symbols": [
+              "BTCUSDT"
+            ],
+            "title": "Crypto Olsson(@Janni_Olsson)'s insights - Binance",
+            "event_ids": [
+              "4cea7a675a73018fca747ad0"
+            ],
+            "sentiment": 0.0,
+            "importance": 30
+          },
+          {
+            "cluster_id": "abfce8fe50aeab7212c11054",
+            "symbols": [
+              "BTCUSDT"
+            ],
+            "title": "Crypto GainGear(@CryptoGainGear)'s insights - Binance",
+            "event_ids": [
+              "c8b0b69e7d91f75ae78302d9"
+            ],
+            "sentiment": 0.0,
+            "importance": 30
+          },
+          {
+            "cluster_id": "611b567140329ecc7cf0e043",
+            "symbols": [
+              "BTCUSDT"
+            ],
+            "title": "Never Trust Crypto Pumps Until You Check These Signals for BINANCE:BTCUSDT by MadWhale - TradingView",
+            "event_ids": [
+              "fce22fc3b4d11e8f93f1898e"
+            ],
+            "sentiment": 0.0,
+            "importance": 30
+          },
+          {
+            "cluster_id": "2fd6b6f60cba312e0bfafc1f",
+            "symbols": [
+              "BTCUSDT"
+            ],
+            "title": "BINANCE:BTCUSDT Chart Image by Crypto-Check- - TradingView",
+            "event_ids": [
+              "97b71f115524a5fa40de0103"
+            ],
+            "sentiment": 0.0,
+            "importance": 30
+          },
+          {
+            "cluster_id": "f359cf7d388bf6dc9f41de57",
+            "symbols": [
+              "BTCUSDT"
+            ],
+            "title": "Will Bitcoin price recover in July? - TradingView",
+            "event_ids": [
+              "aff362cf133b48a2b2c1b6fe"
+            ],
+            "sentiment": 0.0,
+            "importance": 30
+          },
+          {
+            "cluster_id": "af4e8afd6409753f3bd0a944",
+            "symbols": [
+              "BTCUSDT"
+            ],
+            "title": "Bitcoin: Bulls, Bears, and Pigs for BITUNIX:BTCUSDT.P by EXCAVO - TradingView",
+            "event_ids": [
+              "0574b7e7b8d3db842f923937"
+            ],
+            "sentiment": 0.0,
+            "importance": 30
+          },
+          {
+            "cluster_id": "ba4f28ab837435c9ddc7d2e6",
+            "symbols": [
+              "BTCUSDT"
+            ],
+            "title": "Crypto Bitcoin / Tether BTC/USDT Chart 5 Minutes - Finviz",
+            "event_ids": [
+              "a4c1dd77124adbf65db18b12"
+            ],
+            "sentiment": 0.0,
+            "importance": 30
+          },
+          {
+            "cluster_id": "d8270bf946640376de4a15d8",
+            "symbols": [
+              "BTCUSDT"
+            ],
+            "title": "Bitcoin crypto today Analysis: 24h outlook for BTCUSDT - The Cryptonomist",
+            "event_ids": [
+              "30676c7f74d241093152b937"
+            ],
+            "sentiment": 0.0,
+            "importance": 30
+          },
+          {
+            "cluster_id": "b62544b635c6fe15b621fc73",
+            "symbols": [
+              "BTCUSDT"
+            ],
+            "title": "Futures Trading Rules - KuCoin",
+            "event_ids": [
+              "35369810ecc3f407f83cbeff"
+            ],
+            "sentiment": 0.0,
+            "importance": 30
+          },
+          {
+            "cluster_id": "bccfc671feaa1d6bf88a6346",
+            "symbols": [
+              "BTCUSDT"
+            ],
+            "title": "Bitcoin (BTCUSDT) Completing Corrective Wave C 📊 - Binance",
+            "event_ids": [
+              "b885751fd5ebabcde133780d"
+            ],
+            "sentiment": 0.0,
+            "importance": 30
+          }
+        ]
+      },
+      "model": {
+        "model_id": "qwen3.5:4b",
+        "model_version": "qwen3.5:4b",
+        "prompt_version": "phase2-json-v6",
+        "input_hash": "504a932804a92701d6850665903a6cd24763bc6e3f47b894e72a6ce1ea4f5497",
+        "latency_ms": 5058.051,
+        "raw_response": "{\"action\":\"SHORT\",\"confidence_raw\":85.0,\"entry_preference\":\"pullback\",\"entry_zone\":{\"low\":62700.0,\"high\":63100.0},\"stop\":63400.0,\"tp1\":61800.0,\"tp2\":61200.0,\"signal_validity_minutes\":120,\"holding_horizon_minutes\":1440,\"re_evaluate_minutes\":60,\"invalidation\":[\"break above 63640.0\",\"trend_score exceeds -0.05\"],\"thesis\":[\"bear_trend confirmed with trend_score below -0.10 threshold\",\"price near support zone suggesting pullback entry opportunity\",\"macd negative divergence supports downward momentum\"],\"risk_factors\":[\"news sentiment neutral with no clear directional bias\",\"volatility ratio moderate at 0.3855\",\"potential false breakout above resistance\"]}",
+        "parse_status": "valid",
+        "error_code": null,
+        "input_tokens_est": 2491,
+        "output_chars": 656
+      },
+      "signal": {
+        "prediction_id": "llm-20260814170000000000",
+        "instrument": {
+          "symbol": "BTCUSDT",
+          "asset_type": "crypto",
+          "exchange": "PUBLIC",
+          "currency": "USDT",
+          "timezone": "UTC",
+          "trading_hours": "24x7",
+          "sector": "Crypto"
+        },
+        "analysis_timeframe": "1h",
+        "generated_at": "2026-08-14T17:00:00+00:00",
+        "action": "SHORT",
+        "entry_low": 62700.0,
+        "entry_high": 63100.0,
+        "stop": 63400.0,
+        "tp1": 61800.0,
+        "tp2": 61200.0,
+        "signal_validity_minutes": 120,
+        "signal_valid_until": "2026-08-14T19:00:00+00:00",
+        "expected_hold_minutes": 1440,
+        "expected_hold_until": "2026-08-15T17:00:00+00:00",
+        "max_hold_minutes": 4320,
+        "max_hold_until": "2026-08-17T17:00:00+00:00",
+        "reevaluate_at": "2026-08-14T18:00:00+00:00",
+        "invalidation": [
+          "break above 63640.0",
+          "trend_score exceeds -0.05"
+        ],
+        "raw_confidence": 0.85,
+        "reason_codes": [
+          "structured_model_output",
+          "regime:bear_trend"
+        ],
+        "summary": "SHORT: bear_trend confirmed with trend_score below -0.10 threshold price near support zone suggesting pullback entry opportunity Risks: news sentiment neutral with no clear directional bias; volatility ratio moderate at 0.3855.",
+        "model_id": "qwen3.5:4b",
+        "model_version": "qwen3.5:4b",
+        "prompt_version": "phase2-json-v6",
+        "input_hash": "504a932804a92701d6850665903a6cd24763bc6e3f47b894e72a6ce1ea4f5497",
+        "data_as_of": "2026-08-14T17:00:00+00:00",
+        "context_json": "{\"analysis_time\":{\"timeframe\":\"1h\",\"timestamp\":\"2026-08-14T17:00:00+00:00\"},\"history\":{},\"instrument\":{\"asset_type\":\"crypto\",\"exchange\":\"PUBLIC\",\"quote_currency\":\"USDT\",\"symbol\":\"BTCUSDT\",\"trading_hours\":\"24x7\"},\"market_context\":{\"news_available\":true,\"news_provider\":\"google_news_rss\"},\"news\":[{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"d6081700772a574ea4a43f6d56aa5dac783626d01a6cff54b7f7241a859b6ee1\",\"id\":\"4cea7a675a73018fca747ad0\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-13T15:22:01+00:00\",\"sentiment\":0.0,\"source\":\"Binance\",\"summary_raw\":\"Crypto Olsson(@Janni_Olsson)'s insights Binance\",\"symbols\":[\"BTCUSDT\"],\"title\":\"Crypto Olsson(@Janni_Olsson)'s insights - Binance\",\"url\":\"https://news.google.com/rss/articles/CBMiaEFVX3lxTFBJY0EySnJYSVU1eHF2c3pDQ0duVDFHcFJpOG1jVXhQLXh0cFloVzRVUUNxRGR4TkExQ19sTjQzTDJERFQ3djlTSEk1WDRGOExIRE85WlZXXzYzTWdlRE5ScUZiLVFaQ2Fs?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"f99f0582cfd0fd2165d94260cb289e12aeb5fd429ae82ffcd6ca9e1ca1a4fc3e\",\"id\":\"c8b0b69e7d91f75ae78302d9\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-12T16:03:07+00:00\",\"sentiment\":0.0,\"source\":\"Binance\",\"summary_raw\":\"Crypto GainGear(@CryptoGainGear)'s insights Binance\",\"symbols\":[\"BTCUSDT\"],\"title\":\"Crypto GainGear(@CryptoGainGear)'s insights - Binance\",\"url\":\"https://news.google.com/rss/articles/CBMiZEFVX3lxTFBHYVRyeF9McVFFZUQtVDVKM1k3N2d1bll2aUFfYVZpNWNSa1hhSHg3QmZWQ005bmZueFZhaVBkZkRSZ3k5Tkg2b1g3U3dKZng3TkJfX3pLMVR2V05Da0xicXk0TEM?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"0e1d7602d77de3738e1e4393c3ae19273fa6cf0059083b1b749d8fd8ad6eabbb\",\"id\":\"fce22fc3b4d11e8f93f1898e\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-11T08:48:18+00:00\",\"sentiment\":0.0,\"source\":\"TradingView\",\"summary_raw\":\"Never Trust Crypto Pumps Until You Check These Signals for BINANCE:BTCUSDT by MadWhale TradingView\",\"symbols\":[\"BTCUSDT\"],\"title\":\"Never Trust Crypto Pumps Until You Check These Signals for BINANCE:BTCUSDT by MadWhale - TradingView\",\"url\":\"https://news.google.com/rss/articles/CBMiqgFBVV95cUxNd3lyNUZySXk4WGdvc1NVVnV5aHhlOGhKLW81aXo1MDFWRVhQZnJIRXA0U0JQOGY1d1FCNHJMZHZkNURCdGNFOTRyZTNubmhMUXFDcjhWSjZvaGdpa0FnZ2UtM0JKckZveFRZdE1EVmEzWnNBRkN6UDFBeWZwVXNucnNCMHFwYmJNTzRRRWE3R1ZXSnM1dWIyZzM0ZGo3aDdGX3FUMWVFaUhJQQ?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"108efcb631cb265cf40f5878fc6492d7a3024640b56b86b7c15772cd90233053\",\"id\":\"97b71f115524a5fa40de0103\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-10T10:11:32+00:00\",\"sentiment\":0.0,\"source\":\"TradingView\",\"summary_raw\":\"BINANCE:BTCUSDT Chart Image by Crypto-Check- TradingView\",\"symbols\":[\"BTCUSDT\"],\"title\":\"BINANCE:BTCUSDT Chart Image by Crypto-Check- - TradingView\",\"url\":\"https://news.google.com/rss/articles/CBMiUEFVX3lxTE9ucl9zMXB1SDktMWYwUEFwU0NyekNXZC16YUhsTHNNMllkUjAteENvMFEtWWJJSi1nU21qSDFfdmNuZUFWUW52VkVicjZqT0hI?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"af4a98426c0245b8fa69e2198d9c53e80bc94029205dc368a3404bc1460def90\",\"id\":\"aff362cf133b48a2b2c1b6fe\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-06-28T07:00:00+00:00\",\"sentiment\":0.0,\"source\":\"TradingView\",\"summary_raw\":\"Will Bitcoin price recover in July? TradingView\",\"symbols\":[\"BTCUSDT\"],\"title\":\"Will Bitcoin price recover in July? - TradingView\",\"url\":\"https://news.google.com/rss/articles/CBMinwFBVV95cUxNcllXMXRaYl9vNGo0a1Z6QUVhdVljc1UwRVZwT3JzNzlKckphU2lFUnA2N2p1eGtoVzZSVTBkMFNSN3VHU0IxQ09KR2tQWWJRaU55T2NHdEJNUGFyYXZ0Q0c4VUhEaHc1VVp0b1JOc3BKRW5CWmdhSlI2NTJoQVBmTXJkaTRud2JpbXFBSWtzTzRtMXRBbjVmZFNpNW52Z1k?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"b789b431ba44e44efe940c5ab0e2f23a26801cb5a03e9479411c002a1405829f\",\"id\":\"0574b7e7b8d3db842f923937\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-06-04T07:00:00+00:00\",\"sentiment\":0.0,\"source\":\"TradingView\",\"summary_raw\":\"Bitcoin: Bulls, Bears, and Pigs for BITUNIX:BTCUSDT.P by EXCAVO TradingView\",\"symbols\":[\"BTCUSDT\"],\"title\":\"Bitcoin: Bulls, Bears, and Pigs for BITUNIX:BTCUSDT.P by EXCAVO - TradingView\",\"url\":\"https://news.google.com/rss/articles/CBMiigFBVV95cUxPQW9GTXp5UkcyaTEzcjR3UUJWYm5QQnYzYmhXdFdFbEU1S2RFay1MclN3X2ozelpFQ1N5Z0xqajduZjJfVWNCaUJ4VnQtU01Cejh6WDZ2dm5uYi13QVB6MHJXYUxKOHNkUFVUekNrMUZZRTJOXzdSdWVfVVZyVEZPNzQ3dnJ4alYzUmc?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"ed7bf5d1f0ff5aaad8b29e009f080e0541218b1a3d96a15a16436e60c9d16570\",\"id\":\"a4c1dd77124adbf65db18b12\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-04-30T03:31:28+00:00\",\"sentiment\":0.0,\"source\":\"Finviz\",\"summary_raw\":\"Crypto Bitcoin / Tether BTC/USDT Chart 5 Minutes Finviz\",\"symbols\":[\"BTCUSDT\"],\"title\":\"Crypto Bitcoin / Tether BTC/USDT Chart 5 Minutes - Finviz\",\"url\":\"https://news.google.com/rss/articles/CBMiZEFVX3lxTE9PMTNZWl9HSm5vclVRejU3bjRWRlhkMTRRTWYtZDZsblpzR0dpM2xJUGRST044LVRXZVRuek5FS29weHdWZVlZMDVDSk9aR2lVVkRyNWh5OXhDNW96eU9pOUx4SWw?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"36d17614666dc76442c6c7c507e5841bca05d48fa5a1b284b27eaa893fa11b3a\",\"id\":\"30676c7f74d241093152b937\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-04-01T07:00:00+00:00\",\"sentiment\":0.0,\"source\":\"The Cryptonomist\",\"summary_raw\":\"Bitcoin crypto today Analysis: 24h outlook for BTCUSDT The Cryptonomist\",\"symbols\":[\"BTCUSDT\"],\"title\":\"Bitcoin crypto today Analysis: 24h outlook for BTCUSDT - The Cryptonomist\",\"url\":\"https://news.google.com/rss/articles/CBMid0FVX3lxTE5oMnZxQVNtWXphT3AyOW1FODJLUE85VFo2bTFaVEdCbHZhNVlSeVlqdW5acDRrdVRhcTlMWTBvWHQtZ0FmWFNoOUxicm1EQV9tZHVaRWR1OXBTSjNvZjlVa3l5Z1hHaERkVVhMQ0FoWmQ3WThSeU1J?oc=5\"}],\"price\":{\"change_pct\":-0.1897408474869411,\"high\":63247.05,\"last\":63013.69,\"low\":63000.0},\"provider_snapshot\":{\"data_as_of\":\"2026-08-14T17:00:00+00:00\",\"error_code\":null,\"fetched_at\":\"2026-08-14T18:03:26.193565+00:00\",\"provider\":\"provider_chain\",\"stale\":false},\"quant\":{\"atr14\":242.90000000000094,\"ema20\":63062.80512209437,\"ema50\":63346.861987853765,\"macd\":-158.99384302739054,\"macd_signal\":-177.4724596650615,\"market_regime\":\"bear_trend\",\"momentum_score\":0.014766186941739257,\"price\":63013.69,\"resistance\":63640.0,\"rsi14\":45.898294635641456,\"support\":62535.24,\"symbol\":\"BTCUSDT\",\"timeframe\":\"1h\",\"timestamp\":\"2026-08-14T17:00:00+00:00\",\"trend_score\":-0.11210376364572949,\"volume_ratio\":1.4383744722052236},\"risk_events\":[],\"time_policy\":{\"allowed_values\":{\"holding_horizon_minutes\":[1440,2160,2880,4320],\"reevaluate_minutes\":[60,90,120,180,198,396],\"signal_validity_minutes\":[120,180,240,360,396]},\"event_risk\":false,\"holding_horizon_minutes\":[1440,4320],\"market_regime\":\"bear_trend\",\"reason_codes\":[\"timeframe_baseline\",\"trend_regime_allowed_extension\"],\"reevaluate_minutes\":[60,396],\"signal_validity_minutes\":[120,396],\"timeframe\":\"1h\",\"volatility_ratio\":0.3855}}",
+        "raw_model_response": "{\"action\":\"SHORT\",\"confidence_raw\":85.0,\"entry_preference\":\"pullback\",\"entry_zone\":{\"low\":62700.0,\"high\":63100.0},\"stop\":63400.0,\"tp1\":61800.0,\"tp2\":61200.0,\"signal_validity_minutes\":120,\"holding_horizon_minutes\":1440,\"re_evaluate_minutes\":60,\"invalidation\":[\"break above 63640.0\",\"trend_score exceeds -0.05\"],\"thesis\":[\"bear_trend confirmed with trend_score below -0.10 threshold\",\"price near support zone suggesting pullback entry opportunity\",\"macd negative divergence supports downward momentum\"],\"risk_factors\":[\"news sentiment neutral with no clear directional bias\",\"volatility ratio moderate at 0.3855\",\"potential false breakout above resistance\"]}",
+        "parse_status": "valid",
+        "latency_ms": 5058.051
+      },
+      "paper_trade_followed": true,
+      "outcome": {
+        "prediction_id": "llm-20260814170000000000",
+        "status": "TIMEOUT",
+        "settled_at": "2026-08-14T18:00:00+00:00",
+        "exit_price": 63032.01,
+        "realized_r": -0.2640200000000041,
+        "mfe_r": 0.0,
+        "mae_r": -0.28,
+        "bars_held": 1,
+        "timeout": true
+      }
+    }
+  ],
+  "failures": [],
+  "counts": {
+    "instruments": 2,
+    "market_snapshots": 2,
+    "predictions": 2,
+    "paper_trades": 1,
+    "outcomes": 1,
+    "news_events": 20,
+    "provider_snapshots": 2,
+    "model_runs": 2
+  }
+}

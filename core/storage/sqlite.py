@@ -1,0 +1,818 @@
+"""Small durable SQLite store for Prediction/PaperTrade/Outcome separation."""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Iterator
+
+from ..instruments import Instrument
+from ..news_engine import NewsFetchResult
+from ..outcomes.engine import Outcome
+from ..providers.news import NewsEvent
+from ..providers.runtime import ProviderSnapshot
+from ..signals.schema import SignalProposal
+
+
+class SQLiteStore:
+    def __init__(self, path: str | Path = "data/market_analyst.sqlite3") -> None:
+        self.path = Path(path)
+        self._memory_connection: sqlite3.Connection | None = None
+
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        if str(self.path) == ":memory:":
+            if self._memory_connection is None:
+                self._memory_connection = sqlite3.connect(":memory:")
+                self._memory_connection.row_factory = sqlite3.Row
+            try:
+                yield self._memory_connection
+                self._memory_connection.commit()
+            finally:
+                pass
+            return
+        if str(self.path) != ":memory:":
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(str(self.path))
+        connection.row_factory = sqlite3.Row
+        try:
+            yield connection
+            connection.commit()
+        finally:
+            connection.close()
+
+    def initialize(self) -> None:
+        with self._connect() as db:
+            db.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS schema_migrations (
+                    version INTEGER PRIMARY KEY,
+                    applied_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS instruments (
+                    symbol TEXT PRIMARY KEY,
+                    payload_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS market_snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    symbol TEXT NOT NULL,
+                    timeframe TEXT NOT NULL,
+                    captured_at TEXT NOT NULL,
+                    payload_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS predictions (
+                    prediction_id TEXT PRIMARY KEY,
+                    symbol TEXT NOT NULL,
+                    generated_at TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    model_id TEXT,
+                    model_version TEXT,
+                    prompt_version TEXT,
+                    input_hash TEXT,
+                    data_as_of TEXT,
+                    context_json TEXT,
+                    raw_model_response TEXT,
+                    parse_status TEXT
+                );
+                CREATE TABLE IF NOT EXISTS paper_trades (
+                    prediction_id TEXT PRIMARY KEY,
+                    followed_at TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'OPEN',
+                    FOREIGN KEY(prediction_id) REFERENCES predictions(prediction_id)
+                );
+                CREATE TABLE IF NOT EXISTS outcomes (
+                    prediction_id TEXT PRIMARY KEY,
+                    settled_at TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    FOREIGN KEY(prediction_id) REFERENCES predictions(prediction_id)
+                );
+                CREATE TABLE IF NOT EXISTS news_events (
+                    event_id TEXT PRIMARY KEY,
+                    symbol TEXT NOT NULL,
+                    published_at TEXT NOT NULL,
+                    payload_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS provider_snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    symbol TEXT NOT NULL,
+                    provider TEXT NOT NULL,
+                    fetched_at TEXT NOT NULL,
+                    data_as_of TEXT NOT NULL,
+                    stale INTEGER NOT NULL,
+                    error_code TEXT
+                );
+                CREATE TABLE IF NOT EXISTS model_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    prediction_id TEXT,
+                    model_id TEXT NOT NULL,
+                    started_at TEXT NOT NULL,
+                    latency_ms REAL,
+                    input_tokens_est INTEGER,
+                    output_chars INTEGER,
+                    success INTEGER NOT NULL,
+                    error_code TEXT
+                );
+                """
+            )
+            self._ensure_prediction_columns(db)
+            self._ensure_phase3_tables(db)
+            db.execute(
+                "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                (4, datetime.now(timezone.utc).isoformat()),
+            )
+
+    @staticmethod
+    def _ensure_prediction_columns(db: sqlite3.Connection) -> None:
+        columns = {row[1] for row in db.execute("PRAGMA table_info(predictions)").fetchall()}
+        additions = {
+            "model_id": "TEXT",
+            "model_version": "TEXT",
+            "prompt_version": "TEXT",
+            "input_hash": "TEXT",
+            "data_as_of": "TEXT",
+            "context_json": "TEXT",
+            "raw_model_response": "TEXT",
+            "parse_status": "TEXT",
+            "source_type": "TEXT NOT NULL DEFAULT 'live'",
+            "replay_run_id": "TEXT",
+            "calibrated_confidence": "REAL",
+            "calibration_version": "TEXT",
+            "calibration_scope": "TEXT",
+            "calibration_sample_size": "INTEGER",
+            "calibration_fallback": "TEXT",
+        }
+        for name, definition in additions.items():
+            if name not in columns:
+                db.execute(f"ALTER TABLE predictions ADD COLUMN {name} {definition}")
+
+    @staticmethod
+    def _ensure_phase3_tables(db: sqlite3.Connection) -> None:
+        db.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS replay_runs (
+                run_id TEXT PRIMARY KEY,
+                created_at TEXT NOT NULL,
+                model_id TEXT NOT NULL,
+                prompt_version TEXT,
+                symbols_json TEXT NOT NULL,
+                timeframes_json TEXT NOT NULL,
+                sampling_policy_json TEXT NOT NULL,
+                manifest_hash TEXT NOT NULL,
+                status TEXT NOT NULL,
+                counts_json TEXT NOT NULL DEFAULT '{}',
+                config_json TEXT NOT NULL DEFAULT '{}',
+                completed_at TEXT,
+                error_code TEXT
+            );
+            CREATE TABLE IF NOT EXISTS replay_samples (
+                run_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                timeframe TEXT NOT NULL,
+                as_of TEXT NOT NULL,
+                capability_flags_json TEXT NOT NULL DEFAULT '{}',
+                prediction_id TEXT,
+                status TEXT NOT NULL,
+                error_code TEXT,
+                started_at TEXT,
+                completed_at TEXT,
+                PRIMARY KEY (run_id, symbol, timeframe, as_of),
+                FOREIGN KEY(run_id) REFERENCES replay_runs(run_id)
+            );
+            CREATE TABLE IF NOT EXISTS performance_snapshots (
+                snapshot_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                scope_json TEXT NOT NULL,
+                window_start TEXT,
+                window_end TEXT,
+                sample_count INTEGER NOT NULL,
+                actionable_count INTEGER NOT NULL,
+                metrics_json TEXT NOT NULL,
+                model_id TEXT,
+                prompt_version TEXT,
+                source_type TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'PRELIMINARY'
+            );
+            CREATE TABLE IF NOT EXISTS calibration_results (
+                calibration_id TEXT PRIMARY KEY,
+                version TEXT NOT NULL,
+                scope_json TEXT NOT NULL,
+                method TEXT NOT NULL,
+                params_json TEXT NOT NULL,
+                sample_count INTEGER NOT NULL,
+                trained_until TEXT,
+                brier_raw REAL,
+                brier_calibrated REAL,
+                ece_raw REAL,
+                ece_calibrated REAL,
+                status TEXT NOT NULL,
+                fallback TEXT,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS calibration_buckets (
+                calibration_id TEXT NOT NULL,
+                lower_bound REAL NOT NULL,
+                upper_bound REAL NOT NULL,
+                n INTEGER NOT NULL,
+                wins INTEGER NOT NULL,
+                empirical_rate REAL,
+                shrunk_rate REAL,
+                PRIMARY KEY (calibration_id, lower_bound, upper_bound),
+                FOREIGN KEY(calibration_id) REFERENCES calibration_results(calibration_id)
+            );
+            """
+        )
+
+    def save_instrument(self, instrument: Instrument) -> None:
+        payload = {
+            "symbol": instrument.symbol,
+            "asset_type": instrument.asset_type.value,
+            "exchange": instrument.exchange,
+            "currency": instrument.currency,
+            "timezone": instrument.timezone,
+            "trading_hours": instrument.trading_hours.value,
+            "sector": instrument.sector,
+        }
+        with self._connect() as db:
+            db.execute(
+                "INSERT OR REPLACE INTO instruments(symbol, payload_json) VALUES (?, ?)",
+                (instrument.symbol, json.dumps(payload, sort_keys=True)),
+            )
+
+    def save_snapshot(self, symbol: str, timeframe: str, captured_at: str, payload: dict[str, Any]) -> None:
+        with self._connect() as db:
+            db.execute(
+                "INSERT INTO market_snapshots(symbol, timeframe, captured_at, payload_json) VALUES (?, ?, ?, ?)",
+                (symbol, timeframe, captured_at, json.dumps(payload, sort_keys=True)),
+            )
+
+    def save_prediction(self, signal: SignalProposal) -> None:
+        with self._connect() as db:
+            db.execute(
+                """INSERT OR REPLACE INTO predictions(
+                    prediction_id, symbol, generated_at, action, payload_json,
+                    model_id, model_version, prompt_version, input_hash,
+                    data_as_of, context_json, raw_model_response, parse_status,
+                    source_type, replay_run_id, calibrated_confidence,
+                    calibration_version, calibration_scope, calibration_sample_size,
+                    calibration_fallback
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    signal.prediction_id,
+                    signal.instrument.symbol,
+                    signal.generated_at.isoformat(),
+                    signal.action.value,
+                    json.dumps(signal.to_dict(), sort_keys=True),
+                    signal.model_id,
+                    signal.model_version,
+                    signal.prompt_version,
+                    signal.input_hash,
+                    signal.data_as_of.isoformat() if signal.data_as_of else None,
+                    signal.context_json,
+                    signal.raw_model_response,
+                    signal.parse_status,
+                    signal.source_type,
+                    signal.replay_run_id,
+                    signal.calibrated_confidence,
+                    signal.calibration_version,
+                    signal.calibration_scope,
+                    signal.calibration_sample_size,
+                    signal.calibration_fallback,
+                ),
+            )
+
+    def save_news_events(self, symbol: str, result: NewsFetchResult) -> None:
+        with self._connect() as db:
+            for event in result.events:
+                db.execute(
+                    "INSERT OR REPLACE INTO news_events(event_id, symbol, published_at, payload_json) VALUES (?, ?, ?, ?)",
+                    (event.event_id, symbol, event.published_at.isoformat(), json.dumps(event.to_dict(), sort_keys=True)),
+                )
+
+    def save_provider_snapshot(self, symbol: str, snapshot: ProviderSnapshot) -> None:
+        with self._connect() as db:
+            db.execute(
+                "INSERT INTO provider_snapshots(symbol, provider, fetched_at, data_as_of, stale, error_code) VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    symbol,
+                    snapshot.provider,
+                    snapshot.fetched_at.isoformat(),
+                    snapshot.data_as_of.isoformat(),
+                    int(snapshot.stale),
+                    snapshot.error_code,
+                ),
+            )
+
+    def save_model_run(
+        self,
+        *,
+        prediction_id: str | None,
+        model_id: str,
+        started_at: str,
+        latency_ms: float | None,
+        input_tokens_est: int | None,
+        output_chars: int | None,
+        success: bool,
+        error_code: str | None = None,
+    ) -> None:
+        with self._connect() as db:
+            db.execute(
+                """INSERT INTO model_runs(
+                    prediction_id, model_id, started_at, latency_ms,
+                    input_tokens_est, output_chars, success, error_code
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    prediction_id,
+                    model_id,
+                    started_at,
+                    latency_ms,
+                    input_tokens_est,
+                    output_chars,
+                    int(success),
+                    error_code,
+                ),
+            )
+
+    def create_replay_run(
+        self,
+        *,
+        run_id: str,
+        model_id: str,
+        prompt_version: str | None,
+        symbols: list[str],
+        timeframes: list[str],
+        sampling_policy: dict[str, Any],
+        manifest_hash: str,
+        config: dict[str, Any] | None = None,
+        status: str = "RUNNING",
+    ) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as db:
+            db.execute(
+                """INSERT OR REPLACE INTO replay_runs(
+                    run_id, created_at, model_id, prompt_version, symbols_json,
+                    timeframes_json, sampling_policy_json, manifest_hash, status,
+                    counts_json, config_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    run_id,
+                    now,
+                    model_id,
+                    prompt_version,
+                    json.dumps(symbols, sort_keys=True),
+                    json.dumps(timeframes, sort_keys=True),
+                    json.dumps(sampling_policy, sort_keys=True),
+                    manifest_hash,
+                    status,
+                    "{}",
+                    json.dumps(config or {}, sort_keys=True),
+                ),
+            )
+
+    def update_replay_run(
+        self,
+        run_id: str,
+        *,
+        status: str | None = None,
+        counts: dict[str, Any] | None = None,
+        completed_at: str | None = None,
+        error_code: str | None = None,
+    ) -> None:
+        with self._connect() as db:
+            row = db.execute("SELECT * FROM replay_runs WHERE run_id = ?", (run_id,)).fetchone()
+            if row is None:
+                raise KeyError(f"replay run not found: {run_id}")
+            db.execute(
+                """UPDATE replay_runs
+                   SET status = ?, counts_json = ?, completed_at = ?, error_code = ?
+                 WHERE run_id = ?""",
+                (
+                    status or row["status"],
+                    json.dumps(counts, sort_keys=True) if counts is not None else row["counts_json"],
+                    completed_at if completed_at is not None else row["completed_at"],
+                    error_code if error_code is not None else row["error_code"],
+                    run_id,
+                ),
+            )
+
+    def get_replay_run(self, run_id: str) -> dict[str, Any] | None:
+        with self._connect() as db:
+            row = db.execute("SELECT * FROM replay_runs WHERE run_id = ?", (run_id,)).fetchone()
+        if row is None:
+            return None
+        return {
+            "run_id": row["run_id"],
+            "created_at": row["created_at"],
+            "model_id": row["model_id"],
+            "prompt_version": row["prompt_version"],
+            "symbols": json.loads(row["symbols_json"]),
+            "timeframes": json.loads(row["timeframes_json"]),
+            "sampling_policy": json.loads(row["sampling_policy_json"]),
+            "manifest_hash": row["manifest_hash"],
+            "status": row["status"],
+            "counts": json.loads(row["counts_json"] or "{}"),
+            "config": json.loads(row["config_json"] or "{}"),
+            "completed_at": row["completed_at"],
+            "error_code": row["error_code"],
+        }
+
+    def list_replay_runs(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        bounded_limit = max(1, min(int(limit), 500))
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT run_id FROM replay_runs ORDER BY created_at DESC LIMIT ?",
+                (bounded_limit,),
+            ).fetchall()
+        return [self.get_replay_run(row["run_id"]) for row in rows]  # type: ignore[misc]
+
+    def find_resumable_replay_run(self, manifest_hash: str) -> dict[str, Any] | None:
+        with self._connect() as db:
+            row = db.execute(
+                """SELECT run_id FROM replay_runs
+                   WHERE manifest_hash = ? AND status <> 'COMPLETED'
+                   ORDER BY created_at DESC LIMIT 1""",
+                (manifest_hash,),
+            ).fetchone()
+        return self.get_replay_run(row["run_id"]) if row else None
+
+    def save_replay_sample(
+        self,
+        *,
+        run_id: str,
+        symbol: str,
+        timeframe: str,
+        as_of: str,
+        capability_flags: dict[str, Any],
+        prediction_id: str | None,
+        status: str,
+        error_code: str | None = None,
+        started_at: str | None = None,
+        completed_at: str | None = None,
+    ) -> None:
+        with self._connect() as db:
+            db.execute(
+                """INSERT OR REPLACE INTO replay_samples(
+                    run_id, symbol, timeframe, as_of, capability_flags_json,
+                    prediction_id, status, error_code, started_at, completed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    run_id,
+                    symbol,
+                    timeframe,
+                    as_of,
+                    json.dumps(capability_flags, sort_keys=True),
+                    prediction_id,
+                    status,
+                    error_code,
+                    started_at,
+                    completed_at,
+                ),
+            )
+
+    def get_replay_sample(self, run_id: str, symbol: str, timeframe: str, as_of: str) -> dict[str, Any] | None:
+        with self._connect() as db:
+            row = db.execute(
+                """SELECT * FROM replay_samples
+                   WHERE run_id = ? AND symbol = ? AND timeframe = ? AND as_of = ?""",
+                (run_id, symbol, timeframe, as_of),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "run_id": row["run_id"],
+            "symbol": row["symbol"],
+            "timeframe": row["timeframe"],
+            "as_of": row["as_of"],
+            "capability_flags": json.loads(row["capability_flags_json"] or "{}"),
+            "prediction_id": row["prediction_id"],
+            "status": row["status"],
+            "error_code": row["error_code"],
+            "started_at": row["started_at"],
+            "completed_at": row["completed_at"],
+        }
+
+    def list_replay_samples(self, run_id: str) -> list[dict[str, Any]]:
+        with self._connect() as db:
+            rows = db.execute(
+                """SELECT * FROM replay_samples
+                   WHERE run_id = ? ORDER BY as_of, symbol, timeframe""",
+                (run_id,),
+            ).fetchall()
+        return [self.get_replay_sample(run_id, row["symbol"], row["timeframe"], row["as_of"]) for row in rows]  # type: ignore[misc]
+
+    def save_performance_snapshot(self, payload: dict[str, Any]) -> int:
+        scope = payload.get("scope") or {}
+        metrics = payload.get("metrics") or payload
+        with self._connect() as db:
+            cursor = db.execute(
+                """INSERT INTO performance_snapshots(
+                    scope_json, window_start, window_end, sample_count,
+                    actionable_count, metrics_json, model_id, prompt_version,
+                    source_type, created_at, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    json.dumps(scope, sort_keys=True),
+                    payload.get("window_start"),
+                    payload.get("window_end"),
+                    int(payload.get("sample_count", metrics.get("sample_count", 0))),
+                    int(payload.get("actionable_count", metrics.get("actionable_count", 0))),
+                    json.dumps(metrics, sort_keys=True),
+                    payload.get("model_id") or scope.get("model_id"),
+                    payload.get("prompt_version") or scope.get("prompt_version"),
+                    payload.get("source_type") or scope.get("source_type") or "live",
+                    payload.get("created_at") or datetime.now(timezone.utc).isoformat(),
+                    payload.get("status", metrics.get("status", "PRELIMINARY")),
+                ),
+            )
+            return int(cursor.lastrowid)
+
+    def list_performance_snapshots(self, *, source_type: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        bounded_limit = max(1, min(int(limit), 500))
+        query = "SELECT * FROM performance_snapshots"
+        params: list[Any] = []
+        if source_type:
+            query += " WHERE source_type = ?"
+            params.append(source_type)
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(bounded_limit)
+        with self._connect() as db:
+            rows = db.execute(query, tuple(params)).fetchall()
+        return [
+            {
+                "snapshot_id": row["snapshot_id"],
+                "scope": json.loads(row["scope_json"]),
+                "window_start": row["window_start"],
+                "window_end": row["window_end"],
+                "sample_count": row["sample_count"],
+                "actionable_count": row["actionable_count"],
+                "metrics": json.loads(row["metrics_json"]),
+                "model_id": row["model_id"],
+                "prompt_version": row["prompt_version"],
+                "source_type": row["source_type"],
+                "created_at": row["created_at"],
+                "status": row["status"],
+            }
+            for row in rows
+        ]
+
+    def save_calibration_result(self, payload: dict[str, Any]) -> None:
+        buckets = payload.get("buckets") or []
+        with self._connect() as db:
+            db.execute(
+                """INSERT OR REPLACE INTO calibration_results(
+                    calibration_id, version, scope_json, method, params_json,
+                    sample_count, trained_until, brier_raw, brier_calibrated,
+                    ece_raw, ece_calibrated, status, fallback, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    payload["calibration_id"],
+                    payload["version"],
+                    json.dumps(payload.get("scope") or {}, sort_keys=True),
+                    payload.get("method", "empirical_beta_shrinkage"),
+                    json.dumps(payload.get("params") or {}, sort_keys=True),
+                    int(payload.get("sample_count", 0)),
+                    payload.get("trained_until"),
+                    payload.get("brier_raw"),
+                    payload.get("brier_calibrated"),
+                    payload.get("ece_raw"),
+                    payload.get("ece_calibrated"),
+                    payload.get("status", "INSUFFICIENT_SAMPLE"),
+                    payload.get("fallback"),
+                    payload.get("created_at") or datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            db.execute("DELETE FROM calibration_buckets WHERE calibration_id = ?", (payload["calibration_id"],))
+            for bucket in buckets:
+                db.execute(
+                    """INSERT INTO calibration_buckets(
+                        calibration_id, lower_bound, upper_bound, n, wins,
+                        empirical_rate, shrunk_rate
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        payload["calibration_id"],
+                        float(bucket["lower"]),
+                        float(bucket["upper"]),
+                        int(bucket.get("n", 0)),
+                        int(bucket.get("wins", 0)),
+                        bucket.get("empirical_rate"),
+                        bucket.get("shrunk_rate"),
+                    ),
+                )
+
+    def list_calibration_results(self, *, limit: int = 20) -> list[dict[str, Any]]:
+        bounded_limit = max(1, min(int(limit), 100))
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT * FROM calibration_results ORDER BY created_at DESC LIMIT ?",
+                (bounded_limit,),
+            ).fetchall()
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            buckets = db_buckets = []
+            with self._connect() as db:
+                db_buckets = db.execute(
+                    "SELECT lower_bound, upper_bound, n, wins, empirical_rate, shrunk_rate FROM calibration_buckets WHERE calibration_id = ? ORDER BY lower_bound",
+                    (row["calibration_id"],),
+                ).fetchall()
+            buckets = [
+                {
+                    "lower": item["lower_bound"],
+                    "upper": item["upper_bound"],
+                    "n": item["n"],
+                    "wins": item["wins"],
+                    "empirical_rate": item["empirical_rate"],
+                    "shrunk_rate": item["shrunk_rate"],
+                }
+                for item in db_buckets
+            ]
+            results.append(
+                {
+                    "calibration_id": row["calibration_id"],
+                    "version": row["version"],
+                    "scope": json.loads(row["scope_json"]),
+                    "method": row["method"],
+                    "params": json.loads(row["params_json"]),
+                    "sample_count": row["sample_count"],
+                    "trained_until": row["trained_until"],
+                    "brier_raw": row["brier_raw"],
+                    "brier_calibrated": row["brier_calibrated"],
+                    "ece_raw": row["ece_raw"],
+                    "ece_calibrated": row["ece_calibrated"],
+                    "status": row["status"],
+                    "fallback": row["fallback"],
+                    "created_at": row["created_at"],
+                    "buckets": buckets,
+                }
+            )
+        return results
+
+    def update_prediction_calibration(self, prediction_id: str, calibration: dict[str, Any]) -> None:
+        with self._connect() as db:
+            row = db.execute("SELECT payload_json FROM predictions WHERE prediction_id = ?", (prediction_id,)).fetchone()
+            if row is None:
+                raise KeyError(f"prediction not found: {prediction_id}")
+            payload = json.loads(row["payload_json"])
+            for key in (
+                "calibrated_confidence",
+                "calibration_version",
+                "calibration_scope",
+                "calibration_sample_size",
+                "calibration_fallback",
+            ):
+                payload[key] = calibration.get(key)
+            db.execute(
+                """UPDATE predictions SET payload_json = ?, calibrated_confidence = ?,
+                    calibration_version = ?, calibration_scope = ?, calibration_sample_size = ?,
+                    calibration_fallback = ? WHERE prediction_id = ?""",
+                (
+                    json.dumps(payload, sort_keys=True),
+                    calibration.get("calibrated_confidence"),
+                    calibration.get("calibration_version"),
+                    calibration.get("calibration_scope"),
+                    calibration.get("calibration_sample_size"),
+                    calibration.get("calibration_fallback"),
+                    prediction_id,
+                ),
+            )
+
+    def list_prediction_records(
+        self,
+        *,
+        source_type: str | None = None,
+        replay_run_id: str | None = None,
+        symbol: str | None = None,
+        timeframe: str | None = None,
+        model_id: str | None = None,
+        prompt_version: str | None = None,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if source_type:
+            clauses.append("COALESCE(p.source_type, 'live') = ?")
+            params.append(source_type)
+        if replay_run_id:
+            clauses.append("p.replay_run_id = ?")
+            params.append(replay_run_id)
+        if symbol:
+            clauses.append("p.symbol = ?")
+            params.append(symbol.upper())
+        if timeframe:
+            clauses.append("json_extract(p.payload_json, '$.analysis_timeframe') = ?")
+            params.append(timeframe)
+        if model_id:
+            clauses.append("p.model_id = ?")
+            params.append(model_id)
+        if prompt_version:
+            clauses.append("p.prompt_version = ?")
+            params.append(prompt_version)
+        query = """SELECT p.payload_json AS prediction_json, o.payload_json AS outcome_json,
+                    o.status AS outcome_status
+                 FROM predictions p LEFT JOIN outcomes o ON o.prediction_id = p.prediction_id"""
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY p.generated_at ASC"
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(max(1, min(int(limit), 100000)))
+        with self._connect() as db:
+            rows = db.execute(query, tuple(params)).fetchall()
+        return [
+            {
+                "prediction": json.loads(row["prediction_json"]),
+                "outcome": json.loads(row["outcome_json"]) if row["outcome_json"] else None,
+                "outcome_status": row["outcome_status"],
+            }
+            for row in rows
+        ]
+
+    def list_replay_model_latencies(self, replay_run_id: str) -> list[float]:
+        """Return successful model latencies for every prediction in one replay run."""
+
+        with self._connect() as db:
+            rows = db.execute(
+                """SELECT mr.latency_ms
+                   FROM model_runs mr
+                   JOIN predictions p ON p.prediction_id = mr.prediction_id
+                  WHERE p.replay_run_id = ? AND mr.latency_ms IS NOT NULL
+                  ORDER BY p.generated_at ASC, mr.id ASC""",
+                (replay_run_id,),
+            ).fetchall()
+        return [float(row["latency_ms"]) for row in rows]
+
+    def follow_prediction(self, prediction_id: str, followed_at: str, status: str = "OPEN") -> None:
+        with self._connect() as db:
+            exists = db.execute("SELECT 1 FROM predictions WHERE prediction_id = ?", (prediction_id,)).fetchone()
+            if exists is None:
+                raise KeyError(f"prediction not found: {prediction_id}")
+            db.execute(
+                "INSERT OR REPLACE INTO paper_trades(prediction_id, followed_at, status) VALUES (?, ?, ?)",
+                (prediction_id, followed_at, status),
+            )
+
+    def save_outcome(self, outcome: Outcome) -> None:
+        with self._connect() as db:
+            exists = db.execute("SELECT 1 FROM predictions WHERE prediction_id = ?", (outcome.prediction_id,)).fetchone()
+            if exists is None:
+                raise KeyError(f"prediction not found: {outcome.prediction_id}")
+            db.execute(
+                "INSERT OR REPLACE INTO outcomes(prediction_id, settled_at, status, payload_json) VALUES (?, ?, ?, ?)",
+                (outcome.prediction_id, outcome.settled_at.isoformat(), outcome.status.value, json.dumps(outcome.to_dict(), sort_keys=True)),
+            )
+
+    def counts(self) -> dict[str, int]:
+        with self._connect() as db:
+            return {
+                table: int(db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+                for table in (
+                    "instruments",
+                    "market_snapshots",
+                    "predictions",
+                    "paper_trades",
+                    "outcomes",
+                    "news_events",
+                "provider_snapshots",
+                "model_runs",
+                "replay_runs",
+                "replay_samples",
+                "performance_snapshots",
+                "calibration_results",
+                "calibration_buckets",
+            )
+        }
+
+    def schema_version(self) -> int:
+        with self._connect() as db:
+            row = db.execute("SELECT MAX(version) FROM schema_migrations").fetchone()
+        return int(row[0] or 0)
+
+    def backup_to(self, destination: str | Path) -> None:
+        """Create a consistent SQLite backup before applying or testing migrations."""
+
+        destination_path = Path(destination)
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as source:
+            target = sqlite3.connect(str(destination_path))
+            try:
+                source.backup(target)
+                target.commit()
+            finally:
+                target.close()
+
+    def load_prediction_payload(self, prediction_id: str) -> dict[str, Any] | None:
+        with self._connect() as db:
+            row = db.execute("SELECT payload_json FROM predictions WHERE prediction_id = ?", (prediction_id,)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def list_prediction_payloads(self, limit: int = 50) -> list[dict[str, Any]]:
+        bounded_limit = max(1, min(int(limit), 500))
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT payload_json FROM predictions ORDER BY generated_at DESC LIMIT ?",
+                (bounded_limit,),
+            ).fetchall()
+        return [json.loads(row[0]) for row in rows]

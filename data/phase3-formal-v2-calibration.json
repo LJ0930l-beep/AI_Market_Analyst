@@ -1,0 +1,66 @@
+{
+  "calibration_id": "739a53eb90155f876e512900",
+  "version": "cal-v1-qwen3.5-4b",
+  "scope": {
+    "source_type": "replay",
+    "model_id": "qwen3.5:4b",
+    "prompt_version": "phase2-json-v8"
+  },
+  "method": "empirical_beta_shrinkage",
+  "params": {
+    "alpha": 5.0,
+    "beta": 5.0,
+    "min_sample": 100
+  },
+  "sample_count": 191,
+  "trained_until": null,
+  "brier_raw": 0.29783499507853406,
+  "brier_calibrated": 0.24788204802899663,
+  "ece_raw": 0.24237591623036647,
+  "ece_calibrated": 0.03332176067334475,
+  "status": "ACTIVE",
+  "fallback": null,
+  "buckets": [
+    {
+      "lower": 0.5,
+      "upper": 0.6,
+      "n": 61,
+      "wins": 27,
+      "empirical_rate": 0.4426229508196721,
+      "shrunk_rate": 0.4507042253521127
+    },
+    {
+      "lower": 0.6,
+      "upper": 0.7,
+      "n": 104,
+      "wins": 32,
+      "empirical_rate": 0.3076923076923077,
+      "shrunk_rate": 0.32456140350877194
+    },
+    {
+      "lower": 0.7,
+      "upper": 0.8,
+      "n": 0,
+      "wins": 0,
+      "empirical_rate": null,
+      "shrunk_rate": 0.5
+    },
+    {
+      "lower": 0.8,
+      "upper": 0.9,
+      "n": 0,
+      "wins": 0,
+      "empirical_rate": null,
+      "shrunk_rate": 0.5
+    },
+    {
+      "lower": 0.9,
+      "upper": 1.0,
+      "n": 0,
+      "wins": 0,
+      "empirical_rate": null,
+      "shrunk_rate": 0.5
+    }
+  ],
+  "updated_predictions": 255
+}

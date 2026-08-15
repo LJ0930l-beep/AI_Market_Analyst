@@ -1,0 +1,447 @@
+{
+  "phase": 3,
+  "run_id": "replay-20260815042457-71ec330d",
+  "status": "COMPLETED_WITH_ERRORS",
+  "manifest_hash": "517ae96c02f19e3e58720d793b927a06cf771154f14ef23a956806d0962759a5",
+  "manifest_path": "data\\phase3-real-qwen-formal-v2.manifest.json",
+  "db_path": "data\\phase3-real-qwen-formal-v2.sqlite3",
+  "model_id": "qwen3.5:4b",
+  "prompt_version": "phase2-json-v8",
+  "source_type": "replay",
+  "context_capabilities": {
+    "news_history_available": false,
+    "technical_only": true
+  },
+  "counts": {
+    "actionable": 191,
+    "completed": 255,
+    "errors": 45,
+    "outcomes": 191,
+    "planned": 300,
+    "resolved_actionable": 191,
+    "sample_rows": 300,
+    "wait": 64
+  },
+  "elapsed_ms": 1257562.154,
+  "model_latency_ms": {
+    "count": 255,
+    "mean": 4269.329501960784,
+    "median": 4343.49,
+    "p95": 6404.909
+  },
+  "performance": {
+    "scope": {
+      "source_type": "replay",
+      "model_id": "qwen3.5:4b",
+      "prompt_version": "phase2-json-v8"
+    },
+    "window_start": null,
+    "window_end": null,
+    "sample_count": 255,
+    "actionable_count": 191,
+    "model_id": "qwen3.5:4b",
+    "prompt_version": "phase2-json-v8",
+    "source_type": "replay",
+    "status": "PRELIMINARY",
+    "metrics": {
+      "status": "PRELIMINARY",
+      "sample_count": 255,
+      "actionable_count": 191,
+      "resolved_actionable": 191,
+      "pending_actionable": 0,
+      "wait_count": 64,
+      "invalid_count": 45,
+      "wins": 70,
+      "losses": 121,
+      "flats": 0,
+      "win_rate": 0.36649214659685864,
+      "avg_r": 0.37160853420163936,
+      "expectancy_r": 0.37160853420163936,
+      "profit_factor": 1.5957363294257028,
+      "max_drawdown_r": -19.49962848984528,
+      "mfe_r_avg": 1.7661551132715572,
+      "mfe_r_median": 1.2806892305495818,
+      "mfe_r_p90": 3.6200012207031564,
+      "mae_r_avg": -1.3331791400270736,
+      "mae_r_median": -1.1779318313113822,
+      "mae_r_p90": 0.0,
+      "timeout_count": 6,
+      "timeout_rate": 0.031413612565445025,
+      "coverage": 0.7490196078431373,
+      "action_rate": 0.7490196078431373,
+      "wait_rate": 0.25098039215686274,
+      "brier_raw": 0.29783499507853406,
+      "brier_calibrated": 0.2629829275250662,
+      "ece_raw": 0.24237591623036647,
+      "ece_calibrated": 0.07305848090199835,
+      "confidence_buckets": [
+        {
+          "bucket": "0.50-0.60",
+          "count": 61,
+          "raw_avg_confidence": 0.5619999999999999,
+          "empirical_win_rate": 0.4426229508196721,
+          "calibrated_confidence": 0.5604642857142857
+        },
+        {
+          "bucket": "0.60-0.70",
+          "count": 104,
+          "raw_avg_confidence": 0.6,
+          "empirical_win_rate": 0.3076923076923077,
+          "calibrated_confidence": 0.6
+        },
+        {
+          "bucket": "<0.50",
+          "count": 26,
+          "raw_avg_confidence": 0.09185384615384616,
+          "empirical_win_rate": 0.4230769230769231,
+          "calibrated_confidence": 0.32165583470109554
+        }
+      ],
+      "scope": {
+        "source_type": "replay",
+        "model_id": "qwen3.5:4b",
+        "prompt_version": "phase2-json-v8"
+      },
+      "window_start": null,
+      "window_end": null
+    }
+  },
+  "calibration": {
+    "calibration_id": "739a53eb90155f876e512900",
+    "version": "cal-v1-qwen3.5-4b",
+    "scope": {
+      "source_type": "replay",
+      "model_id": "qwen3.5:4b",
+      "prompt_version": "phase2-json-v8"
+    },
+    "method": "empirical_beta_shrinkage",
+    "params": {
+      "alpha": 5.0,
+      "beta": 5.0,
+      "min_sample": 100
+    },
+    "sample_count": 191,
+    "trained_until": null,
+    "brier_raw": 0.29783499507853406,
+    "brier_calibrated": 0.24788204802899663,
+    "ece_raw": 0.24237591623036647,
+    "ece_calibrated": 0.03332176067334475,
+    "status": "ACTIVE",
+    "fallback": null,
+    "buckets": [
+      {
+        "lower": 0.5,
+        "upper": 0.6,
+        "n": 61,
+        "wins": 27,
+        "empirical_rate": 0.4426229508196721,
+        "shrunk_rate": 0.4507042253521127
+      },
+      {
+        "lower": 0.6,
+        "upper": 0.7,
+        "n": 104,
+        "wins": 32,
+        "empirical_rate": 0.3076923076923077,
+        "shrunk_rate": 0.32456140350877194
+      },
+      {
+        "lower": 0.7,
+        "upper": 0.8,
+        "n": 0,
+        "wins": 0,
+        "empirical_rate": null,
+        "shrunk_rate": 0.5
+      },
+      {
+        "lower": 0.8,
+        "upper": 0.9,
+        "n": 0,
+        "wins": 0,
+        "empirical_rate": null,
+        "shrunk_rate": 0.5
+      },
+      {
+        "lower": 0.9,
+        "upper": 1.0,
+        "n": 0,
+        "wins": 0,
+        "empirical_rate": null,
+        "shrunk_rate": 0.5
+      }
+    ]
+  },
+  "errors": [
+    {
+      "symbol": "NVDA",
+      "timeframe": "4h",
+      "as_of": "2025-07-23T12:00:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "NVDA",
+      "timeframe": "4h",
+      "as_of": "2025-08-25T16:00:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "AMD",
+      "timeframe": "4h",
+      "as_of": "2025-09-10T12:00:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "AMD",
+      "timeframe": "4h",
+      "as_of": "2025-12-01T20:00:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "AMD",
+      "timeframe": "4h",
+      "as_of": "2025-12-26T12:00:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "AAPL",
+      "timeframe": "4h",
+      "as_of": "2026-02-27T12:00:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "ETHUSDT",
+      "timeframe": "4h",
+      "as_of": "2026-03-27T20:00:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "AAPL",
+      "timeframe": "1h",
+      "as_of": "2026-04-06T16:30:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "AAPL",
+      "timeframe": "4h",
+      "as_of": "2026-04-16T16:00:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "BTCUSDT",
+      "timeframe": "4h",
+      "as_of": "2026-04-18T04:00:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "AMD",
+      "timeframe": "1h",
+      "as_of": "2026-04-20T17:30:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "NVDA",
+      "timeframe": "1h",
+      "as_of": "2026-04-20T18:30:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "AMD",
+      "timeframe": "1h",
+      "as_of": "2026-04-22T17:30:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "TSLA",
+      "timeframe": "1h",
+      "as_of": "2026-05-08T19:30:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "NVDA",
+      "timeframe": "1h",
+      "as_of": "2026-05-11T17:30:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "NVDA",
+      "timeframe": "1h",
+      "as_of": "2026-05-12T14:30:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "AMD",
+      "timeframe": "1h",
+      "as_of": "2026-05-26T16:30:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "AMD",
+      "timeframe": "1h",
+      "as_of": "2026-05-29T16:30:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "AAPL",
+      "timeframe": "1h",
+      "as_of": "2026-06-02T15:30:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "AMD",
+      "timeframe": "1h",
+      "as_of": "2026-06-02T15:30:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "AMD",
+      "timeframe": "1h",
+      "as_of": "2026-06-03T14:30:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "TSLA",
+      "timeframe": "1h",
+      "as_of": "2026-06-03T19:30:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "AAPL",
+      "timeframe": "4h",
+      "as_of": "2026-06-04T16:00:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "NVDA",
+      "timeframe": "1h",
+      "as_of": "2026-06-09T17:30:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "ETHUSDT",
+      "timeframe": "4h",
+      "as_of": "2026-06-12T00:00:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "TSLA",
+      "timeframe": "1h",
+      "as_of": "2026-06-18T14:30:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "BTCUSDT",
+      "timeframe": "4h",
+      "as_of": "2026-06-29T16:00:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "TSLA",
+      "timeframe": "1h",
+      "as_of": "2026-06-29T19:30:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "AMD",
+      "timeframe": "1h",
+      "as_of": "2026-07-02T15:30:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "AAPL",
+      "timeframe": "1h",
+      "as_of": "2026-07-09T15:30:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "ETHUSDT",
+      "timeframe": "1h",
+      "as_of": "2026-07-10T23:00:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "ETHUSDT",
+      "timeframe": "1h",
+      "as_of": "2026-07-11T20:00:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "ETHUSDT",
+      "timeframe": "1h",
+      "as_of": "2026-07-15T12:00:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "NVDA",
+      "timeframe": "1h",
+      "as_of": "2026-07-15T13:30:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "ETHUSDT",
+      "timeframe": "1h",
+      "as_of": "2026-07-17T08:00:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "BTCUSDT",
+      "timeframe": "1h",
+      "as_of": "2026-07-19T02:00:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "ETHUSDT",
+      "timeframe": "1h",
+      "as_of": "2026-07-20T23:00:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "ETHUSDT",
+      "timeframe": "4h",
+      "as_of": "2026-07-21T00:00:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "ETHUSDT",
+      "timeframe": "4h",
+      "as_of": "2026-07-22T04:00:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "AAPL",
+      "timeframe": "1h",
+      "as_of": "2026-07-22T19:30:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "BTCUSDT",
+      "timeframe": "4h",
+      "as_of": "2026-07-24T12:00:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "ETHUSDT",
+      "timeframe": "1h",
+      "as_of": "2026-07-25T08:00:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "ETHUSDT",
+      "timeframe": "1h",
+      "as_of": "2026-07-26T21:00:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "ETHUSDT",
+      "timeframe": "4h",
+      "as_of": "2026-07-27T00:00:00+00:00",
+      "error_code": "repair_failed"
+    },
+    {
+      "symbol": "ETHUSDT",
+      "timeframe": "1h",
+      "as_of": "2026-07-27T03:00:00+00:00",
+      "error_code": "repair_failed"
+    }
+  ],
+  "output_path": "data\\phase3-real-qwen-formal-v2.json"
+}

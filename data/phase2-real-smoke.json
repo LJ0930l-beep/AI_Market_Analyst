@@ -1,0 +1,511 @@
+{
+  "phase": 2,
+  "mode": "real",
+  "records": [
+    {
+      "symbol": "AAPL",
+      "provider": {
+        "provider": "yfinance",
+        "fetched_at": "2026-08-14T12:58:23.095936+00:00",
+        "data_as_of": "2026-08-13T20:00:00+00:00",
+        "stale": false,
+        "error_code": null
+      },
+      "data_as_of": "2026-08-13T20:00:00+00:00",
+      "quant": {
+        "symbol": "AAPL",
+        "timeframe": "1h",
+        "timestamp": "2026-08-13T20:00:00+00:00",
+        "price": 305.260009765625,
+        "ema20": 304.44614795324975,
+        "ema50": 307.38566372935287,
+        "rsi14": 50.97099829496364,
+        "macd": -0.8145267707909625,
+        "macd_signal": -1.3579802731088377,
+        "atr14": 1.4744698660714286,
+        "volume_ratio": 0.588338194864002,
+        "support": 300.57000732421875,
+        "resistance": 307.6099853515625,
+        "market_regime": "bear_trend",
+        "trend_score": -0.23907391617093432,
+        "momentum_score": 0.13731871367787418
+      },
+      "news_count": 10,
+      "news_available": true,
+      "model": {
+        "provider": "ollama",
+        "model_id": "qwen3.5:4b",
+        "available": false,
+        "error_code": "MODEL_UNAVAILABLE",
+        "raw_response": null,
+        "quantization": "Q4_K_M"
+      },
+      "signal": {
+        "prediction_id": "96f8e078-b781-4988-8489-9f15c9cb5004",
+        "instrument": {
+          "symbol": "AAPL",
+          "asset_type": "equity",
+          "exchange": "NASDAQ",
+          "currency": "USD",
+          "timezone": "America/New_York",
+          "trading_hours": "regular",
+          "sector": "Technology"
+        },
+        "analysis_timeframe": "1h",
+        "generated_at": "2026-08-14T12:58:23.095936+00:00",
+        "action": "WAIT",
+        "entry_low": null,
+        "entry_high": null,
+        "stop": null,
+        "tp1": null,
+        "tp2": null,
+        "signal_validity_minutes": 180,
+        "signal_valid_until": "2026-08-14T15:58:23.095936+00:00",
+        "expected_hold_minutes": 2880,
+        "expected_hold_until": "2026-08-16T12:58:23.095936+00:00",
+        "max_hold_minutes": 4320,
+        "max_hold_until": "2026-08-17T12:58:23.095936+00:00",
+        "reevaluate_at": "2026-08-14T14:58:23.095936+00:00",
+        "invalidation": [
+          "new quant snapshot required before entry"
+        ],
+        "raw_confidence": 0.5483,
+        "reason_codes": [
+          "MODEL_UNAVAILABLE",
+          "model unavailable or output invalid (MODEL_UNAVAILABLE)"
+        ],
+        "summary": "WAIT: model unavailable or output invalid (MODEL_UNAVAILABLE).",
+        "model_id": "qwen3.5:4b",
+        "model_version": null,
+        "prompt_version": null,
+        "input_hash": "cc4b3c91428a008b1f939cede25f1a90463816cca025b8579f8fa9f0fdfc77b0",
+        "data_as_of": "2026-08-13T20:00:00+00:00",
+        "context_json": "{\"analysis_time\":{\"timeframe\":\"1h\",\"timestamp\":\"2026-08-13T13:30:00+00:00\"},\"history\":{},\"instrument\":{\"asset_type\":\"equity\",\"exchange\":\"NASDAQ\",\"quote_currency\":\"USD\",\"symbol\":\"AAPL\",\"trading_hours\":\"regular\"},\"market_context\":{\"news_available\":true,\"news_clusters\":[{\"cluster_id\":\"bfc92751b286045590dffb94\",\"event_ids\":[\"5d0ced03449369532f6fbd3b\"],\"importance\":80,\"sentiment\":0.3333,\"symbols\":[\"AAPL\"],\"title\":\"Apple Stock Analysis Today: AAPL Revenue Record And Supply Chain Outlook Furto (cjlHpeWlQY) - Mshale\"},{\"cluster_id\":\"4cff3c32f92a48c469f4c6cf\",\"event_ids\":[\"70b2acab6f4851bf461b48cf\"],\"importance\":60,\"sentiment\":0.3333,\"symbols\":[\"AAPL\"],\"title\":\"Apple (NASDAQ: AAPL) Launches Houston Advanced Manufacturing Center To Train American Workers And Small Businesses - foreignpolicyjournal.com\"},{\"cluster_id\":\"23c0b9e6f43e5a2b6c441118\",\"event_ids\":[\"4e226f613017f5aa54efff32\"],\"importance\":55,\"sentiment\":-0.3333,\"symbols\":[\"AAPL\"],\"title\":\"Apple stock (AAPL) set for $602 billion valuation test after Jefferies downgrade - ts2.tech\"},{\"cluster_id\":\"94650e1f1b633c7065eba149\",\"event_ids\":[\"e827f8c5efad28384c3eb588\"],\"importance\":55,\"sentiment\":0.0,\"symbols\":[\"AAPL\"],\"title\":\"New Buy Rating for Apple (AAPL), the Technology Giant - The Globe and Mail\"},{\"cluster_id\":\"a490a71b25062779e1a1c554\",\"event_ids\":[\"1783fe909b8311b2309325e9\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"AAPL\"],\"title\":\"How Apple\\u2019s New Houston AI Manufacturing Hub Could Reshape the AAPL Investment Narrative - Yahoo Finance\"},{\"cluster_id\":\"8c36712d89a9206bcca80244\",\"event_ids\":[\"93e15d8d06a728433fdb1068\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"AAPL\"],\"title\":\"Apple (NASDAQ:AAPL) Chart in Focus as Shares Slip In Bumpy Stretch - Kalkine Media\"},{\"cluster_id\":\"addbc3598b696a0220657ada\",\"event_ids\":[\"388537e4767de7c5bd8e7bfa\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"AAPL\"],\"title\":\"(08/12/26) AAPL: Trade the Tech Giant After its Recent Pullback - moneyshow.com\"},{\"cluster_id\":\"2918a8202abe5cb4832a151c\",\"event_ids\":[\"68fcbd266bb51e9a71019b79\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"AAPL\"],\"title\":\"10 Information Technology Stocks Whale Activity In Today\\u2019s Session - Benzinga\"},{\"cluster_id\":\"9e468352ce7e35a9a19fee21\",\"event_ids\":[\"aa23b8ab64260a0630e9510d\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"AAPL\"],\"title\":\"AAPL|Apple Inc|Price:306.000|Chg%:-2.260 - TradingKey\"},{\"cluster_id\":\"e4af1076004e60b60db6c816\",\"event_ids\":[\"fa97cc8244f4cc1d0bb2dc5a\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"AAPL\"],\"title\":\"Apple: Big Tech's AI Boom Offers Mixed Blessings (NASDAQ:AAPL) - Seeking Alpha\"}],\"news_error_code\":null,\"news_provider\":\"google_news_rss\"},\"news\":[{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"ee73700dadcbc759bd84260309736fe20644ffa1b8b818c49d0a3cd61f346d97\",\"id\":\"1783fe909b8311b2309325e9\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-13T22:13:22+00:00\",\"sentiment\":0.0,\"source\":\"Yahoo Finance\",\"summary_raw\":\"How Apple\\u2019s New Houston AI Manufacturing Hub Could Reshape the AAPL Investment Narrative Yahoo Finance\",\"symbols\":[\"AAPL\"],\"title\":\"How Apple\\u2019s New Houston AI Manufacturing Hub Could Reshape the AAPL Investment Narrative - Yahoo Finance\",\"url\":\"https://news.google.com/rss/articles/CBMinwFBVV95cUxPUDVrZlp1c1lFZXJjLUdCT29pWFNQMmRGc1U0aU5JLTN1RzYybV9TX0REVEoyWHVnSldDRS0xVUtjTUtPVEFQcm1LeDRwUWQwN0NYcTgxaVViaGxuNVVJM2NESHJ3eHcySlVoVjg0MS0xeG05WWFZUFVWeVlhOXlzOV9ycnJjMklxeWstZlVxTU9HRS0xOXJMb3pYdVdrZEE?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"5575b01b20e48b9107e4a3bd3f6634d4aaf2d1a9c651c67c56b0295d2abf8347\",\"id\":\"93e15d8d06a728433fdb1068\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-13T21:34:00+00:00\",\"sentiment\":0.0,\"source\":\"Kalkine Media\",\"summary_raw\":\"Apple (NASDAQ:AAPL) Chart in Focus as Shares Slip In Bumpy Stretch Kalkine Media\",\"symbols\":[\"AAPL\"],\"title\":\"Apple (NASDAQ:AAPL) Chart in Focus as Shares Slip In Bumpy Stretch - Kalkine Media\",\"url\":\"https://news.google.com/rss/articles/CBMiuAFBVV95cUxPQkR4Z2ZNcFNmTlJQdjJ3OGpLLUlEcEd5RGxaclpGMUViRzc1X2JhZjk3X1Z5UjlBeDBBbjZZb18yVk5VMHpzZzF6Z3J6cFlmM2JZWUpkV0w1M2FpN3FYWE9XY2sxWFltZDNHYkppZHFra0NhZjRJb184N2RUUFR2bjg2UDh5dl9nYUJwVnRUSHRQQ2huQWVxVE4xLXFpOXlFNlBjMUZ3czZUUkRNQkV0X1FtdnM2dEo1?oc=5\"},{\"category\":\"product\",\"credibility\":60,\"dedupe_hash\":\"2f1697c82cd8c3d696e7921bcb54b1a0e24986ad5a71a6a210112b0f340c7a8e\",\"id\":\"70b2acab6f4851bf461b48cf\",\"impact_horizon\":\"1-3d\",\"importance\":60,\"published_at\":\"2026-08-13T21:19:00+00:00\",\"sentiment\":0.3333333333333333,\"source\":\"foreignpolicyjournal.com\",\"summary_raw\":\"Apple (NASDAQ: AAPL) Launches Houston Advanced Manufacturing Center To Train American Workers And Small Businesses foreignpolicyjournal.com\",\"symbols\":[\"AAPL\"],\"title\":\"Apple (NASDAQ: AAPL) Launches Houston Advanced Manufacturing Center To Train American Workers And Small Businesses - foreignpolicyjournal.com\",\"url\":\"https://news.google.com/rss/articles/CBMi8gFBVV95cUxQbWtadEZRZVFYQUtFbzJURUo1bEYtQTN3Mk9MdW5LcnlEN1oxRmFZWkwwcmk5ZE9yWktoWGxxdHRhQzlRRTNvSGkzMXBoMWxXb2NZU1VMM3ZfNWVPQi00dkgzTFh2UW5UQU5RaXp0TDhESllhMFp1R1piWUo5QXBNQUVGVlVDMk1QV3VuSndIMDYzbTl4dTFyRTc4dVJRMWx4d0V4Tm54ZEs4VFUyTnNtb1dld3VLVjc5QWZaRGZkVFZicVBwRFJad3BrZVNsV3M2MnNtcnl0WVdfNU02NkpkQzB6NVJTTl8waUh1d19fanhNZw?oc=5\"},{\"category\":\"earnings\",\"credibility\":60,\"dedupe_hash\":\"9b73a1394da44a35f6992aa1afcb192a610b723edaff89c06febe2ed036afbb0\",\"id\":\"5d0ced03449369532f6fbd3b\",\"impact_horizon\":\"1-3d\",\"importance\":80,\"published_at\":\"2026-08-13T03:21:47+00:00\",\"sentiment\":0.3333333333333333,\"source\":\"Mshale\",\"summary_raw\":\"Apple Stock Analysis Today: AAPL Revenue Record And Supply Chain Outlook Furto (cjlHpeWlQY) Mshale\",\"symbols\":[\"AAPL\"],\"title\":\"Apple Stock Analysis Today: AAPL Revenue Record And Supply Chain Outlook Furto (cjlHpeWlQY) - Mshale\",\"url\":\"https://news.google.com/rss/articles/CBMiW0FVX3lxTFBRSlhuSzNCcGJ0TGZHVzdwZG9aNFFnbGhvcGtZQmkyMHRZYzdic2tLY0dRbVVXc0txWDBEVER0WTJMR0xuNFJEX3dEa0pvZms1emM3emZTLXk0QmM?oc=5\"},{\"category\":\"analyst\",\"credibility\":60,\"dedupe_hash\":\"78f1e2588f2e5df05e6f7453a0af03ba417c02e2f25176c49b53d600d8699942\",\"id\":\"4e226f613017f5aa54efff32\",\"impact_horizon\":\"intraday\",\"importance\":55,\"published_at\":\"2026-08-12T12:11:17+00:00\",\"sentiment\":-0.3333333333333333,\"source\":\"ts2.tech\",\"summary_raw\":\"Apple stock (AAPL) set for $602 billion valuation test after Jefferies downgrade ts2.tech\",\"symbols\":[\"AAPL\"],\"title\":\"Apple stock (AAPL) set for $602 billion valuation test after Jefferies downgrade - ts2.tech\",\"url\":\"https://news.google.com/rss/articles/CBMinwFBVV95cUxNOGhxajJaM01mOUswTS1IamhrcGhqbEkyOC1yRDhFOVlWS1dmak1qYjJsQTQ0anhCVy1INkdvUmotSzV4dklJNzJfNUplOGFwS2U4LVl3V09GSVI4RUhuUFlEcnZISVp0MmVGd3Babm5rZVBYTEc5U2cwaWdmY3lNa0JJNVNka2o0am1OWXZldjZJYWtvT2pza19LdDRoaTg?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"b9dad4644778a7537bd89f6b6f4d951a69cafb8b8340cb35cf5867caa15c14bf\",\"id\":\"388537e4767de7c5bd8e7bfa\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-12T04:48:37+00:00\",\"sentiment\":0.0,\"source\":\"moneyshow.com\",\"summary_raw\":\"(08/12/26) AAPL: Trade the Tech Giant After its Recent Pullback moneyshow.com\",\"symbols\":[\"AAPL\"],\"title\":\"(08/12/26) AAPL: Trade the Tech Giant After its Recent Pullback - moneyshow.com\",\"url\":\"https://news.google.com/rss/articles/CBMiqAFBVV95cUxNcExUZ282X2VPU1VSOW5lTUN2NDZDS0x1Y0laZVZ1cjh2ZGhvSGpUcjlmekV3TzdmMUVkXzUzdGRxTTlFZzgxYnhXMHo5ZHJ1RzY1SEoxWW56U1hUZWJxblF5VmZ6RHI1NnpHdGhPXzloelhtTWtlRHhLSXU3QmljR0h6MldhQXJJOWQ2b2pLVGNwRHlsRWFTbURnbnQ5WjA4Y3BiQmFlSWo?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"ea525fc214318940a77bd3a95ea32a2cad925d79404a47730841d5d0280baa72\",\"id\":\"68fcbd266bb51e9a71019b79\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-11T17:35:13+00:00\",\"sentiment\":0.0,\"source\":\"Benzinga\",\"summary_raw\":\"10 Information Technology Stocks Whale Activity In Today\\u2019s Session Benzinga\",\"symbols\":[\"AAPL\"],\"title\":\"10 Information Technology Stocks Whale Activity In Today\\u2019s Session - Benzinga\",\"url\":\"https://news.google.com/rss/articles/CBMiuwFBVV95cUxQbjdPaDFSblIwajlsUnZMVUpNLWZrdkNMOW1GR0NEV3NVei1EYWI5YVNFcGNVcndoZ3RqeG9BZWYzQVJmUzRTUWVDOHVKTkdwcS14d3pPU214RFpURTJMa3lkQVdWUjVqNkg5dGFFZm83M3VmR2QwUUlURnUxVjBtdlhoNWlYcnZnYWZLNWZNU0Z6b0tYelNkeFN3eXdRSWZlT0ZfVkF5NzVlZ3VsYl9FdG1vYVBRcGZWX1c4?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"1db566ead3b7d5362e442381cdf3cfc21fe12d072604f2001d65f0b7971d5c65\",\"id\":\"aa23b8ab64260a0630e9510d\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-11T08:05:20+00:00\",\"sentiment\":0.0,\"source\":\"TradingKey\",\"summary_raw\":\"AAPL|Apple Inc|Price:306.000|Chg%:-2.260 TradingKey\",\"symbols\":[\"AAPL\"],\"title\":\"AAPL|Apple Inc|Price:306.000|Chg%:-2.260 - TradingKey\",\"url\":\"https://news.google.com/rss/articles/CBMiWkFVX3lxTFBKUHY4Z0hpQW5PUTRKcUJ0UmhXN2xCMjJmVEJKWEdWWFQyZVpaNHpPVjltMFJkNl9fRlg3WndGd3dMaWtkVEJhbkJGR1NZX3daYkQxcHBXeWtfdw?oc=5\"}],\"price\":{\"change_pct\":0.9958675816790663,\"high\":306.0,\"last\":305.260009765625,\"low\":302.04998779296875},\"provider_snapshot\":{\"data_as_of\":\"2026-08-13T20:00:00+00:00\",\"error_code\":null,\"fetched_at\":\"2026-08-14T12:58:23.095936+00:00\",\"provider\":\"yfinance\",\"stale\":false},\"quant\":{\"atr14\":1.4744698660714286,\"ema20\":304.44614795324975,\"ema50\":307.38566372935287,\"macd\":-0.8145267707909625,\"macd_signal\":-1.3579802731088377,\"market_regime\":\"bear_trend\",\"momentum_score\":0.13731871367787418,\"price\":305.260009765625,\"resistance\":307.6099853515625,\"rsi14\":50.97099829496364,\"support\":300.57000732421875,\"symbol\":\"AAPL\",\"timeframe\":\"1h\",\"timestamp\":\"2026-08-13T20:00:00+00:00\",\"trend_score\":-0.23907391617093432,\"volume_ratio\":0.588338194864002},\"risk_events\":[{\"event_id\":\"5d0ced03449369532f6fbd3b\",\"impact_horizon\":\"1-3d\",\"importance\":80,\"sentiment\":0.3333333333333333,\"title\":\"Apple Stock Analysis Today: AAPL Revenue Record And Supply Chain Outlook Furto (cjlHpeWlQY) - Mshale\"}],\"time_policy\":{\"allowed_values\":{\"holding_horizon_minutes\":[1440,2160,2880,4320],\"reevaluate_minutes\":[60,90,120,240],\"signal_validity_minutes\":[120,180,240]},\"event_risk\":true,\"holding_horizon_minutes\":[1440,4320],\"market_regime\":\"bear_trend\",\"reason_codes\":[\"timeframe_baseline\",\"trend_regime_allowed_extension\",\"high_impact_event_cap\"],\"reevaluate_minutes\":[60,240],\"signal_validity_minutes\":[120,240],\"timeframe\":\"1h\",\"volatility_ratio\":0.483}}",
+        "raw_model_response": null,
+        "parse_status": "MODEL_UNAVAILABLE",
+        "latency_ms": null
+      }
+    },
+    {
+      "symbol": "NVDA",
+      "provider": {
+        "provider": "yfinance",
+        "fetched_at": "2026-08-14T12:58:27.830497+00:00",
+        "data_as_of": "2026-08-13T20:00:00+00:00",
+        "stale": false,
+        "error_code": null
+      },
+      "data_as_of": "2026-08-13T20:00:00+00:00",
+      "quant": {
+        "symbol": "NVDA",
+        "timeframe": "1h",
+        "timestamp": "2026-08-13T20:00:00+00:00",
+        "price": 225.3000030517578,
+        "ema20": 223.52573071105982,
+        "ema50": 219.88887643170762,
+        "rsi14": 60.72203615360754,
+        "macd": 1.7490245194254612,
+        "macd_signal": 1.7009634168196446,
+        "atr14": 1.4392547607421875,
+        "volume_ratio": 0.5699240896410382,
+        "support": 216.3000030517578,
+        "resistance": 227.22999572753906,
+        "market_regime": "bull_trend",
+        "trend_score": 0.413487750991548,
+        "momentum_score": 0.05265072105473223
+      },
+      "news_count": 10,
+      "news_available": true,
+      "model": {
+        "provider": "ollama",
+        "model_id": "qwen3.5:4b",
+        "available": false,
+        "error_code": "MODEL_UNAVAILABLE",
+        "raw_response": null,
+        "quantization": "Q4_K_M"
+      },
+      "signal": {
+        "prediction_id": "f6d02c04-9c81-47c8-99fa-1562f324d901",
+        "instrument": {
+          "symbol": "NVDA",
+          "asset_type": "equity",
+          "exchange": "NASDAQ",
+          "currency": "USD",
+          "timezone": "America/New_York",
+          "trading_hours": "regular",
+          "sector": "Semiconductors"
+        },
+        "analysis_timeframe": "1h",
+        "generated_at": "2026-08-14T12:58:27.830497+00:00",
+        "action": "WAIT",
+        "entry_low": null,
+        "entry_high": null,
+        "stop": null,
+        "tp1": null,
+        "tp2": null,
+        "signal_validity_minutes": 180,
+        "signal_valid_until": "2026-08-14T15:58:27.830497+00:00",
+        "expected_hold_minutes": 2880,
+        "expected_hold_until": "2026-08-16T12:58:27.830497+00:00",
+        "max_hold_minutes": 4320,
+        "max_hold_until": "2026-08-17T12:58:27.830497+00:00",
+        "reevaluate_at": "2026-08-14T14:58:27.830497+00:00",
+        "invalidation": [
+          "new quant snapshot required before entry"
+        ],
+        "raw_confidence": 0.6292,
+        "reason_codes": [
+          "MODEL_UNAVAILABLE",
+          "model unavailable or output invalid (MODEL_UNAVAILABLE)"
+        ],
+        "summary": "WAIT: model unavailable or output invalid (MODEL_UNAVAILABLE).",
+        "model_id": "qwen3.5:4b",
+        "model_version": null,
+        "prompt_version": null,
+        "input_hash": "89b3626c03e335242b3396d824bbd8e04f8aa7b52a2f2ec0ae0b1a15f7571e98",
+        "data_as_of": "2026-08-13T20:00:00+00:00",
+        "context_json": "{\"analysis_time\":{\"timeframe\":\"1h\",\"timestamp\":\"2026-08-13T13:30:00+00:00\"},\"history\":{},\"instrument\":{\"asset_type\":\"equity\",\"exchange\":\"NASDAQ\",\"quote_currency\":\"USD\",\"symbol\":\"NVDA\",\"trading_hours\":\"regular\"},\"market_context\":{\"news_available\":true,\"news_clusters\":[{\"cluster_id\":\"64390c067e4c6115e7f21232\",\"event_ids\":[\"dabffc8614319288a15f828c\"],\"importance\":85,\"sentiment\":0.0,\"symbols\":[\"NVDA\"],\"title\":\"Insights Into NVIDIA's Performance Versus Peers In Semiconductors & Semiconductor Equipment Sector - Benzinga\"},{\"cluster_id\":\"72f72bcf0589acde67b8b300\",\"event_ids\":[\"aeca22f99ad11871186d8538\"],\"importance\":80,\"sentiment\":-0.3333,\"symbols\":[\"NVDA\"],\"title\":\"Cathie Wood's Ark Piled Into Nvidia and Taiwan Semiconductor After Meta's Earnings Miss. Here's What It Signals for Artificial Intelligence (AI) Stocks. - The Motley Fool\"},{\"cluster_id\":\"d0ea4d51a38c2e0e205f0dc5\",\"event_ids\":[\"f52222b9db77113af6d4773c\"],\"importance\":55,\"sentiment\":0.0,\"symbols\":[\"NVDA\"],\"title\":\"Nvidia Stock (NVDA) Gains 3% in Premarket Amid Analyst Target $563 Below Current Level\\u2014Potential Caution Flag - ts2.tech\"},{\"cluster_id\":\"dd595003415aab19410b251f\",\"event_ids\":[\"8afeb237fea970703b610c4a\"],\"importance\":55,\"sentiment\":0.0,\"symbols\":[\"NVDA\"],\"title\":\"NVIDIA (NVDA): The Best American Semiconductor Stock to Buy According to Analysts - Yahoo Finance\"},{\"cluster_id\":\"d7bacdce6ac18d7df14b1126\",\"event_ids\":[\"d69045d5c5ea96bd623a1ffa\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"NVDA\"],\"title\":\"NVIDIA's (NVDA) New Developments with TSMC: Feynman Generation I - GuruFocus\"},{\"cluster_id\":\"9987567dd80e8cc8df3aa106\",\"event_ids\":[\"d802f38c2ee63740fbd7f025\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"NVDA\"],\"title\":\"Comparing NVIDIA With Industry Competitors In Semiconductors & Semiconductor Equipment Industry - NVI - Benzinga\"},{\"cluster_id\":\"97df7f74386c43278f7a082f\",\"event_ids\":[\"6748525eab9927ef78c83e33\"],\"importance\":30,\"sentiment\":-0.3333,\"symbols\":[\"NVDA\"],\"title\":\"Why NXP Semiconductors Stock Dropped 18.5% in July - The Globe and Mail\"},{\"cluster_id\":\"16772541cc5625c2d8d7b6fb\",\"event_ids\":[\"cec22799f60b1a920502b49d\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"NVDA\"],\"title\":\"Jensen Huang Thinks Semiconductors Will Be the Largest Industry in the World \\u201cBy Far\\\" \\u2014 and This Might Be Key to Getting Nvidia Stock to $500 - 24/7 Wall St.\"},{\"cluster_id\":\"2d0202f4853366354bc131b2\",\"event_ids\":[\"2746d15c1048616cbbdb9d56\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"NVDA\"],\"title\":\"NVIDIA and TSMC Bring AI Into Fabs to Advance Semiconductor Design and Manufacturing - NVIDIA Newsroom\"},{\"cluster_id\":\"d5f3633a2b4c7b4f221e0ad9\",\"event_ids\":[\"fdd586dd46b24a2e5db4f5ae\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"NVDA\"],\"title\":\"Is Nvidia Stock a Buy? Why Semiconductor Strength May Signal a Market Top - IO Fund\"}],\"news_error_code\":null,\"news_provider\":\"google_news_rss\"},\"news\":[{\"category\":\"regulation\",\"credibility\":85,\"dedupe_hash\":\"ea32843a6b6905217ab99e9717a6845892ac81e2169a1d56e289ea7c57099936\",\"id\":\"dabffc8614319288a15f828c\",\"impact_horizon\":\"1-4w\",\"importance\":85,\"published_at\":\"2026-08-14T09:58:34+00:00\",\"sentiment\":0.0,\"source\":\"Benzinga\",\"summary_raw\":\"Insights Into NVIDIA's Performance Versus Peers In Semiconductors & Semiconductor Equipment Sector Benzinga\",\"symbols\":[\"NVDA\"],\"title\":\"Insights Into NVIDIA's Performance Versus Peers In Semiconductors & Semiconductor Equipment Sector - Benzinga\",\"url\":\"https://news.google.com/rss/articles/CBMi0wFBVV95cUxOUVFaYzM2UWZ3LVBtZWZLd0hwcm9aWW1ZZ05telNiWWQ3bTlxcjYyQS1JNzhZU1A4aHQxYU9QNlYwb3BFcGRzalVXSzRWdHpTMXp5dzJ2d282U18yY0ZQRVluS3VVOGhpSDJ3aUtoLVJJd2Z5d0J2X3owMFNfYVNTcnA0Vlhmd2EzeW5pSDhISEhVR1F2TU9KNDdYMDhvdjZpc1hWN29nYzdsaU56XzZDa2ZPM2N3UVdxOTU5QmYyeU5lLVd3bFZGMVFyeGthMzhPaWpn?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"5805e147d0a4b1d77e95040a55c86b719eb3630a696ea238ce5674310ae6fb87\",\"id\":\"d69045d5c5ea96bd623a1ffa\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-14T03:23:11+00:00\",\"sentiment\":0.0,\"source\":\"GuruFocus\",\"summary_raw\":\"NVIDIA's (NVDA) New Developments with TSMC: Feynman Generation I GuruFocus\",\"symbols\":[\"NVDA\"],\"title\":\"NVIDIA's (NVDA) New Developments with TSMC: Feynman Generation I - GuruFocus\",\"url\":\"https://news.google.com/rss/articles/CBMiqgFBVV95cUxOVEZhbzhxZElNTC1JLXlVSVZBeURfRldDYVpOZW1KaVdRRGUtREs2S0FxcHJYbnI0THNqdXhwQUw4Q1h4TUtCSVJVTmE1Vl95TTRMYUtzNlFGZi1jaEEtXzdnRWNqMHBvcGdIWDhUNlBBX29JTnZqSUpYWElNeVhNWVhETElEbTRtb2FVb3dfYWRPNjFuRWxPR3cwU2gySW90WnVRRk5PZE1Ddw?oc=5\"},{\"category\":\"analyst\",\"credibility\":60,\"dedupe_hash\":\"6b22109fc4d79a83ab01b5afb63fdf3adbf96dafbbd47a537f414e875e6fb5e1\",\"id\":\"f52222b9db77113af6d4773c\",\"impact_horizon\":\"intraday\",\"importance\":55,\"published_at\":\"2026-08-13T13:12:51+00:00\",\"sentiment\":0.0,\"source\":\"ts2.tech\",\"summary_raw\":\"Nvidia Stock (NVDA) Gains 3% in Premarket Amid Analyst Target $563 Below Current Level\\u2014Potential Caution Flag ts2.tech\",\"symbols\":[\"NVDA\"],\"title\":\"Nvidia Stock (NVDA) Gains 3% in Premarket Amid Analyst Target $563 Below Current Level\\u2014Potential Caution Flag - ts2.tech\",\"url\":\"https://news.google.com/rss/articles/CBMilAFBVV95cUxPRWNtazBQcTFPdVB2VURMdVJpcnl0X0FJZW5teVVQUHpvWFU2cWUwOFFsSzhUZVhqSDMzdER5Q2FabTdDTVJkUHdiLWkyT0ZEZkdPNzlpczNoeklZVktLcHRFM3NEeWluY3RyZjdaVEgtdjJQV0Mya1UzM2VISEdQRGlpc2tCRXczeFFFTUc0c05oM2JX?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"5be6a23f9e2c62e5752337da05246512a623378bf7488155cff7a497e70e94ac\",\"id\":\"d802f38c2ee63740fbd7f025\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-13T09:58:39+00:00\",\"sentiment\":0.0,\"source\":\"Benzinga\",\"summary_raw\":\"Comparing NVIDIA With Industry Competitors In Semiconductors & Semiconductor Equipment Industry - NVI Benzinga\",\"symbols\":[\"NVDA\"],\"title\":\"Comparing NVIDIA With Industry Competitors In Semiconductors & Semiconductor Equipment Industry - NVI - Benzinga\",\"url\":\"https://news.google.com/rss/articles/CBMizwFBVV95cUxQQnZNQzVSd2NmY2VDZk9xVmtPT0VTNWQ0bnNxOHRpMVF3T1RRQndYendfd2NNODlHWjRqTTBjN1ZkekdPcUlLclFhMUNsNVNrUVVLRUJsSFFZb2F4UjRLemtZUmV1RURYdmVOV0Vzd3VpUVNDRWllVlRIZnMyaGNXZnlEUjIxVS1XMmJNUDRyaXZoT3ZfM0w2VkZjUEFkMlNCT29iZHBJY2dnMkVOenBIWElTNlVveHJrZE1PT09LOXhLNEFkS3VkX0NkU3NDZkk?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"f947a3322997aaec3eb7cd2bd5538f8d4be55db867ccc1b312aba4d079685623\",\"id\":\"6748525eab9927ef78c83e33\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-10T21:25:17+00:00\",\"sentiment\":-0.3333333333333333,\"source\":\"The Globe and Mail\",\"summary_raw\":\"Why NXP Semiconductors Stock Dropped 18.5% in July The Globe and Mail\",\"symbols\":[\"NVDA\"],\"title\":\"Why NXP Semiconductors Stock Dropped 18.5% in July - The Globe and Mail\",\"url\":\"https://news.google.com/rss/articles/CBMizgFBVV95cUxNcm1rTU15UFVBT2hkSVoxbWFQNHNxeVRDcnpNNkRsY21memw1XzdvU2ROT013ZUp6c2pveGllWUhEeWVxSTFjU2l4RG9zQlJfWjlYQXlHTmc3SE5pOU5JTk5Pd3pkTjM3enh0S0doRHVlMDFKM1YwMFdYTUtxQTAxT0lFclhOcGhjRnA1Um1zWGNqMllMMjdocEsydkIySVp3clBmZ21LNnZrcFRPU0VuVGdPSmVIQ0tLQ3BLeGVoY1dLV1FNenMxOXFGSnV4dw?oc=5\"},{\"category\":\"earnings\",\"credibility\":60,\"dedupe_hash\":\"54b1eea81d2cd18da542dc865d5a1d3ce6e73518c9ca89ba17236db927cc2dcf\",\"id\":\"aeca22f99ad11871186d8538\",\"impact_horizon\":\"1-3d\",\"importance\":80,\"published_at\":\"2026-08-09T08:05:00+00:00\",\"sentiment\":-0.3333333333333333,\"source\":\"The Motley Fool\",\"summary_raw\":\"Cathie Wood's Ark Piled Into Nvidia and Taiwan Semiconductor After Meta's Earnings Miss. Here's What It Signals for Artificial Intelligence (AI) Stocks. The Motley Fool\",\"symbols\":[\"NVDA\"],\"title\":\"Cathie Wood's Ark Piled Into Nvidia and Taiwan Semiconductor After Meta's Earnings Miss. Here's What It Signals for Artificial Intelligence (AI) Stocks. - The Motley Fool\",\"url\":\"https://news.google.com/rss/articles/CBMimAFBVV95cUxPb0d5bGJQOS1EY1FQUjMzcDRnZEVod1NwS2dJRUhraElXbTY3aXQ5Zk5uOXRJWDd2NUxIaEprejl5a2VjWTF0VS1BNlZQWnRUTnF6OG9mQl95YjgwMUtfNmRiNlpiWXRmOHctVXZ6NEI3WERiNkdwWVFJZjRRYjRVdk5aeWlTeElvR3dVeWtVX2l0ckRmVG9kNg?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"a22852d6133478124290b04ef0a46d06ce998208376a2360f61d7a0f18e6e5fb\",\"id\":\"cec22799f60b1a920502b49d\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-07-20T07:00:00+00:00\",\"sentiment\":0.0,\"source\":\"24/7 Wall St.\",\"summary_raw\":\"Jensen Huang Thinks Semiconductors Will Be the Largest Industry in the World \\u201cBy Far\\\" \\u2014 and This Might Be Key to Getting Nvidia Stock to $500 24/7 Wall St.\",\"symbols\":[\"NVDA\"],\"title\":\"Jensen Huang Thinks Semiconductors Will Be the Largest Industry in the World \\u201cBy Far\\\" \\u2014 and This Might Be Key to Getting Nvidia Stock to $500 - 24/7 Wall St.\",\"url\":\"https://news.google.com/rss/articles/CBMijAJBVV95cUxPWVZMeHN3dTAtaVhTRTBxTDlpM2pnNllYVUk2YVZzUmVHZWhmWDlVWGRhUFlUZlNCR1duSzVqV1dUVlNNRUFjdlNuSjlkMmJjZjd2OENDMVJMb25STEtQb3JjLVBiRzlrU0o0el9pYWQ1cVAzcmtURFE4T01FdFZIR3lOSWNaZ0RIVFRtV0RKV01qbHh1TVZSYTB0bHNfazZ3aC03aGw3MDRpdXRyel92dFVNOW1LNjhVTnpFYXA3QzNRc0lyNW9sck1jVWc4Zms0UUpjVW5pZDdOc2hodGxGbFI2ZVpwc1lVZFRsVmhwUkRyWTcyUnhvbFIzdTBXRWMxcDVwcXNOY1JkTllq?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"86b351391f76c00c8e37af4e43bca40b8fb0ab078a1c7196658db10db07e7983\",\"id\":\"2746d15c1048616cbbdb9d56\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-05-31T07:00:00+00:00\",\"sentiment\":0.0,\"source\":\"NVIDIA Newsroom\",\"summary_raw\":\"NVIDIA and TSMC Bring AI Into Fabs to Advance Semiconductor Design and Manufacturing NVIDIA Newsroom\",\"symbols\":[\"NVDA\"],\"title\":\"NVIDIA and TSMC Bring AI Into Fabs to Advance Semiconductor Design and Manufacturing - NVIDIA Newsroom\",\"url\":\"https://news.google.com/rss/articles/CBMiuwFBVV95cUxNNWhpUkRjY2Z5cE85UmpLWnpPMWVsS3Q3X3VXUE1EOEQ3aTROZkhMM3g5YV9ldWdhVGxiVjFYN0YxTWJxcGppdGpJaXVjeGhaMzg5aFlQWXB4azZGekltYnBvMkJPUXpzdWpES0dhYVBkaTkzVHA2c3lJODZNbHRtSEF1V09GWUtoaXhXT1drUlg4RnlGVzZnQ2FydzFUSzdVMlFYWDg2bGFEaXBMcG9LYndnMFBvTWliZW1R?oc=5\"}],\"price\":{\"change_pct\":0.5399646274448999,\"high\":227.22999572753906,\"last\":225.3000030517578,\"low\":223.7100067138672},\"provider_snapshot\":{\"data_as_of\":\"2026-08-13T20:00:00+00:00\",\"error_code\":null,\"fetched_at\":\"2026-08-14T12:58:27.830497+00:00\",\"provider\":\"yfinance\",\"stale\":false},\"quant\":{\"atr14\":1.4392547607421875,\"ema20\":223.52573071105982,\"ema50\":219.88887643170762,\"macd\":1.7490245194254612,\"macd_signal\":1.7009634168196446,\"market_regime\":\"bull_trend\",\"momentum_score\":0.05265072105473223,\"price\":225.3000030517578,\"resistance\":227.22999572753906,\"rsi14\":60.72203615360754,\"support\":216.3000030517578,\"symbol\":\"NVDA\",\"timeframe\":\"1h\",\"timestamp\":\"2026-08-13T20:00:00+00:00\",\"trend_score\":0.413487750991548,\"volume_ratio\":0.5699240896410382},\"risk_events\":[{\"event_id\":\"dabffc8614319288a15f828c\",\"impact_horizon\":\"1-4w\",\"importance\":85,\"sentiment\":0.0,\"title\":\"Insights Into NVIDIA's Performance Versus Peers In Semiconductors & Semiconductor Equipment Sector - Benzinga\"},{\"event_id\":\"aeca22f99ad11871186d8538\",\"impact_horizon\":\"1-3d\",\"importance\":80,\"sentiment\":-0.3333333333333333,\"title\":\"Cathie Wood's Ark Piled Into Nvidia and Taiwan Semiconductor After Meta's Earnings Miss. Here's What It Signals for Artificial Intelligence (AI) Stocks. - The Motley Fool\"}],\"time_policy\":{\"allowed_values\":{\"holding_horizon_minutes\":[1440,2160,2880,4320],\"reevaluate_minutes\":[60,90,120,240],\"signal_validity_minutes\":[120,180,240]},\"event_risk\":true,\"holding_horizon_minutes\":[1440,4320],\"market_regime\":\"bull_trend\",\"reason_codes\":[\"timeframe_baseline\",\"trend_regime_allowed_extension\",\"high_impact_event_cap\"],\"reevaluate_minutes\":[60,240],\"signal_validity_minutes\":[120,240],\"timeframe\":\"1h\",\"volatility_ratio\":0.6388}}",
+        "raw_model_response": null,
+        "parse_status": "MODEL_UNAVAILABLE",
+        "latency_ms": null
+      }
+    },
+    {
+      "symbol": "TSLA",
+      "provider": {
+        "provider": "yfinance",
+        "fetched_at": "2026-08-14T12:58:33.661923+00:00",
+        "data_as_of": "2026-08-13T20:00:00+00:00",
+        "stale": false,
+        "error_code": null
+      },
+      "data_as_of": "2026-08-13T20:00:00+00:00",
+      "quant": {
+        "symbol": "TSLA",
+        "timeframe": "1h",
+        "timestamp": "2026-08-13T20:00:00+00:00",
+        "price": 339.9599914550781,
+        "ema20": 333.23380069288623,
+        "ema50": 329.19956993637663,
+        "rsi14": 70.15950322423066,
+        "macd": 3.030885219326933,
+        "macd_signal": 2.0109177851400606,
+        "atr14": 2.497687203543527,
+        "volume_ratio": 0.9708243641053248,
+        "support": 323.6400146484375,
+        "resistance": 341.6400146484375,
+        "market_regime": "bull_trend",
+        "trend_score": 0.3063666484504568,
+        "momentum_score": 0.4120562462566424
+      },
+      "news_count": 10,
+      "news_available": true,
+      "model": {
+        "provider": "ollama",
+        "model_id": "qwen3.5:4b",
+        "available": false,
+        "error_code": "MODEL_UNAVAILABLE",
+        "raw_response": null,
+        "quantization": "Q4_K_M"
+      },
+      "signal": {
+        "prediction_id": "c1851374-f071-4193-8a5a-e71a81ecffb7",
+        "instrument": {
+          "symbol": "TSLA",
+          "asset_type": "equity",
+          "exchange": "NASDAQ",
+          "currency": "USD",
+          "timezone": "America/New_York",
+          "trading_hours": "regular",
+          "sector": "Automotive"
+        },
+        "analysis_timeframe": "1h",
+        "generated_at": "2026-08-14T12:58:33.661923+00:00",
+        "action": "WAIT",
+        "entry_low": null,
+        "entry_high": null,
+        "stop": null,
+        "tp1": null,
+        "tp2": null,
+        "signal_validity_minutes": 180,
+        "signal_valid_until": "2026-08-14T15:58:33.661923+00:00",
+        "expected_hold_minutes": 2880,
+        "expected_hold_until": "2026-08-16T12:58:33.661923+00:00",
+        "max_hold_minutes": 4320,
+        "max_hold_until": "2026-08-17T12:58:33.661923+00:00",
+        "reevaluate_at": "2026-08-14T14:58:33.661923+00:00",
+        "invalidation": [
+          "new quant snapshot required before entry"
+        ],
+        "raw_confidence": 0.6545,
+        "reason_codes": [
+          "MODEL_UNAVAILABLE",
+          "model unavailable or output invalid (MODEL_UNAVAILABLE)"
+        ],
+        "summary": "WAIT: model unavailable or output invalid (MODEL_UNAVAILABLE).",
+        "model_id": "qwen3.5:4b",
+        "model_version": null,
+        "prompt_version": null,
+        "input_hash": "379f84ae98bf98f39fa3995361bf6570ef4ba0d922c334fa87c6edeaeaa7ade4",
+        "data_as_of": "2026-08-13T20:00:00+00:00",
+        "context_json": "{\"analysis_time\":{\"timeframe\":\"1h\",\"timestamp\":\"2026-08-13T13:30:00+00:00\"},\"history\":{},\"instrument\":{\"asset_type\":\"equity\",\"exchange\":\"NASDAQ\",\"quote_currency\":\"USD\",\"symbol\":\"TSLA\",\"trading_hours\":\"regular\"},\"market_context\":{\"news_available\":true,\"news_clusters\":[{\"cluster_id\":\"9193b15a85b19e49202aecaf\",\"event_ids\":[\"e4931689db72e20c15386f96\"],\"importance\":85,\"sentiment\":0.0,\"symbols\":[\"TSLA\"],\"title\":\"Tesla\\u2019s Model Y takes second place in China auto sales behind Geely\\u2019s Xingyuan - Seeking Alpha\"},{\"cluster_id\":\"db0e46dbdbdb62b0cc718ffb\",\"event_ids\":[\"b36917667eae9722d14f5779\"],\"importance\":85,\"sentiment\":-0.3333,\"symbols\":[\"TSLA\"],\"title\":\"US auto safety regulator probes 1.2 million Tesla vehicles over suspension failure risks - Reuters\"},{\"cluster_id\":\"f39e9ef615a4c24e039103ff\",\"event_ids\":[\"f06972aef8160e1edbbea42f\"],\"importance\":80,\"sentiment\":-0.3333,\"symbols\":[\"TSLA\"],\"title\":\"Tesla misses on earnings, as free cash flow turns negative and margins slide - CNBC\"},{\"cluster_id\":\"af63fc1c09f436def36b105c\",\"event_ids\":[\"976b3e7a68d936c4e5118d93\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"TSLA\"],\"title\":\"Tesla (NASDAQ:TSLA) Shares Steady As Fresh Automotive Headlines Land - Kalkine Media\"},{\"cluster_id\":\"c0c3d8b391089102564c6fd6\",\"event_ids\":[\"af28db47561acc99eafd486f\"],\"importance\":30,\"sentiment\":0.3333,\"symbols\":[\"TSLA\"],\"title\":\"Tesla's Robotaxi Reality Check: Time to Deliver - MarketBeat\"},{\"cluster_id\":\"b1c2807fb322e7617c70ee91\",\"event_ids\":[\"9eec0a34cb99567b2630c029\"],\"importance\":30,\"sentiment\":-0.3333,\"symbols\":[\"TSLA\"],\"title\":\"Tesla Stock Rises Despite 20,349-Vehicle Headlight Recall - Yahoo Finance\"},{\"cluster_id\":\"609e02d905e572e165252c28\",\"event_ids\":[\"a6093aeece53b7220b835063\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"TSLA\"],\"title\":\"Remember Tesla? - The Atlantic\"},{\"cluster_id\":\"0378b203c3cdaa78fe94ef84\",\"event_ids\":[\"6a84d1b111789cb7a1cdc733\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"TSLA\"],\"title\":\"Tesla vs. GM: Only One Automotive Stock Has the Edge in 2026 - 24/7 Wall St.\"},{\"cluster_id\":\"b6fd23ae2d34f097c8ed3cae\",\"event_ids\":[\"cb1c1af04c2ed5598ced8443\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"TSLA\"],\"title\":\"Tesla (TSLA) crashes 12%, sheds $140B as Elon Musk\\u2019s \\u2018just trust me\\u2019 doesn\\u2019t hold anymore - Electrek\"},{\"cluster_id\":\"7d6fdedc295d641e698fb559\",\"event_ids\":[\"6a5fa8d841d2302da91aa33e\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"TSLA\"],\"title\":\"Tesla Profit Falls Even as Car Sales Rebound - The New York Times\"}],\"news_error_code\":null,\"news_provider\":\"google_news_rss\"},\"news\":[{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"1de59a248b7bc75671846c7b129ac499cdac77a08859665bf994a05a55d95fd4\",\"id\":\"976b3e7a68d936c4e5118d93\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-13T18:11:00+00:00\",\"sentiment\":0.0,\"source\":\"Kalkine Media\",\"summary_raw\":\"Tesla (NASDAQ:TSLA) Shares Steady As Fresh Automotive Headlines Land Kalkine Media\",\"symbols\":[\"TSLA\"],\"title\":\"Tesla (NASDAQ:TSLA) Shares Steady As Fresh Automotive Headlines Land - Kalkine Media\",\"url\":\"https://news.google.com/rss/articles/CBMisAFBVV95cUxOTzZkVk1zaExxclJpTFZHZVpMMkJod0ZZek5PclVnUnVWRmxpOElNWE1zVElDbG1tdkppREhQSTJ0M2dRc01FbF9sR093OTlxZXVTWWUtSDNSd0g0QmdabGFfTFpDOFYtcm1yV0FraU1LT1B0RG5nQ2VlaU9qazJPRlp4TllCbUYyT2czNWZGX1ZyRF9Jeks4MHNQQm4xYVlrUjdqZkJfVUNnVHB0a1ViWQ?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"40348d9ee2012dc8863721364a41e2d8c821ef5714c5ade230821c6bc225bf52\",\"id\":\"af28db47561acc99eafd486f\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-12T14:20:40+00:00\",\"sentiment\":0.3333333333333333,\"source\":\"MarketBeat\",\"summary_raw\":\"Tesla's Robotaxi Reality Check: Time to Deliver MarketBeat\",\"symbols\":[\"TSLA\"],\"title\":\"Tesla's Robotaxi Reality Check: Time to Deliver - MarketBeat\",\"url\":\"https://news.google.com/rss/articles/CBMiigFBVV95cUxNVXV0X2lGT3hyVGhzaHV6b2NHdTAyWGxfWVlaak8waHFEZTlmQzE4ZlVkRTNzWU5lOUdJT01OTTVhUHpGQ2JvWGxrVHVxSC1RRjlndUR6ekxSVGVOSUxpdkJ6WmdFS2RRVHdBbm51SDcydDdGTGJlRmRfX2hqSlQ5M1FLd3lQbnY0QUE?oc=5\"},{\"category\":\"regulation\",\"credibility\":85,\"dedupe_hash\":\"89098d85994fd2b00d7538e581bc28a83f0e636efd3068619645635702a5bea8\",\"id\":\"e4931689db72e20c15386f96\",\"impact_horizon\":\"1-4w\",\"importance\":85,\"published_at\":\"2026-08-12T06:05:32+00:00\",\"sentiment\":0.0,\"source\":\"Seeking Alpha\",\"summary_raw\":\"Tesla\\u2019s Model Y takes second place in China auto sales behind Geely\\u2019s Xingyuan Seeking Alpha\",\"symbols\":[\"TSLA\"],\"title\":\"Tesla\\u2019s Model Y takes second place in China auto sales behind Geely\\u2019s Xingyuan - Seeking Alpha\",\"url\":\"https://news.google.com/rss/articles/CBMitAFBVV95cUxQVWZ6ZW1NNVhfZWljbXZsOG5yeHdCamVxWm5MaWgweGJMcnVOZ2lOb3Zpc1JDMFNiWE9vWDJ4Q2NIeTJIVklPVFhMZ2p5M05RWTlpMlI4eXVZSGpXQ1BKR05qSXktMlBPbkxCeE1zZkJ6SWRndENHQjlFUG53VUlIWDRjQ3I0ZEx1RlYxblVXMDVqa01RQTROdGUxXzU2WG9HWVFnV2ppLWZjdVJsaUt1QVJsbDQ?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"19ff41d971a228842b097be7b63d1adaa526049e7d2e9069ed45166da41daba0\",\"id\":\"9eec0a34cb99567b2630c029\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-11T19:09:32+00:00\",\"sentiment\":-0.3333333333333333,\"source\":\"Yahoo Finance\",\"summary_raw\":\"Tesla Stock Rises Despite 20,349-Vehicle Headlight Recall Yahoo Finance\",\"symbols\":[\"TSLA\"],\"title\":\"Tesla Stock Rises Despite 20,349-Vehicle Headlight Recall - Yahoo Finance\",\"url\":\"https://news.google.com/rss/articles/CBMimAFBVV95cUxOWVU1ZkxMT2NyZlN4SGJWMk9DQUt3S2dxSWlFMXp1RllpNFhOU25GRWNhaHdDX0RqU2lCTU94UHVhT2VVcExuRTN5QnZVZzU3MjBieW9CZEVyaWVtR2FObE5SS1ptMnJVT1JubE9OQ3dnUktvaVRYLTFOU0VaU3I5ZjBBajdKZ2VEdmRsWUdsbGo2VWZZMjZrRQ?oc=5\"},{\"category\":\"regulation\",\"credibility\":85,\"dedupe_hash\":\"5fa8d2978b989b085e75ff101226e82311f2d3d1682df230b926f5602fecf634\",\"id\":\"b36917667eae9722d14f5779\",\"impact_horizon\":\"1-4w\",\"importance\":85,\"published_at\":\"2026-07-31T07:00:00+00:00\",\"sentiment\":-0.3333333333333333,\"source\":\"Reuters\",\"summary_raw\":\"US auto safety regulator probes 1.2 million Tesla vehicles over suspension failure risks Reuters\",\"symbols\":[\"TSLA\"],\"title\":\"US auto safety regulator probes 1.2 million Tesla vehicles over suspension failure risks - Reuters\",\"url\":\"https://news.google.com/rss/articles/CBMiwgFBVV95cUxOWXBVTW4xd3dLcmJXNU41TGx6ZkJadG1walRhRWw5VzkxVnV6Uk5ZQUtTeEhZRHloMDF2WHpPNXNfRkM5UWJUY2RwR3FKM09Da0lDRzg3elRHRWF2SmVvemp1RFItYW5Pc01hM0IxQnBXdExuY3hTeVY1X3oySjVJR0JmMEpqZmUzdWhSYXVGM1FKWmFNZ3lKOWFkX29qbXNCWlhFWktOTmdsMWdWb2d6SjdyeWgwQ3pGLWh5MnNrR0VKQQ?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"35714845b6cd961433bc03d6e361b96085e2275f776288861894bfa5afd4d5b9\",\"id\":\"a6093aeece53b7220b835063\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-07-24T07:00:00+00:00\",\"sentiment\":0.0,\"source\":\"The Atlantic\",\"summary_raw\":\"Remember Tesla? The Atlantic\",\"symbols\":[\"TSLA\"],\"title\":\"Remember Tesla? - The Atlantic\",\"url\":\"https://news.google.com/rss/articles/CBMijAFBVV95cUxQMUo4R3czamE4WTZfQmlDT2hEVHp1R3p3Yy1sUS01VWtuSFFFQnZ0STNoZE03R0k4Yi1lcl9pTDR4bC1zXy0tVDMwaUZ4ZW5mNUJ5d2RtTHNIYXhNRlZLbjBsQUR5c0dxWVVnODU1akdNOEFqVWVTUnlCRTBMSWRoakdTTEJ6bl9HV1RsQQ?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"27309faed3176c537ea2f47e605d8898fbee692a96bbcf31f0544c9bd7911552\",\"id\":\"6a84d1b111789cb7a1cdc733\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-07-24T07:00:00+00:00\",\"sentiment\":0.0,\"source\":\"24/7 Wall St.\",\"summary_raw\":\"Tesla vs. GM: Only One Automotive Stock Has the Edge in 2026 24/7 Wall St.\",\"symbols\":[\"TSLA\"],\"title\":\"Tesla vs. GM: Only One Automotive Stock Has the Edge in 2026 - 24/7 Wall St.\",\"url\":\"https://news.google.com/rss/articles/CBMipAFBVV95cUxNZk51cGFhWExiYU4xRThFS1YwTUgtTkpxZmx2Wm5kTnpLbjlFSW1wcTg4VVM4YmFGVVJuZDRWcVZlMENmOEpBbEhacUQxSnRxUWxxRWd2MWk4Mkg5dnV4ZVEyU1pzdmJwRHpJWjZicWMzTHVSQmNwM3dkVi1kVzhUaWNwckotdjN5TjZDWjA3RWUtZDk1cjJMc0JYUWJKWjVfZm9sdA?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"975e2d157d566ad5b4328d8ebad60ce76b40584700f277eb653a1001254c637f\",\"id\":\"cb1c1af04c2ed5598ced8443\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-07-23T07:00:00+00:00\",\"sentiment\":0.0,\"source\":\"Electrek\",\"summary_raw\":\"Tesla (TSLA) crashes 12%, sheds $140B as Elon Musk\\u2019s \\u2018just trust me\\u2019 doesn\\u2019t hold anymore Electrek\",\"symbols\":[\"TSLA\"],\"title\":\"Tesla (TSLA) crashes 12%, sheds $140B as Elon Musk\\u2019s \\u2018just trust me\\u2019 doesn\\u2019t hold anymore - Electrek\",\"url\":\"https://news.google.com/rss/articles/CBMigAFBVV95cUxNMjJBRjdBUjlQVU45dURzdlk2RmZkci1UNTRIRFFjRUtrTmlJM050NndGZFhQaW56Q24yRVA2bUpaM1A2T0FzNmZnMnBCVVdPaUM2Nlp3SGJ0U2RwY1ZadGpfbXlPcC1QOFl3SGNERzl5VDZzemQxUTJpbTV1ZmtCNw?oc=5\"}],\"price\":{\"change_pct\":3.80140493976433,\"high\":341.6400146484375,\"last\":339.9599914550781,\"low\":325.239990234375},\"provider_snapshot\":{\"data_as_of\":\"2026-08-13T20:00:00+00:00\",\"error_code\":null,\"fetched_at\":\"2026-08-14T12:58:33.661923+00:00\",\"provider\":\"yfinance\",\"stale\":false},\"quant\":{\"atr14\":2.497687203543527,\"ema20\":333.23380069288623,\"ema50\":329.19956993637663,\"macd\":3.030885219326933,\"macd_signal\":2.0109177851400606,\"market_regime\":\"bull_trend\",\"momentum_score\":0.4120562462566424,\"price\":339.9599914550781,\"resistance\":341.6400146484375,\"rsi14\":70.15950322423066,\"support\":323.6400146484375,\"symbol\":\"TSLA\",\"timeframe\":\"1h\",\"timestamp\":\"2026-08-13T20:00:00+00:00\",\"trend_score\":0.3063666484504568,\"volume_ratio\":0.9708243641053248},\"risk_events\":[{\"event_id\":\"e4931689db72e20c15386f96\",\"impact_horizon\":\"1-4w\",\"importance\":85,\"sentiment\":0.0,\"title\":\"Tesla\\u2019s Model Y takes second place in China auto sales behind Geely\\u2019s Xingyuan - Seeking Alpha\"},{\"event_id\":\"b36917667eae9722d14f5779\",\"impact_horizon\":\"1-4w\",\"importance\":85,\"sentiment\":-0.3333333333333333,\"title\":\"US auto safety regulator probes 1.2 million Tesla vehicles over suspension failure risks - Reuters\"},{\"event_id\":\"f06972aef8160e1edbbea42f\",\"impact_horizon\":\"1-3d\",\"importance\":80,\"sentiment\":-0.3333333333333333,\"title\":\"Tesla misses on earnings, as free cash flow turns negative and margins slide - CNBC\"}],\"time_policy\":{\"allowed_values\":{\"holding_horizon_minutes\":[1440,2160,2880,4320],\"reevaluate_minutes\":[60,90,120,240],\"signal_validity_minutes\":[120,180,240]},\"event_risk\":true,\"holding_horizon_minutes\":[1440,4320],\"market_regime\":\"bull_trend\",\"reason_codes\":[\"timeframe_baseline\",\"trend_regime_allowed_extension\",\"high_impact_event_cap\"],\"reevaluate_minutes\":[60,240],\"signal_validity_minutes\":[120,240],\"timeframe\":\"1h\",\"volatility_ratio\":0.7347}}",
+        "raw_model_response": null,
+        "parse_status": "MODEL_UNAVAILABLE",
+        "latency_ms": null
+      }
+    },
+    {
+      "symbol": "AMD",
+      "provider": {
+        "provider": "yfinance",
+        "fetched_at": "2026-08-14T12:58:38.541234+00:00",
+        "data_as_of": "2026-08-13T20:00:00+00:00",
+        "stale": false,
+        "error_code": null
+      },
+      "data_as_of": "2026-08-13T20:00:00+00:00",
+      "quant": {
+        "symbol": "AMD",
+        "timeframe": "1h",
+        "timestamp": "2026-08-13T20:00:00+00:00",
+        "price": 483.010009765625,
+        "ema20": 485.4619597959487,
+        "ema50": 485.7426614123975,
+        "rsi14": 47.664588710700386,
+        "macd": 1.7800421027013158,
+        "macd_signal": 1.941140182475903,
+        "atr14": 4.73736572265625,
+        "volume_ratio": 0.6410078996838287,
+        "support": 465.1000061035156,
+        "resistance": 497.9800109863281,
+        "market_regime": "range",
+        "trend_score": -0.0144470333135166,
+        "momentum_score": -0.06295571602528804
+      },
+      "news_count": 10,
+      "news_available": true,
+      "model": {
+        "provider": "ollama",
+        "model_id": "qwen3.5:4b",
+        "available": false,
+        "error_code": "MODEL_UNAVAILABLE",
+        "raw_response": null,
+        "quantization": "Q4_K_M"
+      },
+      "signal": {
+        "prediction_id": "9f17317e-d2ba-4550-b0c1-29a1d5fe94b2",
+        "instrument": {
+          "symbol": "AMD",
+          "asset_type": "equity",
+          "exchange": "NASDAQ",
+          "currency": "USD",
+          "timezone": "America/New_York",
+          "trading_hours": "regular",
+          "sector": "Semiconductors"
+        },
+        "analysis_timeframe": "1h",
+        "generated_at": "2026-08-14T12:58:38.541234+00:00",
+        "action": "WAIT",
+        "entry_low": null,
+        "entry_high": null,
+        "stop": null,
+        "tp1": null,
+        "tp2": null,
+        "signal_validity_minutes": 180,
+        "signal_valid_until": "2026-08-14T15:58:38.541234+00:00",
+        "expected_hold_minutes": 2880,
+        "expected_hold_until": "2026-08-16T12:58:38.541234+00:00",
+        "max_hold_minutes": 4320,
+        "max_hold_until": "2026-08-17T12:58:38.541234+00:00",
+        "reevaluate_at": "2026-08-14T14:58:38.541234+00:00",
+        "invalidation": [
+          "new quant snapshot required before entry"
+        ],
+        "raw_confidence": 0.5141,
+        "reason_codes": [
+          "MODEL_UNAVAILABLE",
+          "model unavailable or output invalid (MODEL_UNAVAILABLE)"
+        ],
+        "summary": "WAIT: model unavailable or output invalid (MODEL_UNAVAILABLE).",
+        "model_id": "qwen3.5:4b",
+        "model_version": null,
+        "prompt_version": null,
+        "input_hash": "6bab9e85f260cba2e17d4c0615c1e48e011cc7a28c0fe3d71a3ef3a41f681be0",
+        "data_as_of": "2026-08-13T20:00:00+00:00",
+        "context_json": "{\"analysis_time\":{\"timeframe\":\"1h\",\"timestamp\":\"2026-08-13T13:30:00+00:00\"},\"history\":{},\"instrument\":{\"asset_type\":\"equity\",\"exchange\":\"NASDAQ\",\"quote_currency\":\"USD\",\"symbol\":\"AMD\",\"trading_hours\":\"regular\"},\"market_context\":{\"news_available\":true,\"news_clusters\":[{\"cluster_id\":\"64002421a26ebeab48bb183b\",\"event_ids\":[\"2a6d6534209b75f4780862e8\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"AMD\"],\"title\":\"AMD Shares Rise as $4\\u2013$5 Billion Bond Offering May Substantially Increase Debt Load - ts2.tech\"},{\"cluster_id\":\"8c87da381628eafb70d4a88e\",\"event_ids\":[\"6487cc066e9846b8b9e31752\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"AMD\"],\"title\":\"AMD Raises $4.75 Billion in Largest-Ever Bond Offering - GuruFocus\"},{\"cluster_id\":\"982c131533e39c61f4cce9a7\",\"event_ids\":[\"e2fcb4057eb9bf0c46778282\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"AMD\"],\"title\":\"AMD's Big Move: A Debt Offering to Amplify AI Expansion - Devdiscourse\"},{\"cluster_id\":\"1caa36f2f43803d85f153d20\",\"event_ids\":[\"bb22e7e63474065cc0073f01\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"AMD\"],\"title\":\"Advanced Micro Devices (AMD) Stock Is Emerging As A Core AI Infrastructure Trade - simplywall.st\"},{\"cluster_id\":\"a5340da5ae1000841ed880e5\",\"event_ids\":[\"2888ca2f850a0ddfeead05b2\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"AMD\"],\"title\":\"AI Chip Stocks August 2026: Nvidia vs AMD Investment Analysis - Intellectia AI\"},{\"cluster_id\":\"3a1f92d583351b23578ee548\",\"event_ids\":[\"60ea91b7882ff1df70adc6c7\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"AMD\"],\"title\":\"Intel Soars 10%, AMD Jumps 8%, Broadcom Rises 6% as Chip Stocks Ride a Risk-On Rally - 24/7 Wall St.\"},{\"cluster_id\":\"5678f056bdde17964fdf1309\",\"event_ids\":[\"d4e713a26016638f8b24626b\"],\"importance\":30,\"sentiment\":-0.3333,\"symbols\":[\"AMD\"],\"title\":\"AMD, Intel and Micron extend losses as chip stocks get clobbered - CNBC\"},{\"cluster_id\":\"dd99fffa2e39d0f0acac02b8\",\"event_ids\":[\"442f910aab299bb81b373730\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"AMD\"],\"title\":\"South Korea, AMD partner on open AI chip ecosystem - upi.com\"},{\"cluster_id\":\"08e69791c99cd48f5815454a\",\"event_ids\":[\"2239d5de34b712bd8f3c8206\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"AMD\"],\"title\":\"AMD, Micron, SK Hynix climb as semiconductor complex attempt recovery - Yahoo Finance\"},{\"cluster_id\":\"fdc03285b949f00924df8418\",\"event_ids\":[\"e30aab787b5668e6ec80aa7d\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"AMD\"],\"title\":\"AIBIZ Boosts Semiconductor Yield with Lean AI Powered by AMD - AMD\"}],\"news_error_code\":null,\"news_provider\":\"google_news_rss\"},\"news\":[{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"43337cbbc3a196a86be629a45eb81768268f87bdcaa394837037b502fd4c9425\",\"id\":\"2a6d6534209b75f4780862e8\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-14T10:56:05+00:00\",\"sentiment\":0.0,\"source\":\"ts2.tech\",\"summary_raw\":\"AMD Shares Rise as $4\\u2013$5 Billion Bond Offering May Substantially Increase Debt Load ts2.tech\",\"symbols\":[\"AMD\"],\"title\":\"AMD Shares Rise as $4\\u2013$5 Billion Bond Offering May Substantially Increase Debt Load - ts2.tech\",\"url\":\"https://news.google.com/rss/articles/CBMilwFBVV95cUxPZ2JLaFdSampvMGRiT1ptYzR5TGJOZXJudmR3UEMxUW55YkE2QnpvQmpYYmJITkVLSVZvZ3A1NU5xUC1TLS1lNXhYenBMNTVLcVNnb1pkQ3MyVGFNY2dRaUZiRkdvVG8yeVpCWUNGbEpBT1NaX3RKdUpsU2hIMjUtR1VBUFFtSENfNVViOEhVNEpKWWNFZC1r?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"d4c9ee410f05cbbf7383aae459c02776b034f79658b901a2f3e4888093be6f85\",\"id\":\"6487cc066e9846b8b9e31752\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-14T02:16:50+00:00\",\"sentiment\":0.0,\"source\":\"GuruFocus\",\"summary_raw\":\"AMD Raises $4.75 Billion in Largest-Ever Bond Offering GuruFocus\",\"symbols\":[\"AMD\"],\"title\":\"AMD Raises $4.75 Billion in Largest-Ever Bond Offering - GuruFocus\",\"url\":\"https://news.google.com/rss/articles/CBMilAFBVV95cUxPb1BZQnhCdG1pTk55RnFYcWJkYXNicHZaOG9WYjZUeEZCUkNyOFRVOWRMTzR1ek1FVHJxR0JoaXM3dlNYX1dzdTBJQVF0dy1CWGxHWGota052Wmd3TUdvTTJGQ3BsX19DdU9MZV9nLTRHM0ZOQkp2dXdpaWk5WGFZWkNBRW1vVFdFUnh0U1FrQkVQTDBr?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"4948337ecfba0c7d8e4ec70fdc9e6d4d083ee2bb8776963c663494b4e69f6668\",\"id\":\"e2fcb4057eb9bf0c46778282\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-13T16:37:09+00:00\",\"sentiment\":0.0,\"source\":\"Devdiscourse\",\"summary_raw\":\"AMD's Big Move: A Debt Offering to Amplify AI Expansion Devdiscourse\",\"symbols\":[\"AMD\"],\"title\":\"AMD's Big Move: A Debt Offering to Amplify AI Expansion - Devdiscourse\",\"url\":\"https://news.google.com/rss/articles/CBMiswFBVV95cUxNNWVHaWhOQm9nYjIzWG1CT0ZsT1NUdE1UZC0tLXMwRnpwejBqdEtIWC1PTWtfRTFtOHZfUWQtUElOQVU0Q0YyZGhxbG9taTBXWDJXUDBDRFNRV3FqVTdqaG1iM0hsREUtSlhpNjhpV19ValRMVy04bUNCZGlEOFQxWVdQTXhtSnIwdTNhOWZScWxFX3Jjc2FYOThvWWFVbjhJWnZwTnY1dzdIejhIVFJqTE1tONIBswFBVV95cUxNNWVHaWhOQm9nYjIzWG1CT0ZsT1NUdE1UZC0tLXMwRnpwejBqdEtIWC1PTWtfRTFtOHZfUWQtUElOQVU0Q0YyZGhxbG9taTBXWDJXUDBDRFNRV3FqVTdqaG1iM0hsREUtSlhpNjhpV19ValRMVy04bUNCZGlEOFQxWVdQTXhtSnIwdTNhOWZScWxFX3Jjc2FYOThvWWFVbjh\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"e87909b3dacde9e43ad29206d179daf8725983bb68aa8ee8bb7d4b3f4d02a575\",\"id\":\"bb22e7e63474065cc0073f01\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-13T11:34:32+00:00\",\"sentiment\":0.0,\"source\":\"simplywall.st\",\"summary_raw\":\"Advanced Micro Devices (AMD) Stock Is Emerging As A Core AI Infrastructure Trade simplywall.st\",\"symbols\":[\"AMD\"],\"title\":\"Advanced Micro Devices (AMD) Stock Is Emerging As A Core AI Infrastructure Trade - simplywall.st\",\"url\":\"https://news.google.com/rss/articles/CBMi3wFBVV95cUxQcVk0RGZneElnSVNuXzhaUVZ6Z19EOVcwTHZ3UWp1M2RXdVg2Uy1hU3NLcTdob1M1UkF2eDhxZDc0dnZKYi1HRVRDS1U4a2VIaW1pRkNnY2Q2TmdGeC15aWI4U2lFVUZxZHgzR0xSOHlEUW1zUERZZGVXSG16OHR0VlZNODRfbEwta0MzTEpwQzRCQkhWdUFmaVNraUxZTFdwdENQYlJ3R2tCQmVwNFhSYmJ3VWZnWjg5amh6ekVla2hmUHU0UmFGNklydFNuMW9rcDg0Ul94UnBJX05ERWNF0gHkAUFVX3lxTE01Qm8wUEdDaXFPaDk1eURQeUZpM09kcllpSloteHlNU25IUnM2VXc0UVpvb0dOS0pkTkNXdnd6NXBxdVIwNHhzSVpsbXlRX0ltVVNqaEF4YThsMmVQMG9qSVRnTUQ3SEhYUVF5TEdZNGNWUWF\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"de96636cdc5f9ff0a562da202fc5fe8b21bfafe6884bba6d7ad7239ad0e3383b\",\"id\":\"2888ca2f850a0ddfeead05b2\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-13T00:10:51+00:00\",\"sentiment\":0.0,\"source\":\"Intellectia AI\",\"summary_raw\":\"AI Chip Stocks August 2026: Nvidia vs AMD Investment Analysis Intellectia AI\",\"symbols\":[\"AMD\"],\"title\":\"AI Chip Stocks August 2026: Nvidia vs AMD Investment Analysis - Intellectia AI\",\"url\":\"https://news.google.com/rss/articles/CBMiZEFVX3lxTE9hNjg3V1lHY296SVZIMmVNRDE2X3FDQXdNS1dabXhFcFR5X3hNQWhiVm9KSkM0QjN0dW9USmZkaGwzOUp0RnBEYjV2T3l0TnB5SG81QXpNeE9RR1VIenBKSHNEN0g?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"9cf252662c8eeaf1565de1f1a80082005e36cc14498802294fd30e83cbbde994\",\"id\":\"60ea91b7882ff1df70adc6c7\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-04T07:00:00+00:00\",\"sentiment\":0.0,\"source\":\"24/7 Wall St.\",\"summary_raw\":\"Intel Soars 10%, AMD Jumps 8%, Broadcom Rises 6% as Chip Stocks Ride a Risk-On Rally 24/7 Wall St.\",\"symbols\":[\"AMD\"],\"title\":\"Intel Soars 10%, AMD Jumps 8%, Broadcom Rises 6% as Chip Stocks Ride a Risk-On Rally - 24/7 Wall St.\",\"url\":\"https://news.google.com/rss/articles/CBMiwAFBVV95cUxPd0NBY05teWNwSG9tcDRjYWlHcjMwdDNBOHFDb3NWb0VOc0VOT2pCUkNPMTVxMFRETVJjWVFJWm5aMEpyTVJvT3RxSThlejBaOS0tckdWMjNyVjJ1bUJFZUozN0J1VWxpQk1oZy1LWHZJOHk4NEhQakVaa21NV1lKMzFwTXBZYTFsQWRiYzJ3eFZkRGdhREdpZU1QSjdJdGM4SmVHQXhfWWkxcTR4UmZxeU1vRHBWcVBZTEVrSTBIY2c?oc=5\"},{\"category\":\"other\",\"credibility\":85,\"dedupe_hash\":\"cea73bca473ebc15f779634cfbebec64c409b84be63e5ed46cea393b920ee72c\",\"id\":\"d4e713a26016638f8b24626b\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-07-27T07:00:00+00:00\",\"sentiment\":-0.3333333333333333,\"source\":\"CNBC\",\"summary_raw\":\"AMD, Intel and Micron extend losses as chip stocks get clobbered CNBC\",\"symbols\":[\"AMD\"],\"title\":\"AMD, Intel and Micron extend losses as chip stocks get clobbered - CNBC\",\"url\":\"https://news.google.com/rss/articles/CBMiogFBVV95cUxQTE5ReURiN3E4azk1Q0xhR1FzQmZpV3JCNmw4NnVvV21fUEw3b3lNRTV3XzlxUXNBRW9rMzluQU5DTFlYMm9QX3QxNjkyWHZuWDl5MGVrTVkwbFpVRVg3a3Y3YW1iSzByU29jYmRFMFhoY1hDRGVjdmV5NEM0dGVGSEZuVDFGWDM0VFozUmxpcnZ3Rm5zcW9nZHRLUmpZYk5IdlHSAacBQVVfeXFMTmk4b0Nkd25faFlwV3U3OVJheGxMSzdWNHFLSHQ3SktjRV9BamdvUTJSU3QtdFM0UUpUYWVDVUdfOW0xWVlwMEMtTmgzek9LTUdwNWFlOHlLQjdFN0VZVjZlbVZOQ0ZEbVViNFVLWVlSb01RbUxPeHVKeURPTHQ2QTY1TXdXSHdHWFA0d2ZRSDVRejhDQzNFenBaQ0E1ckIwNHRGdXpfRlk?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"b1559d54a8ecad1dfc4d113383eaf75ea751b2130058228158c1103f70fd43f8\",\"id\":\"442f910aab299bb81b373730\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-07-27T07:00:00+00:00\",\"sentiment\":0.0,\"source\":\"upi.com\",\"summary_raw\":\"South Korea, AMD partner on open AI chip ecosystem upi.com\",\"symbols\":[\"AMD\"],\"title\":\"South Korea, AMD partner on open AI chip ecosystem - upi.com\",\"url\":\"https://news.google.com/rss/articles/CBMikAFBVV95cUxOXzc1bDhtY2JHM0ZneGdmQjdVSWFnTy1LLTlXYmNxV3lYeHRxNTk2cm1fSENGVWYtbUNIVXBCUFMwcUVDOTRaZTVmMmFBNlFzUEdWY0x2dUJ1bThlYVVpNVhKd1pjNkdpelVOUlNpSGdKckxhei1FQjVDT3pHWjdBMmhwa0pNQ1J2Q1pZZGplZUzSAZYBQVVfeXFMT3dQMXlhdUFXdDZRaXBxZkxUalBkSTdZVlZILVNwbF9jUmN6T25PNC1xbjEzY0xDMU1iblhNcEJOUXhPY2J1Z0RUZ3BZLVQwOE9xZTFKS2p1aTFWUzVSR1Nrd2trdmtWTy1FdTdxSC1sSUs0Zl9jLVoxcm5wcG8zcDRQT2tIS3NpLXdIUDhWTldORW42bG9B?oc=5\"}],\"price\":{\"change_pct\":0.016569086836049074,\"high\":497.989990234375,\"last\":483.010009765625,\"low\":481.0},\"provider_snapshot\":{\"data_as_of\":\"2026-08-13T20:00:00+00:00\",\"error_code\":null,\"fetched_at\":\"2026-08-14T12:58:38.541234+00:00\",\"provider\":\"yfinance\",\"stale\":false},\"quant\":{\"atr14\":4.73736572265625,\"ema20\":485.4619597959487,\"ema50\":485.7426614123975,\"macd\":1.7800421027013158,\"macd_signal\":1.941140182475903,\"market_regime\":\"range\",\"momentum_score\":-0.06295571602528804,\"price\":483.010009765625,\"resistance\":497.9800109863281,\"rsi14\":47.664588710700386,\"support\":465.1000061035156,\"symbol\":\"AMD\",\"timeframe\":\"1h\",\"timestamp\":\"2026-08-13T20:00:00+00:00\",\"trend_score\":-0.0144470333135166,\"volume_ratio\":0.6410078996838287},\"risk_events\":[],\"time_policy\":{\"allowed_values\":{\"holding_horizon_minutes\":[1440,2160,2880,4320],\"reevaluate_minutes\":[45,60,90,120,135,270],\"signal_validity_minutes\":[90,120,180,240,270]},\"event_risk\":false,\"holding_horizon_minutes\":[1440,4320],\"market_regime\":\"range\",\"reason_codes\":[\"timeframe_baseline\",\"range_regime_shorten_validity\"],\"reevaluate_minutes\":[45,270],\"signal_validity_minutes\":[90,270],\"timeframe\":\"1h\",\"volatility_ratio\":0.9808}}",
+        "raw_model_response": null,
+        "parse_status": "MODEL_UNAVAILABLE",
+        "latency_ms": null
+      }
+    },
+    {
+      "symbol": "BTCUSDT",
+      "provider": {
+        "provider": "binance_public",
+        "fetched_at": "2026-08-14T12:58:43.214938+00:00",
+        "data_as_of": "2026-08-14T12:58:43.727993+00:00",
+        "stale": false,
+        "error_code": null
+      },
+      "data_as_of": "2026-08-14T12:58:43.727993+00:00",
+      "quant": {
+        "symbol": "BTCUSDT",
+        "timeframe": "1h",
+        "timestamp": "2026-08-14T12:00:00+00:00",
+        "price": 62732.47,
+        "ema20": 63161.9105806125,
+        "ema50": 63444.745924653645,
+        "rsi14": 30.645401603660957,
+        "macd": -205.582483668426,
+        "macd_signal": -150.60744405866384,
+        "atr14": 198.86500000000004,
+        "volume_ratio": 1.318106665900109,
+        "support": 62700.0,
+        "resistance": 63640.0,
+        "market_regime": "bear_trend",
+        "trend_score": -0.1114494746251471,
+        "momentum_score": -0.1154834154489559
+      },
+      "news_count": 10,
+      "news_available": true,
+      "model": {
+        "provider": "ollama",
+        "model_id": "qwen3.5:4b",
+        "available": false,
+        "error_code": "MODEL_UNAVAILABLE",
+        "raw_response": null,
+        "quantization": "Q4_K_M"
+      },
+      "signal": {
+        "prediction_id": "1bd7afa1-9a78-4e36-a570-3a76ddfd3bab",
+        "instrument": {
+          "symbol": "BTCUSDT",
+          "asset_type": "crypto",
+          "exchange": "PUBLIC",
+          "currency": "USDT",
+          "timezone": "UTC",
+          "trading_hours": "24x7",
+          "sector": "Crypto"
+        },
+        "analysis_timeframe": "1h",
+        "generated_at": "2026-08-14T12:58:43.214938+00:00",
+        "action": "WAIT",
+        "entry_low": null,
+        "entry_high": null,
+        "stop": null,
+        "tp1": null,
+        "tp2": null,
+        "signal_validity_minutes": 240,
+        "signal_valid_until": "2026-08-14T16:58:43.214938+00:00",
+        "expected_hold_minutes": 2880,
+        "expected_hold_until": "2026-08-16T12:58:43.214938+00:00",
+        "max_hold_minutes": 4320,
+        "max_hold_until": "2026-08-17T12:58:43.214938+00:00",
+        "reevaluate_at": "2026-08-14T15:58:43.214938+00:00",
+        "invalidation": [
+          "new quant snapshot required before entry"
+        ],
+        "raw_confidence": 0.5508,
+        "reason_codes": [
+          "MODEL_UNAVAILABLE",
+          "model unavailable or output invalid (MODEL_UNAVAILABLE)"
+        ],
+        "summary": "WAIT: model unavailable or output invalid (MODEL_UNAVAILABLE).",
+        "model_id": "qwen3.5:4b",
+        "model_version": null,
+        "prompt_version": null,
+        "input_hash": "fe47713027a6a7bf51d31770fd332351ceb99e5c042b39262064db9987257216",
+        "data_as_of": "2026-08-14T12:58:43.727993+00:00",
+        "context_json": "{\"analysis_time\":{\"timeframe\":\"1h\",\"timestamp\":\"2026-08-14T12:58:43.727993+00:00\"},\"history\":{},\"instrument\":{\"asset_type\":\"crypto\",\"exchange\":\"PUBLIC\",\"quote_currency\":\"USDT\",\"symbol\":\"BTCUSDT\",\"trading_hours\":\"24x7\"},\"market_context\":{\"news_available\":true,\"news_clusters\":[{\"cluster_id\":\"973da4057a3cd5b57a6fe6bd\",\"event_ids\":[\"4cea7a675a73018fca747ad0\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"BTCUSDT\"],\"title\":\"Crypto Olsson(@Janni_Olsson)'s insights - Binance\"},{\"cluster_id\":\"abfce8fe50aeab7212c11054\",\"event_ids\":[\"c8b0b69e7d91f75ae78302d9\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"BTCUSDT\"],\"title\":\"Crypto GainGear(@CryptoGainGear)'s insights - Binance\"},{\"cluster_id\":\"611b567140329ecc7cf0e043\",\"event_ids\":[\"fce22fc3b4d11e8f93f1898e\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"BTCUSDT\"],\"title\":\"Never Trust Crypto Pumps Until You Check These Signals for BINANCE:BTCUSDT by MadWhale - TradingView\"},{\"cluster_id\":\"2fd6b6f60cba312e0bfafc1f\",\"event_ids\":[\"97b71f115524a5fa40de0103\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"BTCUSDT\"],\"title\":\"BINANCE:BTCUSDT Chart Image by Crypto-Check- - TradingView\"},{\"cluster_id\":\"f359cf7d388bf6dc9f41de57\",\"event_ids\":[\"aff362cf133b48a2b2c1b6fe\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"BTCUSDT\"],\"title\":\"Will Bitcoin price recover in July? - TradingView\"},{\"cluster_id\":\"ba4f28ab837435c9ddc7d2e6\",\"event_ids\":[\"a4c1dd77124adbf65db18b12\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"BTCUSDT\"],\"title\":\"Crypto Bitcoin / Tether BTC/USDT Chart 5 Minutes - Finviz\"},{\"cluster_id\":\"d8270bf946640376de4a15d8\",\"event_ids\":[\"30676c7f74d241093152b937\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"BTCUSDT\"],\"title\":\"Bitcoin crypto today Analysis: 24h outlook for BTCUSDT - The Cryptonomist\"},{\"cluster_id\":\"b62544b635c6fe15b621fc73\",\"event_ids\":[\"35369810ecc3f407f83cbeff\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"BTCUSDT\"],\"title\":\"Futures Trading Rules - KuCoin\"},{\"cluster_id\":\"76b0eaf2e69c97ff66050569\",\"event_ids\":[\"e036c485eeaafb2a0f03790c\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"BTCUSDT\"],\"title\":\"Bitcoin usd Analysis: 1-Week Outlook for BTCUSDT - The Cryptonomist\"},{\"cluster_id\":\"bccfc671feaa1d6bf88a6346\",\"event_ids\":[\"b885751fd5ebabcde133780d\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"BTCUSDT\"],\"title\":\"Bitcoin (BTCUSDT) Completing Corrective Wave C \\ud83d\\udcca - Binance\"}],\"news_error_code\":null,\"news_provider\":\"google_news_rss\"},\"news\":[{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"d6081700772a574ea4a43f6d56aa5dac783626d01a6cff54b7f7241a859b6ee1\",\"id\":\"4cea7a675a73018fca747ad0\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-13T15:22:01+00:00\",\"sentiment\":0.0,\"source\":\"Binance\",\"summary_raw\":\"Crypto Olsson(@Janni_Olsson)'s insights Binance\",\"symbols\":[\"BTCUSDT\"],\"title\":\"Crypto Olsson(@Janni_Olsson)'s insights - Binance\",\"url\":\"https://news.google.com/rss/articles/CBMiaEFVX3lxTFBJY0EySnJYSVU1eHF2c3pDQ0duVDFHcFJpOG1jVXhQLXh0cFloVzRVUUNxRGR4TkExQ19sTjQzTDJERFQ3djlTSEk1WDRGOExIRE85WlZXXzYzTWdlRE5ScUZiLVFaQ2Fs?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"f99f0582cfd0fd2165d94260cb289e12aeb5fd429ae82ffcd6ca9e1ca1a4fc3e\",\"id\":\"c8b0b69e7d91f75ae78302d9\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-12T16:03:07+00:00\",\"sentiment\":0.0,\"source\":\"Binance\",\"summary_raw\":\"Crypto GainGear(@CryptoGainGear)'s insights Binance\",\"symbols\":[\"BTCUSDT\"],\"title\":\"Crypto GainGear(@CryptoGainGear)'s insights - Binance\",\"url\":\"https://news.google.com/rss/articles/CBMiZEFVX3lxTFBHYVRyeF9McVFFZUQtVDVKM1k3N2d1bll2aUFfYVZpNWNSa1hhSHg3QmZWQ005bmZueFZhaVBkZkRSZ3k5Tkg2b1g3U3dKZng3TkJfX3pLMVR2V05Da0xicXk0TEM?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"0e1d7602d77de3738e1e4393c3ae19273fa6cf0059083b1b749d8fd8ad6eabbb\",\"id\":\"fce22fc3b4d11e8f93f1898e\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-11T08:48:18+00:00\",\"sentiment\":0.0,\"source\":\"TradingView\",\"summary_raw\":\"Never Trust Crypto Pumps Until You Check These Signals for BINANCE:BTCUSDT by MadWhale TradingView\",\"symbols\":[\"BTCUSDT\"],\"title\":\"Never Trust Crypto Pumps Until You Check These Signals for BINANCE:BTCUSDT by MadWhale - TradingView\",\"url\":\"https://news.google.com/rss/articles/CBMiqgFBVV95cUxNd3lyNUZySXk4WGdvc1NVVnV5aHhlOGhKLW81aXo1MDFWRVhQZnJIRXA0U0JQOGY1d1FCNHJMZHZkNURCdGNFOTRyZTNubmhMUXFDcjhWSjZvaGdpa0FnZ2UtM0JKckZveFRZdE1EVmEzWnNBRkN6UDFBeWZwVXNucnNCMHFwYmJNTzRRRWE3R1ZXSnM1dWIyZzM0ZGo3aDdGX3FUMWVFaUhJQQ?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"108efcb631cb265cf40f5878fc6492d7a3024640b56b86b7c15772cd90233053\",\"id\":\"97b71f115524a5fa40de0103\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-10T10:11:32+00:00\",\"sentiment\":0.0,\"source\":\"TradingView\",\"summary_raw\":\"BINANCE:BTCUSDT Chart Image by Crypto-Check- TradingView\",\"symbols\":[\"BTCUSDT\"],\"title\":\"BINANCE:BTCUSDT Chart Image by Crypto-Check- - TradingView\",\"url\":\"https://news.google.com/rss/articles/CBMiUEFVX3lxTE9ucl9zMXB1SDktMWYwUEFwU0NyekNXZC16YUhsTHNNMllkUjAteENvMFEtWWJJSi1nU21qSDFfdmNuZUFWUW52VkVicjZqT0hI?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"af4a98426c0245b8fa69e2198d9c53e80bc94029205dc368a3404bc1460def90\",\"id\":\"aff362cf133b48a2b2c1b6fe\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-06-28T07:00:00+00:00\",\"sentiment\":0.0,\"source\":\"TradingView\",\"summary_raw\":\"Will Bitcoin price recover in July? TradingView\",\"symbols\":[\"BTCUSDT\"],\"title\":\"Will Bitcoin price recover in July? - TradingView\",\"url\":\"https://news.google.com/rss/articles/CBMinwFBVV95cUxNcllXMXRaYl9vNGo0a1Z6QUVhdVljc1UwRVZwT3JzNzlKckphU2lFUnA2N2p1eGtoVzZSVTBkMFNSN3VHU0IxQ09KR2tQWWJRaU55T2NHdEJNUGFyYXZ0Q0c4VUhEaHc1VVp0b1JOc3BKRW5CWmdhSlI2NTJoQVBmTXJkaTRud2JpbXFBSWtzTzRtMXRBbjVmZFNpNW52Z1k?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"ed7bf5d1f0ff5aaad8b29e009f080e0541218b1a3d96a15a16436e60c9d16570\",\"id\":\"a4c1dd77124adbf65db18b12\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-04-30T03:31:28+00:00\",\"sentiment\":0.0,\"source\":\"Finviz\",\"summary_raw\":\"Crypto Bitcoin / Tether BTC/USDT Chart 5 Minutes Finviz\",\"symbols\":[\"BTCUSDT\"],\"title\":\"Crypto Bitcoin / Tether BTC/USDT Chart 5 Minutes - Finviz\",\"url\":\"https://news.google.com/rss/articles/CBMiZEFVX3lxTE9PMTNZWl9HSm5vclVRejU3bjRWRlhkMTRRTWYtZDZsblpzR0dpM2xJUGRST044LVRXZVRuek5FS29weHdWZVlZMDVDSk9aR2lVVkRyNWh5OXhDNW96eU9pOUx4SWw?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"36d17614666dc76442c6c7c507e5841bca05d48fa5a1b284b27eaa893fa11b3a\",\"id\":\"30676c7f74d241093152b937\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-04-01T07:00:00+00:00\",\"sentiment\":0.0,\"source\":\"The Cryptonomist\",\"summary_raw\":\"Bitcoin crypto today Analysis: 24h outlook for BTCUSDT The Cryptonomist\",\"symbols\":[\"BTCUSDT\"],\"title\":\"Bitcoin crypto today Analysis: 24h outlook for BTCUSDT - The Cryptonomist\",\"url\":\"https://news.google.com/rss/articles/CBMid0FVX3lxTE5oMnZxQVNtWXphT3AyOW1FODJLUE85VFo2bTFaVEdCbHZhNVlSeVlqdW5acDRrdVRhcTlMWTBvWHQtZ0FmWFNoOUxicm1EQV9tZHVaRWR1OXBTSjNvZjlVa3l5Z1hHaERkVVhMQ0FoWmQ3WThSeU1J?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"d98f07fae9afb9b014bd0ce4c414dd8cd84e06f8e0a6b4e7289a1c8ba748965c\",\"id\":\"35369810ecc3f407f83cbeff\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-02-22T07:32:07+00:00\",\"sentiment\":0.0,\"source\":\"KuCoin\",\"summary_raw\":\"Futures Trading Rules KuCoin\",\"symbols\":[\"BTCUSDT\"],\"title\":\"Futures Trading Rules - KuCoin\",\"url\":\"https://news.google.com/rss/articles/CBMia0FVX3lxTE5aMm9LMnN5MXpSa2d4bmViUlpSSGY1cW9WVnJVb2c3MUMwTDEtaDJtOEMzZ2ltdzRvZWlJUF9WYnhlbnBMLUxSU2Q0QUw5eGxfNDFnNDhOck1BUEEyRU9PeGlEYWpKc2N5NHNB?oc=5\"}],\"price\":{\"change_pct\":null,\"high\":null,\"last\":62732.47,\"low\":null},\"provider_snapshot\":{\"data_as_of\":\"2026-08-14T12:58:43.727993+00:00\",\"error_code\":null,\"fetched_at\":\"2026-08-14T12:58:43.214938+00:00\",\"provider\":\"binance_public\",\"stale\":false},\"quant\":{\"atr14\":198.86500000000004,\"ema20\":63161.9105806125,\"ema50\":63444.745924653645,\"macd\":-205.582483668426,\"macd_signal\":-150.60744405866384,\"market_regime\":\"bear_trend\",\"momentum_score\":-0.1154834154489559,\"price\":62732.47,\"resistance\":63640.0,\"rsi14\":30.645401603660957,\"support\":62700.0,\"symbol\":\"BTCUSDT\",\"timeframe\":\"1h\",\"timestamp\":\"2026-08-14T12:00:00+00:00\",\"trend_score\":-0.1114494746251471,\"volume_ratio\":1.318106665900109},\"risk_events\":[],\"time_policy\":{\"allowed_values\":{\"holding_horizon_minutes\":[1440,2160,2880,4320],\"reevaluate_minutes\":[60,90,120,180,198,396],\"signal_validity_minutes\":[120,180,240,360,396]},\"event_risk\":false,\"holding_horizon_minutes\":[1440,4320],\"market_regime\":\"bear_trend\",\"reason_codes\":[\"timeframe_baseline\",\"trend_regime_allowed_extension\"],\"reevaluate_minutes\":[60,396],\"signal_validity_minutes\":[120,396],\"timeframe\":\"1h\",\"volatility_ratio\":0.317}}",
+        "raw_model_response": null,
+        "parse_status": "MODEL_UNAVAILABLE",
+        "latency_ms": null
+      }
+    },
+    {
+      "symbol": "ETHUSDT",
+      "provider": {
+        "provider": "binance_public",
+        "fetched_at": "2026-08-14T12:58:47.899992+00:00",
+        "data_as_of": "2026-08-14T12:58:48.176084+00:00",
+        "stale": false,
+        "error_code": null
+      },
+      "data_as_of": "2026-08-14T12:58:48.176084+00:00",
+      "quant": {
+        "symbol": "ETHUSDT",
+        "timeframe": "1h",
+        "timestamp": "2026-08-14T12:00:00+00:00",
+        "price": 1873.15,
+        "ema20": 1880.647789946043,
+        "ema50": 1884.690455892718,
+        "rsi14": 41.011593790969876,
+        "macd": -3.1782657390970144,
+        "macd_signal": -2.268257084621046,
+        "atr14": 6.5414285714285985,
+        "volume_ratio": 1.2689729720680938,
+        "support": 1869.32,
+        "resistance": 1893.03,
+        "market_regime": "bear_trend",
+        "trend_score": -0.053625065246590276,
+        "momentum_score": -0.07139752573385061
+      },
+      "news_count": 10,
+      "news_available": true,
+      "model": {
+        "provider": "ollama",
+        "model_id": "qwen3.5:4b",
+        "available": false,
+        "error_code": "MODEL_UNAVAILABLE",
+        "raw_response": null,
+        "quantization": "Q4_K_M"
+      },
+      "signal": {
+        "prediction_id": "c96a2087-29f1-4dee-8f1a-87eb35a73afc",
+        "instrument": {
+          "symbol": "ETHUSDT",
+          "asset_type": "crypto",
+          "exchange": "PUBLIC",
+          "currency": "USDT",
+          "timezone": "UTC",
+          "trading_hours": "24x7",
+          "sector": "Crypto"
+        },
+        "analysis_timeframe": "1h",
+        "generated_at": "2026-08-14T12:58:47.899992+00:00",
+        "action": "WAIT",
+        "entry_low": null,
+        "entry_high": null,
+        "stop": null,
+        "tp1": null,
+        "tp2": null,
+        "signal_validity_minutes": 240,
+        "signal_valid_until": "2026-08-14T16:58:47.899992+00:00",
+        "expected_hold_minutes": 2880,
+        "expected_hold_until": "2026-08-16T12:58:47.899992+00:00",
+        "max_hold_minutes": 4320,
+        "max_hold_until": "2026-08-17T12:58:47.899992+00:00",
+        "reevaluate_at": "2026-08-14T15:58:47.899992+00:00",
+        "invalidation": [
+          "new quant snapshot required before entry"
+        ],
+        "raw_confidence": 0.5269,
+        "reason_codes": [
+          "MODEL_UNAVAILABLE",
+          "model unavailable or output invalid (MODEL_UNAVAILABLE)"
+        ],
+        "summary": "WAIT: model unavailable or output invalid (MODEL_UNAVAILABLE).",
+        "model_id": "qwen3.5:4b",
+        "model_version": null,
+        "prompt_version": null,
+        "input_hash": "b230ef3c86d997982a45aad838d93abcf09d9904a520bb4352c777587b5b14c6",
+        "data_as_of": "2026-08-14T12:58:48.176084+00:00",
+        "context_json": "{\"analysis_time\":{\"timeframe\":\"1h\",\"timestamp\":\"2026-08-14T12:58:48.176084+00:00\"},\"history\":{},\"instrument\":{\"asset_type\":\"crypto\",\"exchange\":\"PUBLIC\",\"quote_currency\":\"USDT\",\"symbol\":\"ETHUSDT\",\"trading_hours\":\"24x7\"},\"market_context\":{\"news_available\":true,\"news_clusters\":[{\"cluster_id\":\"972b6f01e82f7164ead0cdcc\",\"event_ids\":[\"92d082d48da6c6486b709c13\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"ETHUSDT\"],\"title\":\"ETHUSDT Futures Contract (Aug 2026) Trade Ideas \\u2014 HTX:ETHUSDT21Q2026 - TradingView\"},{\"cluster_id\":\"fba6ae71d0688aeb7a8413d5\",\"event_ids\":[\"9dd0d89b1bc6d3fd2df7a441\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"ETHUSDT\"],\"title\":\"Crypto Olsson(@Janni_Olsson)'s insights - Binance\"},{\"cluster_id\":\"9c5764ae42eeadc652e53543\",\"event_ids\":[\"72de206b4debde42aa9e611e\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"ETHUSDT\"],\"title\":\"Ethereum Price Prediction: Charts Hint At Recovery Phase Before Larger Rally - cryptonews.net\"},{\"cluster_id\":\"296223d8847f0e4828c1e5f4\",\"event_ids\":[\"416bd45a27cd6538133d3026\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"ETHUSDT\"],\"title\":\"Ethereum crypto Analysis momentum in 2026: who benefits - The Cryptonomist\"},{\"cluster_id\":\"9a0dd49542c50aa7840fad7e\",\"event_ids\":[\"03b72bb0cd624335f41d2c0b\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"ETHUSDT\"],\"title\":\"Ethereum today crypto Analysis: 1-Week Recovery Progress - The Cryptonomist\"},{\"cluster_id\":\"0b6c34fa45918f078ce3bae2\",\"event_ids\":[\"35369810ecc3f407f83cbeff\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"ETHUSDT\"],\"title\":\"Futures Trading Rules - KuCoin\"},{\"cluster_id\":\"27914b93307b92acafb58daa\",\"event_ids\":[\"9c3d0be214ad1811783326f8\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"ETHUSDT\"],\"title\":\"ETH vs BTC: Who Really Leads the Market? for BINANCE:ETHUSDT by XAU_EMPIRE - TradingView\"},{\"cluster_id\":\"de712fd77a1cb96c94d25bbb\",\"event_ids\":[\"b3e810b33f927de7d7bf5249\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"ETHUSDT\"],\"title\":\"Standard Chartered Calls 2026 \\u2018Ethereum\\u2019s Year\\u2019: Will ETH USDT Reclaim $5,000? - Yahoo Finance\"},{\"cluster_id\":\"71818201fd07165106ad2ace\",\"event_ids\":[\"be4f8b5f133948b147255284\"],\"importance\":30,\"sentiment\":0.0,\"symbols\":[\"ETHUSDT\"],\"title\":\"Ethereum Whale Adds $105M To His ETH Position \\u2013 $1.33B Bought Since Nov 4 - TradingView\"},{\"cluster_id\":\"3acdcf4631a5ac2a5524623d\",\"event_ids\":[\"c68a032529562c2b5f4c6d8a\"],\"importance\":30,\"sentiment\":0.3333,\"symbols\":[\"ETHUSDT\"],\"title\":\"Trade Crypto on MEXC | Enjoy Lower Fees and Higher Profits! - mexc.co\"}],\"news_error_code\":null,\"news_provider\":\"google_news_rss\"},\"news\":[{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"428da9669d96a030a73eff9d9dd03e610bb168c95148896727de9c1512e9a0c2\",\"id\":\"92d082d48da6c6486b709c13\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-13T14:58:33+00:00\",\"sentiment\":0.0,\"source\":\"TradingView\",\"summary_raw\":\"ETHUSDT Futures Contract (Aug 2026) Trade Ideas \\u2014 HTX:ETHUSDT21Q2026 TradingView\",\"symbols\":[\"ETHUSDT\"],\"title\":\"ETHUSDT Futures Contract (Aug 2026) Trade Ideas \\u2014 HTX:ETHUSDT21Q2026 - TradingView\",\"url\":\"https://news.google.com/rss/articles/CBMihwFBVV95cUxNbGlkaFNfVWxMSUlfUUlhQjMySURPN1lBblZ3dUJLZnRmZlhqTXpOcGo0bFVhdDU0T1EybG9PNkpubThNZGQ2eUxVZ2R4SGMwTmJXQ01hUXRETW5OZmpRNmNOR1FTVy1WWndiNldYRks2Z01TelRRSUlmNllzMV9xTmtxRFVCNk0?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"e890c872d170fe0ed703e543f0feea3d07cd1d40efa964701e029440705f3173\",\"id\":\"9dd0d89b1bc6d3fd2df7a441\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-08-12T09:44:08+00:00\",\"sentiment\":0.0,\"source\":\"Binance\",\"summary_raw\":\"Crypto Olsson(@Janni_Olsson)'s insights Binance\",\"symbols\":[\"ETHUSDT\"],\"title\":\"Crypto Olsson(@Janni_Olsson)'s insights - Binance\",\"url\":\"https://news.google.com/rss/articles/CBMiaEFVX3lxTE1rWTNQWm9kMUU3NkI2eXJac3pDMUZIZUF4MUZnMGh2c3F5alJFanZld2dVQVFUWU5FWTRmUktZc1E3MjVoVms1XzNNU0QtVWR1X29xbTc3dERETG9JSUt1aTlObE5UOHQ1?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"0911bd92975b8e954066131f41ef6e76ebe58f1504c40dfc76ac70ffa110d2c5\",\"id\":\"72de206b4debde42aa9e611e\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-04-27T07:00:00+00:00\",\"sentiment\":0.0,\"source\":\"cryptonews.net\",\"summary_raw\":\"Ethereum Price Prediction: Charts Hint At Recovery Phase Before Larger Rally cryptonews.net\",\"symbols\":[\"ETHUSDT\"],\"title\":\"Ethereum Price Prediction: Charts Hint At Recovery Phase Before Larger Rally - cryptonews.net\",\"url\":\"https://news.google.com/rss/articles/CBMiWkFVX3lxTE5obmZsZ184aWM2N1NPdlRJeXF0LWhJZFJmSTJBeXZ2UjhqMTNQVDNhWE1ncDBlLTk2RmlIY19mNjBQNG1jeDMwZVVRZHJ0LWlCbVFfV2lrdEpfdw?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"8152295be19f6a3308881c1bfbc99dcbf8b9e9659d86d5484087629538fe6da5\",\"id\":\"416bd45a27cd6538133d3026\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-04-08T07:00:00+00:00\",\"sentiment\":0.0,\"source\":\"The Cryptonomist\",\"summary_raw\":\"Ethereum crypto Analysis momentum in 2026: who benefits The Cryptonomist\",\"symbols\":[\"ETHUSDT\"],\"title\":\"Ethereum crypto Analysis momentum in 2026: who benefits - The Cryptonomist\",\"url\":\"https://news.google.com/rss/articles/CBMicEFVX3lxTE9ZcVd1ZTFYeTItcHVVLW9BNXpvUmtvWmp1cUx3MVYwMVNOWjJucS1WZkdPeFNnM3VQWHBjZnZyanZDMDBQUzU0cGN5MnlQMGpkbTE1WFluelZfVlFLMkRmZm5CcFFqOXBQTmk2ZkVNaWM?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"7625431be81ee96dd58cff4888089844e049a606121c017ad4cf3df980a77d08\",\"id\":\"03b72bb0cd624335f41d2c0b\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-03-24T07:00:00+00:00\",\"sentiment\":0.0,\"source\":\"The Cryptonomist\",\"summary_raw\":\"Ethereum today crypto Analysis: 1-Week Recovery Progress The Cryptonomist\",\"symbols\":[\"ETHUSDT\"],\"title\":\"Ethereum today crypto Analysis: 1-Week Recovery Progress - The Cryptonomist\",\"url\":\"https://news.google.com/rss/articles/CBMieEFVX3lxTE13SXdQMl9VVE5XbnJrbEVnT1hsLU5uZ292MTRfV2t3TS02SVAxX2lINXNVUkJVSVlVNlVlR1JpMXBPNUlkYmQtam9Balc0MEFuSXZEX3MycHRnVk1FRWd5MXhwQTRvQU5teWZyWHh5ejlkdWJWQXlQcw?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"d98f07fae9afb9b014bd0ce4c414dd8cd84e06f8e0a6b4e7289a1c8ba748965c\",\"id\":\"35369810ecc3f407f83cbeff\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-02-22T07:32:07+00:00\",\"sentiment\":0.0,\"source\":\"KuCoin\",\"summary_raw\":\"Futures Trading Rules KuCoin\",\"symbols\":[\"ETHUSDT\"],\"title\":\"Futures Trading Rules - KuCoin\",\"url\":\"https://news.google.com/rss/articles/CBMia0FVX3lxTE5aMm9LMnN5MXpSa2d4bmViUlpSSGY1cW9WVnJVb2c3MUMwTDEtaDJtOEMzZ2ltdzRvZWlJUF9WYnhlbnBMLUxSU2Q0QUw5eGxfNDFnNDhOck1BUEEyRU9PeGlEYWpKc2N5NHNB?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"cabd32f8572e8f1e9b2b626a74020e5ec73935824a312848c6c1bf1b3a478ef4\",\"id\":\"9c3d0be214ad1811783326f8\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-02-06T08:00:00+00:00\",\"sentiment\":0.0,\"source\":\"TradingView\",\"summary_raw\":\"ETH vs BTC: Who Really Leads the Market? for BINANCE:ETHUSDT by XAU_EMPIRE TradingView\",\"symbols\":[\"ETHUSDT\"],\"title\":\"ETH vs BTC: Who Really Leads the Market? for BINANCE:ETHUSDT by XAU_EMPIRE - TradingView\",\"url\":\"https://news.google.com/rss/articles/CBMilAFBVV95cUxPNHUzenhiN085bElzNkxuaUhxWHNadDZuY2JVdWZWNDFPNXpJNVBvdVo4WHotVXZFNk9UTGNQQTBSWXJYUjI4aVpvSEpYWnYzaUpaTU5scjZmRGg5MWJEal9BY0ZzVEE2cTlGNmR6cXJiWkxtZWcyQTBlLUVHSUttQU5EdFBULXZiWThmWnN3SVlCQUEx?oc=5\"},{\"category\":\"other\",\"credibility\":60,\"dedupe_hash\":\"24224115816103f41b1b41d0eeb608a5acb30923c2c6ee692b48741e098c03f6\",\"id\":\"b3e810b33f927de7d7bf5249\",\"impact_horizon\":\"unknown\",\"importance\":30,\"published_at\":\"2026-01-14T08:00:00+00:00\",\"sentiment\":0.0,\"source\":\"Yahoo Finance\",\"summary_raw\":\"Standard Chartered Calls 2026 \\u2018Ethereum\\u2019s Year\\u2019: Will ETH USDT Reclaim $5,000? Yahoo Finance\",\"symbols\":[\"ETHUSDT\"],\"title\":\"Standard Chartered Calls 2026 \\u2018Ethereum\\u2019s Year\\u2019: Will ETH USDT Reclaim $5,000? - Yahoo Finance\",\"url\":\"https://news.google.com/rss/articles/CBMijAFBVV95cUxPNU83SUNhQ011YTFKS01JOGo1bmdDMW5pWmhsZU9sdTIwYkstRHVGZGxDY0FYOWQyS0doeWhEUWVMMlVDTGt3QXJhQ3owN25VNHRUZEFrNHd1Q3lWUW1WQ2locXI5Tk9zUUtGN28xSnBkNXRqSUk1aWZPYUpWeE1ZaHRSTkFOMElzN3UxcQ?oc=5\"}],\"price\":{\"change_pct\":null,\"high\":null,\"last\":1873.15,\"low\":null},\"provider_snapshot\":{\"data_as_of\":\"2026-08-14T12:58:48.176084+00:00\",\"error_code\":null,\"fetched_at\":\"2026-08-14T12:58:47.899992+00:00\",\"provider\":\"binance_public\",\"stale\":false},\"quant\":{\"atr14\":6.5414285714285985,\"ema20\":1880.647789946043,\"ema50\":1884.690455892718,\"macd\":-3.1782657390970144,\"macd_signal\":-2.268257084621046,\"market_regime\":\"bear_trend\",\"momentum_score\":-0.07139752573385061,\"price\":1873.15,\"resistance\":1893.03,\"rsi14\":41.011593790969876,\"support\":1869.32,\"symbol\":\"ETHUSDT\",\"timeframe\":\"1h\",\"timestamp\":\"2026-08-14T12:00:00+00:00\",\"trend_score\":-0.053625065246590276,\"volume_ratio\":1.2689729720680938},\"risk_events\":[],\"time_policy\":{\"allowed_values\":{\"holding_horizon_minutes\":[1440,2160,2880,4320],\"reevaluate_minutes\":[60,90,120,180,198,396],\"signal_validity_minutes\":[120,180,240,360,396]},\"event_risk\":false,\"holding_horizon_minutes\":[1440,4320],\"market_regime\":\"bear_trend\",\"reason_codes\":[\"timeframe_baseline\",\"trend_regime_allowed_extension\"],\"reevaluate_minutes\":[60,396],\"signal_validity_minutes\":[120,396],\"timeframe\":\"1h\",\"volatility_ratio\":0.3492}}",
+        "raw_model_response": null,
+        "parse_status": "MODEL_UNAVAILABLE",
+        "latency_ms": null
+      }
+    }
+  ],
+  "failures": 0
+}
