@@ -47,3 +47,9 @@ The local UI uses a restrained research-ledger identity rather than a broker ter
 Date: 2026-08-15
 
 Dashboard panels query backend, provider, model, database counts and performance independently so one failure does not erase unrelated evidence. Backend connectivity never implies model or provider availability. For performance, `metrics.resolved_actionable` is the only resolved-sample count; total Prediction or actionable counts cannot be presented as resolved outcomes. Missing or zero resolved samples remain visibly degraded and PRELIMINARY.
+
+## ADR-009 - Asset reads cannot create Predictions
+
+Date: 2026-08-15
+
+`GET /instruments/{symbol}/snapshot` is a strictly read-only provider-plus-quant path. It may return actual OHLCV, quote, deterministic indicators and provider freshness, but it cannot invoke news, a model, Signal construction or persistence. Only the explicit `POST /analysis/{symbol}` workflow may create a Prediction, including a WAIT Prediction.

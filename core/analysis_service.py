@@ -15,7 +15,7 @@ from .instruments import Instrument
 from .news_engine import NewsEngine, NewsFetchResult, RSSNewsProvider
 from .providers import FixtureNewsProvider, ProviderError, ProviderChain
 from .providers.runtime import MarketDataBundle, ProviderSnapshot, build_default_provider, fetch_market_data
-from .quant import build_quant_snapshot
+from .quant import QuantSnapshot, build_quant_snapshot
 from .signals import Action, SignalProposal, build_signal
 from .storage import SQLiteStore
 from .time_rules import build_time_policy
@@ -71,6 +71,57 @@ class AnalysisResult:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class MarketSnapshotResult:
+    """Read-only provider and deterministic quant output for Asset Detail."""
+
+    instrument: Instrument
+    timeframe: str
+    response_time: datetime
+    bundle: MarketDataBundle
+    quant: QuantSnapshot
+
+    @property
+    def data_as_of(self) -> datetime:
+        return self.bundle.data_as_of
+
+    @staticmethod
+    def _utc_iso(value: datetime) -> str:
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat()
+
+    def to_dict(self) -> dict[str, object]:
+        quote = self.bundle.quote
+        return {
+            "symbol": self.instrument.symbol,
+            "timeframe": self.timeframe,
+            "response_time": self._utc_iso(self.response_time),
+            "data_as_of": self._utc_iso(self.data_as_of),
+            "provider_snapshot": self.bundle.snapshot.to_dict(),
+            "quote": {
+                "timestamp": self._utc_iso(quote.timestamp),
+                "price": quote.price,
+                "change_pct": quote.change_pct,
+                "high": quote.high,
+                "low": quote.low,
+            },
+            "quant": self.quant.to_dict(),
+            "time_policy": None,
+            "bars": [
+                {
+                    "timestamp": self._utc_iso(bar.timestamp),
+                    "open": bar.open,
+                    "high": bar.high,
+                    "low": bar.low,
+                    "close": bar.close,
+                    "volume": bar.volume,
+                }
+                for bar in self.bundle.bars
+            ],
+        }
+
+
 class AnalysisService:
     """One bounded analysis run with explicit provider/model state."""
 
@@ -102,6 +153,34 @@ class AnalysisService:
         except Exception as exc:
             provider_name = str(getattr(provider, "provider_name", provider.__class__.__name__.lower()))
             raise AnalysisError(str(exc), code="provider_error", provider=provider_name) from exc
+
+    def market_snapshot(
+        self,
+        instrument: Instrument,
+        *,
+        timeframe: str = "1h",
+        limit: int = 120,
+        snapshot_time: datetime | None = None,
+    ) -> MarketSnapshotResult:
+        """Fetch market data and compute quant without invoking or persisting analysis."""
+
+        response_time = (snapshot_time or datetime.now(timezone.utc)).astimezone(timezone.utc)
+        bundle = self._bundle(instrument, timeframe, limit)
+        ordered_bars = tuple(sorted(bundle.bars, key=lambda bar: bar.timestamp))[-limit:]
+        snapshot_bundle = MarketDataBundle(
+            quote=bundle.quote,
+            bars=ordered_bars,
+            snapshot=bundle.snapshot,
+        )
+        try:
+            quant = build_quant_snapshot(list(ordered_bars), timeframe, symbol=instrument.symbol)
+        except ValueError as exc:
+            raise AnalysisError(
+                str(exc),
+                code="quant_error",
+                provider=bundle.snapshot.provider,
+            ) from exc
+        return MarketSnapshotResult(instrument, timeframe, response_time, snapshot_bundle, quant)
 
     @staticmethod
     def _risk_events(news: NewsFetchResult) -> tuple[dict[str, object], ...]:

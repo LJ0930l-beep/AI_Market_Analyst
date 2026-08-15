@@ -152,6 +152,17 @@ def get_llm_provider() -> OllamaProvider | None:
     return _llm_provider()
 
 
+def _read_only_snapshot_service() -> AnalysisService:
+    """Build a snapshot service with no persistence, news, or model boundary."""
+
+    return AnalysisService(
+        market_provider_factory=build_default_provider,
+        news_provider=FixtureNewsProvider(),
+        llm_provider=None,
+        store=None,
+    )
+
+
 if FastAPI is not None:
 
     def get_analysis_service(
@@ -165,12 +176,10 @@ if FastAPI is not None:
 
 
     def get_snapshot_service(
-        store: SQLiteStore = Depends(get_store),
-        news_provider: object = Depends(get_news_provider),
     ) -> AnalysisService:
-        """Build the legacy snapshot service without invoking a model."""
+        """Build the read-only market snapshot service without persistence or enrichment."""
 
-        return _service(store=store, news_provider=news_provider, llm_provider=None)
+        return _read_only_snapshot_service()
 
 else:
 
@@ -179,7 +188,7 @@ else:
 
 
     def get_snapshot_service() -> AnalysisService:  # pragma: no cover - FastAPI is absent
-        return _service(llm_provider=None)
+        return _read_only_snapshot_service()
 
 
 def item_payload(item) -> dict[str, object]:
@@ -236,6 +245,14 @@ def _normalize_timeframe(value: str) -> str:
     normalized = _enum_filter(value, field="timeframe", allowed=VALID_TIMEFRAMES, upper=False)
     assert normalized is not None
     return normalized
+
+
+def _analysis_limit(value: object, *, label: str = "analysis") -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise APIError(400, "INVALID_LIMIT", f"{label} limit must be an integer", detail=str(value)) from exc
+    return max(60, min(500, parsed))
 
 
 def _normalize_symbol(value: str | None) -> str | None:
@@ -392,12 +409,29 @@ if FastAPI is not None:
         return [item_payload(item) for item in phase1_universe()]
 
     @router.get("/instruments/{symbol}/snapshot")
-    def snapshot(symbol: str, service: AnalysisService = Depends(get_snapshot_service)) -> dict[str, object]:
+    def snapshot(
+        symbol: str,
+        timeframe: str = "1h",
+        limit: str = "120",
+        service: AnalysisService = Depends(get_snapshot_service),
+    ) -> dict[str, object]:
+        timeframe = _normalize_timeframe(timeframe)
+        bounded_limit = _analysis_limit(limit, label="snapshot")
         try:
-            result = service.analyze(instrument_for(symbol))
+            instrument = instrument_for(symbol)
         except ValueError as exc:
             raise APIError(400, "INVALID_SYMBOL", "unsupported instrument symbol", detail=str(exc), context={"symbol": symbol}) from exc
+        try:
+            result = service.market_snapshot(instrument, timeframe=timeframe, limit=bounded_limit)
         except AnalysisError as exc:
+            if exc.code == "quant_error":
+                raise APIError(
+                    502,
+                    "SNAPSHOT_QUANT_ERROR",
+                    "instrument snapshot quant calculation failed",
+                    detail=str(exc),
+                    context={"provider": exc.provider, "provider_error_code": exc.code},
+                ) from exc
             raise APIError(
                 502,
                 "SNAPSHOT_PROVIDER_ERROR",
@@ -405,15 +439,7 @@ if FastAPI is not None:
                 detail=str(exc),
                 context={"provider": exc.provider, "provider_error_code": exc.code},
             ) from exc
-        return {
-            "symbol": result.instrument.symbol,
-            "response_time": result.response_time.isoformat(),
-            "data_as_of": result.data_as_of.isoformat(),
-            "provider_snapshot": result.bundle.snapshot.to_dict(),
-            "quote": result.to_dict()["quote"],
-            "quant": result.context.quant.to_dict(),
-            "time_policy": result.context.time_policy.to_dict() if result.context.time_policy else None,
-        }
+        return result.to_dict()
 
     @router.get("/instruments/{symbol}/news")
     def news(symbol: str, news_provider: object = Depends(get_news_provider)) -> dict[str, object]:
@@ -431,10 +457,7 @@ if FastAPI is not None:
     ) -> dict[str, object]:
         body = body or {}
         timeframe = _normalize_timeframe(str(body.get("timeframe", "1h")))
-        try:
-            limit = max(60, min(500, int(body.get("limit", 120))))
-        except (TypeError, ValueError) as exc:
-            raise APIError(400, "INVALID_LIMIT", "analysis limit must be an integer", detail=str(body.get("limit"))) from exc
+        limit = _analysis_limit(body.get("limit", 120), label="analysis")
         return _analysis_result(service, symbol, timeframe=timeframe, limit=limit)
 
     @router.post("/analyze/{symbol}")
@@ -806,6 +829,7 @@ def create_app(
     *,
     store: SQLiteStore | None = None,
     analysis_service: AnalysisService | None = None,
+    snapshot_service: AnalysisService | None = None,
     news_provider: object | None = None,
     llm_provider: object | None = _UNSET,
 ):
@@ -886,6 +910,10 @@ def create_app(
         app.dependency_overrides[get_llm_provider] = lambda: llm_provider
     if analysis_service is not None:
         app.dependency_overrides[get_analysis_service] = lambda: analysis_service
+    if snapshot_service is not None:
+        app.dependency_overrides[get_snapshot_service] = lambda: snapshot_service
+    elif analysis_service is not None:
+        app.dependency_overrides[get_snapshot_service] = lambda: analysis_service
     return app
 
 

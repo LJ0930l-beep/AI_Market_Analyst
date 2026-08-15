@@ -6,6 +6,11 @@ Phase 4 - Product UI and interaction.
 
 Current task: `P4-T04` - implement Asset Detail and the evidence-first analysis workflow.
 
+P4-T04 execution split:
+
+- `P4-T04a` read-only market snapshot API - ACCEPTED: real OHLCV/quote/quant/provider provenance with zero Prediction side effects.
+- `P4-T04b` Asset Detail frontend: instrument/timeframe controls, truthful charts/news/quant, explicit Analyze and Signal Card workflow.
+
 ## Phase 4 task graph
 
 1. `P4-T01` Backend product API contract - ACCEPTED

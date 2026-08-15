@@ -16,7 +16,7 @@ from core.ai.prompts import PROMPT_VERSION
 from core.analysis_service import AnalysisService
 from core.instruments import instrument_for
 from core.outcomes import settle_prediction
-from core.providers import Bar, FixtureNewsProvider, FixtureProvider
+from core.providers import Bar, FixtureNewsProvider, FixtureProvider, ProviderError
 from core.quant import build_quant_snapshot
 from core.signals import Action, build_signal
 from core.storage import SQLiteStore
@@ -28,10 +28,29 @@ class Phase4APITests(unittest.TestCase):
         self.store = SQLiteStore(Path(self.temp.name) / "api.sqlite3")
         self.store.initialize()
         self._seed_store()
+        class ExplodingNewsProvider:
+            provider_name = "must_not_be_called"
+
+            def get_events(self, *_args, **_kwargs):
+                raise AssertionError("snapshot must not fetch news")
+
+        class ExplodingModelProvider:
+            provider_name = "must_not_be_called"
+
+            def analyze_market(self, *_args, **_kwargs):
+                raise AssertionError("snapshot must not invoke a model")
+
+        self.snapshot_service = AnalysisService(
+            market_provider_factory=lambda _instrument: FixtureProvider(),
+            news_provider=ExplodingNewsProvider(),
+            llm_provider=ExplodingModelProvider(),
+            store=self.store,
+        )
         self.app = create_app(
             store=self.store,
             news_provider=FixtureNewsProvider(),
             llm_provider=MockLLMProvider(),
+            snapshot_service=self.snapshot_service,
         )
         self.client = TestClient(self.app)
 
@@ -194,9 +213,108 @@ class Phase4APITests(unittest.TestCase):
             news_provider=FixtureNewsProvider(),
             llm_provider=None,
         )
+        before_predictions = self.store.counts()["predictions"]
         result = TestClient(analysis_app).post("/analysis/AAPL", json={"timeframe": "1h", "limit": 120})
         self.assertEqual(result.status_code, 200)
         self.assertEqual(result.json()["signal"]["instrument"]["symbol"], "AAPL")
+        self.assertEqual(self.store.counts()["predictions"], before_predictions + 1)
+
+    def test_snapshot_is_bounded_provenance_rich_and_side_effect_free(self):
+        before = self.store.counts()
+        first = self.client.get("/instruments/NVDA/snapshot", params={"timeframe": "15M", "limit": 60})
+
+        self.assertEqual(first.status_code, 200)
+        payload = first.json()
+        self.assertEqual(
+            set(payload),
+            {"symbol", "timeframe", "response_time", "data_as_of", "provider_snapshot", "quote", "quant", "time_policy", "bars"},
+        )
+        self.assertEqual(payload["symbol"], "NVDA")
+        self.assertEqual(payload["timeframe"], "15m")
+        self.assertEqual(payload["provider_snapshot"]["provider"], "fixture")
+        self.assertTrue(payload["provider_snapshot"]["stale"])
+        self.assertEqual(payload["quant"]["symbol"], "NVDA")
+        self.assertEqual(payload["quant"]["timeframe"], "15m")
+        self.assertIsNone(payload["time_policy"])
+        self.assertEqual(set(payload["quote"]), {"timestamp", "price", "change_pct", "high", "low"})
+        self.assertEqual(len(payload["bars"]), 60)
+
+        timestamps = [datetime.fromisoformat(row["timestamp"]) for row in payload["bars"]]
+        self.assertEqual(timestamps, sorted(timestamps))
+        for row in payload["bars"]:
+            self.assertEqual(set(row), {"timestamp", "open", "high", "low", "close", "volume"})
+            self.assertLessEqual(max(row["open"], row["close"]), row["high"])
+            self.assertGreaterEqual(min(row["open"], row["close"]), row["low"])
+            self.assertGreaterEqual(row["volume"], 0.0)
+        self.assertEqual(self.store.counts(), before)
+
+        second = self.client.get("/instruments/NVDA/snapshot", params={"timeframe": "15m", "limit": 60})
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.json()["bars"], payload["bars"])
+        self.assertEqual(second.json()["quant"], payload["quant"])
+        self.assertEqual(self.store.counts(), before)
+
+        lower_clamped = self.client.get("/instruments/NVDA/snapshot", params={"limit": 1})
+        upper_clamped = self.client.get("/instruments/NVDA/snapshot", params={"limit": 999})
+        self.assertEqual(lower_clamped.status_code, 200)
+        self.assertEqual(upper_clamped.status_code, 200)
+        self.assertEqual(len(lower_clamped.json()["bars"]), 60)
+        self.assertEqual(len(upper_clamped.json()["bars"]), 500)
+        self.assertEqual(self.store.counts(), before)
+
+    def test_snapshot_invalid_inputs_and_provider_or_quant_errors_are_structured(self):
+        invalid_symbol = self.client.get("/instruments/NOT_SUPPORTED/snapshot")
+        invalid_timeframe = self.client.get("/instruments/NVDA/snapshot", params={"timeframe": "weekly"})
+        invalid_limit = self.client.get("/instruments/NVDA/snapshot", params={"limit": "not-an-integer"})
+        for response, code in (
+            (invalid_symbol, "INVALID_SYMBOL"),
+            (invalid_timeframe, "INVALID_TIMEFRAME"),
+            (invalid_limit, "INVALID_LIMIT"),
+        ):
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.json()["error"]["code"], code)
+
+        class FailingProvider:
+            provider_name = "failing_fixture"
+
+            def get_quote(self, _instrument):
+                raise ProviderError("fixture unavailable", code="timeout", provider=self.provider_name)
+
+            def get_bars(self, _instrument, _timeframe, _limit=200):
+                raise AssertionError("quote failure should stop the provider request")
+
+        provider_service = AnalysisService(
+            market_provider_factory=lambda _instrument: FailingProvider(),
+            news_provider=FixtureNewsProvider(),
+            llm_provider=None,
+            store=self.store,
+        )
+        provider_response = TestClient(create_app(store=self.store, snapshot_service=provider_service)).get(
+            "/instruments/NVDA/snapshot"
+        )
+        self.assertEqual(provider_response.status_code, 502)
+        self.assertEqual(provider_response.json()["error"]["code"], "SNAPSHOT_PROVIDER_ERROR")
+
+        class ShortHistoryProvider:
+            provider_name = "short_fixture"
+
+            def get_quote(self, instrument):
+                return FixtureProvider().get_quote(instrument)
+
+            def get_bars(self, instrument, timeframe, limit=200):
+                return FixtureProvider().get_bars(instrument, timeframe, limit)[:59]
+
+        quant_service = AnalysisService(
+            market_provider_factory=lambda _instrument: ShortHistoryProvider(),
+            news_provider=FixtureNewsProvider(),
+            llm_provider=None,
+            store=self.store,
+        )
+        quant_response = TestClient(create_app(store=self.store, snapshot_service=quant_service)).get(
+            "/instruments/NVDA/snapshot"
+        )
+        self.assertEqual(quant_response.status_code, 502)
+        self.assertEqual(quant_response.json()["error"]["code"], "SNAPSHOT_QUANT_ERROR")
 
     def test_predictions_filters_detail_and_structured_errors(self):
         filtered = self.client.get("/predictions", params={"symbol": "nvda", "action": "long", "limit": 0})

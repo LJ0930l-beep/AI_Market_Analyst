@@ -80,6 +80,43 @@ class AnalysisServiceTests(unittest.TestCase):
         self.assertLessEqual(result.signal.raw_confidence, 0.60)
         self.assertIn("news_unavailable", result.signal.reason_codes)
 
+    def test_market_snapshot_is_read_only_and_uses_deterministic_quant(self):
+        class ExplodingNews:
+            def get_events(self, *_args, **_kwargs):
+                raise AssertionError("snapshot must not fetch news")
+
+        class ExplodingModel:
+            def analyze_market(self, *_args, **_kwargs):
+                raise AssertionError("snapshot must not invoke a model")
+
+        with tempfile.TemporaryDirectory() as temp:
+            store = SQLiteStore(Path(temp) / "snapshot.sqlite3")
+            store.initialize()
+            service = AnalysisService(
+                market_provider_factory=self._factory,
+                news_provider=ExplodingNews(),
+                llm_provider=ExplodingModel(),
+                store=store,
+            )
+            before = store.counts()
+
+            result = service.market_snapshot(instrument_for("NVDA"), timeframe="15m", limit=60)
+
+            self.assertEqual(store.counts(), before)
+            self.assertEqual(result.instrument.symbol, "NVDA")
+            self.assertEqual(result.timeframe, "15m")
+            self.assertEqual(len(result.bundle.bars), 60)
+            self.assertEqual(result.quant.timeframe, "15m")
+            self.assertEqual(result.bundle.snapshot.provider, "fixture")
+            self.assertEqual(
+                [bar.timestamp for bar in result.bundle.bars],
+                sorted(bar.timestamp for bar in result.bundle.bars),
+            )
+            for bar in result.bundle.bars:
+                self.assertLessEqual(max(bar.open, bar.close), bar.high)
+                self.assertGreaterEqual(min(bar.open, bar.close), bar.low)
+                self.assertGreaterEqual(bar.volume, 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

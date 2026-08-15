@@ -6,7 +6,7 @@ Updated: 2026-08-15
 
 - Target: V1.0 Final Acceptance through Phase 7.
 - Active phase: Phase 4.
-- Active task: P4-T04 planning - Asset Detail and analysis workflow.
+- Active task: P4-T04b planning - Asset Detail frontend and explicit analysis workflow.
 - Blockers: none.
 - Sole developer: `luna-max` (one persistent thread, serial tasks).
 
@@ -56,7 +56,11 @@ Phase 3 evidence:
 - Frontend verification: lint PASS, typecheck PASS, 15 tests PASS, production build PASS and both dependency audits at 0 vulnerabilities.
 - Full regression: 46 Python tests PASS, compile check PASS and `pip check` PASS.
 - Live visual QA with a temporary Phase 3 database copy: all API routes returned 200, desktop and 390x844 mobile PASS, no horizontal overflow or browser console warnings/errors.
+- P4-T04a Read-only market snapshot contract: PASS.
+- GET snapshot now accepts normalized timeframe/bounded history, returns real ascending OHLCV bars plus quote/quant/provider provenance, and performs no news/model work.
+- Repeated snapshot GETs leave every SQLite count unchanged; explicit POST analysis still persists exactly one Prediction.
+- Backend verification: 49 tests PASS, compile check PASS, `pip check` PASS and diff check PASS.
 
 ## Next action
 
-Create the P4-T03 checkpoint, define P4-T04 acceptance criteria and delegate P4-T04 to the same `luna-max` thread.
+Delegate P4-T04b to the same `luna-max` thread, then verify explicit Analyze, real OHLCV rendering and Signal validity/provenance behavior.

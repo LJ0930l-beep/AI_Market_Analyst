@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Phase 4 - P4-T04a read-only market snapshot
+
+- Replaced the side-effecting GET snapshot path with provider fetch plus deterministic Python quant only.
+- Added normalized timeframe and bounded history inputs with ascending real OHLCV bars.
+- Preserved quote, quant and provider freshness provenance while keeping the legacy `time_policy` key explicitly null.
+- Added structured snapshot provider/quant errors and injectable snapshot-service tests.
+- Proved repeated GET snapshot calls do not change any SQLite table count; explicit POST analysis still creates one Prediction.
+- Verification: 49 Python tests PASS, compile/dependency/diff checks PASS.
+
 ### Phase 4 - P4-T03 Dashboard and operational health
 
 - Added real read-only Dashboard and Settings/Health surfaces backed by independent local API requests.
