@@ -4,11 +4,11 @@
 
 Phase 4 - Product UI and interaction.
 
-Current task: `P4-T01` - establish the tested backend product API contract needed by the UI without changing Phase 1-3 business logic.
+Current task: `P4-T02` - establish the React + TypeScript application foundation and typed API client over the accepted P4-T01 contract.
 
 ## Phase 4 task graph
 
-1. `P4-T01` Backend product API contract
+1. `P4-T01` Backend product API contract - ACCEPTED
    - Structured response envelopes/errors, CORS for local UI, missing read/detail/filter endpoints and API contract tests.
    - No frontend work and no core financial-rule changes.
 2. `P4-T02` React + TypeScript application foundation

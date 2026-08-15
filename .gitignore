@@ -8,4 +8,4 @@ venv/
 data/*.sqlite3
 data/*.db
 *.log
-
+*.egg-info/

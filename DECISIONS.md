@@ -29,3 +29,9 @@ New work should extend existing providers, storage and services. Broad rewrites 
 Date: 2026-08-15
 
 The 45 final `repair_failed` replay samples remain part of the audit trail and invalid-count reporting. They are excluded from valid performance calculations but are not deleted or relabeled. Future quality work may improve new runs without rewriting historical results.
+
+## ADR-006 - Stable API contract before frontend implementation
+
+Date: 2026-08-15
+
+Phase 4 uses an injectable FastAPI app factory while preserving existing successful endpoint shapes. New failures use structured error codes. UI read paths are backed by explicit SQLite query helpers, and Follow remains paper-only, idempotent and limited to non-expired LONG/SHORT Predictions. This contract is accepted before creating the React frontend.

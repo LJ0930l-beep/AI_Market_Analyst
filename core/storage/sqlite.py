@@ -420,13 +420,24 @@ class SQLiteStore:
             "error_code": row["error_code"],
         }
 
-    def list_replay_runs(self, *, limit: int = 50) -> list[dict[str, Any]]:
+    def list_replay_runs(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
         bounded_limit = max(1, min(int(limit), 500))
+        bounded_offset = max(0, min(int(offset), 100_000))
+        query = "SELECT run_id FROM replay_runs"
+        params: list[Any] = []
+        if status:
+            query += " WHERE status = ?"
+            params.append(status)
+        query += " ORDER BY created_at DESC, run_id DESC LIMIT ? OFFSET ?"
+        params.extend((bounded_limit, bounded_offset))
         with self._connect() as db:
-            rows = db.execute(
-                "SELECT run_id FROM replay_runs ORDER BY created_at DESC LIMIT ?",
-                (bounded_limit,),
-            ).fetchall()
+            rows = db.execute(query, tuple(params)).fetchall()
         return [self.get_replay_run(row["run_id"]) for row in rows]  # type: ignore[misc]
 
     def find_resumable_replay_run(self, manifest_hash: str) -> dict[str, Any] | None:
@@ -679,6 +690,170 @@ class SQLiteStore:
                 ),
             )
 
+    @staticmethod
+    def _linked_record_from_row(row: sqlite3.Row) -> dict[str, Any]:
+        prediction = json.loads(row["prediction_json"])
+        paper_trade = None
+        if row["followed_at"] is not None:
+            paper_trade = {
+                "prediction_id": row["prediction_id"],
+                "followed_at": row["followed_at"],
+                "status": row["paper_status"],
+            }
+        outcome = json.loads(row["outcome_json"]) if row["outcome_json"] else None
+        return {
+            "prediction_id": row["prediction_id"],
+            "prediction": prediction,
+            "paper_trade": paper_trade,
+            "outcome": outcome,
+            "outcome_status": row["outcome_status"],
+        }
+
+    def get_prediction_record(self, prediction_id: str) -> dict[str, Any] | None:
+        with self._connect() as db:
+            row = db.execute(
+                """SELECT p.prediction_id AS prediction_id, p.payload_json AS prediction_json,
+                          pt.followed_at AS followed_at, pt.status AS paper_status,
+                          o.payload_json AS outcome_json, o.status AS outcome_status
+                     FROM predictions p
+                LEFT JOIN paper_trades pt ON pt.prediction_id = p.prediction_id
+                LEFT JOIN outcomes o ON o.prediction_id = p.prediction_id
+                    WHERE p.prediction_id = ?""",
+                (prediction_id,),
+            ).fetchone()
+        return self._linked_record_from_row(row) if row is not None else None
+
+    def list_paper_trade_records(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        symbol: str | None = None,
+        timeframe: str | None = None,
+        action: str | None = None,
+        source_type: str | None = None,
+        status: str | None = None,
+        outcome_status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if symbol:
+            clauses.append("p.symbol = ?")
+            params.append(symbol.upper())
+        if timeframe:
+            clauses.append("json_extract(p.payload_json, '$.analysis_timeframe') = ?")
+            params.append(timeframe)
+        if action:
+            clauses.append("p.action = ?")
+            params.append(action)
+        if source_type:
+            clauses.append("COALESCE(p.source_type, 'live') = ?")
+            params.append(source_type)
+        if status:
+            clauses.append("pt.status = ?")
+            params.append(status)
+        if outcome_status:
+            clauses.append("o.status = ?")
+            params.append(outcome_status)
+        query = """SELECT p.prediction_id AS prediction_id, p.payload_json AS prediction_json,
+                          pt.followed_at AS followed_at, pt.status AS paper_status,
+                          o.payload_json AS outcome_json, o.status AS outcome_status
+                     FROM paper_trades pt
+                     JOIN predictions p ON p.prediction_id = pt.prediction_id
+                LEFT JOIN outcomes o ON o.prediction_id = p.prediction_id"""
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY pt.followed_at DESC, pt.prediction_id DESC LIMIT ? OFFSET ?"
+        params.extend((max(1, min(int(limit), 500)), max(0, min(int(offset), 100_000))))
+        with self._connect() as db:
+            rows = db.execute(query, tuple(params)).fetchall()
+        return [
+            {
+                "prediction_id": record["prediction_id"],
+                "followed_at": record["paper_trade"]["followed_at"],
+                "status": record["paper_trade"]["status"],
+                "prediction": record["prediction"],
+                "outcome": record["outcome"],
+                "outcome_status": record["outcome_status"],
+            }
+            for record in (self._linked_record_from_row(row) for row in rows)
+        ]
+
+    def get_paper_trade_record(self, prediction_id: str) -> dict[str, Any] | None:
+        record = self.get_prediction_record(prediction_id)
+        if record is None or record["paper_trade"] is None:
+            return None
+        return {
+            "prediction_id": prediction_id,
+            "followed_at": record["paper_trade"]["followed_at"],
+            "status": record["paper_trade"]["status"],
+            "prediction": record["prediction"],
+            "outcome": record["outcome"],
+            "outcome_status": record["outcome_status"],
+        }
+
+    def list_outcome_records(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        symbol: str | None = None,
+        timeframe: str | None = None,
+        action: str | None = None,
+        source_type: str | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if symbol:
+            clauses.append("p.symbol = ?")
+            params.append(symbol.upper())
+        if timeframe:
+            clauses.append("json_extract(p.payload_json, '$.analysis_timeframe') = ?")
+            params.append(timeframe)
+        if action:
+            clauses.append("p.action = ?")
+            params.append(action)
+        if source_type:
+            clauses.append("COALESCE(p.source_type, 'live') = ?")
+            params.append(source_type)
+        if status:
+            clauses.append("o.status = ?")
+            params.append(status)
+        query = """SELECT p.prediction_id AS prediction_id, p.payload_json AS prediction_json,
+                          pt.followed_at AS followed_at, pt.status AS paper_status,
+                          o.payload_json AS outcome_json, o.status AS outcome_status
+                     FROM outcomes o
+                     JOIN predictions p ON p.prediction_id = o.prediction_id
+                LEFT JOIN paper_trades pt ON pt.prediction_id = p.prediction_id"""
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY o.settled_at DESC, o.prediction_id DESC LIMIT ? OFFSET ?"
+        params.extend((max(1, min(int(limit), 500)), max(0, min(int(offset), 100_000))))
+        with self._connect() as db:
+            rows = db.execute(query, tuple(params)).fetchall()
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            record = self._linked_record_from_row(row)
+            outcome = dict(record["outcome"] or {})
+            outcome["prediction"] = record["prediction"]
+            outcome["paper_trade"] = record["paper_trade"]
+            outcome["outcome"] = record["outcome"]
+            outcome["outcome_status"] = record["outcome_status"]
+            results.append(outcome)
+        return results
+
+    def get_outcome_record(self, prediction_id: str) -> dict[str, Any] | None:
+        record = self.get_prediction_record(prediction_id)
+        if record is None or record["outcome"] is None:
+            return None
+        outcome = dict(record["outcome"])
+        outcome["prediction"] = record["prediction"]
+        outcome["paper_trade"] = record["paper_trade"]
+        outcome["outcome"] = record["outcome"]
+        outcome["outcome_status"] = record["outcome_status"]
+        return outcome
+
     def list_prediction_records(
         self,
         *,
@@ -749,10 +924,15 @@ class SQLiteStore:
             exists = db.execute("SELECT 1 FROM predictions WHERE prediction_id = ?", (prediction_id,)).fetchone()
             if exists is None:
                 raise KeyError(f"prediction not found: {prediction_id}")
-            db.execute(
-                "INSERT OR REPLACE INTO paper_trades(prediction_id, followed_at, status) VALUES (?, ?, ?)",
-                (prediction_id, followed_at, status),
+            updated = db.execute(
+                "UPDATE paper_trades SET status = ? WHERE prediction_id = ?",
+                (status, prediction_id),
             )
+            if updated.rowcount == 0:
+                db.execute(
+                    "INSERT INTO paper_trades(prediction_id, followed_at, status) VALUES (?, ?, ?)",
+                    (prediction_id, followed_at, status),
+                )
 
     def save_outcome(self, outcome: Outcome) -> None:
         with self._connect() as db:
@@ -808,11 +988,56 @@ class SQLiteStore:
             row = db.execute("SELECT payload_json FROM predictions WHERE prediction_id = ?", (prediction_id,)).fetchone()
         return json.loads(row[0]) if row else None
 
-    def list_prediction_payloads(self, limit: int = 50) -> list[dict[str, Any]]:
-        bounded_limit = max(1, min(int(limit), 500))
+    def list_prediction_payloads(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        *,
+        symbol: str | None = None,
+        timeframe: str | None = None,
+        action: str | None = None,
+        source_type: str | None = None,
+        replay_run_id: str | None = None,
+        model_id: str | None = None,
+        prompt_version: str | None = None,
+        outcome_status: str | None = None,
+        has_outcome: bool | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if symbol:
+            clauses.append("p.symbol = ?")
+            params.append(symbol.upper())
+        if timeframe:
+            clauses.append("json_extract(p.payload_json, '$.analysis_timeframe') = ?")
+            params.append(timeframe)
+        if action:
+            clauses.append("p.action = ?")
+            params.append(action)
+        if source_type:
+            clauses.append("COALESCE(p.source_type, 'live') = ?")
+            params.append(source_type)
+        if replay_run_id:
+            clauses.append("p.replay_run_id = ?")
+            params.append(replay_run_id)
+        if model_id:
+            clauses.append("p.model_id = ?")
+            params.append(model_id)
+        if prompt_version:
+            clauses.append("p.prompt_version = ?")
+            params.append(prompt_version)
+        if outcome_status:
+            clauses.append("o.status = ?")
+            params.append(outcome_status)
+        if has_outcome is True:
+            clauses.append("o.prediction_id IS NOT NULL")
+        elif has_outcome is False:
+            clauses.append("o.prediction_id IS NULL")
+        query = "SELECT p.payload_json FROM predictions p LEFT JOIN outcomes o ON o.prediction_id = p.prediction_id"
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY p.generated_at DESC, p.prediction_id DESC LIMIT ? OFFSET ?"
+        params.extend((max(1, min(int(limit), 500)), max(0, min(int(offset), 100_000))))
         with self._connect() as db:
-            rows = db.execute(
-                "SELECT payload_json FROM predictions ORDER BY generated_at DESC LIMIT ?",
-                (bounded_limit,),
-            ).fetchall()
+            rows = db.execute(query, tuple(params)).fetchall()
         return [json.loads(row[0]) for row in rows]

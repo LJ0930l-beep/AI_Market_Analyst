@@ -6,7 +6,7 @@ Updated: 2026-08-15
 
 - Target: V1.0 Final Acceptance through Phase 7.
 - Active phase: Phase 4.
-- Active task: P4-T01 planned; not yet delegated.
+- Active task: P4-T02 planned; not yet delegated.
 - Blockers: none.
 - Sole developer: `luna-max` (one persistent thread, serial tasks).
 
@@ -28,9 +28,19 @@ Phase 3 evidence:
 
 - Historical-news replay is capability-limited and marked `technical_only`.
 - The formal Phase 3 run is `COMPLETED_WITH_ERRORS`; no zero-error claim is made.
-- FastAPI/Uvicorn are optional and not installed in the current base Python environment.
 - No frontend application exists yet.
+
+## Phase 4 progress
+
+- P4-T01 Backend product API contract: PASS.
+- Added injectable FastAPI app factory, local configurable CORS and stable structured errors.
+- Added filtered/detail reads for Predictions, Paper Trades, Outcomes and Replay runs.
+- Follow is idempotent, paper-only and rejects WAIT or expired new signals.
+- Current replay creation uses the authoritative prompt version.
+- Editable install `python -m pip install -e ".[api,dev]"` succeeds.
+- Supervisor verification: 46 tests PASS, compile check PASS, `pip check` PASS and diff check PASS.
+- Known non-blocking warning: current FastAPI TestClient stack emits a Starlette/httpx deprecation warning.
 
 ## Next action
 
-Create the Git baseline checkpoint, delegate P4-T01 to `luna-max`, run deterministic verification, review the diff and either accept or return one evidence-backed repair to the same Luna thread.
+Create the P4-T01 checkpoint and delegate P4-T02 to the same `luna-max` thread.
