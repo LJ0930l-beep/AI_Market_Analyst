@@ -1,12 +1,12 @@
 # AI Market Analyst Status
 
-Updated: 2026-08-15
+Updated: 2026-08-19
 
 ## Overall
 
 - Target: V1.0 Final Acceptance through Phase 7.
 - Active phase: Phase 4.
-- Active task: P4-T05 planning and delegation to the persistent `luna-max` thread.
+- Active task: P4-T06 Watchlist and Replay Lab UI, to be delegated to the persistent `luna-max` thread.
 - Blockers: none.
 - Sole developer: `luna-max` (one persistent thread, serial tasks).
 
@@ -28,7 +28,7 @@ Phase 3 evidence:
 
 - Historical-news replay is capability-limited and marked `technical_only`.
 - The formal Phase 3 run is `COMPLETED_WITH_ERRORS`; no zero-error claim is made.
-- Dashboard, Settings/Health and Asset Detail are live product surfaces; the remaining Phase 4 workflow pages still use honest placeholders.
+- Dashboard, Settings/Health, Asset Detail, Predictions, Paper Trades and Performance are live product surfaces; Watchlist and Replay Lab still use honest placeholders.
 
 ## Phase 4 progress
 
@@ -69,7 +69,15 @@ Phase 3 evidence:
 - Frontend verification: lint PASS, typecheck PASS, 24 tests PASS, production build PASS and both dependency audits at 0 vulnerabilities.
 - Full regression: 49 Python tests PASS and `pip check` PASS.
 - Live QA: initial Asset Detail load left Predictions at 0; one explicit analysis produced one saved WAIT and zero PaperTrades. Desktop and 390x844 mobile had no horizontal overflow; browser console had no warnings/errors.
+- P4-T05 Predictions, Follow/Paper Trades and Performance: PASS.
+- Added live filtered Prediction and PaperTrade ledgers, allowlisted detail evidence, pagination and linked Outcome visibility.
+- Follow is exposed only for active LONG/SHORT Predictions, is guarded synchronously against same-tick duplicate browser actions and remains server-authoritative/idempotent and paper-only.
+- Added independently scoped PRELIMINARY performance summary, confidence buckets and current calibration panels; zero resolved actionable samples remain degraded.
+- Frontend verification: lint PASS, typecheck PASS, 37 tests PASS, production build PASS, both dependency audits at 0 vulnerabilities and diff check PASS.
+- Full regression: 49 Python tests PASS, compile check PASS and `pip check` PASS.
+- Live QA: a browser double-click emitted exactly one Follow POST and produced exactly one PaperTrade; the PaperTrade page showed no broker/real-order path. Formal replay data showed 255 samples, 191 actionable/resolved and 45 invalid records; current calibration was ACTIVE with sample 191. Desktop and 390x844 mobile had no horizontal overflow.
+- Development routing verification: `/predictions`, `/paper-trades`, `/performance` and `/replay` resolve to the SPA while `/api/health` resolves to JSON.
 
 ## Next action
 
-Delegate P4-T05 to the same `luna-max` thread, then verify filtered Prediction detail, paper-only idempotent Follow, PaperTrade ledger and PRELIMINARY-aware performance/calibration views.
+Delegate P4-T06 to the same `luna-max` thread, then verify the truthful Phase 4 Watchlist contract and Replay Lab visibility without claiming Phase 5 scanning or background execution.

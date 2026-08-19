@@ -59,3 +59,15 @@ Date: 2026-08-15
 Date: 2026-08-15
 
 Asset Detail loads snapshot and news evidence without analysis side effects. A Prediction is created only after the user explicitly runs analysis. The Signal Card renders an allowlist of typed product fields and preserves raw confidence exactly; raw model responses and serialized context never enter the DOM. WAIT remains a saved Prediction for coverage and auditability, but has no entry, stop, targets, Follow control, PaperTrade or broker implication.
+
+## ADR-011 - Development API traffic is namespaced under `/api`
+
+Date: 2026-08-19
+
+Vite development traffic to the FastAPI backend uses the `/api` prefix and rewrites that prefix at the proxy boundary. Product routes such as `/predictions`, `/paper-trades`, `/performance` and `/replay` therefore remain direct-loadable SPA routes instead of colliding with backend collection endpoints. Explicit API-base configuration remains supported, and production keeps same-origin behavior.
+
+## ADR-012 - Follow uses a synchronous client lock and server authority
+
+Date: 2026-08-19
+
+The browser sets an immediate in-flight lock before starting a Follow request so same-tick double actions cannot emit duplicate requests. Selection changes and unmounts abort stale work. The FastAPI Follow contract remains the authoritative paper-only and idempotent boundary; the client guard improves interaction safety but is not treated as the source of truth.

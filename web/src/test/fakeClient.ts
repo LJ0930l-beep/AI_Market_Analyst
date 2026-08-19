@@ -3,10 +3,15 @@ import { vi } from "vitest";
 import type { ApplicationShellApiClient } from "../api/client";
 import type {
   AnalysisResult,
+  CalibrationCurrent,
   HealthResponse,
   Instrument,
   InstrumentNews,
   MarketSnapshot,
+  Outcome,
+  PaperTrade,
+  PerformanceBuckets,
+  PerformanceSummary,
   Prediction,
   ProviderHealthResponse,
   StatsResponse,
@@ -43,6 +48,47 @@ export const fakePrediction: Prediction = {
   raw_confidence: 0.72,
   calibrated_confidence: 0.64,
   model_id: "qwen3.5:4b",
+  prompt_version: "phase2-json-v8",
+  parse_status: "OK",
+  summary: "Fixture signal for deterministic UI tests.",
+};
+
+export const fakePaperTrade: PaperTrade = {
+  prediction_id: fakePrediction.prediction_id,
+  status: "OPEN",
+  followed_at: "2030-01-02T12:10:00Z",
+  prediction: fakePrediction,
+  outcome: null,
+  outcome_status: null,
+};
+
+export const fakeOutcome: Outcome = {
+  prediction_id: fakePrediction.prediction_id,
+  status: "TP1",
+  settled_at: "2030-01-02T14:00:00Z",
+  prediction: fakePrediction,
+  paper_trade: fakePaperTrade,
+  outcome_status: "TP1",
+};
+
+export const fakePerformanceSummary: PerformanceSummary = {
+  scope: { source_type: "live" },
+  status: "PRELIMINARY",
+  source_type: "live",
+  sample_count: 2,
+  actionable_count: 2,
+  metrics: { resolved_actionable: 2, hit_rate: 0.5, zero_metric: 0 },
+};
+
+export const fakePerformanceBuckets: PerformanceBuckets = {
+  scope: { source_type: "live" },
+  confidence_buckets: [],
+};
+
+export const fakeCalibrationCurrent: CalibrationCurrent = {
+  status: "INSUFFICIENT_SAMPLE",
+  sample_count: 0,
+  buckets: [],
 };
 
 export const fakeProviderHealth: ProviderHealthResponse = {
@@ -127,11 +173,18 @@ export function createFakeClient(overrides: Partial<ApplicationShellApiClient> =
     instrumentNews: vi.fn().mockResolvedValue(fakeNews),
     analysis: vi.fn().mockResolvedValue(fakeAnalysis),
     predictions: vi.fn().mockResolvedValue([fakePrediction]),
-    performanceSummary: vi.fn().mockResolvedValue({
-      scope: { source_type: "live" },
-      sample_count: 2,
-      actionable_count: 2,
-      metrics: { resolved_actionable: 2, hit_rate: 0.5, zero_metric: 0 },
+    prediction: vi.fn().mockResolvedValue(fakePrediction),
+    paperTrades: vi.fn().mockResolvedValue([]),
+    paperTrade: vi.fn().mockResolvedValue(fakePaperTrade),
+    outcomes: vi.fn().mockResolvedValue([]),
+    outcome: vi.fn().mockResolvedValue(fakeOutcome),
+    performanceSummary: vi.fn().mockResolvedValue(fakePerformanceSummary),
+    performanceBuckets: vi.fn().mockResolvedValue(fakePerformanceBuckets),
+    calibrationCurrent: vi.fn().mockResolvedValue(fakeCalibrationCurrent),
+    followPrediction: vi.fn().mockResolvedValue({
+      prediction_id: fakePrediction.prediction_id,
+      status: "OPEN",
+      real_order: false,
     }),
   };
   return { ...defaults, ...overrides };

@@ -7,6 +7,9 @@ import { HealthStatus, type BackendHealthState } from "./components/HealthStatus
 import { TimeProvenanceRail } from "./components/TimeProvenanceRail";
 import { DashboardPage, EMPTY_DASHBOARD_PROVENANCE, type DashboardProvenance } from "./pages/DashboardPage";
 import { AssetDetailPage } from "./pages/AssetDetailPage";
+import { PaperTradesPage } from "./pages/PaperTradesPage";
+import { PerformancePage } from "./pages/PerformancePage";
+import { PredictionsPage } from "./pages/PredictionsPage";
 import { SettingsHealthPage } from "./pages/SettingsHealthPage";
 
 interface NavigationItem {
@@ -153,15 +156,15 @@ function WorkspaceRoutes({
       <Route path="assets/:symbol" element={<AssetDetailPage apiClient={apiClient} onProvenanceChange={onProvenanceChange} />} />
       <Route
         path="predictions"
-        element={<PlaceholderPage description="Prediction records will be browsable here with their evidence and validity." title="Predictions" />}
+        element={<PredictionsPage apiClient={apiClient} onProvenanceChange={onProvenanceChange} />}
       />
       <Route
         path="paper-trades"
-        element={<PlaceholderPage description="Paper-only follow records will be browsable here." title="Paper trades" />}
+        element={<PaperTradesPage apiClient={apiClient} onProvenanceChange={onProvenanceChange} />}
       />
       <Route
         path="performance"
-        element={<PlaceholderPage description="Outcome, performance and calibration views will be added here." title="Performance" />}
+        element={<PerformancePage apiClient={apiClient} onProvenanceChange={onProvenanceChange} />}
       />
       <Route
         path="replay"

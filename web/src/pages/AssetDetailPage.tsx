@@ -476,9 +476,9 @@ function provenanceForAnalysis(result: AnalysisResult): DashboardProvenance {
     .join(" · ") || "Data source not supplied";
   const model = modelText(signal, result.model);
   return {
-    generatedAt: signal.generated_at,
-    reevaluateAt: signal.reevaluate_at,
-    expiresAt: signal.signal_valid_until,
+    generatedAt: signal.generated_at ?? undefined,
+    reevaluateAt: signal.reevaluate_at ?? undefined,
+    expiresAt: signal.signal_valid_until ?? undefined,
     dataSource,
     model: model === "Not supplied" ? "Model not supplied" : `model_id: ${model}`,
     state: expiry ? (expiry.getTime() <= Date.now() ? "expired" : "active") : "neutral",

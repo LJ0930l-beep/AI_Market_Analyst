@@ -177,15 +177,15 @@ export interface SignalProposal extends JsonRecord {
   stop?: number | null;
   tp1?: number | null;
   tp2?: number | null;
-  signal_validity_minutes?: number;
-  signal_valid_until?: string;
-  expected_hold_minutes?: number;
-  expected_hold_until?: string;
-  max_hold_minutes?: number;
-  max_hold_until?: string;
-  reevaluate_at?: string;
-  invalidation?: string[];
-  raw_confidence?: number;
+  signal_validity_minutes?: number | null;
+  signal_valid_until?: string | null;
+  expected_hold_minutes?: number | null;
+  expected_hold_until?: string | null;
+  max_hold_minutes?: number | null;
+  max_hold_until?: string | null;
+  reevaluate_at?: string | null;
+  invalidation?: string[] | null;
+  raw_confidence?: number | null;
   reason_codes?: string[];
   summary?: string;
   model_id?: string;
@@ -216,13 +216,40 @@ export interface StatsResponse extends JsonRecord {
 export type Prediction = JsonRecord & {
   prediction_id: string;
   symbol?: string;
+  instrument?: AnalysisInstrument | null;
   action?: Action;
   timeframe?: Timeframe;
+  analysis_timeframe?: Timeframe;
   source_type?: SourceType;
-  generated_at?: string;
-  signal_valid_until?: string;
-  raw_confidence?: number;
-  calibrated_confidence?: number;
+  replay_run_id?: string | null;
+  generated_at?: string | null;
+  data_as_of?: string | null;
+  signal_valid_until?: string | null;
+  reevaluate_at?: string | null;
+  expected_hold_until?: string | null;
+  max_hold_until?: string | null;
+  signal_validity_minutes?: number | null;
+  expected_hold_minutes?: number | null;
+  max_hold_minutes?: number | null;
+  raw_confidence?: number | null;
+  calibrated_confidence?: number | null;
+  calibration_version?: string | null;
+  calibration_scope?: string | null;
+  calibration_sample_size?: number | null;
+  calibration_fallback?: string | null;
+  entry_low?: number | null;
+  entry_high?: number | null;
+  stop?: number | null;
+  tp1?: number | null;
+  tp2?: number | null;
+  invalidation?: string[] | null;
+  reason_codes?: string[] | null;
+  summary?: string | null;
+  model_id?: string | null;
+  model_version?: string | null;
+  prompt_version?: string | null;
+  parse_status?: string | null;
+  input_hash?: string | null;
   paper_trade?: PaperTrade | null;
   outcome?: Outcome | null;
   outcome_status?: OutcomeStatus | null;
@@ -231,7 +258,8 @@ export type Prediction = JsonRecord & {
 export type PaperTrade = JsonRecord & {
   prediction_id: string;
   status: string;
-  followed_at?: string;
+  followed_at?: string | null;
+  outcome_status?: OutcomeStatus | null;
   prediction?: Prediction | null;
   outcome?: Outcome | null;
 };
@@ -239,7 +267,8 @@ export type PaperTrade = JsonRecord & {
 export type Outcome = JsonRecord & {
   prediction_id: string;
   status: OutcomeStatus;
-  settled_at?: string;
+  settled_at?: string | null;
+  outcome_status?: OutcomeStatus | null;
   prediction?: Prediction | null;
   paper_trade?: PaperTrade | null;
 };
@@ -260,8 +289,46 @@ export type ReplayRun = JsonRecord & {
   samples?: ReplaySample[];
 };
 
+export interface PerformanceBucket extends JsonRecord {
+  bucket?: string;
+  count?: number;
+  raw_avg_confidence?: number | null;
+  empirical_win_rate?: number | null;
+  calibrated_confidence?: number | null;
+}
+
 export interface PerformanceMetrics extends JsonRecord {
+  status?: string;
+  sample_count?: number;
+  actionable_count?: number;
   resolved_actionable?: number;
+  pending_actionable?: number;
+  wait_count?: number;
+  invalid_count?: number;
+  wins?: number;
+  losses?: number;
+  flats?: number;
+  win_rate?: number | null;
+  avg_r?: number | null;
+  expectancy_r?: number | null;
+  profit_factor?: number | null;
+  max_drawdown_r?: number | null;
+  mfe_r_avg?: number | null;
+  mfe_r_median?: number | null;
+  mfe_r_p90?: number | null;
+  mae_r_avg?: number | null;
+  mae_r_median?: number | null;
+  mae_r_p90?: number | null;
+  timeout_count?: number;
+  timeout_rate?: number | null;
+  coverage?: number | null;
+  action_rate?: number | null;
+  wait_rate?: number | null;
+  brier_raw?: number | null;
+  brier_calibrated?: number | null;
+  ece_raw?: number | null;
+  ece_calibrated?: number | null;
+  confidence_buckets?: PerformanceBucket[];
 }
 
 export type PerformanceSummary = JsonRecord & {
@@ -279,13 +346,33 @@ export type PerformanceSummary = JsonRecord & {
 
 export type PerformanceBuckets = JsonRecord & {
   scope?: JsonRecord;
-  confidence_buckets?: JsonRecord[];
+  confidence_buckets?: PerformanceBucket[];
 };
+
+export interface CalibrationBucket extends JsonRecord {
+  lower?: number;
+  upper?: number;
+  n?: number;
+  wins?: number;
+  empirical_rate?: number | null;
+  shrunk_rate?: number | null;
+}
 
 export type CalibrationCurrent = JsonRecord & {
   status?: string;
+  calibration_id?: string;
+  version?: string;
+  scope?: JsonRecord;
+  method?: string;
+  params?: JsonRecord;
   sample_count?: number;
-  buckets?: JsonRecord[];
+  trained_until?: string | null;
+  brier_raw?: number | null;
+  brier_calibrated?: number | null;
+  ece_raw?: number | null;
+  ece_calibrated?: number | null;
+  fallback?: string | null;
+  buckets?: CalibrationBucket[];
 };
 
 export type PredictionCalibration = JsonRecord & {

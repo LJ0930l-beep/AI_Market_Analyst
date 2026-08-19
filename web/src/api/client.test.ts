@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { ApiClient, ApiError, type ApiErrorPayload, serializeQuery } from "./client";
+import { ApiClient, ApiError, getApiBaseUrl, type ApiErrorPayload, serializeQuery } from "./client";
 
 type FetchMock = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -12,6 +12,12 @@ function response(body: unknown, status = 200): Response {
 }
 
 describe("ApiClient", () => {
+  it("uses the non-colliding development API prefix by default and preserves explicit or production bases", () => {
+    expect(getApiBaseUrl(undefined, true)).toBe("/api");
+    expect(getApiBaseUrl(undefined, false)).toBe("");
+    expect(getApiBaseUrl("http://127.0.0.1:8000///", true)).toBe("http://127.0.0.1:8000");
+  });
+
   it("serializes typed filters and forwards an AbortSignal", async () => {
     const fetchImpl = vi.fn<FetchMock>().mockResolvedValue(
       response([{ prediction_id: "prediction-1" }]),
@@ -114,5 +120,22 @@ describe("ApiClient", () => {
         body: JSON.stringify({ timeframe: "4h", limit: 120 }),
       }),
     );
+  });
+
+  it("keeps workflow detail, performance bucket and PaperTrade follow routes typed", async () => {
+    const fetchImpl = vi
+      .fn<FetchMock>()
+      .mockResolvedValueOnce(response({ prediction_id: "p-1", status: "OPEN" }))
+      .mockResolvedValueOnce(response({ scope: { source_type: "live" }, confidence_buckets: [] }))
+      .mockResolvedValueOnce(response({ prediction_id: "p-1", status: "OPEN", real_order: false }));
+    const client = new ApiClient({ baseUrl: "http://localhost:8000", fetchImpl });
+
+    await client.paperTrade("p/1");
+    await client.performanceBuckets({ source_type: "replay", model_id: "model-x" });
+    await client.followPrediction("p/1", {}, new AbortController().signal);
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(1, "http://localhost:8000/paper-trades/p%2F1", expect.objectContaining({ method: "GET" }));
+    expect(fetchImpl).toHaveBeenNthCalledWith(2, "http://localhost:8000/performance/buckets?source_type=replay&model_id=model-x", expect.objectContaining({ method: "GET" }));
+    expect(fetchImpl).toHaveBeenNthCalledWith(3, "http://localhost:8000/predictions/p%2F1/follow", expect.objectContaining({ method: "POST", body: "{}" }));
   });
 });

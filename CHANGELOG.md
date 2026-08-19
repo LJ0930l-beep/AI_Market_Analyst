@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Phase 4 - P4-T05 Predictions, Paper Trades and Performance
+
+- Added live filtered/paginated Prediction and PaperTrade ledgers with allowlisted details and linked Outcome evidence.
+- Added paper-only Follow for active LONG/SHORT Predictions, including a synchronous client lock for same-tick duplicate actions while retaining server-side idempotency as the authority.
+- Added PRELIMINARY-aware performance summary, confidence buckets and an independently scoped current calibration panel.
+- Kept raw model/context payloads out of the DOM and made WAIT, expiry, empty evidence and zero-resolved states explicit.
+- Moved the Vite development API proxy under `/api` so SPA routes no longer collide with backend collection endpoints.
+- Verification: 49 Python tests and 37 frontend tests PASS; lint/typecheck/build/compile/dependency/diff checks PASS; dependency audits report 0 vulnerabilities.
+- Live QA: browser double-click created exactly one PaperTrade; formal replay showed 255 total samples, 191 actionable/resolved and 45 invalid; ACTIVE calibration sample was 191; desktop and 390x844 mobile had no horizontal overflow.
+
 ### Phase 4 - P4-T04b Asset Detail and explicit analysis
 
 - Added instrument and timeframe controls with independent snapshot/news request states.

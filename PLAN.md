@@ -4,7 +4,7 @@
 
 Phase 4 - Product UI and interaction.
 
-Current task: `P4-T05` - implement Predictions, Follow/Paper Trades and Performance workflows.
+Current task: `P4-T06` - implement Watchlist and Replay Lab UI with truthful Phase 4 capability boundaries.
 
 P4-T04 execution split:
 
@@ -22,9 +22,9 @@ P4-T04 execution split:
    - Provider/model/database health, market summary shell, loading/error/stale/degraded states.
 4. `P4-T04` Asset Detail and analysis workflow - ACCEPTED
    - Instrument search, quote/quant/news/event views, charts, Signal Card and validity/horizon/re-evaluation/invalidation display.
-5. `P4-T05` Predictions, Follow/Paper Trades and Performance
+5. `P4-T05` Predictions, Follow/Paper Trades and Performance - ACCEPTED
    - Filters/details, PaperTrade-only Follow semantics, outcome metrics, calibration reliability/buckets and PRELIMINARY state.
-6. `P4-T06` Watchlist and Replay Lab UI
+6. `P4-T06` Watchlist and Replay Lab UI - IN PROGRESS
    - Phase 4 UI contract/shell for Watchlist and advanced replay visibility; Phase 5 owns live scanning/ranking behavior.
 7. `P4-T07` Phase 4 E2E, accessibility/responsive pass and completion report
    - Main workflow E2E, regression, build artifacts and Phase 4 Gate.

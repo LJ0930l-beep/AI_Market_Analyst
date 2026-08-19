@@ -115,7 +115,15 @@ export type ApplicationShellApiClient = Pick<
   | "instrumentNews"
   | "analysis"
   | "predictions"
+  | "prediction"
+  | "paperTrades"
+  | "paperTrade"
+  | "outcomes"
+  | "outcome"
   | "performanceSummary"
+  | "performanceBuckets"
+  | "calibrationCurrent"
+  | "followPrediction"
 >;
 
 export function serializeQuery(params: QueryParams): string {
@@ -129,8 +137,15 @@ export function serializeQuery(params: QueryParams): string {
   return encoded ? `?${encoded}` : "";
 }
 
-export function getApiBaseUrl(configured = import.meta.env.VITE_API_BASE_URL): string {
-  return (configured ?? "").trim().replace(/\/+$/, "");
+export function getApiBaseUrl(
+  configured = import.meta.env.VITE_API_BASE_URL,
+  isDevelopment = import.meta.env.DEV,
+): string {
+  const explicitBaseUrl = (configured ?? "").trim().replace(/\/+$/, "");
+  if (explicitBaseUrl) {
+    return explicitBaseUrl;
+  }
+  return isDevelopment ? "/api" : "";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
