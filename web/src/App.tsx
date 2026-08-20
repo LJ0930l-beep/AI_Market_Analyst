@@ -11,6 +11,7 @@ import { AlertsPage } from "./pages/AlertsPage";
 import { PaperTradesPage } from "./pages/PaperTradesPage";
 import { PerformancePage } from "./pages/PerformancePage";
 import { PredictionsPage } from "./pages/PredictionsPage";
+import { QwenConsultPage } from "./pages/QwenConsultPage";
 import { ReplayLabPage } from "./pages/ReplayLabPage";
 import { SettingsHealthPage } from "./pages/SettingsHealthPage";
 import { WatchlistPage } from "./pages/WatchlistPage";
@@ -31,6 +32,7 @@ const navigationItems: NavigationItem[] = [
   { label: "Performance", to: "/performance" },
   { label: "Replay lab", to: "/replay" },
   { label: "Alert Center", to: "/alerts" },
+  { label: "Qwen Consult", to: "/consult" },
   { label: "Settings / health", to: "/settings" },
 ];
 
@@ -193,6 +195,7 @@ function WorkspaceRoutes({
         element={<ReplayLabPage apiClient={apiClient} />}
       />
       <Route path="alerts" element={<AlertsPage apiClient={apiClient} />} />
+      <Route path="consult" element={<QwenConsultPage apiClient={apiClient} />} />
       <Route path="settings" element={<SettingsHealthPage apiClient={apiClient} />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

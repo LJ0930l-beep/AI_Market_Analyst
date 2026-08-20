@@ -1,5 +1,6 @@
 import type { HealthResponse, Instrument, JsonRecord, ModelHealthResponse, ProviderHealthResponse, StatsResponse } from "../api/types";
 import { Link } from "react-router-dom";
+import { useI18n } from "../i18n";
 
 function textValue(value: unknown): string {
   if (value === null) {
@@ -51,12 +52,22 @@ export function HealthFacts({ health }: { health: HealthResponse }) {
 }
 
 export function ModelFacts({ model }: { model: ModelHealthResponse }) {
-  const availability = model.available === true ? "available" : model.available === false ? "unavailable" : "not supplied";
+  const { t } = useI18n();
+  const availability = model.available === true ? t("common.available") : model.available === false ? t("common.unavailableValue") : t("common.notSuppliedValue");
+  const consult = model.consult;
+  const consultAvailability = consult?.available === true ? t("common.available") : consult?.available === false ? t("common.unavailableValue") : t("common.notSuppliedValue");
   return (
     <dl className="fact-list">
-      <Fact label="Provider" value={model.provider ?? "Not supplied"} />
-      <Fact label="Availability" value={availability} />
-      {model.error_code ? <Fact label="Error code" value={model.error_code} /> : null}
+      <Fact label={t("common.provider")} value={model.provider ?? t("common.notSupplied")} />
+      <Fact label={t("common.availability")} value={availability} />
+      {model.error_code ? <Fact label={t("common.errorCode")} value={model.error_code} /> : null}
+      {consult ? <>
+        <Fact label={t("settings.consultAvailability")} value={consultAvailability} />
+        <Fact label={t("settings.consultModel")} value={consult.model_id ?? t("common.notSupplied")} />
+        <Fact label={t("settings.consultContract")} value={consult.contract_version ?? t("common.notSupplied")} />
+        <Fact label={t("settings.consultStorage")} value={consult.conversation_storage ?? t("common.notSupplied")} />
+        <Fact label={t("settings.consultWrites")} value={consult.database_writes === false ? t("settings.consultNoWrites") : t("common.notSuppliedValue")} />
+      </> : null}
     </dl>
   );
 }

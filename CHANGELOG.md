@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Post-V1.0 Qwen Consult — developer-complete, supervisor Gate pending
+
+- Added the versioned `qwen_consult_v1` local NDJSON streaming contract with a fixed server-side Ollama/Qwen model, serial concurrency, bounded input/output/timeouts, sanitized errors, read-only saved-symbol evidence and no fabricated fallback.
+- Added a bilingual, accessible Qwen consultation route with true incremental rendering, stop/clear/keyboard controls, optional Asset Detail symbol handoff and browser-tab-only session restoration; no chat content or consultation result enters SQLite or the financial ledgers.
+- Added deterministic backend/frontend/browser coverage for validation, streaming, cancellation, context provenance, availability/error states, persistence, domain-write invariants and route-wide desktop/mobile accessibility. Deterministic fixtures are not claimed as live Qwen proof.
+- Developer Gate: 127 pytest passed, 1 skipped, 1 warning and 20 subtests; 128 unittest tests with 1 skipped; frontend 14 files / 67 tests; lint/typecheck/build/compileall/pip check PASS; both npm audits 0 vulnerabilities; standalone Chrome E2E 12/12 in 45.3s with 20 route-wide axe/overflow checks. Loopback Ollama responded but `qwen3.5:4b` was not installed, so no live generation smoke is claimed.
+
 ### V1.0 Final Acceptance — SUPERVISOR_ACCEPTED / PASS
 
 - Recorded the independent Phase 7/V1.0 Final Acceptance evidence: pytest 117 passed, 1 skipped, 1 warning and 10 subtests; frontend 13 files / 59 tests; lint, typecheck, production build, compileall and pip check PASS; full and production npm audits at 0 vulnerabilities; standalone E2E 11/11 in 43.9s with Chinese switching, all routes, refresh persistence, accepted workflows, axe and overflow checks; clean diff/status and restored running launcher with `ownership_errors=[]` and API/UI HTTP 200.

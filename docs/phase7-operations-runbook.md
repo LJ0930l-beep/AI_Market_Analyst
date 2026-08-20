@@ -37,6 +37,12 @@ Check:
 
 Provider, model, GPU and database failures are capability/degraded evidence. A provider outage does not fabricate bars, context, prediction confidence or outcomes. A resource guard blocks model scanning with bounded backoff but does not stop ComfyUI/Ollama. Pure settlement has its own provider evidence and remains independent of the model GPU guard.
 
+### Post-V1.0 Qwen consultation
+
+`GET /health/model` also reports the redacted `qwen_consult_v1` capability and fixed configured model. It does not expose `OLLAMA_BASE_URL`; startup and `GET /health/release` do not invoke Qwen. The browser's **Qwen Consult / Qwen 咨询** page streams through `POST /consult/stream`. Availability depends on the existing loopback Ollama service and installed configured model. A missing service/model is an honest unavailable state with no generated fallback.
+
+Consult requests are serial and bounded by the `QWEN_CONSULT_*` limits documented in the README. Stop cancels only the current HTTP/model request; it does not stop Ollama or any process. Clear removes only this tab's browser session conversation. Chat text is not a database/backup artifact and should not appear in project logs. Optional symbol context reads existing saved evidence only and does not trigger a provider fetch, analysis, scheduler, settlement, Follow or financial write.
+
 ## Recovery checklist
 
 1. Stop only the owned local instance and preserve its logs; do not restore while the launcher or any database connection is active.

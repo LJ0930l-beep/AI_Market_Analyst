@@ -12,7 +12,18 @@ function renderSettings() {
     .mockResolvedValue(fakeProviderHealth);
   const client = createFakeClient({
     providerHealth,
-    modelHealth: vi.fn().mockResolvedValue({ provider: "ollama", available: false, error_code: "MODEL_NOT_CONFIGURED" }),
+    modelHealth: vi.fn().mockResolvedValue({
+      provider: "ollama",
+      available: false,
+      error_code: "MODEL_NOT_CONFIGURED",
+      consult: {
+        available: false,
+        model_id: "qwen3.5:4b",
+        contract_version: "qwen_consult_v1",
+        conversation_storage: "browser_session_only",
+        database_writes: false,
+      },
+    }),
   });
 
   render(
@@ -39,6 +50,8 @@ describe("SettingsHealthPage", () => {
     const model = screen.getByRole("region", { name: "Local model" });
     expect(await within(model).findByText(/Model health is degraded or unavailable/)).toBeInTheDocument();
     expect(within(model).getByText("MODEL_NOT_CONFIGURED")).toBeInTheDocument();
+    expect(within(model).getByText("qwen_consult_v1")).toBeInTheDocument();
+    expect(within(model).getByText("disabled (read-only consultation)")).toBeInTheDocument();
     expect(screen.getByText(/No secrets, broker connections, real orders or external notifiers are exposed here; alerts are local observability/)).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Alert reconciliation" })).toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();

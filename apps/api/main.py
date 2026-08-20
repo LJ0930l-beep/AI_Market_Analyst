@@ -7,6 +7,7 @@ context evidence over the accepted Phase 0-5 paper-only core.
 
 from __future__ import annotations
 
+import json
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
@@ -26,6 +27,15 @@ from core.alerts import (
 )
 from core.analysis_service import AnalysisError, AnalysisService
 from core.config import API_PHASE, APP_VERSION, ConfigurationError, database_path_from_env, env_bool, redact_path, runtime_capabilities
+from core.consult import (
+    CONSULT_CONTRACT_VERSION,
+    CONSULT_STREAM_MEDIA_TYPE,
+    ConsultServiceError,
+    ConsultValidationError,
+    QwenConsultService,
+    ndjson_line,
+    parse_consult_request,
+)
 from core.events import NewsEventProviderAdapter, event_capabilities
 from core.instruments import (
     CandidateParseError,
@@ -106,7 +116,7 @@ try:  # FastAPI is optional; the stdlib core must remain importable without it.
     from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Request
     from fastapi.exceptions import RequestValidationError
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import JSONResponse
+    from fastapi.responses import JSONResponse, StreamingResponse
 except ImportError:  # pragma: no cover - exercised only without the optional API extra
     APIRouter = None  # type: ignore[assignment,misc]
     Body = None  # type: ignore[assignment,misc]
@@ -117,6 +127,7 @@ except ImportError:  # pragma: no cover - exercised only without the optional AP
     RequestValidationError = RuntimeError  # type: ignore[assignment,misc]
     CORSMiddleware = None  # type: ignore[assignment,misc]
     JSONResponse = None  # type: ignore[assignment,misc]
+    StreamingResponse = None  # type: ignore[assignment,misc]
 
 
 def _store() -> SQLiteStore:
@@ -137,6 +148,12 @@ def _llm_provider() -> OllamaProvider | None:
     if os.environ.get("LLM_MODE", "ollama").lower() in {"disabled", "off", "none"}:
         return None
     return OllamaProvider()
+
+
+def _consult_service() -> QwenConsultService:
+    """Build the bounded local consultation service without probing the model."""
+
+    return QwenConsultService()
 
 
 def _service(
@@ -198,6 +215,15 @@ def get_llm_provider() -> OllamaProvider | None:
     """FastAPI dependency boundary for the local model provider."""
 
     return _llm_provider()
+
+
+def get_consult_service(request: Request) -> QwenConsultService:
+    """Return the app-scoped serial consultation service."""
+
+    service = getattr(request.app.state, "consult_service", None)
+    if not isinstance(service, QwenConsultService):
+        raise RuntimeError("Qwen consultation service is not configured")
+    return service
 
 
 def get_scheduler(request: Request) -> LocalSchedulerRuntime:
@@ -612,15 +638,22 @@ if FastAPI is not None:
         }
 
     @router.get("/health/model")
-    def health_model(llm_provider: object | None = Depends(get_llm_provider)) -> dict[str, object]:
+    def health_model(
+        llm_provider: object | None = Depends(get_llm_provider),
+        consult_service: QwenConsultService = Depends(get_consult_service),
+    ) -> dict[str, object]:
+        consult = consult_service.capability()
         if llm_provider is None:
-            return {"provider": "none", "available": False, "error_code": "MODEL_NOT_CONFIGURED"}
+            consult["available"] = False
+            return {"provider": "none", "available": False, "error_code": "MODEL_NOT_CONFIGURED", "consult": consult}
         health_method = getattr(llm_provider, "health", None)
         if not callable(health_method):
+            consult["available"] = False
             return {
                 "provider": str(getattr(llm_provider, "provider_name", llm_provider.__class__.__name__.lower())),
                 "available": False,
                 "error_code": "MODEL_HEALTH_UNSUPPORTED",
+                "consult": consult,
             }
         try:
             if isinstance(llm_provider, OllamaProvider):
@@ -634,16 +667,23 @@ if FastAPI is not None:
             # Provider exception text can contain local paths or request data;
             # the health contract exposes only stable capability/error fields.
             safe_health.pop("detail", None)
+            consult["available"] = bool(safe_health.get("available")) and safe_health.get("model_available") is not False
+            safe_health["consult"] = consult
             return safe_health
         except Exception:  # pragma: no cover - depends on the local model process
+            consult["available"] = False
             return {
                 "provider": str(getattr(llm_provider, "provider_name", llm_provider.__class__.__name__.lower())),
                 "available": False,
                 "error_code": "MODEL_HEALTH_ERROR",
+                "consult": consult,
             }
 
     @router.get("/health/release")
-    def health_release(store: SQLiteStore = Depends(get_store)) -> dict[str, object]:
+    def health_release(
+        store: SQLiteStore = Depends(get_store),
+        consult_service: QwenConsultService = Depends(get_consult_service),
+    ) -> dict[str, object]:
         """Expose bounded local capability evidence without revealing paths."""
 
         try:
@@ -654,6 +694,8 @@ if FastAPI is not None:
             }
         except Exception:  # pragma: no cover - local filesystem dependent
             database = {"available": False, "error_code": "DATABASE_UNAVAILABLE"}
+        capabilities = runtime_capabilities()
+        capabilities["qwen_consult"] = consult_service.capability()
         return {
             "status": "ok" if database.get("available") else "degraded",
             "phase": API_PHASE,
@@ -665,7 +707,7 @@ if FastAPI is not None:
                 "mechanism": "sqlite_backup_api",
                 "restore_requires_explicit_command": True,
             },
-            "capabilities": runtime_capabilities(),
+            "capabilities": capabilities,
         }
 
     @router.get("/health/context")
@@ -684,6 +726,66 @@ if FastAPI is not None:
             "read_only_get": True,
             "cloud_required": False,
         }
+
+    async def _consult_payload(request: Request, service: QwenConsultService) -> object:
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            try:
+                declared_length = int(content_length)
+            except ValueError as exc:
+                raise APIError(400, "INVALID_CONTENT_LENGTH", "request content length is invalid") from exc
+            if declared_length < 0 or declared_length > service.config.max_body_bytes:
+                raise APIError(413, "CONSULT_BODY_LIMIT", "consultation request body exceeds the configured limit")
+        content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+        if content_type != "application/json":
+            raise APIError(415, "CONSULT_JSON_REQUIRED", "consultation request must use application/json")
+        chunks: list[bytes] = []
+        size = 0
+        async for chunk in request.stream():
+            size += len(chunk)
+            if size > service.config.max_body_bytes:
+                raise APIError(413, "CONSULT_BODY_LIMIT", "consultation request body exceeds the configured limit")
+            chunks.append(chunk)
+        try:
+            return json.loads(b"".join(chunks).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise APIError(400, "INVALID_CONSULT_JSON", "consultation request body is not valid JSON") from exc
+
+    @router.post("/consult/stream")
+    async def consult_stream(
+        request: Request,
+        store: SQLiteStore = Depends(get_store),
+        service: QwenConsultService = Depends(get_consult_service),
+    ):
+        """Stream local Qwen text as versioned NDJSON without domain writes."""
+
+        payload = await _consult_payload(request, service)
+        try:
+            consult_request = parse_consult_request(payload, service.config)
+            session = await service.open(consult_request, store=store)
+        except ConsultValidationError as exc:
+            raise APIError(exc.status_code, exc.code, exc.message) from exc
+        except ConsultServiceError as exc:
+            raise APIError(exc.status_code, exc.code, exc.message) from exc
+
+        async def stream_events():
+            try:
+                async for event in session.events():
+                    if await request.is_disconnected():
+                        break
+                    yield ndjson_line(event)
+            finally:
+                await session.close()
+
+        return StreamingResponse(
+            stream_events(),
+            media_type=CONSULT_STREAM_MEDIA_TYPE,
+            headers={
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+                "X-Qwen-Consult-Contract": CONSULT_CONTRACT_VERSION,
+            },
+        )
 
     @router.get("/instruments")
     def instruments(store: SQLiteStore = Depends(get_store)) -> list[dict[str, object]]:
@@ -1492,6 +1594,7 @@ def create_app(
     news_provider: object | None = None,
     event_provider: object | None = None,
     llm_provider: object | None = _UNSET,
+    consult_service: QwenConsultService | object = _UNSET,
     instrument_validator: InstrumentValidator | None = None,
     scheduler_runtime: LocalSchedulerRuntime | None = None,
     scheduler_executor: ScanAnalysisExecutor | None = None,
@@ -1511,11 +1614,12 @@ def create_app(
     app = FastAPI(
         title="AI Market Analyst",
         version=API_VERSION,
-        description="Local-first V1.0 market research API with deterministic context, point-in-time evidence, explicit local scheduling and structured paper-only tracking.",
+        description="Local-first V1.0 market research API with deterministic context, point-in-time evidence, explicit local scheduling, structured paper-only tracking and an Unreleased read-only local Qwen consultation surface.",
         openapi_extra={"x-phase": API_PHASE, "x-product-baseline": "phase7"},
     )
     app.state.api_phase = API_PHASE
     app.state.api_version = API_VERSION
+    app.state.consult_service = _consult_service() if consult_service is _UNSET else consult_service
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,

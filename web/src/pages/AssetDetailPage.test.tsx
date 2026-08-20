@@ -64,6 +64,7 @@ describe("AssetDetailPage", () => {
     );
     expect(news).toHaveBeenCalledWith("NVDA", expect.any(AbortSignal));
     expect(analysis).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: "Consult Qwen about this instrument" })).toHaveAttribute("href", "/consult?symbol=NVDA");
   });
 
   it("keeps news visible when the snapshot endpoint fails", async () => {

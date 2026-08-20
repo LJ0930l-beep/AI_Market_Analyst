@@ -4,7 +4,7 @@
 
 Phase 7 - Security/release hardening, backup/restore, one-command startup and V1.0 Final Acceptance — SUPERVISOR_ACCEPTED.
 
-Current task: `V1.0 Final Acceptance` - SUPERVISOR_ACCEPTED / PASS; do not begin post-V1.0 work.
+Current task: Post-V1.0 `Qwen Consult` streaming consultation milestone — DEVELOPER_COMPLETE / supervisor Gate pending; V1.0 Final Acceptance remains SUPERVISOR_ACCEPTED / PASS and historical.
 
 P4-T04 execution split:
 

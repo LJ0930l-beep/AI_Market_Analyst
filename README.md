@@ -26,6 +26,8 @@ The browser is available at `http://127.0.0.1:4173`; the API health document is 
 
 The frontend language selector is available in the workspace header and supports `中文` and `English`. The selection is stored locally under `ai-market-analyst.language`, survives route changes and refreshes, and uses the browser language (`zh-*` or English fallback) when no choice is stored. Translation is presentation-only: API paths, symbols, URLs, numeric values, timestamps, database values and standard backend contracts are unchanged; provider/model free text remains evidence returned by the backend.
 
+The Unreleased Post-V1.0 interface also includes **Qwen Consult / Qwen 咨询**. It streams responses from the server-configured local Ollama/Qwen model, supports an optional registered symbol, and stores conversation history only in the current browser tab's `sessionStorage`. Consultation is a separate read-only research surface: it does not analyze, scan, settle, Follow, create Predictions/Outcomes/PaperTrades/alerts, or place orders. Select a symbol from Asset Detail with **Consult Qwen**, or open `http://127.0.0.1:4173/consult`.
+
 ## Configuration
 
 All runtime configuration is local and bounded. Defaults are safe for a single-user development machine.
@@ -39,10 +41,18 @@ All runtime configuration is local and bounded. Defaults are safe for a single-u
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Local Ollama endpoint; no cloud fallback. |
 | `OLLAMA_MODEL` | `qwen3.5:4b` | Local model identifier; Phase 2-6 bounded timeout/output/retry policy remains active. |
 | `OLLAMA_TIMEOUT_SEC` / `OLLAMA_RETRIES` | `45` / `1` | Finite model request timeout and at most two attempts. |
+| `QWEN_CONSULT_CONNECT_TIMEOUT_SEC` | `3` | Consultation connection timeout; bounded to 0.5-10 seconds. |
+| `QWEN_CONSULT_FIRST_TOKEN_TIMEOUT_SEC` / `QWEN_CONSULT_STREAM_IDLE_TIMEOUT_SEC` | `20` / `20` | First-token and between-token limits; each bounded to 1-60 seconds. |
+| `QWEN_CONSULT_TOTAL_TIMEOUT_SEC` | `90` | Whole consultation generation limit; bounded to 5-180 seconds. |
+| `QWEN_CONSULT_MAX_BODY_BYTES` / `QWEN_CONSULT_MAX_MESSAGES` | `32768` / `24` | Request body and message-count limits. |
+| `QWEN_CONSULT_MAX_MESSAGE_CHARS` / `QWEN_CONSULT_MAX_TOTAL_CHARS` | `4000` / `16000` | Per-message and complete-history character limits. |
+| `QWEN_CONSULT_MAX_OUTPUT_CHARS` / `QWEN_CONSULT_MAX_OUTPUT_TOKENS` | `12000` / inherited bounded Ollama value | Output budgets enforced by server and model request. |
+| `QWEN_CONSULT_RETRIES` / `QWEN_CONSULT_CONCURRENCY` | `0` / `1` | Retry only before output (maximum one); consultation model work is always serial. |
+| `QWEN_CONSULT_FRESHNESS_SEC` | `3600` | Threshold used to label saved symbol evidence fresh/stale. |
 | `API_CORS_ORIGINS` | local dev origins | Comma-separated bounded allowlist; wildcard credentials are rejected. |
 | `API_DEBUG_ERRORS` | `false` | Production-safe API errors omit unexpected exception text. |
 
-`GET /health/release` reports the API/package contract, schema, backup format and local-only capabilities without exposing the absolute database path. `/health/providers` and `/health/model` distinguish routing/model degradation from backend health.
+`GET /health/release` reports the API/package contract, schema, backup format and local-only capabilities without exposing the absolute database path. `/health/providers` and `/health/model` distinguish routing/model degradation from backend health. Model health includes the redacted `qwen_consult_v1` capability, configured model identifier, limits and availability; it never returns the configured base URL. Startup does not probe or invoke Qwen.
 
 ## Backup, restore and recovery
 
@@ -101,6 +111,7 @@ The local scheduler is explicit and default-off, serial for model work, bounded 
 - [Phase 7 completion report](docs/phase7-completion-report.md)
 - [V1.0 Final Acceptance evidence inventory](docs/final-acceptance-evidence.json) — developer-ready and pending supervisor final Gate
 - [Phase 7 operations runbook](docs/phase7-operations-runbook.md)
+- [Post-V1.0 Qwen Consult report](docs/post-v1-qwen-consult.md)
 - [Phase 7 security audit artifact](docs/phase7-security-audit.json)
 - [Phase 7 license inventory artifact](docs/phase7-license-audit.json)
 - [Phase 6 historical completion report](docs/phase6-completion-report.md)

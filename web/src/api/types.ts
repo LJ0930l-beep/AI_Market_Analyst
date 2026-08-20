@@ -46,7 +46,63 @@ export interface ModelHealthResponse extends JsonRecord {
   provider?: string;
   available?: boolean;
   error_code?: string;
+  consult?: ConsultCapability;
 }
+
+export type ConsultLanguage = "en" | "zh-CN";
+export type ConsultRole = "user" | "assistant";
+
+export interface ConsultMessage {
+  role: ConsultRole;
+  content: string;
+}
+
+export interface ConsultRequest {
+  language: ConsultLanguage;
+  messages: ConsultMessage[];
+  symbol?: string;
+}
+
+export interface ConsultCapability extends JsonRecord {
+  contract_version?: string;
+  configured?: boolean;
+  available?: boolean;
+  provider?: string;
+  model_id?: string;
+  endpoint_scope?: string;
+  streaming?: string;
+  availability?: string;
+  conversation_storage?: string;
+  database_writes?: boolean;
+  model_concurrency?: number;
+  error_code?: string;
+  limits?: JsonRecord;
+}
+
+export interface ConsultContextEvidence extends JsonRecord {
+  status?: string;
+  symbol?: string | null;
+  as_of?: string | null;
+  freshness?: JsonRecord;
+  sources?: string[];
+  missing_reasons?: string[];
+  evidence_hash?: string;
+  read_only?: boolean;
+}
+
+export type ConsultStreamEvent =
+  | (JsonRecord & {
+      type: "meta";
+      contract_version: string;
+      request_id: string;
+      provider: string;
+      model_id: string;
+      symbol?: string | null;
+      context: ConsultContextEvidence;
+    })
+  | { type: "delta"; content: string }
+  | { type: "done"; finish_reason: string; output_chars: number }
+  | { type: "error"; error: { code: string; message: string } };
 
 export interface Instrument extends JsonRecord {
   symbol: string;

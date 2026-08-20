@@ -9,6 +9,7 @@ from pathlib import Path
 
 from core.ai.prompts import PROMPT_VERSION
 from core.analysis_service import AnalysisService
+from core.consult import ConsultConfig, QwenConsultService
 from core.events import EventEvidence, source_credibility
 from core.outcomes import settle_prediction
 from core.performance.calibration import fit_calibration
@@ -25,6 +26,37 @@ from core.instruments import instrument_for
 MODEL_ID = "p4-e2e-model"
 PROMPT = "p4-e2e-prompt-v1"
 RUN_ID = "p4-e2e-replay-with-errors"
+
+
+class E2EInjectedConsultTransport:
+    """Deterministic local streaming transport; never calls a model or network."""
+
+    provider_name = "e2e_local_qwen"
+    model_name = "qwen-e2e-fixture"
+
+    async def stream(self, messages):
+        language = "zh-CN" if "默认使用中文" in messages[0]["content"] else "en"
+        if language == "zh-CN":
+            yield "确定性 "
+            yield "Qwen 测试回答。"
+        else:
+            yield "Deterministic "
+            yield "Qwen test answer."
+
+
+class E2EInjectedModelHealth:
+    """Health-only model dependency; analysis remains model-disabled."""
+
+    provider_name = "e2e_local_qwen"
+
+    def health(self):
+        return {
+            "provider": self.provider_name,
+            "available": True,
+            "model_id": "qwen-e2e-fixture",
+            "model_available": True,
+            "capability": "injected_test_not_live_model_proof",
+        }
 
 
 class E2EInjectedInstrumentValidator:
@@ -394,12 +426,25 @@ def main() -> None:
         provider_factory=lambda _instrument: E2EInjectedSettlementProvider(fresh_signal),
         clock=scheduler_clock.now,
     )
+    consult_service = QwenConsultService(
+        ConsultConfig(
+            enabled=True,
+            base_url="http://127.0.0.1:11434",
+            model_name="qwen-e2e-fixture",
+            first_token_timeout_seconds=2.0,
+            stream_idle_timeout_seconds=2.0,
+            total_timeout_seconds=5.0,
+        ),
+        E2EInjectedConsultTransport(),
+    )
 
     print(f"P4_E2E_API_READY http://{args.host}:{args.port}", flush=True)
     uvicorn.run(
         create_app(
             store=scheduler_store,
             analysis_service=analysis_service,
+            llm_provider=E2EInjectedModelHealth(),
+            consult_service=consult_service,
             event_provider=E2EInjectedEventProvider(),
             instrument_validator=E2EInjectedInstrumentValidator(),
             scheduler_executor=scheduler_executor,

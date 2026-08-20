@@ -41,6 +41,8 @@ describe("i18n contract", () => {
   it("keeps English and Chinese catalogs key-complete", () => {
     expect(Object.keys(translationCatalog.en).sort()).toEqual(Object.keys(translationCatalog["zh-CN"]).sort());
     expect(translateKey("nav.dashboard", "zh-CN")).toBe("仪表盘");
+    expect(translateKey("nav.consult", "zh-CN")).toBe("Qwen 咨询");
+    expect(translateKey("consult.stop", "zh-CN")).toBe("停止生成");
     expect(translateText("PRELIMINARY", "zh-CN")).toBe("初步");
     expect(translateText('{"available":true}', "zh-CN")).toBe('{"available":true}');
     expect(translateText("unmapped backend message", "zh-CN")).toBe("unmapped backend message");

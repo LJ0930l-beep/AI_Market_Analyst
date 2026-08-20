@@ -5,10 +5,23 @@ Updated: 2026-08-21
 ## Overall
 
 - Target: V1.0 Final Acceptance through Phase 7.
-- Active phase: Phase 7.
-- Active task: V1.0 Final Acceptance — SUPERVISOR_ACCEPTED / PASS; no post-V1.0 work is started.
+- Active phase: Post-V1.0 Unreleased enhancements; Phase 7/V1.0 remains accepted.
+- Active task: versioned local Qwen streaming consultation — DEVELOPER_COMPLETE, supervisor review pending.
 - Blockers: none.
 - Sole developer: `luna-max` (one persistent thread, serial tasks).
+
+## Post-V1.0 Qwen Consult developer checkpoint — 2026-08-21
+
+- Status: DEVELOPER_COMPLETE; supervisor acceptance is not claimed. Accepted V1.0/Phase 7 evidence remains historical and unchanged.
+- Added `qwen_consult_v1`: server-owned local Ollama/Qwen model and bilingual safety prompt, loopback-only URL policy, true NDJSON streaming, serial concurrency, bounded body/history/output/timeouts/retries, cancellation cleanup and sanitized failure states. Browser input cannot select a model or base URL.
+- Optional symbol context reads only the latest existing live Prediction and bounded stored evidence with `as_of`, freshness, provenance and missing/degraded reasons. Consultation never runs analysis/provider refresh/scans/settlement/Follow and does not write chat, Prediction, Outcome, PaperTrade, alert, memory, confidence or calibration state.
+- Added the global bilingual Qwen Consult page, Asset Detail handoff, incremental token rendering, Enter/Shift+Enter, stop/clear, sessionStorage-only restore, unavailable/error states, health capability and Settings evidence. Technical identifiers/evidence and model free text are not translated.
+- Python Gate: `python -m pytest -q` => 127 passed, 1 skipped, 1 warning, 20 subtests passed in 23.64s; `python -B -m unittest discover -s tests -v` => 128 tests OK, 1 skipped; compileall PASS; pip check reports no broken requirements.
+- Frontend Gate: lint PASS; typecheck PASS; 14 files / 67 tests PASS; production build PASS (59 modules); full and production npm audits both report 0 vulnerabilities.
+- Standalone browser Gate: 12/12 PASS in 45.3s with real built React/FastAPI/temporary SQLite and deterministic injected consultation transport. Ten routes, including `/consult`, passed 20 desktop/mobile (390x844) axe + horizontal-overflow checks in Chrome 151.0.7922.140. Consultation flow proves symbol handoff, real incremental HTTP stream assembly, tab-session refresh, explicit clear and unchanged domain counts; fixture output is not live Qwen proof.
+- Live local capability check: Ollama endpoint responded and was redacted as `provider=ollama`, but configured `qwen3.5:4b` reported `model_available=false` with no installed models, so no real-generation smoke was attempted and no fixture result is presented as live evidence.
+- Launcher restored after E2E: `running`, `ownership_errors=[]`, scheduler default disabled, UI/API HTTP 200 at `127.0.0.1:4173` / `127.0.0.1:8000`.
+- Honest limitations: the configured local Qwen model is not currently installed; context is latest saved evidence rather than a fresh provider request; session history is tab-scoped and plain-text only; serial concurrency is process-local; deterministic transport/browser evidence does not measure live Qwen quality, latency or GPU/ComfyUI contention.
 
 ## Accepted phases
 

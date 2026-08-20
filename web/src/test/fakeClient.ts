@@ -10,6 +10,7 @@ import type {
   AppSetting,
   CalibrationCurrent,
   ContextHealthResponse,
+  ConsultStreamEvent,
   MarketContextResponse,
   HealthResponse,
   Instrument,
@@ -264,7 +265,22 @@ export const fakeReleaseHealth: ReleaseHealthResponse = {
   api_version: "1.0.0",
   database: { available: true, schema_version: 10, path: "market_analyst.sqlite3" },
   backup: { available: true, format_version: "phase7_backup_v1", restore_requires_explicit_command: true },
-  capabilities: { local_only: true, cloud_required: false, scheduler_default_enabled: false, external_notifications: false },
+  capabilities: {
+    local_only: true,
+    cloud_required: false,
+    scheduler_default_enabled: false,
+    external_notifications: false,
+    qwen_consult: {
+      contract_version: "qwen_consult_v1",
+      configured: true,
+      provider: "ollama",
+      model_id: "qwen3.5:4b",
+      endpoint_scope: "loopback_only",
+      streaming: "ndjson",
+      conversation_storage: "browser_session_only",
+      database_writes: false,
+    },
+  },
 };
 
 export const fakeContextHealth: ContextHealthResponse = {
@@ -482,7 +498,35 @@ export function createFakeClient(overrides: Partial<ApplicationShellApiClient> =
     releaseHealth: vi.fn().mockResolvedValue(fakeReleaseHealth),
     providerHealth: vi.fn().mockResolvedValue(fakeProviderHealth),
     contextHealth: vi.fn().mockResolvedValue(fakeContextHealth),
-    modelHealth: vi.fn().mockResolvedValue({ provider: "ollama", available: true }),
+    modelHealth: vi.fn().mockResolvedValue({
+      provider: "ollama",
+      available: true,
+      model_id: "qwen3.5:4b",
+      model_available: true,
+      consult: { contract_version: "qwen_consult_v1", configured: true, available: true, model_id: "qwen3.5:4b" },
+    }),
+    consultStream: vi.fn(async (_request, onEvent: (event: ConsultStreamEvent) => void) => {
+      onEvent({
+        type: "meta",
+        contract_version: "qwen_consult_v1",
+        request_id: "fake-consult-request",
+        provider: "fake_local_qwen",
+        model_id: "qwen3.5:4b",
+        symbol: "NVDA",
+        context: {
+          status: "available",
+          symbol: "NVDA",
+          as_of: "2030-01-02T12:00:00Z",
+          freshness: { status: "fresh", age_seconds: 0 },
+          sources: ["durable_latest_live_prediction"],
+          missing_reasons: [],
+          read_only: true,
+        },
+      });
+      onEvent({ type: "delta", content: "Fixture " });
+      onEvent({ type: "delta", content: "Qwen answer." });
+      onEvent({ type: "done", finish_reason: "stop", output_chars: 20 });
+    }),
     stats: vi.fn().mockResolvedValue(fakeStats),
     schedulerStatus: vi.fn().mockResolvedValue(fakeSchedulerStatus),
     schedulerHistory: vi.fn().mockResolvedValue(fakeSchedulerHistory),

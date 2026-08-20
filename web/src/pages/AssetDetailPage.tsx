@@ -766,6 +766,9 @@ export function AssetDetailPage({ apiClient, onProvenanceChange }: AssetDetailPa
               <p className="subsection-label">Instrument context</p>
               <p className="asset-context-row__title">{selectedInstrument.symbol} · {selectedInstrument.exchange}</p>
               <p className="data-meta">{selectedInstrument.asset_type} · {selectedInstrument.sector || "Sector not supplied"} · {selectedInstrument.currency}</p>
+              <Link className="quiet-button asset-consult-link" to={`/consult?symbol=${encodeURIComponent(selectedInstrument.symbol)}`}>
+                Consult Qwen about this instrument
+              </Link>
             </div>
             <div className="timeframe-control">
               <span className="subsection-label" id="timeframe-label">Snapshot timeframe</span>

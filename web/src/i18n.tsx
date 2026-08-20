@@ -17,6 +17,7 @@ const en = {
   "nav.replay": "Replay lab",
   "nav.alerts": "Alert Center",
   "nav.settings": "Settings / health",
+  "nav.consult": "Qwen Consult",
   "shell.aiMarketAnalyst": "AI Market Analyst",
   "shell.researchDesk": "Research desk",
   "shell.localFirst": "Local-first · paper-only",
@@ -577,6 +578,12 @@ const en = {
   "settings.noSettlement": "No settlement run recorded",
   "settings.noRefresh": "No live refresh recorded",
   "settings.noReconciliation": "No reconciliation recorded",
+  "settings.consultAvailability": "Qwen consultation",
+  "settings.consultModel": "Consult model",
+  "settings.consultContract": "Consult contract",
+  "settings.consultStorage": "Conversation storage",
+  "settings.consultWrites": "Domain/database writes",
+  "settings.consultNoWrites": "disabled (read-only consultation)",
   "alerts.eyebrow": "Local observability / durable ledger",
   "alerts.title": "Alert Center",
   "alerts.description": "Review deterministic local evidence from predictions, outcomes, Radar transitions and operational failures.",
@@ -601,6 +608,51 @@ const en = {
   "alerts.acknowledging": "Acknowledging…",
   "alerts.acknowledge": "Acknowledge alert",
   "alerts.acknowledgedAt": "Acknowledged",
+  "consult.eyebrow": "Local model / session-only conversation",
+  "consult.title": "Qwen Consult",
+  "consult.description": "Ask the configured local Qwen model questions with optional read-only evidence for a supported instrument.",
+  "consult.boundary": "Consultation does not create analysis, Predictions, Outcomes, PaperTrades, alerts, scans, settlement or orders. Conversation content stays in this browser tab session.",
+  "consult.capabilityTitle": "Qwen consultation capability",
+  "consult.contract": "Contract",
+  "consult.sessionStorage": "Conversation storage",
+  "consult.sessionOnly": "Browser session only",
+  "consult.modelChecking": "Checking local Qwen availability…",
+  "consult.modelAvailable": "Qwen is available",
+  "consult.modelUnavailable": "Qwen is unavailable",
+  "consult.modelFailed": "Qwen availability check failed",
+  "consult.retryAvailability": "Retry availability",
+  "consult.symbolLabel": "Optional instrument context",
+  "consult.noSymbol": "No instrument context",
+  "consult.symbolHelp": "Only supported backend instruments are accepted. Selecting one reads saved evidence and never runs analysis.",
+  "consult.conversationTitle": "Conversation",
+  "consult.empty": "No messages yet. Ask a research question to begin.",
+  "consult.userMessage": "You",
+  "consult.assistantMessage": "Qwen",
+  "consult.composerLabel": "Message Qwen",
+  "consult.placeholder": "Ask about the evidence, risks, or what is missing…",
+  "consult.send": "Send",
+  "consult.stop": "Stop generating",
+  "consult.clear": "Clear conversation",
+  "consult.clearQuestion": "Clear every message from this browser session?",
+  "consult.clearConfirm": "Clear now",
+  "consult.cancel": "Cancel",
+  "consult.statusIdle": "Ready",
+  "consult.statusConnecting": "Connecting",
+  "consult.statusGenerating": "Generating",
+  "consult.statusStopped": "Generation stopped",
+  "consult.statusComplete": "Response complete",
+  "consult.statusFailed": "Consultation failed",
+  "consult.statusUnavailable": "Qwen unavailable",
+  "consult.errorFallback": "The consultation request did not return a usable response.",
+  "consult.contextTitle": "Read-only context evidence",
+  "consult.contextStatus": "Context status",
+  "consult.asOf": "As of",
+  "consult.sources": "Sources",
+  "consult.missing": "Missing / degraded reasons",
+  "consult.noContextYet": "Context evidence appears when a request starts.",
+  "consult.disclaimer": "Research assistance only · not investment advice · no trading execution",
+  "consult.restoreNotice": "This conversation is restored only within the current browser tab session.",
+  "asset.consultQwen": "Consult Qwen about this instrument",
 } as const;
 
 export type TranslationKey = keyof typeof en;
@@ -618,6 +670,7 @@ const zhCN: Record<TranslationKey, string> = {
   "nav.replay": "回放实验室",
   "nav.alerts": "提醒中心",
   "nav.settings": "设置 / 健康",
+  "nav.consult": "Qwen 咨询",
   "shell.aiMarketAnalyst": "AI 市场分析师",
   "shell.researchDesk": "研究工作台",
   "shell.localFirst": "本地优先 · 仅纸面交易",
@@ -1178,6 +1231,12 @@ const zhCN: Record<TranslationKey, string> = {
   "settings.noSettlement": "没有记录结果结算运行",
   "settings.noRefresh": "没有记录实时刷新",
   "settings.noReconciliation": "没有记录提醒协调",
+  "settings.consultAvailability": "Qwen 咨询",
+  "settings.consultModel": "咨询模型",
+  "settings.consultContract": "咨询契约",
+  "settings.consultStorage": "对话存储",
+  "settings.consultWrites": "领域/数据库写入",
+  "settings.consultNoWrites": "已禁用（只读咨询）",
   "alerts.eyebrow": "本地可观测性 / 持久化台账",
   "alerts.title": "提醒中心",
   "alerts.description": "查看来自预测、结果、雷达转变和运维失败的确定性本地证据。",
@@ -1202,6 +1261,51 @@ const zhCN: Record<TranslationKey, string> = {
   "alerts.acknowledging": "确认中…",
   "alerts.acknowledge": "确认提醒",
   "alerts.acknowledgedAt": "已确认",
+  "consult.eyebrow": "本地模型 / 仅限当前会话",
+  "consult.title": "Qwen 咨询",
+  "consult.description": "向服务端配置的本地 Qwen 模型提问，并可选择一个受支持标的的只读证据作为上下文。",
+  "consult.boundary": "咨询不会创建分析、预测、结果、纸面交易、提醒、扫描、结算或订单。对话内容仅保留在当前浏览器标签页会话中。",
+  "consult.capabilityTitle": "Qwen 咨询能力",
+  "consult.contract": "协议",
+  "consult.sessionStorage": "对话存储",
+  "consult.sessionOnly": "仅浏览器当前会话",
+  "consult.modelChecking": "正在检查本地 Qwen 可用性…",
+  "consult.modelAvailable": "Qwen 可用",
+  "consult.modelUnavailable": "Qwen 不可用",
+  "consult.modelFailed": "Qwen 可用性检查失败",
+  "consult.retryAvailability": "重新检查可用性",
+  "consult.symbolLabel": "可选标的上下文",
+  "consult.noSymbol": "不使用标的上下文",
+  "consult.symbolHelp": "只接受后端支持的标的。选择标的只读取已保存证据，绝不会运行分析。",
+  "consult.conversationTitle": "对话",
+  "consult.empty": "暂无消息。请输入研究问题开始咨询。",
+  "consult.userMessage": "你",
+  "consult.assistantMessage": "Qwen",
+  "consult.composerLabel": "发送给 Qwen",
+  "consult.placeholder": "询问现有证据、风险或缺失信息…",
+  "consult.send": "发送",
+  "consult.stop": "停止生成",
+  "consult.clear": "清空对话",
+  "consult.clearQuestion": "清空当前浏览器会话中的全部消息？",
+  "consult.clearConfirm": "立即清空",
+  "consult.cancel": "取消",
+  "consult.statusIdle": "就绪",
+  "consult.statusConnecting": "连接中",
+  "consult.statusGenerating": "生成中",
+  "consult.statusStopped": "已停止生成",
+  "consult.statusComplete": "回答完成",
+  "consult.statusFailed": "咨询失败",
+  "consult.statusUnavailable": "Qwen 不可用",
+  "consult.errorFallback": "咨询请求未返回可用响应。",
+  "consult.contextTitle": "只读上下文证据",
+  "consult.contextStatus": "上下文状态",
+  "consult.asOf": "数据截至",
+  "consult.sources": "来源",
+  "consult.missing": "缺失 / 降级原因",
+  "consult.noContextYet": "请求开始后将显示上下文证据。",
+  "consult.disclaimer": "仅供研究参考 · 不构成投资建议 · 不执行交易",
+  "consult.restoreNotice": "此对话仅在当前浏览器标签页会话内恢复。",
+  "asset.consultQwen": "咨询 Qwen 此标的",
 };
 
 const englishByText = new Map<string, TranslationKey>(Object.entries(en).map(([key, value]) => [value, key as TranslationKey]));
@@ -1350,13 +1454,21 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       let node = walker.nextNode();
       while (node) {
         const parent = node.parentElement;
-        if (parent && parent.tagName !== "SCRIPT" && parent.tagName !== "STYLE" && parent.tagName !== "CODE" && parent.tagName !== "PRE") {
+        if (
+          parent &&
+          !parent.closest("[data-i18n-skip]") &&
+          parent.tagName !== "SCRIPT" &&
+          parent.tagName !== "STYLE" &&
+          parent.tagName !== "CODE" &&
+          parent.tagName !== "PRE"
+        ) {
           const next = translateText(node.nodeValue ?? "", language);
           if (next !== node.nodeValue) node.nodeValue = next;
         }
         node = walker.nextNode();
       }
       root.querySelectorAll<HTMLElement>("[aria-label], [placeholder], [title], [alt]").forEach((element) => {
+        if (element.closest("[data-i18n-skip]")) return;
         for (const attribute of ["aria-label", "placeholder", "title", "alt"]) {
           const current = element.getAttribute(attribute);
           if (current !== null) {

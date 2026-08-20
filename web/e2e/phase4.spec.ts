@@ -15,6 +15,7 @@ const phase4Routes = [
   "/performance",
   "/replay",
   "/alerts",
+  "/consult",
   "/settings",
 ];
 
@@ -137,6 +138,7 @@ test("language selector switches to Chinese and persists across route navigation
     "/performance": "表现",
     "/replay": "回放实验室",
     "/alerts": "提醒中心",
+    "/consult": "Qwen 咨询",
     "/settings": "设置 / 健康",
   };
   for (const [route, title] of Object.entries(chineseRouteTitles)) {
@@ -174,6 +176,39 @@ test("Dashboard Market Radar reads existing evidence without creating analysis o
   const after = await (await page.request.get("/api/stats")).json();
   expect(after.predictions).toBe(before.predictions);
   expect(after.paper_trades).toBe(before.paper_trades);
+});
+
+test("Qwen Consult streams local fixture output, restores the browser session, and remains domain read-only", async ({ page }) => {
+  const before = await (await page.request.get("/api/stats")).json();
+  await page.goto("/assets/NVDA");
+  await page.getByRole("link", { name: "Consult Qwen about this instrument" }).click();
+  await expect(page).toHaveURL(/\/consult\?symbol=NVDA$/);
+  await expect(page.getByRole("heading", { name: "Qwen Consult", exact: true })).toBeVisible();
+  await expect(page.getByText("Qwen is available", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Optional instrument context")).toHaveValue("NVDA");
+
+  const composer = page.getByLabel("Message Qwen");
+  await composer.fill("Summarize only the saved NVDA evidence.");
+  await composer.press("Shift+Enter");
+  await expect(composer).toHaveValue(/\n$/);
+  await composer.press("Enter");
+  await expect(page.getByText("Deterministic Qwen test answer.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Response complete", { exact: true })).toBeVisible();
+  const context = page.getByRole("region", { name: "Read-only context evidence" });
+  await expect(context.getByText("NVDA", { exact: true })).toBeVisible();
+  await expect(context.getByText(/durable_latest_live_prediction/)).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByText("Deterministic Qwen test answer.", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Optional instrument context")).toHaveValue("NVDA");
+  await page.getByRole("button", { name: "Clear conversation" }).click();
+  await page.getByRole("button", { name: "Clear now" }).click();
+  await expect(page.getByText("No messages yet. Ask a research question to begin.", { exact: true })).toBeVisible();
+
+  const after = await (await page.request.get("/api/stats")).json();
+  for (const key of ["predictions", "outcomes", "paper_trades", "calibration_results", "alerts", "market_memory_features"]) {
+    expect(after[key], `${key} must remain unchanged by consultation`).toBe(before[key]);
+  }
 });
 
 test("explicit local scheduler scans Watchlist once, updates Radar, and stops cleanly", async ({ page }) => {

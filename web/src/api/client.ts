@@ -12,6 +12,8 @@ import type {
   CalibrationCurrent,
   ContextHealthResponse,
   ContextFilters,
+  ConsultRequest,
+  ConsultStreamEvent,
   FollowRequest,
   FollowResponse,
   HealthResponse,
@@ -104,6 +106,7 @@ export interface MarketApiClient {
   providerHealth(signal?: AbortSignal): Promise<ProviderHealthResponse>;
   contextHealth(signal?: AbortSignal): Promise<ContextHealthResponse>;
   modelHealth(signal?: AbortSignal): Promise<ModelHealthResponse>;
+  consultStream(request: ConsultRequest, onEvent: (event: ConsultStreamEvent) => void, signal?: AbortSignal): Promise<void>;
   stats(signal?: AbortSignal): Promise<StatsResponse>;
   schedulerStatus(signal?: AbortSignal): Promise<SchedulerStatus>;
   schedulerHistory(limit?: number, signal?: AbortSignal): Promise<SchedulerHistory>;
@@ -152,6 +155,7 @@ export type ApplicationShellApiClient = Pick<
   | "providerHealth"
   | "contextHealth"
   | "modelHealth"
+  | "consultStream"
   | "stats"
   | "schedulerStatus"
   | "schedulerHistory"
@@ -229,6 +233,32 @@ function isAbortSignal(value: unknown): value is AbortSignal {
   );
 }
 
+function parseConsultStreamEvent(payload: unknown): ConsultStreamEvent {
+  if (!isRecord(payload) || typeof payload.type !== "string") {
+    throw new ApiError(502, { code: "QWEN_STREAM_INVALID", message: "Qwen stream returned an invalid event." });
+  }
+  if (payload.type === "delta" && typeof payload.content === "string") {
+    return { type: "delta", content: payload.content };
+  }
+  if (payload.type === "done" && typeof payload.finish_reason === "string" && typeof payload.output_chars === "number") {
+    return { type: "done", finish_reason: payload.finish_reason, output_chars: payload.output_chars };
+  }
+  if (payload.type === "error" && isRecord(payload.error) && typeof payload.error.code === "string" && typeof payload.error.message === "string") {
+    return { type: "error", error: { code: payload.error.code, message: payload.error.message } };
+  }
+  if (
+    payload.type === "meta" &&
+    typeof payload.contract_version === "string" &&
+    typeof payload.request_id === "string" &&
+    typeof payload.provider === "string" &&
+    typeof payload.model_id === "string" &&
+    isRecord(payload.context)
+  ) {
+    return payload as ConsultStreamEvent;
+  }
+  throw new ApiError(502, { code: "QWEN_STREAM_INVALID", message: "Qwen stream returned an invalid event." });
+}
+
 export class ApiClient implements MarketApiClient {
   private readonly baseUrl: string;
   private readonly fetchImpl: FetchImplementation;
@@ -301,6 +331,72 @@ export class ApiClient implements MarketApiClient {
 
   modelHealth(signal?: AbortSignal): Promise<ModelHealthResponse> {
     return this.request<ModelHealthResponse>("/health/model", { signal });
+  }
+
+  async consultStream(
+    request: ConsultRequest,
+    onEvent: (event: ConsultStreamEvent) => void,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const headers = new Headers({
+      accept: "application/x-ndjson",
+      "content-type": "application/json",
+    });
+    const fetchImpl = this.fetchImpl;
+    const response = await fetchImpl(`${this.baseUrl}/consult/stream`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(request),
+      signal,
+    });
+    if (!response.ok) {
+      const responseText = await response.text();
+      let payload: unknown;
+      try {
+        payload = responseText ? JSON.parse(responseText) : undefined;
+      } catch {
+        payload = undefined;
+      }
+      throw ApiError.fromResponse(response.status, payload);
+    }
+    if (!response.body) {
+      throw new ApiError(502, { code: "QWEN_STREAM_UNAVAILABLE", message: "Qwen stream body is unavailable." });
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let terminal = false;
+    const dispatchLine = (line: string) => {
+      if (!line.trim()) return;
+      let payload: unknown;
+      try {
+        payload = JSON.parse(line);
+      } catch {
+        throw new ApiError(502, { code: "QWEN_STREAM_INVALID", message: "Qwen stream returned invalid JSON." });
+      }
+      const event = parseConsultStreamEvent(payload);
+      if (event.type === "done" || event.type === "error") terminal = true;
+      onEvent(event);
+    };
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        buffer += decoder.decode(value, { stream: !done });
+        if (buffer.length > 65_536) {
+          throw new ApiError(502, { code: "QWEN_STREAM_INVALID", message: "Qwen stream exceeded the client event limit." });
+        }
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) dispatchLine(line);
+        if (done) break;
+      }
+      if (buffer.trim()) dispatchLine(buffer);
+      if (!terminal) {
+        throw new ApiError(502, { code: "QWEN_STREAM_INTERRUPTED", message: "Qwen stream ended before a terminal event." });
+      }
+    } finally {
+      reader.releaseLock();
+    }
   }
 
   stats(signal?: AbortSignal): Promise<StatsResponse> {

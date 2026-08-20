@@ -83,6 +83,66 @@ describe("ApiClient", () => {
     }
   });
 
+  it("parses the Qwen NDJSON response incrementally without buffering the full answer", async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(`{"type":"meta","contract_version":"qwen_consult_v1","request_id":"r1","provider":"ollama","model_id":"qwen3.5:4b","context":{"status":"unavailable","sources":[],"missing_reasons":[],"read_only":true}}\n{"type":"delta","content":"first `));
+        controller.enqueue(encoder.encode(`chunk"}\n{"type":"delta","content":"second"}\n{"type":"done","finish_reason":"stop","output_chars":18}\n`));
+        controller.close();
+      },
+    });
+    const fetchImpl = vi.fn<FetchMock>().mockResolvedValue(new Response(stream, {
+      status: 200,
+      headers: { "content-type": "application/x-ndjson" },
+    }));
+    const client = new ApiClient({ baseUrl: "http://localhost:8000", fetchImpl });
+    const events: string[] = [];
+    const controller = new AbortController();
+
+    await client.consultStream(
+      { language: "en", messages: [{ role: "user", content: "question" }] },
+      (event) => events.push(event.type === "delta" ? event.content : event.type),
+      controller.signal,
+    );
+
+    expect(events).toEqual(["meta", "first chunk", "second", "done"]);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "http://localhost:8000/consult/stream",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ language: "en", messages: [{ role: "user", content: "question" }] }),
+        signal: controller.signal,
+      }),
+    );
+  });
+
+  it("rejects a Qwen stream that ends without a terminal event", async () => {
+    const fetchImpl = vi.fn<FetchMock>().mockResolvedValue(new Response('{"type":"delta","content":"partial"}\n', {
+      status: 200,
+      headers: { "content-type": "application/x-ndjson" },
+    }));
+    const client = new ApiClient({ baseUrl: "http://localhost:8000", fetchImpl });
+
+    await expect(client.consultStream(
+      { language: "en", messages: [{ role: "user", content: "question" }] },
+      () => undefined,
+    )).rejects.toMatchObject({ code: "QWEN_STREAM_INTERRUPTED" });
+  });
+
+  it("rejects an unbounded Qwen stream event before it can grow indefinitely", async () => {
+    const fetchImpl = vi.fn<FetchMock>().mockResolvedValue(new Response("x".repeat(65_537), {
+      status: 200,
+      headers: { "content-type": "application/x-ndjson" },
+    }));
+    const client = new ApiClient({ baseUrl: "http://localhost:8000", fetchImpl });
+
+    await expect(client.consultStream(
+      { language: "en", messages: [{ role: "user", content: "question" }] },
+      () => undefined,
+    )).rejects.toMatchObject({ code: "QWEN_STREAM_INVALID" });
+  });
+
   it("requests typed stored counts from the stats endpoint", async () => {
     const fetchImpl = vi.fn<FetchMock>().mockResolvedValue(
       response({ predictions: 12, paper_trades: 3, unknown_counter: 2 }),
