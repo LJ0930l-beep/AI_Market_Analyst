@@ -123,6 +123,8 @@ export type ApplicationShellApiClient = Pick<
   | "performanceSummary"
   | "performanceBuckets"
   | "calibrationCurrent"
+  | "replayRuns"
+  | "replayRun"
   | "followPrediction"
 >;
 

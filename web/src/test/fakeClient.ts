@@ -14,6 +14,7 @@ import type {
   PerformanceSummary,
   Prediction,
   ProviderHealthResponse,
+  ReplayRun,
   StatsResponse,
 } from "../api/types";
 
@@ -89,6 +90,48 @@ export const fakeCalibrationCurrent: CalibrationCurrent = {
   status: "INSUFFICIENT_SAMPLE",
   sample_count: 0,
   buckets: [],
+};
+
+export const fakeReplayRun: ReplayRun = {
+  run_id: "replay-fixture",
+  status: "COMPLETED",
+  created_at: "2030-01-02T10:00:00Z",
+  completed_at: "2030-01-02T10:20:00Z",
+  model_id: "qwen3.5:4b",
+  prompt_version: "phase2-json-v8",
+  symbols: ["NVDA"],
+  timeframes: ["1h"],
+  sampling_policy: {
+    min_history_bars: 120,
+    deterministic_seed: 7,
+    order: "as_of_utc_then_symbol_then_timeframe",
+    news_history_available: false,
+  },
+  manifest_hash: "manifest-fixture",
+  counts: {
+    planned: 1,
+    sample_rows: 1,
+    completed: 1,
+    wait: 0,
+    errors: 0,
+    actionable: 1,
+    resolved_actionable: 0,
+    outcomes: 0,
+  },
+  config: { samples: 1, seed: 7, manifest_path: "data/fixture.manifest.json" },
+  error_code: null,
+  samples: [{
+    run_id: "replay-fixture",
+    prediction_id: "replay-prediction-fixture",
+    symbol: "NVDA",
+    timeframe: "1h",
+    as_of: "2030-01-01T20:00:00Z",
+    status: "COMPLETED",
+    error_code: null,
+    started_at: "2030-01-02T10:01:00Z",
+    completed_at: "2030-01-02T10:02:00Z",
+    capability_flags: { news_history_available: false, technical_only: true },
+  }],
 };
 
 export const fakeProviderHealth: ProviderHealthResponse = {
@@ -181,6 +224,8 @@ export function createFakeClient(overrides: Partial<ApplicationShellApiClient> =
     performanceSummary: vi.fn().mockResolvedValue(fakePerformanceSummary),
     performanceBuckets: vi.fn().mockResolvedValue(fakePerformanceBuckets),
     calibrationCurrent: vi.fn().mockResolvedValue(fakeCalibrationCurrent),
+    replayRuns: vi.fn().mockResolvedValue([fakeReplayRun]),
+    replayRun: vi.fn().mockResolvedValue(fakeReplayRun),
     followPrediction: vi.fn().mockResolvedValue({
       prediction_id: fakePrediction.prediction_id,
       status: "OPEN",

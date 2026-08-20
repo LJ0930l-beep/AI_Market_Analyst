@@ -71,3 +71,9 @@ Vite development traffic to the FastAPI backend uses the `/api` prefix and rewri
 Date: 2026-08-19
 
 The browser sets an immediate in-flight lock before starting a Follow request so same-tick double actions cannot emit duplicate requests. Selection changes and unmounts abort stale work. The FastAPI Follow contract remains the authoritative paper-only and idempotent boundary; the client guard improves interaction safety but is not treated as the source of truth.
+
+## ADR-013 - Phase 4 Watchlist and Replay Lab are capability-honest read surfaces
+
+Date: 2026-08-19
+
+Before Phase 5, Watchlist is a searchable view of the backend instrument roster and does not persist membership or claim ranking, scans or alerts. Replay Lab uses only replay GET endpoints and does not expose the API request-record creation endpoint because that endpoint stores PENDING CLI metadata without starting a worker. PENDING and RUNNING are displayed as returned state, while replay execution remains an explicit CLI workflow.

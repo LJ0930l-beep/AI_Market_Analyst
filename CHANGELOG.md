@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Phase 4 - P4-T06 Watchlist and Replay Lab
+
+- Replaced the final Phase 4 placeholders with a searchable/filterable read-only instrument roster and an advanced read-only Replay Lab.
+- Linked all six returned instruments to canonical Asset Detail routes while explicitly deferring saved membership, CRUD, ranking, scans, scheduling and alerts to Phase 5.
+- Added replay status filters, pagination, selectable run detail, allowlisted run/configuration/count provenance and per-sample capability/status coverage.
+- Kept replay mutation and execution out of the UI; PENDING/RUNNING are presented as passive stored metadata and actual execution remains an explicit CLI workflow.
+- Verification: 49 Python tests and 45 frontend tests PASS; lint/typecheck/build/compile/dependency/diff checks PASS; dependency audits report 0 vulnerabilities.
+- Live QA against the formal Phase 3 database showed all six instruments and the complete 300-row replay evidence, including 45 retained errors and technical-only historical-news limits. Desktop and 390x844 mobile had no page-level horizontal overflow.
+
 ### Phase 4 - P4-T05 Predictions, Paper Trades and Performance
 
 - Added live filtered/paginated Prediction and PaperTrade ledgers with allowlisted details and linked Outcome evidence.

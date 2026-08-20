@@ -4,7 +4,7 @@
 
 Phase 4 - Product UI and interaction.
 
-Current task: `P4-T06` - implement Watchlist and Replay Lab UI with truthful Phase 4 capability boundaries.
+Current task: `P4-T07` - execute the Phase 4 user-flow E2E, accessibility/responsive pass and completion report.
 
 P4-T04 execution split:
 
@@ -24,9 +24,9 @@ P4-T04 execution split:
    - Instrument search, quote/quant/news/event views, charts, Signal Card and validity/horizon/re-evaluation/invalidation display.
 5. `P4-T05` Predictions, Follow/Paper Trades and Performance - ACCEPTED
    - Filters/details, PaperTrade-only Follow semantics, outcome metrics, calibration reliability/buckets and PRELIMINARY state.
-6. `P4-T06` Watchlist and Replay Lab UI - IN PROGRESS
+6. `P4-T06` Watchlist and Replay Lab UI - ACCEPTED
    - Phase 4 UI contract/shell for Watchlist and advanced replay visibility; Phase 5 owns live scanning/ranking behavior.
-7. `P4-T07` Phase 4 E2E, accessibility/responsive pass and completion report
+7. `P4-T07` Phase 4 E2E, accessibility/responsive pass and completion report - IN PROGRESS
    - Main workflow E2E, regression, build artifacts and Phase 4 Gate.
 
 ## Phase 5 task graph

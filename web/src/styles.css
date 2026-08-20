@@ -1235,6 +1235,180 @@ summary:focus-visible,
   margin-top: 0.8rem;
 }
 
+.capability-ledger {
+  display: grid;
+  grid-template-columns: minmax(8.5rem, 0.25fr) minmax(0, 1fr);
+  gap: 0.8rem;
+  margin-top: 0.8rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--info);
+  background: var(--canvas);
+}
+
+.capability-ledger--warning {
+  border-left-color: var(--warning);
+}
+
+.capability-ledger__label {
+  color: var(--ink);
+  font-family: var(--data);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.capability-ledger p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.5;
+}
+
+.watchlist-filters__grid,
+.replay-filters__grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.roster-count {
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+  font-family: var(--data);
+  font-size: 0.64rem;
+}
+
+.watchlist-roster {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.watchlist-roster__item {
+  min-width: 0;
+  border: 1px solid var(--rule);
+  background: var(--surface-strong);
+}
+
+.watchlist-roster__item article {
+  display: grid;
+  min-width: 0;
+  gap: 0.7rem;
+  padding: 0.75rem;
+}
+
+.watchlist-roster__heading {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.7rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.watchlist-roster__heading .eyebrow {
+  margin: 0 0 0.2rem;
+}
+
+.watchlist-roster__heading h3 {
+  margin: 0;
+  font-family: var(--data);
+  font-size: 1rem;
+  letter-spacing: -0.02em;
+}
+
+.watchlist-roster__heading a {
+  flex: 0 0 auto;
+  color: var(--info);
+  font-family: var(--data);
+  font-size: 0.64rem;
+  font-weight: 700;
+  text-underline-offset: 0.16em;
+}
+
+.replay-run-table,
+.replay-sample-table {
+  width: 100%;
+  min-width: 46rem;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.replay-run-table th,
+.replay-run-table td,
+.replay-sample-table th,
+.replay-sample-table td {
+  padding: 0.58rem 0.45rem;
+  border-bottom: 1px solid var(--rule);
+  overflow-wrap: anywhere;
+  text-align: left;
+  vertical-align: top;
+}
+
+.replay-run-table th,
+.replay-sample-table th {
+  color: var(--muted);
+  font-family: var(--data);
+  font-size: 0.59rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.replay-run-table td,
+.replay-sample-table td {
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.replay-status {
+  display: inline-block;
+  padding: 0.24rem 0.34rem;
+  border: 1px solid var(--wait);
+  color: var(--wait);
+  font-family: var(--data);
+  font-size: 0.61rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.replay-status--running,
+.replay-status--completed {
+  border-color: var(--info);
+  color: var(--info);
+}
+
+.replay-status--completed-with-errors,
+.replay-status--failed {
+  border-color: var(--warning);
+  color: var(--warning);
+}
+
+.replay-status-note {
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  border-left: 3px solid var(--info);
+  background: var(--canvas);
+  color: var(--ink);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.replay-detail__split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.table-wrap:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
 .performance-grid .performance-panel--summary {
   grid-column: 1 / -1;
 }
@@ -1304,13 +1478,24 @@ summary:focus-visible,
   .performance-grid .performance-panel--summary {
     grid-column: auto;
   }
+
+  .watchlist-roster,
+  .replay-detail__split {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 420px) {
   .pagination-controls,
-  .record-detail__heading {
+  .record-detail__heading,
+  .watchlist-roster__heading,
+  .capability-ledger {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .capability-ledger {
+    display: flex;
   }
 
   .workflow-filters,

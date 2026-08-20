@@ -138,4 +138,27 @@ describe("ApiClient", () => {
     expect(fetchImpl).toHaveBeenNthCalledWith(2, "http://localhost:8000/performance/buckets?source_type=replay&model_id=model-x", expect.objectContaining({ method: "GET" }));
     expect(fetchImpl).toHaveBeenNthCalledWith(3, "http://localhost:8000/predictions/p%2F1/follow", expect.objectContaining({ method: "POST", body: "{}" }));
   });
+
+  it("encodes replay run filters and the selected run path", async () => {
+    const fetchImpl = vi
+      .fn<FetchMock>()
+      .mockResolvedValueOnce(response([{ run_id: "run/7", status: "COMPLETED_WITH_ERRORS" }]))
+      .mockResolvedValueOnce(response({ run_id: "run/7", status: "COMPLETED_WITH_ERRORS", samples: [] }));
+    const client = new ApiClient({ baseUrl: "http://localhost:8000", fetchImpl });
+    const controller = new AbortController();
+
+    await client.replayRuns({ status: "COMPLETED_WITH_ERRORS", limit: 50, offset: 100 }, controller.signal);
+    await client.replayRun("run/7", controller.signal);
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      "http://localhost:8000/replay/runs?status=COMPLETED_WITH_ERRORS&limit=50&offset=100",
+      expect.objectContaining({ method: "GET", signal: controller.signal }),
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:8000/replay/runs/run%2F7",
+      expect.objectContaining({ method: "GET", signal: controller.signal }),
+    );
+  });
 });

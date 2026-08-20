@@ -273,19 +273,68 @@ export type Outcome = JsonRecord & {
   paper_trade?: PaperTrade | null;
 };
 
+export interface ReplayCounts extends JsonRecord {
+  planned?: number;
+  sample_rows?: number;
+  completed?: number;
+  wait?: number;
+  errors?: number;
+  actionable?: number;
+  resolved_actionable?: number;
+  outcomes?: number;
+}
+
+export interface ReplaySamplingPolicy extends JsonRecord {
+  samples?: number;
+  resume?: boolean;
+  execution?: string;
+  min_history_bars?: number;
+  deterministic_seed?: number;
+  order?: string;
+  news_history_available?: boolean;
+}
+
+export interface ReplayConfig extends JsonRecord {
+  db_path?: string;
+  samples?: number;
+  seed?: number;
+  manifest_path?: string;
+  requested_via?: string;
+  execution?: string;
+}
+
+export interface ReplayCapabilityFlags extends JsonRecord {
+  news_history_available?: boolean;
+  technical_only?: boolean;
+}
+
 export type ReplaySample = JsonRecord & {
   run_id?: string;
-  prediction_id?: string;
+  prediction_id?: string | null;
   symbol?: string;
-  timeframe?: Timeframe;
+  timeframe?: Timeframe | string;
+  as_of?: string;
   status?: string;
+  error_code?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  capability_flags?: ReplayCapabilityFlags;
 };
 
 export type ReplayRun = JsonRecord & {
   run_id: string;
   status: ReplayStatus;
   model_id?: string;
-  prompt_version?: string;
+  prompt_version?: string | null;
+  created_at?: string;
+  completed_at?: string | null;
+  symbols?: string[];
+  timeframes?: Array<Timeframe | string>;
+  sampling_policy?: ReplaySamplingPolicy;
+  manifest_hash?: string;
+  counts?: ReplayCounts;
+  config?: ReplayConfig;
+  error_code?: string | null;
   samples?: ReplaySample[];
 };
 

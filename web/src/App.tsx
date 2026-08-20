@@ -10,7 +10,9 @@ import { AssetDetailPage } from "./pages/AssetDetailPage";
 import { PaperTradesPage } from "./pages/PaperTradesPage";
 import { PerformancePage } from "./pages/PerformancePage";
 import { PredictionsPage } from "./pages/PredictionsPage";
+import { ReplayLabPage } from "./pages/ReplayLabPage";
 import { SettingsHealthPage } from "./pages/SettingsHealthPage";
+import { WatchlistPage } from "./pages/WatchlistPage";
 
 interface NavigationItem {
   label: string;
@@ -151,7 +153,7 @@ function WorkspaceRoutes({
       <Route index element={<DashboardPage apiClient={apiClient} onProvenanceChange={onProvenanceChange} />} />
       <Route
         path="watchlist"
-        element={<PlaceholderPage description="A focused place for saved instruments will live here." title="Watchlist" />}
+        element={<WatchlistPage apiClient={apiClient} />}
       />
       <Route path="assets/:symbol" element={<AssetDetailPage apiClient={apiClient} onProvenanceChange={onProvenanceChange} />} />
       <Route
@@ -168,7 +170,7 @@ function WorkspaceRoutes({
       />
       <Route
         path="replay"
-        element={<PlaceholderPage description="Replay run provenance will be inspected here." title="Replay lab" />}
+        element={<ReplayLabPage apiClient={apiClient} />}
       />
       <Route path="settings" element={<SettingsHealthPage apiClient={apiClient} />} />
       <Route path="*" element={<NotFoundPage />} />
