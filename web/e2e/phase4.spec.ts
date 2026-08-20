@@ -14,6 +14,7 @@ const phase4Routes = [
   "/paper-trades",
   "/performance",
   "/replay",
+  "/alerts",
   "/settings",
 ];
 
@@ -179,6 +180,61 @@ test("explicit local scheduler scans Watchlist once, updates Radar, and stops cl
   await expect(scheduler.getByText(/settlement_v1/)).toBeVisible();
   await expect(scheduler.getByText(/live_performance_v1/)).toBeVisible();
   await expect(scheduler.getByRole("button", { name: "Enable scheduler" })).toBeVisible();
+});
+
+test("Alert Center reads deduped local evidence and acknowledges without financial mutation", async ({ page }) => {
+  const before = await (await page.request.get("/api/stats")).json();
+  const beforePrediction = await (await page.request.get("/api/predictions/p4-fresh-long")).json();
+  const beforeCalibration = await (await page.request.get("/api/calibration/current")).json();
+  const readMethods: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() !== "GET") readMethods.push(request.method());
+  });
+  await page.goto("/alerts");
+  await expect(page.getByRole("heading", { name: "Alert Center", exact: true })).toBeVisible();
+  await expect(page.getByText("alert_policy_v1", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(/No Telegram, Discord, email, cloud notifier/)).toBeVisible();
+  const alertResponse = await page.request.get("/api/alerts?limit=100");
+  expect(alertResponse.status()).toBe(200);
+  const alertPayload = await alertResponse.json();
+  const sourceRows = await Promise.all(["prediction", "outcome", "radar", "operational"].map(async (source) => {
+    const response = await page.request.get(`/api/alerts?source=${source}&limit=100`);
+    expect(response.status()).toBe(200);
+    return [source, (await response.json()).alerts.length] as const;
+  }));
+  const sourceCounts = Object.fromEntries(sourceRows);
+  expect(sourceCounts.prediction).toBeGreaterThan(0);
+  expect(sourceCounts.outcome).toBeGreaterThan(0);
+  expect(sourceCounts.radar).toBeGreaterThan(0);
+  expect(sourceCounts.operational).toBeGreaterThan(0);
+  expect(alertPayload.policy.version).toBe("alert_policy_v1");
+  expect(alertPayload.capabilities.outbound_notifiers).toBe(false);
+  expect(alertPayload.capabilities.broker_or_real_order).toBe(false);
+  expect(alertPayload.counts.total).toBeGreaterThan(0);
+  expect(readMethods).toEqual([]);
+
+  const firstAck = page.getByRole("button", { name: "Acknowledge alert" }).first();
+  await expect(firstAck).toBeVisible();
+  const acknowledgeResponse = page.waitForResponse((response) => response.url().includes("/api/alerts/") && response.url().endsWith("/acknowledge") && response.request().method() === "POST");
+  await firstAck.click();
+  const acknowledged = await (await acknowledgeResponse).json();
+  expect(acknowledged.status).toBe("ACKNOWLEDGED");
+  const after = await (await page.request.get("/api/stats")).json();
+  expect(after.predictions).toBe(before.predictions);
+  expect(after.paper_trades).toBe(before.paper_trades);
+  expect(after.outcomes).toBe(before.outcomes);
+  expect(after.calibration_results).toBe(before.calibration_results);
+  const afterPrediction = await (await page.request.get("/api/predictions/p4-fresh-long")).json();
+  expect(afterPrediction.raw_confidence).toBe(beforePrediction.raw_confidence);
+  expect(afterPrediction.calibrated_confidence).toBe(beforePrediction.calibrated_confidence);
+  const afterCalibration = await (await page.request.get("/api/calibration/current")).json();
+  expect(afterCalibration).toMatchObject({ status: beforeCalibration.status, scope: beforeCalibration.scope });
+  const repeated = await page.request.get("/api/alerts?limit=100");
+  expect((await repeated.json()).counts.total).toBe(alertPayload.counts.total);
+
+  await page.goto("/settings");
+  await expect(page.getByRole("region", { name: "Alert reconciliation" })).toBeVisible();
+  await expect(page.getByText(/Alerts are local SQLite observability only/i)).toBeVisible();
 });
 
 test("fresh LONG double-click Follow creates exactly one PaperTrade and linked detail", async ({ page }) => {

@@ -14,6 +14,15 @@ from uuid import uuid4
 
 from core.ai import OllamaProvider
 from core.ai.prompts import PROMPT_VERSION
+from core.alerts import (
+    ALERT_PAGE_LIMIT,
+    ALERT_SEVERITIES,
+    ALERT_SOURCES,
+    ALERT_STATUSES,
+    AlertReconciler,
+    alert_capabilities,
+    alert_policy,
+)
 from core.analysis_service import AnalysisError, AnalysisService
 from core.instruments import (
     CandidateParseError,
@@ -420,6 +429,18 @@ def _normalize_radar_category(value: str | None) -> str | None:
     return normalized
 
 
+def _normalize_alert_source(value: str | None) -> str | None:
+    return _enum_filter(value, field="alert_source", allowed=ALERT_SOURCES, upper=False)
+
+
+def _normalize_alert_severity(value: str | None) -> str | None:
+    return _enum_filter(value, field="alert_severity", allowed=ALERT_SEVERITIES, upper=True)
+
+
+def _normalize_alert_status(value: str | None) -> str | None:
+    return _enum_filter(value, field="alert_status", allowed=ALERT_STATUSES, upper=True)
+
+
 def _normalize_paper_status(value: object) -> str:
     if value is None:
         raise APIError(400, "INVALID_PAPER_TRADE_STATUS", "paper trade status must be a non-empty string")
@@ -728,6 +749,71 @@ if FastAPI is not None:
             return scheduler.run_once()
         except SchedulerRuntimeError as exc:
             raise APIError(409, exc.code, exc.message, context=exc.context) from exc
+
+    @router.get("/alerts")
+    def alerts(
+        limit: int = 50,
+        offset: int = 0,
+        source: str | None = None,
+        severity: str | None = None,
+        status: str | None = None,
+        store: SQLiteStore = Depends(get_store),
+    ) -> dict[str, object]:
+        normalized_source = _normalize_alert_source(source)
+        normalized_severity = _normalize_alert_severity(severity)
+        normalized_status = _normalize_alert_status(status)
+        bounded_limit = min(_clamp_limit(limit, maximum=ALERT_PAGE_LIMIT), ALERT_PAGE_LIMIT)
+        bounded_offset = _clamp_offset(offset)
+        filters = {
+            "source": normalized_source,
+            "severity": normalized_severity,
+            "status": normalized_status,
+        }
+        return {
+            "policy": alert_policy(),
+            "capabilities": alert_capabilities(),
+            "alerts": store.list_alerts(limit=bounded_limit, offset=bounded_offset, **filters),
+            "counts": store.alert_counts(),
+            "pagination": {
+                "limit": bounded_limit,
+                "offset": bounded_offset,
+                "total": store.count_alerts(**filters),
+                "filters": {key: value for key, value in filters.items() if value is not None},
+            },
+        }
+
+    @router.get("/alerts/count")
+    def alert_count(store: SQLiteStore = Depends(get_store)) -> dict[str, object]:
+        return {"policy": alert_policy(), "counts": store.alert_counts()}
+
+    @router.get("/alerts/status")
+    def alert_status(store: SQLiteStore = Depends(get_store)) -> dict[str, object]:
+        return {
+            "policy": alert_policy(),
+            "capabilities": alert_capabilities(),
+            "counts": store.alert_counts(),
+            "last_reconciliation": store.get_scheduler_state("last_alert_reconciliation"),
+        }
+
+    @router.post("/alerts/{alert_id}/acknowledge")
+    def acknowledge_alert(
+        alert_id: str,
+        body: dict[str, Any] | None = Body(default=None),
+        store: SQLiteStore = Depends(get_store),
+    ) -> dict[str, object]:
+        if body not in (None, {}):
+            raise APIError(
+                400,
+                "INVALID_ALERT_ACK_PAYLOAD",
+                "alert acknowledgement payload must be empty",
+            )
+        alert = store.acknowledge_alert(
+            alert_id,
+            acknowledged_at=datetime.now(timezone.utc).isoformat(),
+        )
+        if alert is None:
+            raise APIError(404, "ALERT_NOT_FOUND", "alert not found", context={"alert_id": alert_id})
+        return alert
 
     @router.get("/settings")
     def settings(store: SQLiteStore = Depends(get_store)) -> list[dict[str, object]]:
@@ -1249,6 +1335,7 @@ def create_app(
     scheduler_resource_probe: ResourceProbe | Callable[[], object] | None = None,
     scheduler_clock: Callable[[], datetime] | None = None,
     settlement_service: SettlementService | None = None,
+    alert_reconciler: AlertReconciler | None = None,
 ):
     """Create an API app with optional service injections for isolated tests."""
 
@@ -1355,6 +1442,7 @@ def create_app(
             resource_probe=scheduler_resource_probe or LocalResourceProbe(),
             clock=scheduler_clock or (lambda: datetime.now(timezone.utc)),
             settlement_service=settlement_service,
+            alert_reconciler=alert_reconciler,
         )
 
     app.state.scheduler_factory = scheduler_factory

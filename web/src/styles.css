@@ -1863,6 +1863,136 @@ summary:focus-visible,
   }
 }
 
+.alert-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 1.25rem 0;
+}
+
+.alert-summary > div {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--rule);
+  background: var(--surface-strong);
+}
+
+.alert-summary__label {
+  color: var(--muted);
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.alert-summary strong {
+  color: var(--ink);
+  font-size: 1.35rem;
+}
+
+.alert-list {
+  display: grid;
+  gap: 0.85rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.alert-card {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--rule);
+  border-left: 4px solid var(--rule);
+  background: var(--surface-strong);
+}
+
+.alert-card--warning { border-left-color: var(--warning); }
+.alert-card--critical { border-left-color: var(--short); }
+
+.alert-card__header,
+.alert-card__actions,
+.alert-card__badges {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.alert-card__header h3 {
+  margin: 0.15rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.alert-card__badges {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.alert-card__message {
+  margin: 0.8rem 0;
+  color: var(--muted);
+}
+
+.alert-card__facts {
+  margin: 0;
+}
+
+.alert-card__facts dd,
+.alert-card__evidence pre {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.alert-card__evidence {
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--rule);
+  padding-top: 0.65rem;
+}
+
+.alert-card__evidence summary {
+  cursor: pointer;
+  color: var(--info);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.alert-card__evidence pre {
+  max-width: 100%;
+  margin: 0.7rem 0 0;
+  padding: 0.75rem;
+  overflow: auto;
+  background: var(--ink);
+  color: var(--surface-strong);
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+}
+
+.alert-card__actions {
+  align-items: center;
+  margin-top: 0.8rem;
+}
+
+@media (max-width: 780px) {
+  .alert-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 420px) {
+  .alert-summary {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .alert-card__header {
+    display: grid;
+  }
+
+  .alert-card__badges {
+    justify-content: flex-start;
+  }
+}
+
 .asset-page {
   min-width: 0;
   padding: clamp(1.25rem, 3vw, 2rem);

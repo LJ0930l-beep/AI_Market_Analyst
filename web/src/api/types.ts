@@ -331,12 +331,75 @@ export interface SchedulerStatus extends JsonRecord {
   cache?: JsonRecord;
   settlement?: JsonRecord | null;
   performance_refresh?: JsonRecord | null;
+  alerts?: JsonRecord | null;
   capabilities?: JsonRecord;
 }
 
 export interface SchedulerHistory extends JsonRecord {
   runs: SchedulerRun[];
   status: SchedulerStatus;
+}
+
+export type AlertSource = "prediction" | "outcome" | "radar" | "news_event" | "operational";
+export type AlertSeverity = "INFO" | "WARNING" | "CRITICAL";
+export type AlertStatus = "OPEN" | "ACKNOWLEDGED";
+
+export interface AlertRecord extends JsonRecord {
+  alert_id: string;
+  policy_version: string;
+  source: AlertSource | string;
+  severity: AlertSeverity | string;
+  status: AlertStatus | string;
+  title: string;
+  message: string;
+  symbol?: string | null;
+  prediction_id?: string | null;
+  event_identity: string;
+  fingerprint: string;
+  evidence: JsonRecord;
+  first_seen_at: string;
+  last_seen_at: string;
+  occurrence_count: number;
+  acknowledged_at?: string | null;
+  acknowledged_by?: string | null;
+  dedupe_key: string;
+}
+
+export interface AlertCounts extends JsonRecord {
+  total: number;
+  open: number;
+  unread: number;
+  acknowledged: number;
+}
+
+export interface AlertPolicy extends JsonRecord {
+  version: string;
+  mode: string;
+  retention_limit?: number;
+  operational_cooldown_seconds?: number;
+}
+
+export interface AlertStatusResponse extends JsonRecord {
+  policy: AlertPolicy;
+  capabilities: JsonRecord;
+  counts: AlertCounts;
+  last_reconciliation?: JsonRecord | null;
+}
+
+export interface AlertFilters {
+  limit?: number;
+  offset?: number;
+  source?: AlertSource;
+  severity?: AlertSeverity;
+  status?: AlertStatus;
+}
+
+export interface AlertsResponse extends JsonRecord {
+  policy: AlertPolicy;
+  capabilities: JsonRecord;
+  alerts: AlertRecord[];
+  counts: AlertCounts;
+  pagination: JsonRecord & { limit: number; offset: number; total: number };
 }
 
 export type Prediction = JsonRecord & {

@@ -1,6 +1,10 @@
 import type {
   AnalysisRequest,
   AnalysisResult,
+  AlertFilters,
+  AlertRecord,
+  AlertStatusResponse,
+  AlertsResponse,
   AppSetting,
   AppSettingKey,
   AppSettingResetResponse,
@@ -126,6 +130,9 @@ export interface MarketApiClient {
   calibrationCurrent(signal?: AbortSignal): Promise<CalibrationCurrent>;
   predictionCalibration(predictionId: string, signal?: AbortSignal): Promise<PredictionCalibration>;
   radar(filters?: RadarFilters, signal?: AbortSignal): Promise<RadarResponse>;
+  alerts(filters?: AlertFilters, signal?: AbortSignal): Promise<AlertsResponse>;
+  alertStatus(signal?: AbortSignal): Promise<AlertStatusResponse>;
+  acknowledgeAlert(alertId: string, signal?: AbortSignal): Promise<AlertRecord>;
   replayRuns(filters?: ReplayRunFilters, signal?: AbortSignal): Promise<ReplayRun[]>;
   replayRun(runId: string, signal?: AbortSignal): Promise<ReplayRun>;
   followPrediction(predictionId: string, request?: FollowRequest, signal?: AbortSignal): Promise<FollowResponse>;
@@ -165,6 +172,9 @@ export type ApplicationShellApiClient = Pick<
   | "performanceBuckets"
   | "calibrationCurrent"
   | "radar"
+  | "alerts"
+  | "alertStatus"
+  | "acknowledgeAlert"
   | "replayRuns"
   | "replayRun"
   | "followPrediction"
@@ -452,6 +462,22 @@ export class ApiClient implements MarketApiClient {
 
   radar(filters: RadarFilters = {}, signal?: AbortSignal): Promise<RadarResponse> {
     return this.request<RadarResponse>("/radar", { query: filters, signal });
+  }
+
+  alerts(filters: AlertFilters = {}, signal?: AbortSignal): Promise<AlertsResponse> {
+    return this.request<AlertsResponse>("/alerts", { query: filters, signal });
+  }
+
+  alertStatus(signal?: AbortSignal): Promise<AlertStatusResponse> {
+    return this.request<AlertStatusResponse>("/alerts/status", { signal });
+  }
+
+  acknowledgeAlert(alertId: string, signal?: AbortSignal): Promise<AlertRecord> {
+    return this.request<AlertRecord>(`/alerts/${encodePathSegment(alertId)}/acknowledge`, {
+      method: "POST",
+      body: {},
+      signal,
+    });
   }
 
   replayRuns(filters: ReplayRunFilters = {}, signal?: AbortSignal): Promise<ReplayRun[]> {

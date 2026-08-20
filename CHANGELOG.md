@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Phase 5 - P5-T04 local Alert Center
+
+- Added SQLite v8 durable local alerts with `alert_policy_v1`, immutable event identity/evidence, deterministic prediction/outcome/Radar/news-event dedupe, bounded operational cooldown/coalescing, acknowledgement and retention-priority pruning.
+- Integrated isolated post-settlement/post-scan reconciliation, read-only bounded/filterable alert APIs, Settings/Health capability evidence and accessible responsive Alert Center UI; no outbound notifier, broker, order, PaperTrade, confidence or calibration mutation.
+- Verification: 99 Python tests plus 10 subtests, 55 frontend tests with lint/typecheck/build, npm audits 0 vulnerabilities, standalone E2E 10/10 PASS with 1 worker on Chrome 151.0.7922.140, axe/overflow coverage for 9 routes at desktop and 390x844, compileall/pip check/diff check PASS.
+- Phase 5 Gate: developer-verified and ready for Sol review; no Phase 6 implementation.
+
 ### Phase 5 - P5-T03b background Outcome settlement and live refresh
 
 - Added bounded point-in-time settlement for live Predictions and deduplicated live Performance/Radar refresh evidence while preserving WAIT, paper-only and no-calibration boundaries.

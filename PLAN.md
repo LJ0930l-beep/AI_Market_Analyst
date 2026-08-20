@@ -4,7 +4,7 @@
 
 Phase 5 - Radar, watchlist, scanning and alerts.
 
-Current task: `P5-T04` - local alerts/dedupe/ack.
+Current task: `Phase 5 Gate` - developer-verified, ready for Sol review; no Phase 6 implementation.
 
 P4-T04 execution split:
 
@@ -38,8 +38,8 @@ P4-T04 execution split:
 3. Low-concurrency scheduler, market-session policy, caching, resource backoff, background settlement and live refresh - ACCEPTED.
    - `P5-T03a` safe local Watchlist scheduler and scan execution foundation - ACCEPTED.
    - `P5-T03b` background Outcome settlement + performance/Radar refresh - ACCEPTED.
-4. `P5-T04` local alert model, deduplication, acknowledge flow and UI integration - PENDING / IN PROGRESS.
-5. Restart/recovery, performance/resource tests, E2E and Phase 5 report.
+4. `P5-T04` local alert model, deduplication, acknowledge flow and UI integration - DEVELOPER-VERIFIED.
+5. Restart/recovery, performance/resource tests, E2E and Phase 5 Gate evidence - READY FOR SOL REVIEW.
 
 ## Phase 6 task graph
 

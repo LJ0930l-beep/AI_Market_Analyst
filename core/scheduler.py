@@ -22,6 +22,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .analysis_service import AnalysisError, AnalysisService
+from .alerts import AlertReconciler
 from .instruments import AssetType, Instrument, TradingHours
 from .providers import build_default_provider
 from .settlement import SettlementService
@@ -696,6 +697,7 @@ class LocalSchedulerRuntime:
         backoff_max_seconds: int = RESOURCE_BACKOFF_MAX_SECONDS,
         timeframe: str = DEFAULT_SCAN_TIMEFRAME,
         settlement_service: SettlementService | None = None,
+        alert_reconciler: AlertReconciler | None = None,
     ) -> None:
         self.store = store
         self.analysis_executor = analysis_executor
@@ -707,6 +709,7 @@ class LocalSchedulerRuntime:
             provider_factory=build_default_provider,
             clock=clock,
         )
+        self.alert_reconciler = alert_reconciler or AlertReconciler(store=store, clock=clock)
         self.cache = ContextCache(
             ttl_seconds=cache_ttl_seconds,
             capacity=cache_capacity,
@@ -831,6 +834,7 @@ class LocalSchedulerRuntime:
         persisted_cache = self.store.list_scheduler_cache_entries(limit=500)
         last_settlement = self.store.get_scheduler_state("last_settlement")
         last_performance_refresh = self.store.get_scheduler_state("last_performance_refresh")
+        last_alert_reconciliation = self.store.get_scheduler_state("last_alert_reconciliation")
         running = self._thread_alive()
         if running:
             state = "running"
@@ -862,6 +866,7 @@ class LocalSchedulerRuntime:
             },
             "settlement": last_settlement,
             "performance_refresh": last_performance_refresh,
+            "alerts": last_alert_reconciliation,
             "capabilities": {
                 "runtime": "local_thread_explicit_lifecycle",
                 "model_analysis_concurrency": MODEL_ANALYSIS_CONCURRENCY_LIMIT,
@@ -870,7 +875,10 @@ class LocalSchedulerRuntime:
                 "resource_guard": self._last_resource.capability,
                 "cache": "scheduler_only_metadata_persists_cold_restart",
                 "real_orders": False,
-                "alerts": False,
+                "alerts": True,
+                "alert_policy": "alert_policy_v1",
+                "alert_mode": "local_observability_only",
+                "alert_reconciliation": "after_settlement_and_scan",
                 "outcome_settlement": True,
                 "outcome_settlement_mode": "live_point_in_time_before_model_scan",
                 "performance_refresh": "versioned_live_snapshot_no_calibration_mutation",
@@ -1000,6 +1008,15 @@ class LocalSchedulerRuntime:
             "settlement_provider_reused": 0,
             "performance_refreshes": 0,
             "performance_reused": 0,
+            "alerts_created": 0,
+            "alerts_deduped": 0,
+            "alert_errors": 0,
+            "alert_prediction_created": 0,
+            "alert_outcome_created": 0,
+            "alert_radar_created": 0,
+            "alert_news_event_created": 0,
+            "alert_operational_created": 0,
+            "alert_pruned": 0,
         }
         backoff_triggered = False
         stop_requested = False
@@ -1097,6 +1114,12 @@ class LocalSchedulerRuntime:
                             session_state=session.state,
                             resource_reason=resource.reason,
                             cache_status="not_checked",
+                            capability=resource.to_dict(),
+                            retry_after_at=(
+                                iso_timestamp(item_started + timedelta(seconds=resource.retry_after_seconds))
+                                if resource.retry_after_seconds is not None
+                                else None
+                            ),
                         )
                         continue
                     if stop_event is not None and stop_event.is_set():
@@ -1184,6 +1207,19 @@ class LocalSchedulerRuntime:
                         error_code=code,
                         error_detail=str(exc),
                     )
+            try:
+                alert_result = self.alert_reconciler.run_once(run_id=run_id, as_of=self._now())
+                alert_counts = alert_result.get("counts", {})
+                if isinstance(alert_counts, dict):
+                    counts["alerts_created"] = int(alert_counts.get("created", 0))
+                    counts["alerts_deduped"] = int(alert_counts.get("deduped", 0))
+                    counts["alert_errors"] = int(alert_counts.get("errors", 0))
+                    counts["alert_pruned"] = int(alert_counts.get("pruned", 0))
+                    for source_key in ("prediction", "outcome", "radar", "news_event", "operational"):
+                        counts[f"alert_{source_key}_created"] = int(alert_counts.get(f"{source_key}_created", 0))
+            except Exception as exc:  # alert reconciliation must not corrupt a scan run
+                counts["alert_errors"] += 1
+                self._last_error = {"code": "ALERT_RECONCILIATION_ERROR", "message": str(exc)}
             if not backoff_triggered:
                 self.backoff.clear()
             if stop_event is not None and stop_event.is_set():
@@ -1192,7 +1228,7 @@ class LocalSchedulerRuntime:
                 "INTERRUPTED"
                 if stop_requested
                 else "COMPLETED_WITH_ERRORS"
-                if counts["errors"] or counts["skipped_resource"] or counts["settlement_errors"] or counts["settlement_provider_errors"]
+                if counts["errors"] or counts["skipped_resource"] or counts["settlement_errors"] or counts["settlement_provider_errors"] or counts["alert_errors"]
                 else "COMPLETED"
             )
             finished = self._now()

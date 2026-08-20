@@ -279,6 +279,11 @@ def seed_database(db_path: Path) -> dict[str, int]:
         version="p4-e2e-calibration-v1",
     )
     store.save_calibration_result(calibration.to_dict())
+    store.set_scheduler_state(
+        "alerts.radar_state",
+        {"TSLA": {"category": "NOT_RANKED", "transition_sequence": 0}},
+        updated_at=now.isoformat(),
+    )
 
     counts = store.counts()
     print(

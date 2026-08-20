@@ -7,6 +7,7 @@ import { HealthStatus, type BackendHealthState } from "./components/HealthStatus
 import { TimeProvenanceRail } from "./components/TimeProvenanceRail";
 import { DashboardPage, EMPTY_DASHBOARD_PROVENANCE, type DashboardProvenance } from "./pages/DashboardPage";
 import { AssetDetailPage } from "./pages/AssetDetailPage";
+import { AlertsPage } from "./pages/AlertsPage";
 import { PaperTradesPage } from "./pages/PaperTradesPage";
 import { PerformancePage } from "./pages/PerformancePage";
 import { PredictionsPage } from "./pages/PredictionsPage";
@@ -28,6 +29,7 @@ const navigationItems: NavigationItem[] = [
   { label: "Paper trades", to: "/paper-trades" },
   { label: "Performance", to: "/performance" },
   { label: "Replay lab", to: "/replay" },
+  { label: "Alert Center", to: "/alerts" },
   { label: "Settings / health", to: "/settings" },
 ];
 
@@ -172,6 +174,7 @@ function WorkspaceRoutes({
         path="replay"
         element={<ReplayLabPage apiClient={apiClient} />}
       />
+      <Route path="alerts" element={<AlertsPage apiClient={apiClient} />} />
       <Route path="settings" element={<SettingsHealthPage apiClient={apiClient} />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

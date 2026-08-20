@@ -123,3 +123,15 @@ Live settlement is evaluated in Python at a supplied `as_of`, using only bars af
 Public-provider bars are batched and reused by symbol/timeframe within a bounded settlement round. Provider, `as_of`, capability and error evidence are persisted. Provider failures, malformed SignalProposal payloads and evaluation failures are isolated with bounded retry/quarantine evidence rather than producing fabricated Outcomes. Settlement runs before model scanning and is independent of the model GPU/resource guard; provider availability still controls whether a settlement item can complete.
 
 Live Performance snapshots use only real live-record dimensions for filtering, reuse equivalent snapshots when metrics have not changed, and apply bounded retention. Settlement does not retrain or activate calibration, alter raw confidence, or mutate PaperTrade records.
+
+## ADR-020 - P5-T04 is a local, durable and deterministic Alert Center
+
+Date: 2026-08-20
+
+P5-T04 adds SQLite schema migration v8 with an `alerts` ledger. `alert_policy_v1` makes event identity, fingerprint, source, severity, evidence and UTC first/last-seen timestamps auditable and immutable after creation; acknowledgement status, actor and timestamp are the only mutable event fields. Prediction IDs, final Outcome identity/status, Radar category transitions and normalized stored news/event evidence distinguish materially new events. Repeated provider/resource/model operational failures coalesce by stage, symbol, failure and 15-minute UTC cooldown window with occurrence counts.
+
+The scheduler reconciles alerts only after its settlement and Watchlist scan stages, with per-record/stage isolation. Supported sources are actionable live Predictions, newly visible final actionable Outcomes, meaningful read-only Radar transitions, provider/resource failures and stored Prediction context `news`/`risk_events`. Event-risk evidence gives `time_policy.event_risk=true` and `risk_events.importance >= 70` explicit priority; no external news fetch is performed by the alert layer, so absent stored context remains a capability limitation rather than fabricated evidence.
+
+Retention is capped at 500 rows. Open/unacknowledged rows are retained ahead of acknowledged history; oldest acknowledged rows are pruned first, and old open rows are pruned only when necessary to respect the hard cap. API reads are bounded/filterable and side-effect free; single-alert acknowledgement is strict, idempotent and local. The UI exposes severity/source/status/evidence and keyboard-accessible acknowledgement without any outbound notifier, cloud service, Redis/Celery worker, broker/order path or PaperTrade mutation. Reconciliation never changes raw or calibrated confidence, calibration artifacts, Outcomes or Prediction records.
+
+Phase 5 implementation evidence is developer-complete and ready for Sol review; this ADR does not authorize Phase 6 implementation.

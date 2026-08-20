@@ -3,7 +3,7 @@ import { useCallback, useState } from "react";
 import type { ApplicationShellApiClient } from "../api/client";
 import { AsyncPanel, type PanelState } from "../components/AsyncPanel";
 import { CountLedger, HealthFacts, ModelFacts, ProviderRouting } from "../components/OperationalFacts";
-import type { SchedulerHistory, SchedulerStatus } from "../api/types";
+import type { AlertStatusResponse, SchedulerHistory, SchedulerStatus } from "../api/types";
 import type { AsyncResource } from "../hooks/useAsyncResource";
 import { useAsyncResource } from "../hooks/useAsyncResource";
 
@@ -37,6 +37,13 @@ function schedulerState(resource: AsyncResource<SchedulerStatus>): PanelState {
   return resourceAvailable === false || backoffActive === true || Boolean(status.last_error) ? "degraded" : "ready";
 }
 
+function alertState(resource: AsyncResource<AlertStatusResponse>): PanelState {
+  if (resource.status === "loading") return "loading";
+  if (resource.status === "unavailable") return "unavailable";
+  if (!resource.data) return "empty";
+  return resource.data.last_reconciliation?.status === "COMPLETED_WITH_ERRORS" ? "degraded" : "ready";
+}
+
 function schedulerText(value: unknown): string {
   if (value === null || value === undefined || value === "") {
     return "Not supplied";
@@ -66,7 +73,7 @@ function SchedulerFacts({ status, history }: { status: SchedulerStatus; history?
         <div className="fact-list__row"><dt>Performance refresh</dt><dd>{status.performance_refresh ? schedulerText(status.performance_refresh) : "No live refresh recorded"}</dd></div>
       </dl>
       <p className="panel-reading">Model analysis is serial (effective concurrency 1). Scheduler cache metadata survives restart, while cached context is intentionally cold after restart.</p>
-      <p className="panel-reading">Outcome settlement is deterministic, point-in-time and read-only for live records; it never creates PaperTrades or real orders. No alerts or broker connectivity are activated. Regular-equity session checks omit exchange holiday calendars; `always` is an explicit user override.</p>
+      <p className="panel-reading">Outcome settlement is deterministic, point-in-time and read-only for live records; it never creates PaperTrades or real orders. Alerts are local SQLite observability only; no broker connectivity or outbound notifier is activated. Regular-equity session checks omit exchange holiday calendars; `always` is an explicit user override.</p>
       {history && history.runs.length > 0 ? (
         <ul className="scheduler-history" aria-label="Recent scheduler runs">
           {history.runs.slice(0, 3).map((run) => (
@@ -85,6 +92,7 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
   const statsLoader = useCallback((signal: AbortSignal) => apiClient.stats(signal), [apiClient]);
   const schedulerLoader = useCallback((signal: AbortSignal) => apiClient.schedulerStatus(signal), [apiClient]);
   const schedulerHistoryLoader = useCallback((signal: AbortSignal) => apiClient.schedulerHistory(5, signal), [apiClient]);
+  const alertLoader = useCallback((signal: AbortSignal) => apiClient.alertStatus(signal), [apiClient]);
 
   const health = useAsyncResource(healthLoader);
   const provider = useAsyncResource(providerLoader);
@@ -92,6 +100,7 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
   const stats = useAsyncResource(statsLoader);
   const scheduler = useAsyncResource(schedulerLoader);
   const schedulerHistory = useAsyncResource(schedulerHistoryLoader);
+  const alerts = useAsyncResource(alertLoader);
   const [action, setAction] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -134,7 +143,7 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
         <p className="page-intro__description">
           Separate backend, market/news routing, model, scheduler and stored-count signals. Scheduler controls are explicit and local.
         </p>
-        <p className="page-boundary">No secrets, broker connections, real orders or alerts are exposed here; outcome settlement and performance refresh are read-only evidence.</p>
+        <p className="page-boundary">No secrets, broker connections, real orders or external notifiers are exposed here; alerts are local observability evidence only, while outcome settlement and performance refresh remain read-only.</p>
       </header>
 
       <div className="settings-grid">
@@ -211,6 +220,29 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
           emptyMessage="No stored-count keys were returned. Database condition is not inferred beyond this response."
         >
           {stats.data ? <CountLedger stats={stats.data} /> : null}
+        </AsyncPanel>
+
+        <AsyncPanel
+          title="Alert reconciliation"
+          source="GET /alerts/status"
+          freshness="durable local policy and last reconciliation"
+          state={alertState(alerts)}
+          error={alerts.error}
+          onRetry={alerts.retry}
+          degradedMessage="Alert reconciliation reported an isolated evidence error; scheduler and stored financial records remain separate."
+          className="settings-panel--alerts"
+        >
+          {alerts.data ? (
+            <div className="scheduler-facts">
+              <dl className="fact-list fact-list--compact">
+                <div className="fact-list__row"><dt>Policy</dt><dd>{alerts.data.policy.version} · retention {alerts.data.policy.retention_limit ?? "not supplied"}</dd></div>
+                <div className="fact-list__row"><dt>Counts</dt><dd>{schedulerText(alerts.data.counts)}</dd></div>
+                <div className="fact-list__row"><dt>Last refresh</dt><dd>{alerts.data.last_reconciliation ? schedulerText(alerts.data.last_reconciliation) : "No reconciliation recorded"}</dd></div>
+                <div className="fact-list__row"><dt>Capabilities</dt><dd>{schedulerText(alerts.data.capabilities)}</dd></div>
+              </dl>
+              <p className="panel-reading">Alert evidence is deduped in SQLite and acknowledgement is idempotent. No cloud notification, broker, order, PaperTrade, calibration or confidence mutation is connected.</p>
+            </div>
+          ) : null}
         </AsyncPanel>
       </div>
     </section>

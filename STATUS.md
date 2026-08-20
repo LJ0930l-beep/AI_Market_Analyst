@@ -6,7 +6,7 @@ Updated: 2026-08-20
 
 - Target: V1.0 Final Acceptance through Phase 7.
 - Active phase: Phase 5.
-- Active task: P5-T04 local alerts/dedupe/ack.
+- Active task: Phase 5 Gate review; P5-T04 developer-verified, no Phase 6 implementation.
 - Blockers: none.
 - Sole developer: `luna-max` (one persistent thread, serial tasks).
 
@@ -30,7 +30,7 @@ Phase 3 evidence:
 - Historical-news replay is capability-limited and marked `technical_only`.
 - The formal Phase 3 run is `COMPLETED_WITH_ERRORS`; no zero-error claim is made.
 - All Phase 4 product routes are live. Watchlist has durable membership; the P5-T03a local scan runtime is explicit opt-in and Radar remains read-only over saved evidence.
-- Additional public equity/USDT symbols require explicit successful provider validation; scheduler background execution remains disabled by default, settlement is read-only within the explicit lifecycle, and settings alone activate no alerts or ranking behavior.
+- Additional public equity/USDT symbols require explicit successful provider validation; scheduler background execution remains disabled by default, settlement is read-only within the explicit lifecycle, and alerts reconcile only after an explicit scheduler run/lifecycle rather than from settings or GET reads.
 
 ## Phase 4 progress
 
@@ -88,7 +88,7 @@ Phase 3 evidence:
 
 ## Next action
 
-Begin P5-T04 local alerts/dedupe/ack; do not begin implementation in this milestone.
+Sol supervisor review of the developer-verified Phase 5 Gate; do not begin Phase 6 implementation in this assignment.
 
 ## P4-T07 execution checkpoint — 2026-08-20
 
@@ -209,3 +209,16 @@ Begin P5-T04 local alerts/dedupe/ack; do not begin implementation in this milest
 - Browser verification: `npm run e2e:preflight` PASS; `npm run e2e` PASS, 9/9 tests, 1 worker, 28.0s, Playwright 1.62.1 with Chrome 151.0.7922.140; axe and desktop/390x844 overflow coverage remains 16/16.
 - Independent supervisor evidence: 93 Python tests plus 10 subtests; frontend lint/typecheck/build and 53 tests; npm audits 0 vulnerabilities; standalone E2E 9/9 PASS; `git diff --check` clean with only LF/CRLF warnings. Supervisor Gate: ACCEPTED.
 - Blockers: none. Residual risks: retention is local SQLite-only and bounded to 100 live snapshots; retry quarantine is time-bounded and requires payload/provider recovery; no distributed queue or cross-process settlement lease was added.
+
+## P5-T04 developer verification / Phase 5 Gate readiness — 2026-08-20
+
+- Milestone: local Alert Center with durable dedupe and acknowledgement; Phase 5 implementation is developer-complete and ready for Sol review. No Phase 6 code was started.
+- Implementation: added idempotent SQLite migration v8 and an immutable-evidence/mutable-ack alert ledger; versioned `alert_policy_v1` identity and cooldown dedupe for actionable Prediction, settled Outcome, Radar transition, stored news/event and provider/resource failure evidence; bounded 500-row retention preserving open alerts preferentially; strict bounded/filterable read APIs, counts/status and idempotent acknowledgement; post-settlement/post-scan isolated scheduler reconciliation; Settings/Health evidence and accessible responsive Alert Center navigation/page.
+- Boundaries: alert reconciliation is deterministic Python only and never invokes an LLM, sends external notifications, calls cloud/Redis/Celery, touches broker/order/PaperTrade/Outcome/Prediction/confidence/calibration records, or makes GET reads mutate state. News/event alerts use stored Prediction context only; no external news fetch is claimed. Operational failures coalesce in 900-second UTC windows. Existing scheduler session/resource/backoff/cache/lease/stop and settlement-before-scan behavior remains intact.
+- Changed files: `core/alerts.py`, `core/storage/sqlite.py`, `core/scheduler.py`, `apps/api/main.py`, `tests/test_phase5_alerts.py`, schema expectation updates in `tests/test_migration.py`, `tests/test_phase5_scheduler.py`, `tests/test_phase5_watchlist.py`, `tests/test_storage.py`, `scripts/phase4_e2e_harness.py`, `web/e2e/phase4.spec.ts`, `web/src/App.tsx`, `web/src/api/client.ts`, `web/src/api/types.ts`, `web/src/test/fakeClient.ts`, `web/src/pages/AlertsPage.tsx`, `web/src/pages/AlertsPage.test.tsx`, `web/src/pages/SettingsHealthPage.tsx`, `web/src/pages/SettingsHealthPage.test.tsx`, `web/src/styles.css`, `PLAN.md`, `CHANGELOG.md`, `DECISIONS.md`, `STATUS.md`.
+- Focused evidence: `pytest -q tests/test_phase5_alerts.py` PASS, 6 tests; migration/reopen, restart dedupe, event-risk precedence, materially new event, Radar/operational dedupe, retention pruning, malformed-payload quarantine, ack/idempotence and read-no-mutation coverage.
+- Full Python evidence: `pytest -q` PASS, 99 tests plus 10 subtests, 1 known Starlette/httpx deprecation warning; `python -m compileall -q core apps tests scripts` PASS; `python -m pip check` PASS.
+- Full frontend evidence: `npm run lint` PASS; `npm run typecheck` PASS; `npm test -- --run` PASS, 12 test files / 55 tests; `npm run build` PASS with Vite 6.4.3; `npm audit --audit-level=high` and production audit PASS, 0 vulnerabilities.
+- Browser evidence: `npm run e2e:preflight` PASS with Playwright 1.62.1 and Chrome/Edge candidates; standalone `npm run e2e` PASS, 10/10 tests, 1 worker, Chrome 151.0.7922.140. Real built React + FastAPI/SQLite harness covered health/Watchlist/Asset Detail, WAIT analysis, exactly-once Follow, Performance/calibration, Replay, Alert Center source evidence/ack/no mutation, deep links and 9-route axe/overflow checks at `1280x900` and `390x844` (18 axe scans, 18 overflow checks).
+- Gate evidence: restart persistence, scheduler lifecycle/session/resource/backoff/cache bounds, settlement/performance refresh, Watchlist/Radar/alerts, no external notifier/cloud queue, no real orders and no confidence/calibration/PaperTrade mutation are covered by the full suite and standalone E2E. `git diff --check` PASS with only expected LF/CRLF warnings.
+- Limitations: E2E market/model/resource dependencies are deterministic injected fixtures; it does not prove live Yahoo/Binance freshness, Qwen/ComfyUI production contention or distributed deployment. Alert news/event support is limited to stored context, retention is local SQLite-only, and the existing equity holiday-calendar limitation remains explicit.

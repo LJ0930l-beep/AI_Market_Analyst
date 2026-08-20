@@ -197,6 +197,11 @@ class SQLiteStore:
                 "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                 (7, datetime.now(timezone.utc).isoformat()),
             )
+            self._ensure_phase5_alert_tables(db)
+            db.execute(
+                "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                (8, datetime.now(timezone.utc).isoformat()),
+            )
 
     @staticmethod
     def _ensure_prediction_columns(db: sqlite3.Connection) -> None:
@@ -399,6 +404,37 @@ class SQLiteStore:
         for name, definition in additions.items():
             if name not in columns:
                 db.execute(f"ALTER TABLE scheduler_items ADD COLUMN {name} {definition}")
+
+    @staticmethod
+    def _ensure_phase5_alert_tables(db: sqlite3.Connection) -> None:
+        db.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS alerts (
+                alert_id TEXT PRIMARY KEY,
+                policy_version TEXT NOT NULL,
+                source TEXT NOT NULL,
+                severity TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'OPEN',
+                title TEXT NOT NULL,
+                message TEXT NOT NULL,
+                symbol TEXT,
+                prediction_id TEXT,
+                event_identity TEXT NOT NULL,
+                fingerprint TEXT NOT NULL,
+                evidence_json TEXT NOT NULL,
+                first_seen_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL,
+                occurrence_count INTEGER NOT NULL DEFAULT 1,
+                acknowledged_at TEXT,
+                acknowledged_by TEXT,
+                dedupe_key TEXT NOT NULL UNIQUE
+            );
+            CREATE INDEX IF NOT EXISTS idx_alerts_status_seen
+                ON alerts(status, last_seen_at DESC, alert_id DESC);
+            CREATE INDEX IF NOT EXISTS idx_alerts_source_seen
+                ON alerts(source, last_seen_at DESC, alert_id DESC);
+            """
+        )
 
     @staticmethod
     def _utc_timestamp(value: datetime | None = None) -> str:
@@ -849,6 +885,233 @@ class SQLiteStore:
                 (key,),
             ).fetchone()
         return json.loads(row["value_json"]) if row is not None else None
+
+    @staticmethod
+    def _alert_from_row(row: sqlite3.Row) -> dict[str, object]:
+        try:
+            evidence = json.loads(row["evidence_json"])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            evidence = {"parse_error": "stored alert evidence is invalid"}
+        if not isinstance(evidence, dict):
+            evidence = {"value": evidence}
+        return {
+            "alert_id": row["alert_id"],
+            "policy_version": row["policy_version"],
+            "source": row["source"],
+            "severity": row["severity"],
+            "status": row["status"],
+            "title": row["title"],
+            "message": row["message"],
+            "symbol": row["symbol"],
+            "prediction_id": row["prediction_id"],
+            "event_identity": row["event_identity"],
+            "fingerprint": row["fingerprint"],
+            "evidence": evidence,
+            "first_seen_at": row["first_seen_at"],
+            "last_seen_at": row["last_seen_at"],
+            "occurrence_count": int(row["occurrence_count"]),
+            "acknowledged_at": row["acknowledged_at"],
+            "acknowledged_by": row["acknowledged_by"],
+            "dedupe_key": row["dedupe_key"],
+        }
+
+    def upsert_alert(
+        self,
+        *,
+        alert_id: str,
+        policy_version: str,
+        source: str,
+        severity: str,
+        title: str,
+        message: str,
+        event_identity: str,
+        fingerprint: str,
+        evidence: dict[str, Any],
+        dedupe_key: str,
+        first_seen_at: str,
+        symbol: str | None = None,
+        prediction_id: str | None = None,
+    ) -> dict[str, object]:
+        evidence_json = json.dumps(evidence, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            existing = db.execute(
+                "SELECT alert_id FROM alerts WHERE dedupe_key = ?",
+                (dedupe_key,),
+            ).fetchone()
+            if existing is None:
+                db.execute(
+                    """INSERT INTO alerts(
+                        alert_id, policy_version, source, severity, status, title, message,
+                        symbol, prediction_id, event_identity, fingerprint, evidence_json,
+                        first_seen_at, last_seen_at, occurrence_count, dedupe_key
+                    ) VALUES (?, ?, ?, ?, 'OPEN', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+                    (
+                        alert_id,
+                        policy_version,
+                        source,
+                        severity,
+                        title,
+                        message,
+                        symbol,
+                        prediction_id,
+                        event_identity,
+                        fingerprint,
+                        evidence_json,
+                        first_seen_at,
+                        first_seen_at,
+                        dedupe_key,
+                    ),
+                )
+                created = True
+            else:
+                db.execute(
+                    """UPDATE alerts
+                          SET last_seen_at = ?, occurrence_count = occurrence_count + 1
+                        WHERE dedupe_key = ?""",
+                    (first_seen_at, dedupe_key),
+                )
+                created = False
+            row = db.execute("SELECT * FROM alerts WHERE dedupe_key = ?", (dedupe_key,)).fetchone()
+        assert row is not None
+        return {"created": created, "deduped": not created, "alert": self._alert_from_row(row)}
+
+    def get_alert(self, alert_id: str) -> dict[str, object] | None:
+        with self._connect() as db:
+            row = db.execute("SELECT * FROM alerts WHERE alert_id = ?", (alert_id,)).fetchone()
+        return self._alert_from_row(row) if row is not None else None
+
+    def list_alerts(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        source: str | None = None,
+        severity: str | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, object]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        for field, value in (("source", source), ("severity", severity), ("status", status)):
+            if value:
+                clauses.append(f"{field} = ?")
+                params.append(value)
+        query = "SELECT * FROM alerts"
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY last_seen_at DESC, alert_id DESC LIMIT ? OFFSET ?"
+        params.extend((max(1, min(int(limit), 100)), max(0, min(int(offset), 100_000))))
+        with self._connect() as db:
+            rows = db.execute(query, tuple(params)).fetchall()
+        return [self._alert_from_row(row) for row in rows]
+
+    def count_alerts(
+        self,
+        *,
+        source: str | None = None,
+        severity: str | None = None,
+        status: str | None = None,
+    ) -> int:
+        clauses: list[str] = []
+        params: list[Any] = []
+        for field, value in (("source", source), ("severity", severity), ("status", status)):
+            if value:
+                clauses.append(f"{field} = ?")
+                params.append(value)
+        query = "SELECT COUNT(*) FROM alerts"
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        with self._connect() as db:
+            return int(db.execute(query, tuple(params)).fetchone()[0])
+
+    def alert_counts(self) -> dict[str, int]:
+        with self._connect() as db:
+            rows = db.execute("SELECT status, COUNT(*) AS count FROM alerts GROUP BY status").fetchall()
+            total = int(db.execute("SELECT COUNT(*) FROM alerts").fetchone()[0])
+        by_status = {str(row["status"]): int(row["count"]) for row in rows}
+        open_count = by_status.get("OPEN", 0)
+        return {
+            "total": total,
+            "open": open_count,
+            "unread": open_count,
+            "acknowledged": by_status.get("ACKNOWLEDGED", 0),
+        }
+
+    def acknowledge_alert(
+        self,
+        alert_id: str,
+        *,
+        acknowledged_at: str,
+        acknowledged_by: str = "local_user",
+    ) -> dict[str, object] | None:
+        with self._connect() as db:
+            row = db.execute("SELECT status FROM alerts WHERE alert_id = ?", (alert_id,)).fetchone()
+            if row is None:
+                return None
+            if row["status"] == "OPEN":
+                db.execute(
+                    """UPDATE alerts
+                          SET status = 'ACKNOWLEDGED', acknowledged_at = ?, acknowledged_by = ?
+                        WHERE alert_id = ?""",
+                    (acknowledged_at, acknowledged_by, alert_id),
+                )
+            updated = db.execute("SELECT * FROM alerts WHERE alert_id = ?", (alert_id,)).fetchone()
+        assert updated is not None
+        return self._alert_from_row(updated)
+
+    def prune_alerts(self, *, keep: int = 500) -> int:
+        bounded_keep = max(1, min(int(keep), 500))
+        with self._connect() as db:
+            result = db.execute(
+                """DELETE FROM alerts
+                     WHERE alert_id NOT IN (
+                         SELECT alert_id FROM alerts
+                          ORDER BY CASE WHEN status = 'OPEN' THEN 0 ELSE 1 END,
+                                   last_seen_at DESC, alert_id DESC
+                          LIMIT ?
+                     )""",
+                (bounded_keep,),
+            )
+        return result.rowcount
+
+    def list_live_prediction_records_for_alerts(self, *, limit: int = 500) -> list[dict[str, Any]]:
+        bounded_limit = max(1, min(int(limit), 500))
+        with self._connect() as db:
+            rows = db.execute(
+                """SELECT p.prediction_id, p.symbol, p.generated_at, p.payload_json,
+                          o.payload_json AS outcome_json, o.status AS outcome_status
+                     FROM predictions p
+                LEFT JOIN outcomes o ON o.prediction_id = p.prediction_id
+                    WHERE COALESCE(p.source_type, 'live') = 'live'
+                    ORDER BY p.generated_at DESC, p.prediction_id DESC
+                    LIMIT ?""",
+                (bounded_limit,),
+            ).fetchall()
+        records: list[dict[str, Any]] = []
+        for row in rows:
+            record: dict[str, Any] = {
+                "prediction_id": row["prediction_id"],
+                "symbol": row["symbol"],
+                "generated_at": row["generated_at"],
+                "outcome_status": row["outcome_status"],
+                "prediction": None,
+                "outcome": None,
+            }
+            try:
+                prediction = json.loads(row["payload_json"])
+                if not isinstance(prediction, dict):
+                    raise ValueError("stored prediction payload must be an object")
+                record["prediction"] = prediction
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                record["prediction_error"] = str(exc)
+            if row["outcome_json"]:
+                try:
+                    outcome = json.loads(row["outcome_json"])
+                    record["outcome"] = outcome if isinstance(outcome, dict) else None
+                except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                    record["outcome_error"] = str(exc)
+            records.append(record)
+        return records
 
     @staticmethod
     def _instrument_record_from_row(row: sqlite3.Row) -> dict[str, object]:
@@ -1800,6 +2063,7 @@ class SQLiteStore:
                 "scheduler_runs",
                 "scheduler_items",
                 "scheduler_cache_entries",
+                "alerts",
             )
         }
 

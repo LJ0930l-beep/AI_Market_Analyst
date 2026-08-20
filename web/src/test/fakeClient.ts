@@ -3,6 +3,9 @@ import { vi } from "vitest";
 import type { ApplicationShellApiClient } from "../api/client";
 import type {
   AnalysisResult,
+  AlertRecord,
+  AlertStatusResponse,
+  AlertsResponse,
   AssetType,
   AppSetting,
   CalibrationCurrent,
@@ -296,10 +299,60 @@ export const fakeSchedulerStatus: SchedulerStatus = {
     session_policy: "weekday_hours_only_no_holiday_calendar",
     crypto_24_7: true,
     real_orders: false,
-    alerts: false,
+    alerts: true,
+    alert_policy: "alert_policy_v1",
+    alert_mode: "local_observability_only",
     outcome_settlement: true,
     outcome_settlement_mode: "live_point_in_time_before_model_scan",
   },
+};
+
+export const fakeAlert: AlertRecord = {
+  alert_id: "alert-prediction-fixture",
+  policy_version: "alert_policy_v1",
+  source: "prediction",
+  severity: "INFO",
+  status: "OPEN",
+  title: "New LONG prediction · NVDA",
+  message: "A new actionable LONG prediction is available for NVDA.",
+  symbol: "NVDA",
+  prediction_id: fakePrediction.prediction_id,
+  event_identity: `prediction:${fakePrediction.prediction_id}`,
+  fingerprint: "fixture-alert-fingerprint",
+  evidence: { prediction_id: fakePrediction.prediction_id, action: "LONG", source_type: "live" },
+  first_seen_at: "2030-01-02T12:01:00Z",
+  last_seen_at: "2030-01-02T12:01:00Z",
+  occurrence_count: 1,
+  acknowledged_at: null,
+  acknowledged_by: null,
+  dedupe_key: `prediction:${fakePrediction.prediction_id}`,
+};
+
+export const fakeAlertStatus: AlertStatusResponse = {
+  policy: {
+    version: "alert_policy_v1",
+    mode: "local_observability_only",
+    retention_limit: 500,
+    operational_cooldown_seconds: 900,
+  },
+  capabilities: {
+    reconciliation: "after_settlement_and_scan",
+    outbound_notifiers: false,
+    broker_or_real_order: false,
+  },
+  counts: { total: 1, open: 1, unread: 1, acknowledged: 0 },
+  last_reconciliation: {
+    status: "COMPLETED",
+    counts: { created: 1, deduped: 0, errors: 0 },
+  },
+};
+
+export const fakeAlertsResponse: AlertsResponse = {
+  policy: fakeAlertStatus.policy,
+  capabilities: fakeAlertStatus.capabilities,
+  alerts: [fakeAlert],
+  counts: fakeAlertStatus.counts,
+  pagination: { limit: 50, offset: 0, total: 1, filters: {} },
 };
 
 export const fakeSchedulerHistory: SchedulerHistory = {
@@ -371,6 +424,9 @@ export function createFakeClient(overrides: Partial<ApplicationShellApiClient> =
     stats: vi.fn().mockResolvedValue(fakeStats),
     schedulerStatus: vi.fn().mockResolvedValue(fakeSchedulerStatus),
     schedulerHistory: vi.fn().mockResolvedValue(fakeSchedulerHistory),
+    alerts: vi.fn().mockResolvedValue(fakeAlertsResponse),
+    alertStatus: vi.fn().mockResolvedValue(fakeAlertStatus),
+    acknowledgeAlert: vi.fn().mockResolvedValue({ ...fakeAlert, status: "ACKNOWLEDGED", acknowledged_at: "2030-01-02T12:02:00Z", acknowledged_by: "local_user" }),
     startScheduler: vi.fn().mockResolvedValue({ ...fakeSchedulerStatus, state: "running", enabled: true, running: true, thread_alive: true }),
     stopScheduler: vi.fn().mockResolvedValue(fakeSchedulerStatus),
     runSchedulerOnce: vi.fn().mockResolvedValue({ run: null, items: [], status: fakeSchedulerStatus }),
