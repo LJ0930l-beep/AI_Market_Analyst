@@ -9,7 +9,9 @@ import type {
   FollowRequest,
   FollowResponse,
   HealthResponse,
+  AssetType,
   Instrument,
+  InstrumentRegistrationResponse,
   InstrumentNews,
   MarketSnapshot,
   ModelHealthResponse,
@@ -90,6 +92,7 @@ export interface MarketApiClient {
   modelHealth(signal?: AbortSignal): Promise<ModelHealthResponse>;
   stats(signal?: AbortSignal): Promise<StatsResponse>;
   instruments(signal?: AbortSignal): Promise<Instrument[]>;
+  registerInstrument(symbol: string, assetType: AssetType, signal?: AbortSignal): Promise<InstrumentRegistrationResponse>;
   watchlist(signal?: AbortSignal): Promise<WatchlistEntry[]>;
   addWatchlist(symbol: string, signal?: AbortSignal): Promise<WatchlistEntry>;
   upsertWatchlist(symbol: string, signal?: AbortSignal): Promise<WatchlistEntry>;
@@ -125,6 +128,7 @@ export type ApplicationShellApiClient = Pick<
   | "modelHealth"
   | "stats"
   | "instruments"
+  | "registerInstrument"
   | "watchlist"
   | "addWatchlist"
   | "upsertWatchlist"
@@ -261,6 +265,18 @@ export class ApiClient implements MarketApiClient {
 
   instruments(signal?: AbortSignal): Promise<Instrument[]> {
     return this.request<Instrument[]>("/instruments", { signal });
+  }
+
+  registerInstrument(
+    symbol: string,
+    assetType: AssetType,
+    signal?: AbortSignal,
+  ): Promise<InstrumentRegistrationResponse> {
+    return this.request<InstrumentRegistrationResponse>("/instruments/register", {
+      method: "POST",
+      body: { symbol, asset_type: assetType },
+      signal,
+    });
   }
 
   watchlist(signal?: AbortSignal): Promise<WatchlistEntry[]> {

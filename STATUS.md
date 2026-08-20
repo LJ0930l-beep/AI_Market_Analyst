@@ -6,7 +6,7 @@ Updated: 2026-08-20
 
 - Target: V1.0 Final Acceptance through Phase 7.
 - Active phase: Phase 5.
-- Active task: P5-T01b public-provider-compatible Watchlist symbol expansion.
+- Active task: P5-T02 versioned auditable Opportunity Score and Radar API.
 - Blockers: none.
 - Sole developer: `luna-max` (one persistent thread, serial tasks).
 
@@ -30,7 +30,7 @@ Phase 3 evidence:
 - Historical-news replay is capability-limited and marked `technical_only`.
 - The formal Phase 3 run is `COMPLETED_WITH_ERRORS`; no zero-error claim is made.
 - All Phase 4 product routes are live. Watchlist now has durable membership but no scan/ranking behavior yet; Replay Lab remains read-only over stored replay evidence.
-- Watchlist membership and safe scheduler-resource settings are durable; membership is still limited to the six canonical instruments until P5-T01b.
+- Watchlist membership and safe scheduler-resource settings are durable; additional public equity/USDT symbols require explicit successful provider validation, while ranking and scanning remain inactive.
 
 ## Phase 4 progress
 
@@ -88,7 +88,7 @@ Phase 3 evidence:
 
 ## Next action
 
-Delegate P5-T01b to the same `luna-max` thread, then verify provider-compatible symbol expansion, durable metadata and failure-safe validation without adding scan/ranking behavior.
+Begin P5-T02 planning and implementation; do not activate ranking, scans, scheduling or alerts outside its accepted scope.
 
 ## P4-T07 execution checkpoint — 2026-08-20
 
@@ -126,3 +126,21 @@ Delegate P5-T01b to the same `luna-max` thread, then verify provider-compatible 
 - Historical evidence: `docs/phase4-completion-report.md` has no diff.
 - Boundaries: no product behavior was expanded, Phase 5 scheduler/Radar/scans/alerts remain inactive, and no commit was created.
 - Residual risks: E2E remains fixture-backed with a disabled model; dependency-owned `0.4.0` entries in the lockfile were intentionally left unchanged.
+
+## P5-T01b accepted execution checkpoint — 2026-08-20
+
+- Milestone: public-provider-compatible Watchlist symbol expansion over the six-symbol canonical universe — ACCEPTED.
+- Implementation summary: added strict equity/crypto candidate parsing with explicit inferred/unknown metadata; injected public Yahoo chart and Binance spot validation with bounded timeout/retries and stable unsupported/transient errors; persisted validated Instrument metadata in the existing `instruments` table; exposed registration/catalog APIs; resolved registered symbols through snapshot, news, analysis, prediction, performance and replay paths; added Watchlist registration UI/client/fake coverage and deterministic injected-validator browser coverage.
+- Changed files: `README.md`, `apps/api/main.py`, `core/instruments.py`, `core/providers/__init__.py`, `core/providers/binance.py`, `core/providers/instrument_validation.py`, `core/providers/yfinance.py`, `core/storage/sqlite.py`, `scripts/phase4_e2e_harness.py`, `tests/test_phase5_instrument_registration.py`, `web/e2e/phase4.spec.ts`, `web/src/api/client.test.ts`, `web/src/api/client.ts`, `web/src/api/types.ts`, `web/src/pages/WatchlistPage.test.tsx`, `web/src/pages/WatchlistPage.tsx`, `web/src/styles.css`, `web/src/test/fakeClient.ts`.
+- Focused verification: `python -m pytest -q tests/test_phase5_instrument_registration.py tests/test_providers_phase2.py` PASS, 10 tests / 10 subtests; existing Starlette/httpx deprecation warning only.
+- Full verification: `python -m pytest -q` PASS, 57 tests / 10 subtests; `python -B -m compileall -q apps core tests scripts` PASS; `python -m pip check` PASS; `npm run lint` PASS; `npm run typecheck` PASS; `npm run test -- --run` PASS, 11 files / 50 tests; `npm run build` PASS; full and production-only `npm audit --audit-level=high` PASS, 0 vulnerabilities; `npm run e2e:preflight` PASS, Playwright 1.62.1 with installed Chrome/Edge candidates; `npm run e2e` PASS, 7/7 tests; `git diff --check` PASS with expected LF/CRLF warnings.
+- Browser/API coverage: deterministic injected-validator registration, duplicate/idempotent registration, registered Watchlist CRUD, restart persistence, registered Asset Detail snapshot/news/explicit WAIT analysis, canonical catalog union, failure-safe unsupported/transient handling, prior Phase 4 flows, axe and 390x844 overflow checks, and HTML SPA deep links versus JSON `/api/health`.
+- Boundaries: automated tests never call public network providers; the E2E validator is explicitly `injected_test` and fixture market data is not compatibility proof. No secrets, model/news probing, scans, ranking, Opportunity Score, Radar, scheduler activation, alerts, broker connectivity or real orders were added.
+- Blockers: none. Residual risks: live Yahoo/Binance availability, symbol listing/market-hours variability and inferred/unknown metadata remain external-provider limitations; no production freshness or concurrency claim is made.
+
+## P5-T01b accepted Gate repair — 2026-08-20
+
+- Milestone: repair the independent Gate failure in the existing P5-T01b browser suite — ACCEPTED.
+- Implementation summary: changed only the Paper Trades assertions in `web/e2e/phase4.spec.ts` so `Linked Prediction` and `Linked Outcome` use exact text matching, avoiding strict-mode ambiguity with explanatory copy.
+- Verification: `npm run e2e` PASS, 7/7 tests; production build completed inside the command with Vite 6.4.3.
+- Blockers: none. Residual risks: none introduced; no product behavior changed.

@@ -11,6 +11,7 @@ import json
 import os
 import time
 from datetime import datetime, timezone
+from urllib.error import HTTPError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
@@ -25,11 +26,20 @@ class YFinanceProvider:
     _INTERVALS = {"5m": "5m", "15m": "15m", "1h": "1h", "4h": "1h", "1d": "1d"}
     _RANGES = {"5m": "60d", "15m": "60d", "1h": "730d", "4h": "730d", "1d": "2y"}
 
-    def __init__(self, period: str = "1y", *, base_url: str | None = None, timeout: float | None = None, retries: int = 1) -> None:
+    def __init__(
+        self,
+        period: str = "1y",
+        *,
+        base_url: str | None = None,
+        timeout: float | None = None,
+        retries: int = 1,
+        public_chart_only: bool = False,
+    ) -> None:
         self.period = period
         self.base_url = (base_url or os.environ.get("YAHOO_CHART_BASE_URL", "https://query1.finance.yahoo.com/v8/finance/chart")).rstrip("/")
         self.timeout = timeout if timeout is not None else float(os.environ.get("MARKET_PROVIDER_TIMEOUT_SEC", "10"))
         self.retries = max(0, min(retries, 2))
+        self.public_chart_only = public_chart_only
 
     def _ticker(self, instrument: Instrument):
         try:
@@ -63,6 +73,16 @@ class YFinanceProvider:
                     return payload
             except ProviderError:
                 raise
+            except HTTPError as exc:
+                if exc.code == 404:
+                    raise ProviderError(
+                        f"Yahoo does not list {instrument.symbol}",
+                        code="unsupported_symbol",
+                        provider=self.provider_name,
+                    ) from exc
+                last_error = exc
+                if attempt < self.retries:
+                    time.sleep(0.25 * (attempt + 1))
             except Exception as exc:  # pragma: no cover - network dependent
                 last_error = exc
                 if attempt < self.retries:
@@ -115,6 +135,8 @@ class YFinanceProvider:
         timeframe = timeframe.lower()
         if timeframe not in self._INTERVALS:
             raise ProviderError(f"unsupported Yahoo timeframe: {timeframe}", code="unsupported_timeframe", provider=self.provider_name)
+        if self.public_chart_only:
+            return self._get_yahoo_bars(instrument, timeframe, limit)
         try:
             ticker = self._ticker(instrument)
         except ProviderError as dependency_error:

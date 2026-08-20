@@ -10,7 +10,8 @@ from pathlib import Path
 from core.ai.prompts import PROMPT_VERSION
 from core.outcomes import settle_prediction
 from core.performance.calibration import fit_calibration
-from core.providers import Bar, FixtureProvider
+from core.instruments import InstrumentCandidate
+from core.providers import Bar, FixtureProvider, InstrumentValidationResult
 from core.quant import build_quant_snapshot
 from core.signals import Action, SignalProposal, build_signal
 from core.storage import SQLiteStore
@@ -20,6 +21,19 @@ from core.instruments import instrument_for
 MODEL_ID = "p4-e2e-model"
 PROMPT = "p4-e2e-prompt-v1"
 RUN_ID = "p4-e2e-replay-with-errors"
+
+
+class E2EInjectedInstrumentValidator:
+    """Deterministic dependency for registration UI coverage; not provider proof."""
+
+    def validate(self, candidate: InstrumentCandidate) -> InstrumentValidationResult:
+        now = datetime.now(timezone.utc)
+        return InstrumentValidationResult(
+            provider="e2e-public-probe",
+            validated_at=now,
+            data_as_of=now,
+            mode="injected_test",
+        )
 
 
 def _signal(
@@ -223,7 +237,13 @@ def main() -> None:
     from apps.api.main import create_app
 
     print(f"P4_E2E_API_READY http://{args.host}:{args.port}", flush=True)
-    uvicorn.run(create_app(), host=args.host, port=args.port, log_level="warning", access_log=False)
+    uvicorn.run(
+        create_app(instrument_validator=E2EInjectedInstrumentValidator()),
+        host=args.host,
+        port=args.port,
+        log_level="warning",
+        access_log=False,
+    )
 
 
 if __name__ == "__main__":

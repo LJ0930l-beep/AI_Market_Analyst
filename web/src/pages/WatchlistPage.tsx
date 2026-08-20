@@ -1,8 +1,8 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 
 import { ApiError, type ApplicationShellApiClient } from "../api/client";
-import type { Instrument } from "../api/types";
+import type { AssetType, Instrument } from "../api/types";
 import { AsyncPanel, type PanelState } from "../components/AsyncPanel";
 import { ResearchFacts, primitiveText } from "../components/ResearchFacts";
 import { useAsyncResource } from "../hooks/useAsyncResource";
@@ -72,7 +72,9 @@ function InstrumentCard({
       <article>
         <header className="watchlist-roster__heading">
           <div>
-            <p className="eyebrow">{primitiveText(instrument.asset_type)}</p>
+            <p className="eyebrow">
+              {instrument.registry_source === "registered" ? "registered" : "canonical"} · {primitiveText(instrument.asset_type)}
+            </p>
             <h3>{instrument.symbol}</h3>
           </div>
           <div className="watchlist-roster__actions">
@@ -96,6 +98,8 @@ function InstrumentCard({
             { label: "Timezone", value: primitiveText(instrument.timezone) },
             { label: "Trading hours", value: primitiveText(instrument.trading_hours) },
             { label: "Sector", value: primitiveText(instrument.sector) },
+            { label: "Metadata", value: primitiveText(instrument.metadata_status) },
+            { label: "Validation", value: primitiveText(instrument.validation_provider) },
           ]}
         />
       </article>
@@ -106,6 +110,11 @@ function InstrumentCard({
 export function WatchlistPage({ apiClient }: WatchlistPageProps) {
   const [query, setQuery] = useState("");
   const [assetType, setAssetType] = useState("");
+  const [registrationSymbol, setRegistrationSymbol] = useState("");
+  const [registrationAssetType, setRegistrationAssetType] = useState<AssetType>("equity");
+  const [registrationStatus, setRegistrationStatus] = useState<"idle" | "loading" | "success">("idle");
+  const [registrationMessage, setRegistrationMessage] = useState("");
+  const [registrationError, setRegistrationError] = useState<unknown>();
   const [mutationSymbol, setMutationSymbol] = useState<string>();
   const [mutationError, setMutationError] = useState<unknown>();
   const rosterLoader = useCallback((signal: AbortSignal) => apiClient.instruments(signal), [apiClient]);
@@ -134,7 +143,7 @@ export function WatchlistPage({ apiClient }: WatchlistPageProps) {
   const rosterState = resourceState(roster.status, instruments.length, visibleInstruments.length, isDegraded);
   const savedState = resourceState(saved.status, savedEntries.length);
   const emptyMessage = instruments.length === 0
-    ? "The instrument endpoint returned no canonical instruments."
+    ? "The instrument registry returned no instruments."
     : "No instruments match the current search and asset-type filter.";
 
   const handleToggle = useCallback(async (symbol: string, isSaved: boolean) => {
@@ -154,25 +163,78 @@ export function WatchlistPage({ apiClient }: WatchlistPageProps) {
     }
   }, [apiClient, saved.retry]);
 
+  const handleRegister = useCallback(async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setRegistrationStatus("loading");
+    setRegistrationMessage("");
+    setRegistrationError(undefined);
+    try {
+      const result = await apiClient.registerInstrument(registrationSymbol, registrationAssetType);
+      await apiClient.addWatchlist(result.instrument.symbol);
+      setRegistrationStatus("success");
+      setRegistrationMessage(
+        `${result.instrument.symbol} passed provider validation and was saved to the watchlist.`,
+      );
+      setRegistrationSymbol("");
+      roster.retry();
+      saved.retry();
+    } catch (error: unknown) {
+      setRegistrationStatus("idle");
+      setRegistrationError(error);
+    }
+  }, [apiClient, registrationAssetType, registrationSymbol, roster.retry, saved.retry]);
+
   return (
     <section className="workflow-page watchlist-page" aria-labelledby="watchlist-title">
       <header className="page-intro">
         <p className="eyebrow">Saved membership / canonical Phase 5 foundation</p>
         <h1 id="watchlist-title">Watchlist</h1>
         <p className="page-intro__description">
-          Keep a durable local membership over the six canonical instruments and open an Asset Detail workspace for market evidence.
+          Keep durable local membership over the canonical universe and explicitly register additional public symbols for Asset Detail evidence.
         </p>
         <p className="page-boundary">
-          Ranking, opportunity scores, background scans, scheduling and alerts are not active. Membership changes only update local SQLite state.
+          Registration performs bounded network validation for public US equities or Binance-compatible USDT spot symbols. Ranking, scans, scheduling and alerts are not active.
         </p>
       </header>
 
       <div className="capability-ledger" role="note" aria-label="Watchlist capability boundary">
         <span className="capability-ledger__label">Phase 5 foundation boundary</span>
-        <p>GET /watchlist and POST/PUT/DELETE /watchlist provide canonical saved membership. Radar, scanning, scheduling and alerts remain inactive.</p>
+        <p>GET /watchlist and POST/PUT/DELETE /watchlist provide saved membership. POST /instruments/register validates equity or USDT crypto symbols before saving metadata; Radar, scanning, scheduling and alerts remain inactive.</p>
       </div>
 
       {mutationError ? <p className="watchlist-mutation-error" role="alert">{errorMessage(mutationError)}</p> : null}
+
+      <section className="watchlist-registration" aria-labelledby="watchlist-registration-title">
+        <header>
+          <p className="eyebrow">Explicit network validation</p>
+          <h2 id="watchlist-registration-title">Register an instrument</h2>
+          <p>Current scope: public US equity tickers and Binance-compatible USDT spot symbols. Metadata is labeled inferred or unknown; no fixture data, model, news or account access is used for compatibility validation.</p>
+        </header>
+        <form className="watchlist-registration__form" aria-label="Register instrument" onSubmit={handleRegister}>
+          <label>
+            Instrument symbol
+            <input
+              value={registrationSymbol}
+              onChange={(event) => setRegistrationSymbol(event.target.value)}
+              placeholder="MSFT or SOLUSDT"
+              autoComplete="off"
+              required
+            />
+          </label>
+          <label>
+            Instrument asset type
+            <select value={registrationAssetType} onChange={(event) => setRegistrationAssetType(event.target.value as AssetType)}>
+              <option value="equity">equity</option>
+              <option value="crypto">crypto</option>
+            </select>
+          </label>
+          <button className="quiet-button" type="submit" disabled={registrationStatus === "loading"}>
+            {registrationStatus === "loading" ? "Validating…" : "Validate and add"}
+          </button>
+        </form>
+        {registrationError ? <p className="watchlist-mutation-error" role="alert">{errorMessage(registrationError)}</p> : null}
+        {registrationStatus === "success" ? <p className="watchlist-registration__success" role="status">{registrationMessage}</p> : null}
+      </section>
 
       <form className="workflow-filters" aria-label="Available instrument filters" onSubmit={(event) => event.preventDefault()}>
         <div className="workflow-filters__grid watchlist-filters__grid">
@@ -226,7 +288,7 @@ export function WatchlistPage({ apiClient }: WatchlistPageProps) {
           className="workflow-panel--list"
           title="Available instruments"
           source="GET /instruments"
-          freshness="canonical registry response; no provider probing or ranking"
+          freshness="canonical plus validated registry response; no ranking"
           state={rosterState}
           error={roster.error}
           onRetry={roster.retry}
@@ -236,7 +298,7 @@ export function WatchlistPage({ apiClient }: WatchlistPageProps) {
           {visibleInstruments.length > 0 ? (
             <>
               <p className="roster-count" role="status">
-                Showing {visibleInstruments.length} of {instruments.length} canonical instruments.
+                Showing {visibleInstruments.length} of {instruments.length} available instruments.
               </p>
               <ul className="watchlist-roster" aria-label="Available instrument roster">
                 {visibleInstruments.map((instrument) => (

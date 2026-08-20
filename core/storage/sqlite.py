@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from ..instruments import Instrument, instrument_for
+from ..instruments import Instrument, instrument_for, instrument_from_payload
 from ..news_engine import NewsFetchResult
 from ..outcomes.engine import Outcome
 from ..providers.news import NewsEvent
@@ -328,7 +328,7 @@ class SQLiteStore:
         ]
 
     def upsert_watchlist_entry(self, symbol: str, *, now: datetime | None = None) -> dict[str, str]:
-        canonical_symbol = instrument_for(symbol).symbol
+        canonical_symbol = self.resolve_instrument(symbol).symbol
         timestamp = self._utc_timestamp(now)
         with self._connect() as db:
             row = db.execute(
@@ -350,7 +350,7 @@ class SQLiteStore:
         return {"symbol": canonical_symbol, "added_at": added_at, "updated_at": timestamp}
 
     def delete_watchlist_entry(self, symbol: str) -> bool:
-        canonical_symbol = instrument_for(symbol).symbol
+        canonical_symbol = self.resolve_instrument(symbol).symbol
         with self._connect() as db:
             result = db.execute("DELETE FROM watchlist_entries WHERE symbol = ?", (canonical_symbol,))
         return result.rowcount > 0
@@ -406,7 +406,85 @@ class SQLiteStore:
             result = db.execute("DELETE FROM app_settings WHERE setting_key = ?", (key,))
         return result.rowcount > 0
 
-    def save_instrument(self, instrument: Instrument) -> None:
+    @staticmethod
+    def _instrument_record_from_row(row: sqlite3.Row) -> dict[str, object]:
+        payload = json.loads(row["payload_json"])
+        if not isinstance(payload, dict):
+            raise ValueError("stored instrument payload is not an object")
+        labels = payload.get("metadata_labels", {})
+        if not isinstance(labels, dict):
+            labels = {}
+        return {
+            "instrument": instrument_from_payload(payload),
+            "registry_source": str(payload.get("registry_source", "canonical")),
+            "metadata_status": str(payload.get("metadata_status", "canonical")),
+            "metadata_labels": {str(key): str(value) for key, value in labels.items()},
+            "validation_provider": payload.get("validation_provider"),
+            "validated_at": payload.get("validated_at"),
+        }
+
+    def get_instrument_record(self, symbol: str) -> dict[str, object] | None:
+        normalized = symbol.strip().upper() if isinstance(symbol, str) else ""
+        if not normalized:
+            return None
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT symbol, payload_json FROM instruments WHERE symbol = ?",
+                (normalized,),
+            ).fetchone()
+        return self._instrument_record_from_row(row) if row is not None else None
+
+    def get_instrument(self, symbol: str) -> Instrument | None:
+        record = self.get_instrument_record(symbol)
+        return record["instrument"] if record is not None else None  # type: ignore[return-value]
+
+    def list_instrument_records(self) -> list[dict[str, object]]:
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT symbol, payload_json FROM instruments ORDER BY symbol ASC"
+            ).fetchall()
+        return [self._instrument_record_from_row(row) for row in rows]
+
+    def list_instruments(self) -> list[Instrument]:
+        return [record["instrument"] for record in self.list_instrument_records()]  # type: ignore[misc]
+
+    def resolve_instrument(self, symbol: str) -> Instrument:
+        try:
+            return instrument_for(symbol)
+        except (TypeError, ValueError) as canonical_error:
+            if not isinstance(symbol, str) or symbol != symbol.strip():
+                raise canonical_error
+            instrument = self.get_instrument(symbol)
+            if instrument is None:
+                raise canonical_error
+            return instrument
+
+    def save_instrument(
+        self,
+        instrument: Instrument,
+        *,
+        registry_source: str | None = None,
+        metadata_status: str | None = None,
+        metadata_labels: dict[str, str] | None = None,
+        validation_provider: str | None = None,
+        validated_at: str | None = None,
+    ) -> None:
+        existing: dict[str, object] = {}
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT payload_json FROM instruments WHERE symbol = ?",
+                (instrument.symbol,),
+            ).fetchone()
+            if row is not None:
+                raw_existing = json.loads(row["payload_json"])
+                if isinstance(raw_existing, dict):
+                    existing = raw_existing
+        effective_source = registry_source or str(existing.get("registry_source", "canonical"))
+        effective_status = metadata_status or str(existing.get("metadata_status", "canonical"))
+        existing_labels = existing.get("metadata_labels")
+        effective_labels = metadata_labels or (existing_labels if isinstance(existing_labels, dict) else {})
+        effective_provider = validation_provider if validation_provider is not None else existing.get("validation_provider")
+        effective_validated_at = validated_at if validated_at is not None else existing.get("validated_at")
         payload = {
             "symbol": instrument.symbol,
             "asset_type": instrument.asset_type.value,
@@ -415,6 +493,11 @@ class SQLiteStore:
             "timezone": instrument.timezone,
             "trading_hours": instrument.trading_hours.value,
             "sector": instrument.sector,
+            "registry_source": effective_source,
+            "metadata_status": effective_status,
+            "metadata_labels": effective_labels,
+            "validation_provider": effective_provider,
+            "validated_at": effective_validated_at,
         }
         with self._connect() as db:
             db.execute(

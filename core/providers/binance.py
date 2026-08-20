@@ -10,6 +10,7 @@ import json
 import os
 import time
 from datetime import datetime, timezone
+from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -43,6 +44,21 @@ class BinancePublicProvider:
                     return json.loads(response.read().decode("utf-8"))
             except ProviderError:
                 raise
+            except HTTPError as exc:
+                body = ""
+                try:
+                    body = exc.read().decode("utf-8", errors="replace")
+                except Exception:
+                    pass
+                if exc.code == 400 and "invalid symbol" in body.lower():
+                    raise ProviderError(
+                        f"Binance rejected the instrument: {body or exc}",
+                        code="unsupported_symbol",
+                        provider=self.provider_name,
+                    ) from exc
+                last_error = exc
+                if attempt < self.retries:
+                    time.sleep(0.25 * (attempt + 1))
             except Exception as exc:  # pragma: no cover - network dependent
                 last_error = exc
                 if attempt < self.retries:

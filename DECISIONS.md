@@ -89,3 +89,9 @@ Phase 4 user-flow acceptance runs the production React build against real local 
 Date: 2026-08-20
 
 Phase 5 begins with an idempotent v5 migration for Watchlist membership and typed local scheduler-resource settings. P5-T01a accepts only symbols resolved by the existing canonical registry; public-provider-compatible expansion is isolated in P5-T01b so network validation cannot weaken migration or CRUD safety. Persisted settings do not activate a scheduler, scan, ranking, alert or execution behavior by themselves.
+
+## ADR-016 - Public instrument registration is strict and provider-validated
+
+Date: 2026-08-20
+
+P5-T01b accepts only strictly parsed public equity candidates or unambiguous Binance-compatible USDT spot candidates. Equity validation uses Yahoo public market data and crypto validation uses Binance public spot data, with bounded timeout/retry behavior; fixture or stale provider data is never compatibility proof. Expansion candidates are persisted in the existing `instruments` table only after a successful unambiguous probe, while failed or ambiguous probes do not persist. Registered expansion metadata remains explicitly labeled `inferred` or `unknown` rather than inventing exchange, sector or other descriptive facts.

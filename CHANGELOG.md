@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Phase 5 - P5-T01b public-provider-compatible symbol expansion
+
+- Added strict equity/crypto candidate parsing, bounded Yahoo/Binance public validation, durable registered Instrument metadata and Watchlist/API/client support with explicit inferred/unknown metadata.
+- Verification: 57 Python tests, 50 frontend tests and 7 browser E2E tests PASS; failure-safe persistence and dependency audits PASS.
+
 ### Phase 5 - P5-T01a durable Watchlist and AppSetting foundation
 
 - Added idempotent SQLite schema migration v5 with durable `watchlist_entries` and typed `app_settings`.

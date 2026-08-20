@@ -1352,6 +1352,69 @@ summary:focus-visible,
   font-size: 0.7rem;
 }
 
+.watchlist-registration {
+  display: grid;
+  min-width: 0;
+  gap: 0.8rem;
+  margin-top: 0.8rem;
+  padding: 0.85rem;
+  border: 1px solid var(--rule);
+  background: var(--surface);
+}
+
+.watchlist-registration h2 {
+  margin: 0.3rem 0 0;
+  font-family: var(--display);
+  font-size: 1.05rem;
+  font-weight: 720;
+}
+
+.watchlist-registration header p:last-child {
+  max-width: 58rem;
+  margin: 0.5rem 0 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.5;
+}
+
+.watchlist-registration__form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(8rem, 0.45fr) auto;
+  align-items: end;
+  gap: 0.65rem;
+}
+
+.watchlist-registration__form label {
+  display: grid;
+  min-width: 0;
+  gap: 0.3rem;
+  color: var(--muted);
+  font-family: var(--data);
+  font-size: 0.62rem;
+  line-height: 1.3;
+}
+
+.watchlist-registration__form input,
+.watchlist-registration__form select {
+  width: 100%;
+  min-width: 0;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  background: var(--surface-strong);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.watchlist-registration__success {
+  margin: 0;
+  color: var(--long);
+  font-family: var(--data);
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+
 .replay-run-table,
 .replay-sample-table {
   width: 100%;
@@ -1504,6 +1567,11 @@ summary:focus-visible,
   .watchlist-roster,
   .replay-detail__split {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .watchlist-registration__form {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
   }
 }
 

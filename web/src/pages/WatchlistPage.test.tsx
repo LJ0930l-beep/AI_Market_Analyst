@@ -51,8 +51,7 @@ describe("WatchlistPage", () => {
     fireEvent.change(screen.getByLabelText("Asset type"), { target: { value: "equity" } });
     expect(within(roster).getByText("NVDA")).toBeInTheDocument();
     expect(within(roster).queryByText("BTC-USD")).not.toBeInTheDocument();
-    expect(screen.getByText(/Ranking, opportunity scores, background scans, scheduling and alerts are not active/)).toBeInTheDocument();
-    expect(screen.getByText(/Membership changes only update local SQLite state/)).toBeInTheDocument();
+    expect(screen.getByText(/Registration performs bounded network validation.*Ranking, scans, scheduling and alerts are not active/)).toBeInTheDocument();
     expect(screen.getByText("Neutral placeholder")).toBeInTheDocument();
   });
 
@@ -82,7 +81,7 @@ describe("WatchlistPage", () => {
       .mockResolvedValueOnce([fakeInstrument]);
     const emptyView = renderWatchlist({ instruments: emptyThenLoaded });
 
-    expect(await screen.findByText("The instrument endpoint returned no canonical instruments.")).toBeInTheDocument();
+    expect(await screen.findByText("The instrument registry returned no instruments.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry Available instruments" }));
     expect(await screen.findByText("NVDA")).toBeInTheDocument();
     expect(emptyThenLoaded).toHaveBeenCalledTimes(2);
@@ -107,5 +106,47 @@ describe("WatchlistPage", () => {
     expect(within(panel).getByText("Degraded")).toBeInTheDocument();
     expect(within(panel).getByText(/missing descriptive metadata/)).toBeInTheDocument();
     expect(within(panel).getByRole("link", { name: "Open asset detail" })).toHaveAttribute("href", "/assets/AMD");
+  });
+
+  it("validates and saves a new provider-compatible instrument", async () => {
+    const registered = {
+      ...fakeInstrument,
+      symbol: "MSFT",
+      exchange: "UNKNOWN",
+      sector: null,
+      registry_source: "registered",
+      metadata_status: "inferred",
+      validation_provider: "test-public-probe",
+    };
+    const registerInstrument = vi.fn().mockResolvedValue({
+      instrument: registered,
+      registered: true,
+      idempotent: false,
+      validation: { status: "validated", mode: "injected_test", provider: "test-public-probe" },
+    });
+    const addWatchlist = vi.fn().mockResolvedValue({ ...fakeWatchlistEntry, symbol: "MSFT", instrument: registered });
+    renderWatchlist({ registerInstrument, addWatchlist });
+
+    const registration = screen.getByRole("region", { name: "Register an instrument" });
+    fireEvent.change(within(registration).getByLabelText("Instrument symbol"), { target: { value: "MSFT" } });
+    fireEvent.click(within(registration).getByRole("button", { name: "Validate and add" }));
+
+    expect(registerInstrument).toHaveBeenCalledWith("MSFT", "equity");
+    expect(await within(registration).findByRole("status")).toHaveTextContent("MSFT passed provider validation and was saved");
+    expect(addWatchlist).toHaveBeenCalledWith("MSFT");
+  });
+
+  it("shows provider validation failures without claiming registration", async () => {
+    const registerInstrument = vi.fn().mockRejectedValue(
+      new ApiError(503, { code: "PROVIDER_UNAVAILABLE", message: "provider offline" }),
+    );
+    const addWatchlist = vi.fn();
+    renderWatchlist({ registerInstrument, addWatchlist });
+
+    fireEvent.change(screen.getByLabelText("Instrument symbol"), { target: { value: "MSFT" } });
+    fireEvent.click(screen.getByRole("button", { name: "Validate and add" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("PROVIDER_UNAVAILABLE: provider offline");
+    expect(addWatchlist).not.toHaveBeenCalled();
   });
 });

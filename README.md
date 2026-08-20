@@ -82,7 +82,7 @@ Phase 3 API 增加：`/performance/summary`、`/performance/by-symbol/{symbol}`�
 
 ## 最小 API
 
-当前 API 合同为 Phase 5 / 0.5.0；本任务启用 durable canonical Watchlist/AppSetting foundation，未启用 Radar、扫描、调度或告警行为。
+当前 API 合同为 Phase 5 / 0.5.0；本任务启用 durable Watchlist/AppSetting foundation 与显式 public-provider-compatible symbol registration，未启用 Radar、扫描、调度或告警行为。
 
 ```powershell
 python -m pip install -e ".[api,market]"
@@ -96,6 +96,7 @@ python -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8000
 
 - `GET /instruments/{symbol}/snapshot`
 - `GET /instruments/{symbol}/news`
+- `GET /instruments` 返回六个 canonical instruments 与已验证注册项；`POST /instruments/register` 只接受 `symbol` 和 `asset_type`，对 equity 使用安全公开 ticker，对 crypto 接受明确的 `BASE` 或 `BASEUSDT` alias 并规范化为 `BASEUSDT`。
 - `POST /analysis/{symbol}`，body 可传 `{"timeframe":"1h","limit":120}`
 - `GET /predictions`
 - `POST /predictions/{id}/follow`
@@ -103,6 +104,8 @@ python -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8000
 - `GET /settings`, `GET/PUT/DELETE /settings/{key}` for the four typed local scheduler-resource defaults; these endpoints do not activate background work.
 - `GET /health/providers`
 - `GET /health/model`
+
+注册项会先经 Yahoo 公共 market data（equity）或 Binance 公共 USDT spot ticker（crypto）验证；超时/重试有界，失败或 provider 不可用不会写入 SQLite。扩展项的 exchange/sector 等元数据明确标记为 inferred/unknown，不使用 Fixture 作为兼容性证明。
 
 API 同时返回 `data_as_of` 与 `response_time`，并明确标记真实、Fixture、模型不可用等状态。
 

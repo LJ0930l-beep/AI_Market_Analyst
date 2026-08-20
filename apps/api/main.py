@@ -15,11 +15,25 @@ from uuid import uuid4
 from core.ai import OllamaProvider
 from core.ai.prompts import PROMPT_VERSION
 from core.analysis_service import AnalysisError, AnalysisService
-from core.instruments import instrument_for, phase1_universe
+from core.instruments import (
+    CandidateParseError,
+    Instrument,
+    InstrumentCandidate,
+    instrument_for,
+    parse_instrument_candidate,
+    phase1_universe,
+)
 from core.news_engine import NewsEngine, RSSNewsProvider
 from core.outcomes import OutcomeStatus
 from core.performance.metrics import build_performance_snapshot
-from core.providers import FixtureNewsProvider, ProviderChain, build_default_provider
+from core.providers import (
+    FixtureNewsProvider,
+    InstrumentValidationError,
+    InstrumentValidator,
+    ProviderChain,
+    PublicInstrumentValidator,
+    build_default_provider,
+)
 from core.signals import Action
 from core.storage import APP_SETTING_DEFINITIONS, SQLiteStore, validate_app_setting_value
 
@@ -152,6 +166,12 @@ def get_llm_provider() -> OllamaProvider | None:
     return _llm_provider()
 
 
+def get_instrument_validator() -> InstrumentValidator:
+    """FastAPI dependency boundary for explicit public instrument validation."""
+
+    return PublicInstrumentValidator()
+
+
 def _read_only_snapshot_service() -> AnalysisService:
     """Build a snapshot service with no persistence, news, or model boundary."""
 
@@ -255,23 +275,66 @@ def _analysis_limit(value: object, *, label: str = "analysis") -> int:
     return max(60, min(500, parsed))
 
 
-def _normalize_symbol(value: str | None) -> str | None:
+def _resolve_instrument(store: SQLiteStore | None, value: str) -> Instrument:
+    try:
+        return instrument_for(value)
+    except ValueError as canonical_error:
+        if store is not None:
+            try:
+                return store.resolve_instrument(value)
+            except (TypeError, ValueError):
+                pass
+        raise canonical_error
+
+
+def _normalize_symbol(value: str | None, store: SQLiteStore | None = None) -> str | None:
     if value is None:
         return None
     try:
-        return instrument_for(value).symbol
+        return _resolve_instrument(store, value).symbol
     except ValueError as exc:
         raise APIError(400, "INVALID_SYMBOL", "unsupported instrument symbol", detail=str(exc), context={"symbol": value}) from exc
 
 
-def _watchlist_entry_payload(entry: dict[str, str]) -> dict[str, object]:
+def _instrument_payload(item: Instrument, *, record: dict[str, object] | None = None) -> dict[str, object]:
+    registry_source = str(record.get("registry_source", "canonical")) if record else "canonical"
+    metadata_status = str(record.get("metadata_status", "canonical")) if record else "canonical"
+    labels = record.get("metadata_labels", {}) if record else {}
+    metadata_labels = labels if isinstance(labels, dict) else {}
     return {
-        **entry,
-        "instrument": item_payload(instrument_for(entry["symbol"])),
+        "symbol": item.symbol,
+        "asset_type": item.asset_type.value,
+        "exchange": item.exchange,
+        "currency": item.currency,
+        "quote_currency": item.quote_currency,
+        "timezone": item.timezone,
+        "trading_hours": item.trading_hours.value,
+        "sector": item.sector,
+        "registry_source": registry_source,
+        "metadata_status": metadata_status,
+        "metadata_labels": metadata_labels,
+        "validation_provider": record.get("validation_provider") if record else None,
+        "validated_at": record.get("validated_at") if record else None,
     }
 
 
-def _watchlist_body_symbol(body: dict[str, Any] | None, *, required: bool) -> str | None:
+def _watchlist_entry_payload(entry: dict[str, str], store: SQLiteStore) -> dict[str, object]:
+    instrument = _resolve_instrument(store, entry["symbol"])
+    return {
+        **entry,
+        "instrument": _instrument_payload(
+            instrument,
+            record=store.get_instrument_record(instrument.symbol),
+        ),
+    }
+
+
+def _watchlist_body_symbol(
+    body: dict[str, Any] | None,
+    *,
+    required: bool,
+    store: SQLiteStore | None = None,
+) -> str | None:
     if body is None:
         if required:
             raise APIError(400, "INVALID_WATCHLIST_PAYLOAD", "watchlist payload must contain only a symbol")
@@ -291,7 +354,7 @@ def _watchlist_body_symbol(body: dict[str, Any] | None, *, required: bool) -> st
     raw_symbol = body["symbol"]
     if not isinstance(raw_symbol, str) or not raw_symbol.strip():
         raise APIError(400, "INVALID_WATCHLIST_PAYLOAD", "watchlist symbol must be a non-empty string")
-    return _normalize_symbol(raw_symbol)
+    return _normalize_symbol(raw_symbol, store)
 
 
 def _normalize_setting_key(value: str) -> str:
@@ -341,6 +404,7 @@ def _prediction_valid_until(prediction: dict[str, Any]) -> datetime | None:
 
 def _read_filters(
     *,
+    store: SQLiteStore | None = None,
     symbol: str | None,
     timeframe: str | None,
     action: str | None,
@@ -348,7 +412,7 @@ def _read_filters(
     outcome_status: str | None,
 ) -> tuple[str | None, str | None, str | None, str | None, str | None]:
     return (
-        _normalize_symbol(symbol),
+        _normalize_symbol(symbol, store),
         _normalize_timeframe(timeframe) if timeframe is not None else None,
         _enum_filter(action, field="action", allowed=VALID_ACTIONS, upper=True),
         _enum_filter(source_type, field="source_type", allowed=VALID_SOURCE_TYPES, upper=False),
@@ -360,11 +424,12 @@ def _analysis_result(
     service: AnalysisService,
     symbol: str,
     *,
+    store: SQLiteStore | None = None,
     timeframe: str = "1h",
     limit: int = 120,
 ) -> dict[str, object]:
     try:
-        instrument = instrument_for(symbol)
+        instrument = _resolve_instrument(store, symbol)
     except ValueError as exc:
         raise APIError(400, "INVALID_SYMBOL", "unsupported instrument symbol", detail=str(exc), context={"symbol": symbol}) from exc
     try:
@@ -379,6 +444,39 @@ def _analysis_result(
             detail=str(exc),
             context={"provider": exc.provider, "provider_error_code": exc.code},
         ) from exc
+
+
+def _instrument_registration_candidate(body: dict[str, Any] | None) -> InstrumentCandidate:
+    if body is None or set(body) != {"symbol", "asset_type"}:
+        raise APIError(
+            400,
+            "INVALID_INSTRUMENT_REGISTRATION_PAYLOAD",
+            "instrument registration payload must contain only symbol and asset_type",
+        )
+    try:
+        return parse_instrument_candidate(body["symbol"], body["asset_type"])
+    except CandidateParseError as exc:
+        raise APIError(
+            400,
+            "INVALID_INSTRUMENT_CANDIDATE",
+            "instrument candidate failed strict validation",
+            detail=str(exc),
+        ) from exc
+
+
+def _instrument_catalog(store: SQLiteStore) -> list[dict[str, object]]:
+    records: dict[str, dict[str, object]] = {}
+    for instrument in phase1_universe():
+        records[instrument.symbol] = {"instrument": instrument}
+    for record in store.list_instrument_records():
+        instrument = record["instrument"]
+        source = str(record.get("registry_source", "canonical"))
+        if source in {"canonical", "registered"} and isinstance(instrument, Instrument):
+            records.setdefault(instrument.symbol, record)
+    return [
+        _instrument_payload(record["instrument"], record=record if "registry_source" in record else None)
+        for record in records.values()
+    ]
 
 
 if FastAPI is not None:
@@ -447,21 +545,82 @@ if FastAPI is not None:
             }
 
     @router.get("/instruments")
-    def instruments() -> list[dict[str, object]]:
-        return [item_payload(item) for item in phase1_universe()]
+    def instruments(store: SQLiteStore = Depends(get_store)) -> list[dict[str, object]]:
+        return _instrument_catalog(store)
+
+    @router.post("/instruments/register")
+    def register_instrument(
+        body: dict[str, Any] | None = Body(default=None),
+        store: SQLiteStore = Depends(get_store),
+        validator: InstrumentValidator = Depends(get_instrument_validator),
+    ) -> dict[str, object]:
+        candidate = _instrument_registration_candidate(body)
+        symbol = candidate.instrument.symbol
+        existing = store.get_instrument_record(symbol)
+        was_existing = existing is not None
+        if existing is not None and str(existing.get("registry_source")) == "registered":
+            return {
+                "instrument": _instrument_payload(existing["instrument"], record=existing),
+                "registered": True,
+                "idempotent": True,
+                "validation": {"status": "already_registered"},
+            }
+        if candidate.is_canonical:
+            if existing is None:
+                store.save_instrument(
+                    candidate.instrument,
+                    registry_source="canonical",
+                    metadata_status=candidate.metadata_status,
+                    metadata_labels=candidate.metadata_labels,
+                )
+                existing = store.get_instrument_record(symbol)
+            assert existing is not None
+            return {
+                "instrument": _instrument_payload(existing["instrument"], record=existing),
+                "registered": True,
+                "idempotent": was_existing,
+                "validation": {"status": "canonical_known"},
+            }
+        try:
+            validation = validator.validate(candidate)
+        except InstrumentValidationError as exc:
+            status_code = 422 if exc.code == "INSTRUMENT_UNSUPPORTED" else 503
+            raise APIError(
+                status_code,
+                exc.code,
+                "instrument provider validation failed",
+                detail=str(exc),
+                context={"provider": exc.provider},
+            ) from exc
+        store.save_instrument(
+            candidate.instrument,
+            registry_source="registered",
+            metadata_status=candidate.metadata_status,
+            metadata_labels=candidate.metadata_labels,
+            validation_provider=validation.provider,
+            validated_at=validation.validated_at.astimezone(timezone.utc).isoformat(),
+        )
+        stored = store.get_instrument_record(symbol)
+        assert stored is not None
+        return {
+            "instrument": _instrument_payload(stored["instrument"], record=stored),
+            "registered": True,
+            "idempotent": False,
+            "validation": validation.to_dict(),
+        }
 
     @router.get("/watchlist")
     def watchlist(store: SQLiteStore = Depends(get_store)) -> list[dict[str, object]]:
-        return [_watchlist_entry_payload(entry) for entry in store.list_watchlist_entries()]
+        return [_watchlist_entry_payload(entry, store) for entry in store.list_watchlist_entries()]
 
     @router.post("/watchlist")
     def add_watchlist(
         body: dict[str, Any] | None = Body(default=None),
         store: SQLiteStore = Depends(get_store),
     ) -> dict[str, object]:
-        symbol = _watchlist_body_symbol(body, required=True)
+        symbol = _watchlist_body_symbol(body, required=True, store=store)
         assert symbol is not None
-        return _watchlist_entry_payload(store.upsert_watchlist_entry(symbol))
+        return _watchlist_entry_payload(store.upsert_watchlist_entry(symbol), store)
 
     @router.put("/watchlist/{symbol}")
     def upsert_watchlist(
@@ -469,9 +628,9 @@ if FastAPI is not None:
         body: dict[str, Any] | None = Body(default=None),
         store: SQLiteStore = Depends(get_store),
     ) -> dict[str, object]:
-        canonical_symbol = _normalize_symbol(symbol)
+        canonical_symbol = _normalize_symbol(symbol, store)
         assert canonical_symbol is not None
-        body_symbol = _watchlist_body_symbol(body, required=False)
+        body_symbol = _watchlist_body_symbol(body, required=False, store=store)
         if body_symbol is not None and body_symbol != canonical_symbol:
             raise APIError(
                 400,
@@ -479,11 +638,11 @@ if FastAPI is not None:
                 "watchlist body symbol must match the path symbol",
                 context={"path_symbol": canonical_symbol, "body_symbol": body_symbol},
             )
-        return _watchlist_entry_payload(store.upsert_watchlist_entry(canonical_symbol))
+        return _watchlist_entry_payload(store.upsert_watchlist_entry(canonical_symbol), store)
 
     @router.delete("/watchlist/{symbol}")
     def delete_watchlist(symbol: str, store: SQLiteStore = Depends(get_store)) -> dict[str, object]:
-        canonical_symbol = _normalize_symbol(symbol)
+        canonical_symbol = _normalize_symbol(symbol, store)
         assert canonical_symbol is not None
         return {"symbol": canonical_symbol, "deleted": store.delete_watchlist_entry(canonical_symbol)}
 
@@ -532,11 +691,12 @@ if FastAPI is not None:
         timeframe: str = "1h",
         limit: str = "120",
         service: AnalysisService = Depends(get_snapshot_service),
+        store: SQLiteStore = Depends(get_store),
     ) -> dict[str, object]:
         timeframe = _normalize_timeframe(timeframe)
         bounded_limit = _analysis_limit(limit, label="snapshot")
         try:
-            instrument = instrument_for(symbol)
+            instrument = _resolve_instrument(store, symbol)
         except ValueError as exc:
             raise APIError(400, "INVALID_SYMBOL", "unsupported instrument symbol", detail=str(exc), context={"symbol": symbol}) from exc
         try:
@@ -560,9 +720,13 @@ if FastAPI is not None:
         return result.to_dict()
 
     @router.get("/instruments/{symbol}/news")
-    def news(symbol: str, news_provider: object = Depends(get_news_provider)) -> dict[str, object]:
+    def news(
+        symbol: str,
+        news_provider: object = Depends(get_news_provider),
+        store: SQLiteStore = Depends(get_store),
+    ) -> dict[str, object]:
         try:
-            instrument = instrument_for(symbol)
+            instrument = _resolve_instrument(store, symbol)
         except ValueError as exc:
             raise APIError(400, "INVALID_SYMBOL", "unsupported instrument symbol", detail=str(exc), context={"symbol": symbol}) from exc
         return NewsEngine(news_provider).collect(instrument, limit=10).to_dict()
@@ -572,15 +736,20 @@ if FastAPI is not None:
         symbol: str,
         body: dict[str, Any] | None = Body(default=None),
         service: AnalysisService = Depends(get_analysis_service),
+        store: SQLiteStore = Depends(get_store),
     ) -> dict[str, object]:
         body = body or {}
         timeframe = _normalize_timeframe(str(body.get("timeframe", "1h")))
         limit = _analysis_limit(body.get("limit", 120), label="analysis")
-        return _analysis_result(service, symbol, timeframe=timeframe, limit=limit)
+        return _analysis_result(service, symbol, store=store, timeframe=timeframe, limit=limit)
 
     @router.post("/analyze/{symbol}")
-    def analyze_legacy(symbol: str, service: AnalysisService = Depends(get_analysis_service)) -> dict[str, object]:
-        return _analysis_result(service, symbol)
+    def analyze_legacy(
+        symbol: str,
+        service: AnalysisService = Depends(get_analysis_service),
+        store: SQLiteStore = Depends(get_store),
+    ) -> dict[str, object]:
+        return _analysis_result(service, symbol, store=store)
 
     @router.get("/predictions")
     def predictions(
@@ -598,6 +767,7 @@ if FastAPI is not None:
         store: SQLiteStore = Depends(get_store),
     ) -> list[dict[str, Any]]:
         symbol, timeframe, action, source_type, outcome_status = _read_filters(
+            store=store,
             symbol=symbol,
             timeframe=timeframe,
             action=action,
@@ -691,6 +861,7 @@ if FastAPI is not None:
         store: SQLiteStore = Depends(get_store),
     ) -> list[dict[str, Any]]:
         symbol, timeframe, action, source_type, outcome_status = _read_filters(
+            store=store,
             symbol=symbol,
             timeframe=timeframe,
             action=action,
@@ -731,6 +902,7 @@ if FastAPI is not None:
         store: SQLiteStore = Depends(get_store),
     ) -> list[dict[str, Any]]:
         symbol, timeframe, action, source_type, _ = _read_filters(
+            store=store,
             symbol=symbol,
             timeframe=timeframe,
             action=action,
@@ -770,7 +942,7 @@ if FastAPI is not None:
     ) -> dict[str, object]:
         source_type = _enum_filter(source_type, field="source_type", allowed=VALID_SOURCE_TYPES, upper=False) or "live"
         timeframe = _normalize_timeframe(timeframe) if timeframe else None
-        symbol = _normalize_symbol(symbol) if symbol else None
+        symbol = _normalize_symbol(symbol, store) if symbol else None
         records = store.list_prediction_records(
             source_type=source_type,
             replay_run_id=replay_run_id,
@@ -818,7 +990,7 @@ if FastAPI is not None:
         return _performance_summary(
             store,
             source_type=source_type,
-            symbol=symbol.upper(),
+            symbol=symbol,
             timeframe=timeframe,
             model_id=model_id,
             prompt_version=prompt_version,
@@ -862,7 +1034,7 @@ if FastAPI is not None:
             raise APIError(400, "INVALID_SYMBOLS", "symbols must be a non-empty list")
         if not isinstance(raw_timeframes, list) or not raw_timeframes:
             raise APIError(400, "INVALID_TIMEFRAMES", "timeframes must be a non-empty list")
-        symbols = [_normalize_symbol(str(item)) for item in raw_symbols]
+        symbols = [_normalize_symbol(str(item), store) for item in raw_symbols]
         timeframes = [_normalize_timeframe(str(item)) for item in raw_timeframes]
         assert all(item is not None for item in symbols)
         run_id = f"api-{uuid4().hex[:16]}"
@@ -950,6 +1122,7 @@ def create_app(
     snapshot_service: AnalysisService | None = None,
     news_provider: object | None = None,
     llm_provider: object | None = _UNSET,
+    instrument_validator: InstrumentValidator | None = None,
 ):
     """Create an API app with optional service injections for isolated tests."""
 
@@ -1026,6 +1199,8 @@ def create_app(
         app.dependency_overrides[get_news_provider] = lambda: news_provider
     if llm_provider is not _UNSET:
         app.dependency_overrides[get_llm_provider] = lambda: llm_provider
+    if instrument_validator is not None:
+        app.dependency_overrides[get_instrument_validator] = lambda: instrument_validator
     if analysis_service is not None:
         app.dependency_overrides[get_analysis_service] = lambda: analysis_service
     if snapshot_service is not None:

@@ -3,10 +3,12 @@ import { vi } from "vitest";
 import type { ApplicationShellApiClient } from "../api/client";
 import type {
   AnalysisResult,
+  AssetType,
   AppSetting,
   CalibrationCurrent,
   HealthResponse,
   Instrument,
+  InstrumentRegistrationResponse,
   InstrumentNews,
   MarketSnapshot,
   Outcome,
@@ -45,6 +47,19 @@ export const fakeWatchlistEntry: WatchlistEntry = {
   instrument: fakeInstrument,
   added_at: "2030-01-02T12:00:00Z",
   updated_at: "2030-01-02T12:00:00Z",
+};
+
+export const fakeInstrumentRegistration: InstrumentRegistrationResponse = {
+  instrument: fakeInstrument,
+  registered: true,
+  idempotent: false,
+  validation: {
+    status: "validated",
+    mode: "injected_test",
+    provider: "e2e-public-probe",
+    validated_at: "2030-01-02T12:00:00Z",
+    data_as_of: "2030-01-02T11:59:00Z",
+  },
 };
 
 export const fakeAppSettings: AppSetting[] = [
@@ -260,6 +275,7 @@ export function createFakeClient(overrides: Partial<ApplicationShellApiClient> =
     modelHealth: vi.fn().mockResolvedValue({ provider: "ollama", available: true }),
     stats: vi.fn().mockResolvedValue(fakeStats),
     instruments: vi.fn().mockResolvedValue([fakeInstrument]),
+    registerInstrument: vi.fn<(symbol: string, assetType: AssetType) => Promise<InstrumentRegistrationResponse>>().mockResolvedValue(fakeInstrumentRegistration),
     watchlist: vi.fn().mockResolvedValue([]),
     addWatchlist: vi.fn().mockResolvedValue(fakeWatchlistEntry),
     upsertWatchlist: vi.fn().mockResolvedValue(fakeWatchlistEntry),

@@ -124,6 +124,28 @@ describe("ApiClient", () => {
     expect(fetchImpl).toHaveBeenNthCalledWith(7, "http://localhost:8000/settings/scheduler.enabled", expect.objectContaining({ method: "DELETE" }));
   });
 
+  it("posts the narrow provider-validation registration payload", async () => {
+    const fetchImpl = vi.fn<FetchMock>().mockResolvedValue(
+      response({
+        instrument: { symbol: "SOLUSDT", asset_type: "crypto" },
+        registered: true,
+        idempotent: false,
+        validation: { status: "validated", mode: "public_probe" },
+      }),
+    );
+    const client = new ApiClient({ baseUrl: "http://localhost:8000", fetchImpl });
+
+    await client.registerInstrument("SOL", "crypto");
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "http://localhost:8000/instruments/register",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ symbol: "SOL", asset_type: "crypto" }),
+      }),
+    );
+  });
+
   it("encodes snapshot filters and sends the explicit analysis body", async () => {
     const fetchImpl = vi
       .fn<FetchMock>()

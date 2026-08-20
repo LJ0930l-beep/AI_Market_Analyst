@@ -80,6 +80,26 @@ test("health, durable Watchlist, and read-only Asset Detail analysis", async ({ 
   const after = await (await page.request.get("/api/stats")).json();
   expect(after.predictions).toBe(before.predictions + 1);
   expect(after.paper_trades).toBe(before.paper_trades);
+
+  await page.goto("/watchlist");
+  await expect(page.getByRole("heading", { name: "Watchlist", exact: true })).toBeVisible();
+  const registration = page.getByRole("region", { name: "Register an instrument" });
+  await registration.getByLabel("Instrument symbol").fill("MSFT");
+  await registration.getByLabel("Instrument asset type").selectOption("equity");
+  const registrationResponse = page.waitForResponse((response) => response.url().endsWith("/api/instruments/register") && response.request().method() === "POST");
+  await registration.getByRole("button", { name: "Validate and add" }).click();
+  const registered = await (await registrationResponse).json();
+  expect(registered.instrument.symbol).toBe("MSFT");
+  expect(registered.validation.mode).toBe("injected_test");
+  await expect(registration.getByRole("status")).toContainText("MSFT passed provider validation and was saved");
+  await expect(page.getByRole("region", { name: "Available instruments" }).getByText("MSFT")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Saved watchlist" }).getByText("MSFT")).toBeVisible();
+
+  await page.locator('a[href="/assets/MSFT"]').first().click();
+  await expect(page.getByRole("heading", { name: "Asset detail / MSFT" })).toBeVisible();
+  await expect(page.getByText("OHLCV evidence")).toBeVisible();
+  await page.getByRole("button", { name: "Run analysis" }).click();
+  await expect(page.getByText("WAIT · saved coverage result")).toBeVisible();
 });
 
 test("fresh LONG double-click Follow creates exactly one PaperTrade and linked detail", async ({ page }) => {
@@ -109,10 +129,10 @@ test("fresh LONG double-click Follow creates exactly one PaperTrade and linked d
   await page.getByRole("link", { name: "Paper trades" }).click();
   await expect(page.getByRole("heading", { name: "Paper trades" })).toBeVisible();
   await page.getByRole("button", { name: "p4-fresh-long" }).click();
-  await expect(page.getByText("Linked Prediction")).toBeVisible();
+  await expect(page.getByText("Linked Prediction", { exact: true })).toBeVisible();
   await expect(page.getByText("No linked Outcome record was returned.")).toBeVisible();
   await page.getByRole("button", { name: "p4-paper-outcome" }).click();
-  await expect(page.getByText("Linked Outcome")).toBeVisible();
+  await expect(page.getByText("Linked Outcome", { exact: true })).toBeVisible();
   await expect(page.getByText("TP1").last()).toBeVisible();
   await expect(page.getByText(/No real order, broker action or execution/)).toBeVisible();
 });

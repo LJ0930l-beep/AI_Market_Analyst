@@ -1,6 +1,7 @@
 export type JsonRecord = Record<string, unknown>;
 
 export type Action = "LONG" | "SHORT" | "WAIT";
+export type AssetType = "equity" | "crypto";
 export type SourceType = "live" | "replay";
 export type Timeframe = "5m" | "15m" | "1h" | "4h" | "1d";
 export type OutcomeStatus = "TP1" | "TP2" | "STOP" | "TIMEOUT" | "INVALIDATED" | "PENDING";
@@ -29,13 +30,33 @@ export interface ModelHealthResponse extends JsonRecord {
 
 export interface Instrument extends JsonRecord {
   symbol: string;
-  asset_type: string;
+  asset_type: AssetType | string;
   exchange: string;
   currency: string;
   quote_currency: string;
   timezone: string;
   trading_hours: string;
-  sector: string;
+  sector: string | null;
+  registry_source?: "canonical" | "registered" | string;
+  metadata_status?: string;
+  metadata_labels?: Record<string, string>;
+  validation_provider?: string | null;
+  validated_at?: string | null;
+}
+
+export interface InstrumentRegistrationValidation extends JsonRecord {
+  status: string;
+  mode?: string;
+  provider?: string;
+  validated_at?: string;
+  data_as_of?: string;
+}
+
+export interface InstrumentRegistrationResponse extends JsonRecord {
+  instrument: Instrument;
+  registered: boolean;
+  idempotent: boolean;
+  validation: InstrumentRegistrationValidation;
 }
 
 export interface WatchlistEntry extends JsonRecord {
