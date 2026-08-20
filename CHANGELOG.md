@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Phase 7 V1.0 release-hardening — developer-ready
+
+- Set the package/API release contract to `1.0.0` / Phase 7; added bounded local configuration, redacted health errors, `/health/release`, explicit capability evidence and loopback-only startup defaults.
+- Added SQLite-consistent `phase7_backup_v1` manifest/checksum/schema/count backup and atomic restore with retained safety artifacts, plus the Windows owned-child API/UI launcher and reproducible audit/release-smoke artifacts.
+- Added V1.0 README, operations runbook, completion report and machine-readable final acceptance inventory. Developer Gate: 113 pytest tests plus 10 subtests, 114 unittest tests, 55 frontend tests, lint/typecheck/build/compileall/pip check PASS, npm audits 0, standalone E2E 10/10 in 40.9s with 18 axe/overflow desktop-mobile checks; `pip-audit` unavailable and license metadata review remains explicit. Supervisor final acceptance is pending.
+
+### Phase 6 supervisor acceptance handoff
+
+- Recorded supervisor acceptance of Phase 6 after the consolidated repair: 106 pytest tests plus 10 subtests, 55 frontend tests, lint/typecheck/build/compileall/pip check PASS, both npm audits 0 vulnerabilities, standalone E2E 10/10 in 52.6s with 18 desktop/mobile axe and overflow checks, and clean `git diff --check`.
+- Phase 7 is now the active V1.0 release-hardening scope; no post-V1.0/Phase 8 work is included.
+
 ### Phase 6 supervisor repair — benchmark/event/memory evidence
 
 - Corrected benchmark aggregate freshness to require independently fresh target and benchmark data, normalized event publisher identity so same-source URLs cannot create consensus, and aligned Memory sample statistics with the selected `top_k` analogue cohort.

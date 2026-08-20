@@ -3,7 +3,7 @@ import { useCallback, useState } from "react";
 import type { ApplicationShellApiClient } from "../api/client";
 import { AsyncPanel, type PanelState } from "../components/AsyncPanel";
 import { CountLedger, HealthFacts, ModelFacts, ProviderRouting } from "../components/OperationalFacts";
-import type { AlertStatusResponse, ContextHealthResponse, SchedulerHistory, SchedulerStatus } from "../api/types";
+import type { AlertStatusResponse, ContextHealthResponse, ReleaseHealthResponse, SchedulerHistory, SchedulerStatus } from "../api/types";
 import type { AsyncResource } from "../hooks/useAsyncResource";
 import { useAsyncResource } from "../hooks/useAsyncResource";
 
@@ -50,6 +50,13 @@ function contextState(resource: AsyncResource<ContextHealthResponse>): PanelStat
   return resource.data ? "ready" : "empty";
 }
 
+function releaseState(resource: AsyncResource<ReleaseHealthResponse>): PanelState {
+  if (resource.status === "loading") return "loading";
+  if (resource.status === "unavailable") return "unavailable";
+  if (!resource.data) return "empty";
+  return resource.data.status === "ok" ? "ready" : "degraded";
+}
+
 function schedulerText(value: unknown): string {
   if (value === null || value === undefined || value === "") {
     return "Not supplied";
@@ -94,6 +101,7 @@ function SchedulerFacts({ status, history }: { status: SchedulerStatus; history?
 export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
   const healthLoader = useCallback((signal: AbortSignal) => apiClient.health(signal), [apiClient]);
   const providerLoader = useCallback((signal: AbortSignal) => apiClient.providerHealth(signal), [apiClient]);
+  const releaseLoader = useCallback((signal: AbortSignal) => apiClient.releaseHealth(signal), [apiClient]);
   const modelLoader = useCallback((signal: AbortSignal) => apiClient.modelHealth(signal), [apiClient]);
   const statsLoader = useCallback((signal: AbortSignal) => apiClient.stats(signal), [apiClient]);
   const schedulerLoader = useCallback((signal: AbortSignal) => apiClient.schedulerStatus(signal), [apiClient]);
@@ -103,6 +111,7 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
 
   const health = useAsyncResource(healthLoader);
   const provider = useAsyncResource(providerLoader);
+  const release = useAsyncResource(releaseLoader);
   const model = useAsyncResource(modelLoader);
   const stats = useAsyncResource(statsLoader);
   const scheduler = useAsyncResource(schedulerLoader);
@@ -178,6 +187,29 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
           degradedMessage="Provider routing is degraded. This does not mean the backend itself is unavailable."
         >
           {provider.data ? <ProviderRouting provider={provider.data} /> : null}
+        </AsyncPanel>
+
+        <AsyncPanel
+          title="Release / local capability"
+          source="GET /health/release"
+          freshness="versioned capability response"
+          state={releaseState(release)}
+          error={release.error}
+          onRetry={release.retry}
+          emptyMessage="No release capability evidence was returned."
+          degradedMessage="Database or local release capability is degraded; no readiness claim is inferred."
+        >
+          {release.data ? (
+            <div className="scheduler-facts">
+              <dl className="fact-list fact-list--compact">
+                <div className="fact-list__row"><dt>Contract</dt><dd>phase {release.data.phase} · API {release.data.api_version}</dd></div>
+                <div className="fact-list__row"><dt>Database</dt><dd>{schedulerText(release.data.database)}</dd></div>
+                <div className="fact-list__row"><dt>Backup</dt><dd>{schedulerText(release.data.backup)}</dd></div>
+                <div className="fact-list__row"><dt>Boundaries</dt><dd>{schedulerText(release.data.capabilities)}</dd></div>
+              </dl>
+              <p className="panel-reading">Startup binds to loopback, scheduler remains explicitly off by default, and backup/restore is an operator command. No telemetry, cloud notifier, broker or real-order path is enabled.</p>
+            </div>
+          ) : null}
         </AsyncPanel>
 
         <AsyncPanel

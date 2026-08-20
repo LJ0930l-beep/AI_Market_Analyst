@@ -165,3 +165,23 @@ The Phase 6 repair keeps API/package contract `phase=6` / `0.6.0` and adds addit
 Event clustering uses a deterministic normalized publisher identity derived from the source field, never the article URL. Same-publisher reports with different URLs remain one source and cannot create confirmed consensus alone. Independent source identities can confirm; primary/official evidence may confirm under the existing explicit rule. Every URL and source record remains in cluster provenance.
 
 Market Memory defines one cohort as the deterministic eligible ranking truncated to `top_k`; resolved count, win rate, average R and typical outcomes are computed only from that displayed cohort. Broader eligible count remains diagnostic and cannot make a distant analogue produce READY statistics. Explicit materialization stores generated time, symbol, timeframe, source type, feature snapshot `as_of` and outcome-known boundary. Reads prefer valid materialized rows at or before the query boundary, deduplicate repeated snapshots by prediction, and report the exact raw prediction-ledger fallback when no valid materialized cohort exists; the fallback is not claimed to obey the 1,000-row materialized retention bound. GETs remain read-only and no context feature changes confidence, calibration, Outcomes or PaperTrades.
+
+## ADR-024 - Phase 6 supervisor acceptance is the Phase 7 release-hardening baseline
+
+Date: 2026-08-20
+
+Phase 6 is supervisor-accepted on independent final evidence: 106 pytest tests plus 10 subtests, 55 frontend tests, lint/typecheck/build/compileall/`pip check` PASS, full and production npm audits with zero vulnerabilities, standalone E2E 10/10 in 52.6 seconds with 18 desktop/mobile axe and overflow checks, and clean `git diff --check`. Phase 7 must preserve the Phase 6 API/package contract `phase=6` / `0.6.0` until the final release-version change is verified.
+
+Phase 7 is limited to local security/dependency/license/privacy/configuration hardening, SQLite-consistent backup/restore, safe one-command lifecycle/resource health, resilience/release evidence and V1.0 documentation. It does not authorize cloud runtime, telemetry, external notification, Broker/order/private-key paths, automatic analysis/materialization/Follow/alerts at startup, scheduler default-on behavior, or Phase 8/post-V1.0 features. Final acceptance remains developer-ready until Sol/supervisor reviews the recorded inventory.
+
+## ADR-025 - Phase 7 V1.0 release boundary and recovery contract
+
+Date: 2026-08-20
+
+Phase 7 is developer-complete and ready for supervisor final acceptance. The package/API contract is `1.0.0` / Phase 7 while Phase 0-6 historical reports retain their original version evidence. Runtime defaults remain loopback/local-only, scheduler disabled, explicit lifecycle, bounded timeouts/retries/paths and redacted unexpected/model errors. No cloud runtime, telemetry, external notifier, Redis/Celery, broker/order client, private key or real-money path is present.
+
+SQLite release backups are explicit `phase7_backup_v1` artifacts produced through SQLite’s online backup API. A manifest records app/schema/version/time/checksum/count evidence. Restore validates the artifact and target safety before creating a sibling safety backup, stages the replacement atomically, retains recoverable evidence and never recursively deletes a broad path. Restart and migration behavior remains additive through schema 10.
+
+The Windows launcher owns only its recorded API/UI child PIDs after executable-path verification, refuses non-loopback hosts and occupied ports, waits for health, and stops gracefully with a bounded fallback only for those verified children. It never kills ComfyUI, Ollama or unrelated processes. Provider/model/GPU/database/backup states are exposed as capability/degraded evidence; the release smoke records local timings without an arbitrary performance claim.
+
+Security and license artifacts are reproducible summaries. npm full/production audits and `pip check` passed with zero npm vulnerabilities; `pip-audit` is unavailable in the current environment and license metadata has explicit review-required entries. The final acceptance inventory is developer-ready only; Sol/supervisor performs the final Gate.

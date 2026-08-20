@@ -5,8 +5,8 @@ Updated: 2026-08-20
 ## Overall
 
 - Target: V1.0 Final Acceptance through Phase 7.
-- Active phase: Phase 6.
-- Active task: Phase 6 Gate complete; developer-verified and ready for supervisor acceptance. Phase 7 is not started.
+- Active phase: Phase 7.
+- Active task: Phase 7 completion and V1.0 Final Acceptance evidence. Developer Gate is complete and pending supervisor final acceptance; no post-V1.0 work is started.
 - Blockers: none.
 - Sole developer: `luna-max` (one persistent thread, serial tasks).
 
@@ -18,7 +18,7 @@ Updated: 2026-08-20
 - Phase 3: PASS with recorded model-output errors.
 - Phase 4: PASS.
 - Phase 5: ACCEPTED by supervisor.
-- Phase 6: developer Gate PASS; supervisor acceptance pending.
+- Phase 6: ACCEPTED by supervisor.
 
 Phase 5 independent acceptance evidence:
 
@@ -98,7 +98,7 @@ Phase 3 evidence:
 
 ## Next action
 
-Sol/supervisor review of the Phase 6 completion evidence; do not begin Phase 7.
+Sol/supervisor review of the Phase 7 completion evidence and machine-readable V1.0 Final Acceptance inventory; do not begin post-V1.0 work.
 
 ## Phase 5 acceptance handoff — 2026-08-20
 
@@ -240,14 +240,26 @@ Sol/supervisor review of the Phase 6 completion evidence; do not begin Phase 7.
 
 ## Phase 6 developer Gate checkpoint — 2026-08-20
 
-- Milestone: Benchmark Context, typed point-in-time Events/TimePolicy, multi-source credibility/clustering and leakage-safe Market Memory; Phase 6 repair is developer-complete and ready for Sol/supervisor acceptance. Phase 7 was not started.
+- Milestone: Benchmark Context, typed point-in-time Events/TimePolicy, multi-source credibility/clustering and leakage-safe Market Memory; Phase 6 repair is supervisor-accepted. Phase 7 is now active and no post-V1.0 work is started.
 - Implementation: added API/package contract `phase=6`, version `0.6.0`, idempotent SQLite migration v10, durable explicit benchmark mappings, independently audited target/benchmark freshness with conservative aggregate status, typed event evidence with known/published/retrieved/revision timestamps, normalized publisher-identity clustering and versioned source credibility, Python-owned major-event time/risk policy effects, and local versioned Memory feature materialization/query with immutable provenance, selected-cohort statistics and UTC as-of/self/future/incomplete-feature exclusion.
 - Integration: Analysis Context now carries benchmark/events/memory evidence without letting the model calculate or override Python numeric/time/risk rules. Asset Detail exposes read-only Benchmark/Events/Memory evidence; Settings/Health exposes Phase 6 capability versions and no-cloud/read-only boundaries; `GET /health/context`, `GET /instruments/{symbol}/context|events|memory` are read-only. `POST /memory/materialize` is the explicitly documented local write boundary.
 - Changed files: `apps/api/main.py`, `core/analysis_service.py`, `core/benchmarks.py`, `core/events.py`, `core/memory.py`, `core/storage/sqlite.py`, `core/time_rules.py`, `pyproject.toml`, `README.md`, `scripts/phase4_e2e_harness.py`, `tests/test_phase6_context.py`, coupled schema/version tests, `web/package.json`, `web/package-lock.json`, `web/e2e/phase4.spec.ts`, `web/src/api/client.ts`, `web/src/api/types.ts`, `web/src/pages/AssetDetailPage.tsx`, `web/src/pages/AssetDetailPage.test.tsx`, `web/src/pages/SettingsHealthPage.tsx`, `web/src/pages/SettingsHealthPage.test.tsx`, `web/src/test/fakeClient.ts`, `web/src/styles.css`, and governance/report files.
 - Focused evidence: `python -m pytest -q tests/test_phase6_context.py` PASS, 7 tests; migration/reopen, independent benchmark freshness, future bar/event/publication/known/revision filtering, same-publisher versus independent-source consensus, deterministic clustering/credibility, TimePolicy event cap, Memory selected-cohort statistics and materialized/raw point-in-time boundaries, repeatability, API read-only counts and explicit analysis/materialization boundaries are covered.
 - Full Python evidence: `python -m pytest -q` PASS, 106 tests plus 10 subtests with one known Starlette/httpx deprecation warning; `python -B -m unittest discover -s tests -v` PASS, 106 tests; `python -B -m compileall -q apps core tests scripts` PASS; `python -m pip check` PASS (`No broken requirements found.`).
 - Full frontend evidence: `npm run lint` PASS; `npm run typecheck` PASS; `npm run test -- --run` PASS, 12 files / 55 tests; `npm run build` PASS with Vite 6.4.3; `npm audit --audit-level=high` and `npm audit --omit=dev --audit-level=high` PASS, 0 vulnerabilities.
-- Browser evidence: `npm run e2e:preflight` PASS, Playwright 1.62.1, Chrome candidate `151.0.7922.140`, Edge candidate `151.0.4129.93`; final standalone `npm run e2e` PASS, 10/10 tests, 1 worker, 58.7s on Chrome. The real built React app and FastAPI/SQLite harness covered Phase 5 regression plus Phase 6 context capability/read-only evidence, 9 routes at desktop `1280x900` and mobile `390x844`, 18 axe scans and 18 page-level overflow checks.
+- Browser evidence: `npm run e2e:preflight` PASS, Playwright 1.62.1, Chrome candidate `151.0.7922.140`, Edge candidate `151.0.4129.93`; independent final standalone `npm run e2e` PASS, 10/10 tests, 52.6s on Chrome. The real built React app and FastAPI/SQLite harness covered Phase 5 regression plus Phase 6 context capability/read-only evidence, 9 routes at desktop `1280x900` and mobile `390x844`, 18 axe scans and 18 page-level overflow checks.
 - Gate evidence: additive migration/restart persistence, provider/capability fallback, deterministic clustering/credibility, strong as-of/leakage boundaries, GET no-domain-mutation, accepted scheduler/settlement/Radar/watchlist/Alert Center behavior, no cloud/Redis/Celery/notifier/broker/order/private-key path, no automatic calibration/raw-confidence/PaperTrade mutation, and disposable temp-DB browser execution all pass. `git diff --check` PASS with only expected LF/CRLF warnings.
 - Blockers: none. Residual risks: RSS/news adapters infer `known_at` from publication time and do not claim a historical event calendar/revision feed; benchmark crypto context intentionally exposes only BTC baseline while total-market/dominance are unavailable and both target/benchmark freshness are required for aggregate fresh status; E2E uses injected fixture market/events/model/resource providers and does not prove live Yahoo/Binance/Qwen/ComfyUI freshness or distributed deployment; Memory is fixed-feature SQLite/local with a minimum resolved-sample gate and no automatic materialization/calibration, and raw-ledger fallback is explicitly not covered by the materialized retention bound; existing equity holiday-calendar limitation remains explicit.
-- Developer verdict: PASS / accepted-by-developer for handoff. Supervisor/Sol final acceptance remains pending; no Phase 7 implementation is included.
+- Independent supervisor verdict: ACCEPTED. Phase 7 implementation is now active; no post-V1.0 work is included.
+
+## Phase 7 developer Gate checkpoint — 2026-08-20
+
+- Milestone: V1.0 security/dependency/license/privacy/configuration hardening, SQLite backup/restore and recovery, Windows local lifecycle/resource health, resilience/release smoke, documentation and Final Acceptance inventory. Developer implementation is complete and ready for supervisor final Gate; Phase 8 is not started.
+- Implementation: package/API `1.0.0` / Phase 7; bounded `core/config.py`; redacted `/health/model` and read-only `/health/release`; safe `phase7_backup_v1` SQLite artifact/manifest/restore CLI with checksum, schema, integrity, count, path/symlink, atomic-stage and retained safety-backup controls; Windows loopback-only `scripts/phase7-local.ps1` with owned PID/executable validation, port/dependency checks and graceful bounded stop; reproducible `phase7_audit.py` and non-SLO `phase7-release-smoke.py`; final README, operations runbook, completion report and JSON acceptance inventory.
+- Changed files: `core/config.py`, `core/backup.py`, `apps/api/main.py`, `pyproject.toml`, `web/package.json`, `web/package-lock.json`, `web/src/api/types.ts`, `web/src/api/client.ts`, `web/src/test/fakeClient.ts`, `web/src/pages/SettingsHealthPage.tsx`, `web/src/pages/SettingsHealthPage.test.tsx`, `web/e2e/phase4.spec.ts`, `web/e2e/preview-server.mjs`, `tests/test_api_phase4.py`, `tests/test_phase7_hardening.py`, `scripts/phase7_backup.py`, `scripts/phase7_audit.py`, `scripts/phase7-release-smoke.py`, `scripts/phase7-local.ps1`, `README.md`, `docs/phase7-completion-report.md`, `docs/phase7-operations-runbook.md`, `docs/phase7-security-audit.json`, `docs/phase7-license-audit.json`, `docs/phase7-release-smoke.json`, `docs/final-acceptance-evidence.json`, `PLAN.md`, `CHANGELOG.md`, `DECISIONS.md`, `STATUS.md`.
+- Python evidence: `python -m pytest -q` PASS with 113 tests, 10 subtests and one environment-only symlink-permission skip; `python -B -m unittest discover -s tests -v` PASS, 114 tests with one skip; `python -B -m compileall -q apps core tests scripts` PASS; `python -m pip check` PASS. One known Starlette/httpx deprecation warning remains.
+- Frontend evidence: `npm run lint`, `npm run typecheck`, `npm test -- --run` PASS (12 files / 55 tests), `npm run build` PASS (Vite 6.4.3), full and production `npm audit --audit-level=high` PASS with 0 vulnerabilities.
+- Browser evidence: `npm run e2e:preflight` PASS with Playwright 1.62.1, Chrome `151.0.7922.140` and Edge `151.0.4129.93`; standalone `npm run e2e` PASS, 10/10 in 40.9s, one worker, Chrome channel, real built React + FastAPI/SQLite, 18 desktop/mobile axe scans and 18 overflow checks. Version health assertions use Phase 7 / `1.0.0`; release health/backup capability is covered.
+- Operations/recovery evidence: real launcher start/status/health/UI/stop smoke passed on loopback ports 18000/14173 and released both ports; backup focused tests cover restart/count restoration, tamper/corruption rejection, target safety/atomic failure and retained recovery artifact. Release smoke records Windows 11/Python 3.12.10/12 CPU context, temporary fixture backup/restore timings and read-only GPU capability; current GPU state reported bounded `gpu_competition` and no process was changed.
+- Audit limitations: `pip-audit` is unavailable in this environment; npm lock license inventory has 51 unknown metadata entries, Python optional `yfinance` is not installed and some installed license metadata is missing. Reports mark these `unavailable`/`review_required`; no clean legal claim is made. Symlink creation was unavailable for the focused symlink test, while runtime path guards and non-symlink safety tests passed.
+- Boundaries: no cloud/telemetry/Redis/Celery/external notifier/broker/order/private-key path; no startup analysis/materialization/Follow/alert; scheduler remains default-off; no automatic calibration/raw-confidence/PaperTrade mutation; accepted Phase 0-6 behavior preserved.

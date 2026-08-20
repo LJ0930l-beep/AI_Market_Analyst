@@ -22,6 +22,7 @@ import type {
   PerformanceSummary,
   Prediction,
   ProviderHealthResponse,
+  ReleaseHealthResponse,
   RadarResponse,
   ReplayRun,
   StatsResponse,
@@ -32,8 +33,8 @@ import type {
 
 export const fakeHealth: HealthResponse = {
   status: "ok",
-  phase: 6,
-  api_version: "0.6.0",
+  phase: 7,
+  api_version: "1.0.0",
   product: "AI Market Analyst",
   real_orders: false,
   private_keys: false,
@@ -257,9 +258,18 @@ export const fakeProviderHealth: ProviderHealthResponse = {
   news: { provider: "fixture_news", configured: true, probe: "deferred_until_symbol_request" },
 };
 
+export const fakeReleaseHealth: ReleaseHealthResponse = {
+  status: "ok",
+  phase: 7,
+  api_version: "1.0.0",
+  database: { available: true, schema_version: 10, path: "market_analyst.sqlite3" },
+  backup: { available: true, format_version: "phase7_backup_v1", restore_requires_explicit_command: true },
+  capabilities: { local_only: true, cloud_required: false, scheduler_default_enabled: false, external_notifications: false },
+};
+
 export const fakeContextHealth: ContextHealthResponse = {
-  phase: 6,
-  api_version: "0.6.0",
+  phase: 7,
+  api_version: "1.0.0",
   benchmark: { context_version: "benchmark_context_v1", mapping_version: "benchmark_mapping_v1" },
   events: { schema_version: "event_schema_v1", cluster_version: "event_cluster_v1" },
   memory: { version: "market_memory_v1", feature_version: "feature_representation_v1", retention_limit: 1000 },
@@ -469,6 +479,7 @@ export const fakeAnalysis: AnalysisResult = {
 export function createFakeClient(overrides: Partial<ApplicationShellApiClient> = {}): ApplicationShellApiClient {
   const defaults: ApplicationShellApiClient = {
     health: vi.fn().mockResolvedValue(fakeHealth),
+    releaseHealth: vi.fn().mockResolvedValue(fakeReleaseHealth),
     providerHealth: vi.fn().mockResolvedValue(fakeProviderHealth),
     contextHealth: vi.fn().mockResolvedValue(fakeContextHealth),
     modelHealth: vi.fn().mockResolvedValue({ provider: "ollama", available: true }),

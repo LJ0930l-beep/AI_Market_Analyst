@@ -2,9 +2,9 @@
 
 ## Current phase
 
-Phase 6 - Benchmark Context, Events/TimePolicy, News Quality and Market Memory.
+Phase 7 - Security/release hardening, backup/restore, one-command startup and V1.0 Final Acceptance.
 
-Current task: `Phase 6 Gate complete` - developer-verified and ready for supervisor acceptance; Phase 7 not started.
+Current task: `Phase 7 completion` - developer-ready pending supervisor final Gate; do not begin post-V1.0 work.
 
 P4-T04 execution split:
 
@@ -47,17 +47,19 @@ P4-T04 execution split:
 2. Event schema/provider interfaces and major-event TimePolicy effects - COMPLETE (developer-verified).
 3. Multi-source event clustering and credibility/primary-source model - COMPLETE (developer-verified).
 4. Leakage-safe deterministic Market Memory and API/UI integration - COMPLETE (developer-verified).
-5. Capability fallback, leakage tests, E2E and Phase 6 report - COMPLETE (developer-verified; supervisor acceptance pending).
+5. Capability fallback, leakage tests, E2E and Phase 6 report - ACCEPTED by supervisor.
 
-Phase 6 Gate: PASS by developer verification; ready for Sol/supervisor review. Phase 7 remains pending and unimplemented.
+Phase 6 Gate: ACCEPTED by supervisor on independent final evidence: 106 pytest tests plus 10 subtests, 55 frontend tests, lint/typecheck/build/compileall/pip check PASS, both npm audits 0, standalone E2E 10/10 in 52.6s with 18 desktop/mobile axe+overflow checks, and clean diff check.
 
 ## Phase 7 task graph
 
-1. Dependency/license/security/privacy audit and configuration hardening.
-2. SQLite backup/restore and restart-persistence tooling/tests.
-3. One-command startup, shutdown and resource-health behavior.
-4. Full unit/integration/E2E/replay/resilience/performance/release smoke.
-5. User/developer README, reports, artifact inventory and final acceptance.
+1. Dependency/license/security/privacy audit and configuration hardening - COMPLETE (developer-verified; supervisor review pending).
+2. SQLite backup/restore and restart-persistence tooling/tests - COMPLETE (developer-verified; supervisor review pending).
+3. One-command startup, shutdown and resource-health behavior - COMPLETE (developer-verified; supervisor review pending).
+4. Full unit/integration/E2E/replay/resilience/performance/release smoke - COMPLETE (developer-verified; supervisor review pending).
+5. User/developer README, reports, artifact inventory and final acceptance - COMPLETE (developer-verified; supervisor review pending).
+
+Phase 7 Gate: DEVELOPER-READY for supervisor final acceptance: 113 pytest tests plus 10 subtests (one safe symlink-permission skip), 114 unittest tests with one safe symlink-permission skip, frontend lint/typecheck/build and 55 tests, compileall/pip check PASS, full and production npm audits 0, standalone E2E 10/10 in 40.9s with 18 desktop/mobile axe and 18 overflow checks, backup/restore and repeated launcher smoke PASS, bounded release smoke recorded, and diff check clean.
 
 ## Task-pack policy
 

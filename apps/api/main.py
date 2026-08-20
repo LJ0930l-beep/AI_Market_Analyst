@@ -25,6 +25,7 @@ from core.alerts import (
     alert_policy,
 )
 from core.analysis_service import AnalysisError, AnalysisService
+from core.config import API_PHASE, APP_VERSION, ConfigurationError, database_path_from_env, env_bool, redact_path, runtime_capabilities
 from core.events import NewsEventProviderAdapter, event_capabilities
 from core.instruments import (
     CandidateParseError,
@@ -60,8 +61,7 @@ from core.signals import Action
 from core.storage import APP_SETTING_DEFINITIONS, SQLiteStore, validate_app_setting_value
 
 _UNSET = object()
-API_VERSION = "0.6.0"
-API_PHASE = 6
+API_VERSION = APP_VERSION
 DEFAULT_CORS_ORIGINS = (
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -120,7 +120,11 @@ except ImportError:  # pragma: no cover - exercised only without the optional AP
 
 
 def _store() -> SQLiteStore:
-    store = SQLiteStore(os.environ.get("DATABASE_PATH", "data/market_analyst.sqlite3"))
+    try:
+        database_path = database_path_from_env()
+    except ConfigurationError as exc:
+        raise RuntimeError("invalid local database configuration") from exc
+    store = SQLiteStore(database_path)
     store.initialize()
     return store
 
@@ -626,14 +630,43 @@ if FastAPI is not None:
                 ).health()
             else:
                 health = health_method()
-            return dict(health)
-        except Exception as exc:  # pragma: no cover - depends on the local model process
+            safe_health = dict(health)
+            # Provider exception text can contain local paths or request data;
+            # the health contract exposes only stable capability/error fields.
+            safe_health.pop("detail", None)
+            return safe_health
+        except Exception:  # pragma: no cover - depends on the local model process
             return {
                 "provider": str(getattr(llm_provider, "provider_name", llm_provider.__class__.__name__.lower())),
                 "available": False,
                 "error_code": "MODEL_HEALTH_ERROR",
-                "detail": str(exc),
             }
+
+    @router.get("/health/release")
+    def health_release(store: SQLiteStore = Depends(get_store)) -> dict[str, object]:
+        """Expose bounded local capability evidence without revealing paths."""
+
+        try:
+            database = {
+                "available": True,
+                "schema_version": store.schema_version(),
+                "path": redact_path(store.path),
+            }
+        except Exception:  # pragma: no cover - local filesystem dependent
+            database = {"available": False, "error_code": "DATABASE_UNAVAILABLE"}
+        return {
+            "status": "ok" if database.get("available") else "degraded",
+            "phase": API_PHASE,
+            "api_version": API_VERSION,
+            "database": database,
+            "backup": {
+                "available": True,
+                "format_version": "phase7_backup_v1",
+                "mechanism": "sqlite_backup_api",
+                "restore_requires_explicit_command": True,
+            },
+            "capabilities": runtime_capabilities(),
+        }
 
     @router.get("/health/context")
     def health_context() -> dict[str, object]:
@@ -1438,14 +1471,17 @@ def _cors_origins() -> list[str]:
         configured = os.environ.get("CORS_ORIGINS")
     if configured is None:
         return list(DEFAULT_CORS_ORIGINS)
-    return [origin.strip() for origin in configured.split(",") if origin.strip()]
+    origins = [origin.strip() for origin in configured.split(",") if origin.strip()]
+    if len(origins) > 16:
+        raise ValueError("too many CORS origins")
+    return origins
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
-    value = os.environ.get(name)
-    if value is None:
-        return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+    try:
+        return env_bool(name, default)
+    except ConfigurationError as exc:
+        raise ValueError(str(exc)) from exc
 
 
 def create_app(
@@ -1475,8 +1511,8 @@ def create_app(
     app = FastAPI(
         title="AI Market Analyst",
         version=API_VERSION,
-        description="Local-first Phase 6 market research API with deterministic Benchmark Context, point-in-time event intelligence, leakage-safe Market Memory, explicit local scheduling and structured paper-only tracking.",
-        openapi_extra={"x-phase": API_PHASE, "x-product-baseline": "phase6"},
+        description="Local-first V1.0 market research API with deterministic context, point-in-time evidence, explicit local scheduling and structured paper-only tracking.",
+        openapi_extra={"x-phase": API_PHASE, "x-product-baseline": "phase7"},
     )
     app.state.api_phase = API_PHASE
     app.state.api_version = API_VERSION
@@ -1484,8 +1520,8 @@ def create_app(
         CORSMiddleware,
         allow_origins=origins,
         allow_credentials=allow_credentials,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Accept", "Content-Type"],
     )
 
     @app.exception_handler(APIError)

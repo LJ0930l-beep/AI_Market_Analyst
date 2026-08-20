@@ -16,6 +16,15 @@ export interface HealthResponse {
   private_keys: false;
 }
 
+export interface ReleaseHealthResponse extends JsonRecord {
+  status: string;
+  phase: number;
+  api_version: string;
+  database?: JsonRecord;
+  backup?: JsonRecord;
+  capabilities?: JsonRecord;
+}
+
 export interface ProviderHealthResponse extends JsonRecord {
   available?: boolean;
   routes?: JsonRecord[];

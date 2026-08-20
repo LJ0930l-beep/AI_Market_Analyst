@@ -1,129 +1,110 @@
-# AI Market Analyst — Phase 6
+# AI Market Analyst V1.0
 
-Phase 6 在已验收的 Phase 0-5 纸面研究边界上增加 Benchmark Context、point-in-time 多源事件/TimePolicy 和 leakage-safe Market Memory：
+AI Market Analyst is a local-first research ledger for market context, deterministic signals, paper tracking and auditable operations. The released package/API contract is `1.0.0` / Phase 7. It does not place orders, connect to a broker, hold private keys, send external notifications, require a cloud service, or start background work implicitly.
 
-`Market Provider → QuantSnapshot → News/Events/Benchmark/Memory Context → Ollama/Qwen → SignalProposal → Prediction → PaperTrade → Outcome`
+## Quick start (Windows)
 
-系统只做研究与 Paper Tracking，不包含真实下单、券商账户、私钥或用户资金链路。
-
-## 快速验证
+From the repository root:
 
 ```powershell
-cd D:\RJ\codex\ai-market-analyst
-python -B -m unittest discover -s tests -v
-python -B scripts\run_phase2_demo.py --mode fixture --llm mock --news fixture --db data\phase2-demo.sqlite3 --follow --settle
+python -m pip install -e ".[api,market,dev]"
+cd web
+npm ci
+npm run build
+cd ..
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\phase7-local.ps1 -Action start
 ```
 
-Fixture Demo 不依赖网络或 Ollama，覆盖 AAPL、NVDA、TSLA、AMD、BTCUSDT、ETHUSDT，并会保存 Prediction、PaperTrade 和 Outcome。
-
-## Phase 4 browser Gate
+The launcher binds the API and built UI to loopback (`127.0.0.1`), checks Python/uvicorn/Node/npm, checks the database path and ports, and writes only owned-child state under the OS temporary directory. It never searches by process name or stops ComfyUI, Ollama, or another unrelated process. If the build is missing, `start` builds it; use `-Build` to force a rebuild.
 
 ```powershell
-cd D:\RJ\codex\ai-market-analyst\web
-npm ci
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\phase7-local.ps1 -Action status
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\phase7-local.ps1 -Action stop
+```
+
+The browser is available at `http://127.0.0.1:4173`; the API health document is `http://127.0.0.1:8000/health`. Scheduler settings remain disabled by default and startup does not analyze, scan, settle, alert, materialize memory, Follow, or create PaperTrades.
+
+## Configuration
+
+All runtime configuration is local and bounded. Defaults are safe for a single-user development machine.
+
+| Variable | Default | Boundary |
+| --- | --- | --- |
+| `DATABASE_PATH` | `data/market_analyst.sqlite3` | Explicit `.sqlite3`, `.sqlite`, or `.db` path; existing symlink/reparse paths are rejected. |
+| `MARKET_DATA_MODE` | `real` | Public-provider routing; use `fixture` only for deterministic local tests. |
+| `NEWS_MODE` | `real` | RSS/public evidence or the explicit fixture test adapter. |
+| `LLM_MODE` | `ollama` | Local Ollama only; `disabled` preserves a saved `WAIT`. |
+| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Local Ollama endpoint; no cloud fallback. |
+| `OLLAMA_MODEL` | `qwen3.5:4b` | Local model identifier; Phase 2-6 bounded timeout/output/retry policy remains active. |
+| `OLLAMA_TIMEOUT_SEC` / `OLLAMA_RETRIES` | `45` / `1` | Finite model request timeout and at most two attempts. |
+| `API_CORS_ORIGINS` | local dev origins | Comma-separated bounded allowlist; wildcard credentials are rejected. |
+| `API_DEBUG_ERRORS` | `false` | Production-safe API errors omit unexpected exception text. |
+
+`GET /health/release` reports the API/package contract, schema, backup format and local-only capabilities without exposing the absolute database path. `/health/providers` and `/health/model` distinguish routing/model degradation from backend health.
+
+## Backup, restore and recovery
+
+Do not copy a live SQLite file directly. Use the explicit artifact command, which calls the SQLite backup API and writes a checksum- and schema-validated directory:
+
+```powershell
+python -B scripts\phase7_backup.py backup `
+  --database data\market_analyst.sqlite3 `
+  --output data\backups\market-20260820T120000Z
+
+python -B scripts\phase7_backup.py restore `
+  --input data\backups\market-20260820T120000Z `
+  --database data\market_analyst.sqlite3
+```
+
+Each artifact contains `database.sqlite3` and `manifest.json` with `phase7_backup_v1`, app version, schema version, UTC creation time, source basename, SHA-256 and table-count evidence. Restore validates the manifest, checksum, SQLite integrity and supported schema before touching the target. An existing target first receives a sibling `*.pre-restore-<UTC>-<nonce>` safety artifact; replacement is staged and atomic. Invalid, tampered, self-referential, symlinked, broad or path-confused targets are rejected. Safety artifacts are retained for operator recovery and no recursive delete is used.
+
+## Developer setup and verification
+
+```powershell
+python -m pytest -q
+python -B -m unittest discover -s tests -v
+python -B -m compileall -q apps core tests scripts
+python -m pip check
+
+cd web
+npm run lint
+npm run typecheck
+npm test -- --run
+npm run build
+npm run audit
+npm run audit:production
 npm run e2e:preflight
 npm run e2e
 ```
 
-The E2E command builds the React app, starts the real FastAPI routes against a disposable SQLite database under the OS temporary directory, serves the build locally, and removes the temporary run directory after completion. It never uses the formal Phase 3 database. The default browser is the installed Chrome channel; use `npm run e2e:install`, then `$env:P4_E2E_BROWSER_CHANNEL = "chromium"` before `npm run e2e` to run the pinned Playwright Chromium instead. `npm run e2e:preflight` also accepts `P4_E2E_BROWSER_CHANNEL = "edge"` for installed Edge.
+The E2E suite builds and runs the real React app and FastAPI routes against a disposable SQLite database. It uses deterministic injected providers only for browser reproducibility; it does not claim live Yahoo/Binance/Ollama/ComfyUI behavior. `scripts\phase7_audit.py --output-dir docs` records the local npm/pip checks, optional-tool availability, tracked secret scan and dependency license inventory. An unavailable `pip-audit` or an unknown license remains explicitly marked in the report.
 
-## 真实 Provider 烟测
+## Architecture and safety boundary
 
-```powershell
-python -B scripts\smoke_real_providers.py --output data\phase2-real-smoke.json
-```
+The core flow is:
 
-股票优先走 `YFinanceProvider`；未安装 `yfinance` 时，同一 Provider 使用 Yahoo 公网 Chart 接口。Crypto 优先走 Binance Public REST，CoinGecko 与 Fixture 为降级路径。所有结果都带 `provider`、`data_as_of`、`stale` 和 `error_code`。
+`public/fixture provider → QuantSnapshot → typed Benchmark/Event/Memory context → local Ollama (optional) → SignalProposal → durable Prediction → user-only PaperTrade → point-in-time Outcome`
 
-## Ollama / Qwen
+Python owns instrument validation, numeric scoring, time/session/risk rules, point-in-time settlement, event clustering, memory ranking, alert identity and persistence. React is a read/interaction surface and never recalculates financial rules. GET reads are side-effect safe; explicit analysis always saves a Prediction, including `WAIT`; Follow is the only PaperTrade entry; no automatic calibration, raw-confidence mutation, final-Outcome overwrite or real order path exists.
 
-安装并启动 Ollama 后，将模型配置放在环境变量或 `.env` 中：
+The local scheduler is explicit and default-off, serial for model work, bounded by session/resource/backoff/cache policies, and settles outcomes before model scanning. Alerts are durable local observability with deterministic dedupe and acknowledgement only. No Redis/Celery, telemetry, cloud notifier, broker, private key, or external account is required.
 
-```powershell
-$env:OLLAMA_BASE_URL = "http://127.0.0.1:11434"
-$env:OLLAMA_MODEL = "qwen3.5:4b"
-$env:OLLAMA_QUANTIZATION = "Q4_K_M"
-$env:OLLAMA_CONTEXT_LENGTH = "8192"
-$env:OLLAMA_TEMPERATURE = "0.2"
-$env:OLLAMA_MAX_TOKENS = "700"
-python -B scripts\run_phase2_demo.py --mode real --llm ollama --news rss --db data\phase2-real-qwen.sqlite3
-```
+## Release artifacts and historical records
 
-默认调用只通过 Ollama HTTP API；超时、重试、响应长度、严格 JSON 解析和一次 repair 都有上限。模型不可用时系统继续展示 Quant/News，并保存 `WAIT + MODEL_UNAVAILABLE`。
+- [Phase 7 completion report](docs/phase7-completion-report.md)
+- [V1.0 Final Acceptance evidence inventory](docs/final-acceptance-evidence.json) — developer-ready and pending supervisor final Gate
+- [Phase 7 operations runbook](docs/phase7-operations-runbook.md)
+- [Phase 7 security audit artifact](docs/phase7-security-audit.json)
+- [Phase 7 license inventory artifact](docs/phase7-license-audit.json)
+- [Phase 6 historical completion report](docs/phase6-completion-report.md)
+- [Phase 4 historical completion report](docs/phase4-completion-report.md)
 
-## Phase 3 历史回放与指标
+Migration history is additive and idempotent through schema 10; Phase 0-6 data is preserved. The formal Phase 3 record remains `COMPLETED_WITH_ERRORS` where documented, and no zero-error or production-provider claim is inferred from fixture E2E evidence.
 
-正式回放只使用真实 `qwen3.5:4b`，按 `as_of` 截止点隔离输入，使用 `--resume` 支持中断后继续。`--mode mock` 仅用于测试编排，不计入正式验收。
+## Known limitations
 
-```powershell
-python -B scripts\run_phase3_replay.py `
-  --symbols AAPL NVDA TSLA AMD BTCUSDT ETHUSDT `
-  --timeframes 1h 4h `
-  --samples 300 `
-  --model qwen3.5:4b `
-  --seed 42 `
-  --mode real `
-  --require-model `
-  --resume `
-  --db data\phase3-real-qwen-formal-v2.sqlite3 `
-  --output data\phase3-real-qwen-formal-v2.json `
-  --manifest data\phase3-real-qwen-formal-v2.manifest.json
-```
-
-回放完成后生成绩效快照、Beta(5,5) 置信度校准和汇总报告：
-
-```powershell
-python -B scripts\build_performance_snapshot.py --db data\phase3-real-qwen-formal-v2.sqlite3 --replay-run-id replay-20260815042457-71ec330d --output data\phase3-formal-v2-snapshots.json
-python -B scripts\fit_confidence_calibration.py --db data\phase3-real-qwen-formal-v2.sqlite3 --replay-run-id replay-20260815042457-71ec330d --output data\phase3-formal-v2-calibration.json
-python -B scripts\report_phase3_metrics.py --db data\phase3-real-qwen-formal-v2.sqlite3 --replay-run-id replay-20260815042457-71ec330d --output data\phase3-formal-v2-report.json --markdown docs\phase3-formal-v2-metrics.md
-```
-
-Phase 3 API 增加：`/performance/summary`、`/performance/by-symbol/{symbol}`、`/performance/buckets`、`/calibration/current`、`/replay/runs`、`/replay/runs/{run_id}` 和 `/predictions/{prediction_id}/calibration`。
-
-## 最小 API
-
-当前 API 合同为 Phase 6 / 0.6.0；Phase 6 上下文接口保持 GET 只读，明确区分 response_time/data_as_of，并保留 Phase 5 的 Radar、默认关闭 scheduler、settlement 和本地 Alert Center 边界。
-
-```powershell
-python -m pip install -e ".[api,market]"
-$env:MARKET_DATA_MODE = "real"
-$env:NEWS_MODE = "real"
-$env:LLM_MODE = "ollama"
-python -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8000
-```
-
-主要接口：
-
-- `GET /instruments/{symbol}/snapshot`
-- `GET /instruments/{symbol}/news`
-- `GET /instruments` 返回六个 canonical instruments 与已验证注册项；`POST /instruments/register` 只接受 `symbol` 和 `asset_type`，对 equity 使用安全公开 ticker，对 crypto 接受明确的 `BASE` 或 `BASEUSDT` alias 并规范化为 `BASEUSDT`。
-- `POST /analysis/{symbol}`，body 可传 `{"timeframe":"1h","limit":120}`
-- `GET /predictions`
-- `POST /predictions/{id}/follow`
-- `GET /watchlist`, `POST /watchlist`, `PUT /watchlist/{symbol}`, `DELETE /watchlist/{symbol}`
-- `GET /settings`, `GET/PUT/DELETE /settings/{key}` for the four typed local scheduler-resource defaults; these endpoints do not activate background work.
-- `GET /health/providers`
-- `GET /health/model`
-- `GET /health/context` 返回 benchmark/event/memory/time-policy capability 与只读边界。
-- `GET /instruments/{symbol}/context`、`/events`、`/memory` 返回带 `response_time`、`data_as_of`、provider/capability provenance 的 Phase 6 上下文；这些 GET 不保存 Prediction、Outcome、PaperTrade、alert 或 Memory feature。
-- `POST /memory/materialize` 是唯一显式的本地 Memory feature materialization 边界，需要带时区的 `as_of`；普通 GET 不会物化历史样本。
-
-注册项会先经 Yahoo 公共 market data（equity）或 Binance 公共 USDT spot ticker（crypto）验证；超时/重试有界，失败或 provider 不可用不会写入 SQLite。扩展项的 exchange/sector 等元数据明确标记为 inferred/unknown，不使用 Fixture 作为兼容性证明。
-
-API 同时返回 `data_as_of` 与 `response_time`，并明确标记真实、Fixture、模型不可用等状态。
-
-## 代码边界
-
-- `core/providers/`：统一 Bar/Quote、真实 Provider、Fixture、News RSS。
-- `core/quant/`：EMA、RSI、MACD、ATR、Volume Ratio、Support/Resistance、Regime。
-- `core/context.py`：不含原始 bars 的压缩 Structured Market Context 与 `input_hash`。
-- `core/benchmarks.py`：显式公共 benchmark mapping 与 Python 相对表现计算。
-- `core/events.py`：typed event evidence、point-in-time 选择、版本化来源可信度与多源 cluster。
-- `core/memory.py`：版本化固定特征距离、as_of 隔离、可选显式 materialize 的 Market Memory。
-- `core/ai/`：Ollama、Mock、Prompt、JSON Parser、一次 repair、Signal Validator。
-- `core/analysis_service.py`：完整 Phase 2 编排。
-- `core/storage/`：SQLite 增量迁移、canonical Watchlist/AppSetting、Prediction、News、ProviderSnapshot、ModelRun、PaperTrade、Outcome。
-
-完整验收记录见 [docs/phase2-completion-report.md](docs/phase2-completion-report.md)。
-
-Phase 3 正式回放及限制见 [docs/phase3-completion-report.md](docs/phase3-completion-report.md)，指标明细见 [docs/phase3-formal-v2-metrics.md](docs/phase3-formal-v2-metrics.md)。
+- Public-provider availability, rate limits, network freshness, Ollama installation and GPU contention are runtime capabilities, not release guarantees.
+- Regular equity session checks do not contain a complete exchange holiday calendar; crypto is treated as 24/7 under the accepted policy.
+- Benchmark and event evidence can be unavailable or degraded when public data lacks a point-in-time capability. Memory remains local SQLite and refuses unsupported/future samples rather than generating a score.
+- The browser harness uses deterministic injected data and does not measure production concurrency, live provider freshness, Qwen quality, ComfyUI contention or distributed deployment.
+- License artifacts are an inventory/review input, not legal advice. The current local environment records optional `pip-audit` as unavailable and reports unknown package license metadata instead of claiming a clean legal review.

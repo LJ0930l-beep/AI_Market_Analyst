@@ -78,10 +78,10 @@ const server = createServer(async (request, response) => {
       return;
     }
     sendFile(response, join(dist, "index.html"));
-  } catch (error) {
+  } catch {
     response.statusCode = 502;
     response.setHeader("content-type", "text/plain; charset=utf-8");
-    response.end(`E2E preview server error: ${error instanceof Error ? error.message : String(error)}`);
+    response.end("Local preview server error");
   }
 });
 

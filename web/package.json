@@ -1,11 +1,16 @@
 {
   "name": "ai-market-analyst-web",
   "private": true,
-  "version": "0.6.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "start:local": "powershell -NoProfile -ExecutionPolicy Bypass -File ../scripts/phase7-local.ps1 -Action start",
+    "stop:local": "powershell -NoProfile -ExecutionPolicy Bypass -File ../scripts/phase7-local.ps1 -Action stop",
+    "status:local": "powershell -NoProfile -ExecutionPolicy Bypass -File ../scripts/phase7-local.ps1 -Action status",
+    "audit": "npm audit --audit-level=high",
+    "audit:production": "npm audit --omit=dev --audit-level=high",
     "build:e2e": "node e2e/run-e2e.mjs --build-only",
     "e2e": "node e2e/run-e2e.mjs",
     "e2e:install": "playwright install chromium",

@@ -34,6 +34,7 @@ import type {
   PredictionFilters,
   ProviderHealthResponse,
   ReplayRun,
+  ReleaseHealthResponse,
   ReplayRunFilters,
   RadarFilters,
   RadarResponse,
@@ -99,6 +100,7 @@ export interface ApiClientOptions {
 
 export interface MarketApiClient {
   health(signal?: AbortSignal): Promise<HealthResponse>;
+  releaseHealth(signal?: AbortSignal): Promise<ReleaseHealthResponse>;
   providerHealth(signal?: AbortSignal): Promise<ProviderHealthResponse>;
   contextHealth(signal?: AbortSignal): Promise<ContextHealthResponse>;
   modelHealth(signal?: AbortSignal): Promise<ModelHealthResponse>;
@@ -146,6 +148,7 @@ export interface MarketApiClient {
 export type ApplicationShellApiClient = Pick<
   MarketApiClient,
   | "health"
+  | "releaseHealth"
   | "providerHealth"
   | "contextHealth"
   | "modelHealth"
@@ -282,6 +285,10 @@ export class ApiClient implements MarketApiClient {
 
   health(signal?: AbortSignal): Promise<HealthResponse> {
     return this.request<HealthResponse>("/health", { signal });
+  }
+
+  releaseHealth(signal?: AbortSignal): Promise<ReleaseHealthResponse> {
+    return this.request<ReleaseHealthResponse>("/health/release", { signal });
   }
 
   providerHealth(signal?: AbortSignal): Promise<ProviderHealthResponse> {

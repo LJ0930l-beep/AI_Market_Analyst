@@ -1,0 +1,71 @@
+{
+  "backup": {
+    "elapsed_ms": 17.169,
+    "schema_version": 10
+  },
+  "fixture_context": {
+    "database": "temporary SQLite database",
+    "model": false,
+    "network": false,
+    "orders": false,
+    "seeded_instruments": [
+      "AAPL"
+    ]
+  },
+  "hardware_context": {
+    "cpu_count": 12,
+    "gpu_measurement": "nvidia-smi read-only probe result only; no benchmark threshold",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.10"
+  },
+  "non_claims": [
+    "These are bounded local smoke timings, not a production performance SLO.",
+    "The resource result is capability evidence and does not measure model quality or concurrency.",
+    "No live provider, Ollama, ComfyUI, distributed or real-order behavior is inferred."
+  ],
+  "report_version": "phase7_release_smoke_v1",
+  "resource_probe": {
+    "available": false,
+    "capability": "nvidia_smi",
+    "details": {
+      "free_memory_mb": [
+        5552.0
+      ],
+      "minimum_free_memory_mb": null,
+      "process_count": 38
+    },
+    "elapsed_ms": 90.514,
+    "reason": "gpu_competition",
+    "retry_after_seconds": 30
+  },
+  "restore": {
+    "counts": {
+      "alerts": 0,
+      "app_settings": 0,
+      "benchmark_metadata": 6,
+      "calibration_buckets": 0,
+      "calibration_results": 0,
+      "instruments": 1,
+      "market_memory_features": 0,
+      "market_snapshots": 0,
+      "model_runs": 0,
+      "news_events": 0,
+      "outcomes": 0,
+      "paper_trades": 0,
+      "performance_snapshots": 0,
+      "phase6_event_clusters": 0,
+      "phase6_events": 0,
+      "predictions": 0,
+      "provider_snapshots": 0,
+      "replay_runs": 0,
+      "replay_samples": 0,
+      "scheduler_cache_entries": 0,
+      "scheduler_items": 0,
+      "scheduler_runs": 0,
+      "watchlist_entries": 0
+    },
+    "elapsed_ms": 25.7,
+    "restored": true
+  },
+  "started_at": "2026-08-20T15:30:40.179430+00:00"
+}
