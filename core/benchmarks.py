@@ -257,19 +257,42 @@ class BenchmarkContextService:
         relative = target_return - benchmark_return
         self_baseline = instrument.asset_type is AssetType.CRYPTO and instrument.symbol == metadata.benchmark_symbol
         strength = None if self_baseline else _clamp(relative * 10.0)
-        last_as_of = max(_utc(target[-1].timestamp), _utc(benchmark_bars[-1].timestamp))
-        age_seconds = max(0.0, (cutoff - last_as_of).total_seconds())
+        target_as_of = _utc(target[-1].timestamp)
+        benchmark_as_of = _utc(benchmark_bars[-1].timestamp)
+        target_age_seconds = max(0.0, (cutoff - target_as_of).total_seconds())
+        benchmark_age_seconds = max(0.0, (cutoff - benchmark_as_of).total_seconds())
+        freshness_limit = 2 * self._timeframe_seconds(timeframe)
+        target_fresh = target_age_seconds <= freshness_limit
+        benchmark_fresh = benchmark_age_seconds <= freshness_limit
+        aggregate_fresh = target_fresh and benchmark_fresh
+        freshness_reasons = []
+        if not target_fresh:
+            freshness_reasons.append("target_data_stale")
+        if not benchmark_fresh:
+            freshness_reasons.append("benchmark_data_stale")
         freshness = {
-            "status": "fresh" if age_seconds <= 2 * self._timeframe_seconds(timeframe) else "stale",
-            "age_seconds": round(age_seconds, 3),
-            "target_data_as_of": _utc(target[-1].timestamp).isoformat(),
-            "benchmark_data_as_of": _utc(benchmark_bars[-1].timestamp).isoformat(),
+            # The aggregate is intentionally conservative: freshness from
+            # either side cannot mask a stale required counterpart.
+            "status": "fresh" if aggregate_fresh else "stale",
+            "age_seconds": round(max(target_age_seconds, benchmark_age_seconds), 3),
+            "target_age_seconds": round(target_age_seconds, 3),
+            "benchmark_age_seconds": round(benchmark_age_seconds, 3),
+            "target_status": "fresh" if target_fresh else "stale",
+            "benchmark_status": "fresh" if benchmark_fresh else "stale",
+            "freshness_limit_seconds": freshness_limit,
+            "target_data_as_of": target_as_of.isoformat(),
+            "benchmark_data_as_of": benchmark_as_of.isoformat(),
         }
+        context_status = "available" if aggregate_fresh else "stale"
         capability: dict[str, object] = {
-            "relative_performance": "available",
-            "relative_strength": "baseline_only" if self_baseline else "available",
+            "relative_performance": "available" if aggregate_fresh else "stale",
+            "relative_strength": ("baseline_only" if self_baseline else ("available" if aggregate_fresh else "stale")),
             "future_bars_excluded": True,
+            "target_freshness": freshness["target_status"],
+            "benchmark_freshness": freshness["benchmark_status"],
         }
+        if freshness_reasons:
+            capability["reason"] = ",".join(freshness_reasons)
         if self_baseline:
             capability["reason"] = "crypto_benchmark_is_the_same_explicit_btc_baseline"
         if instrument.asset_type is AssetType.CRYPTO:
@@ -281,7 +304,7 @@ class BenchmarkContextService:
             symbol=instrument.symbol,
             timeframe=timeframe,
             as_of=cutoff.isoformat(),
-            status="available",
+            status=context_status,
             benchmark=metadata,
             provider=provider_name,
             freshness=freshness,

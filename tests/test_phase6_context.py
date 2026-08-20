@@ -21,7 +21,7 @@ from core.events import (
 from core.instruments import instrument_for
 from core.memory import MEMORY_FEATURE_VERSION, MEMORY_VERSION, MarketMemoryService
 from core.outcomes import Outcome, OutcomeStatus
-from core.providers import FixtureNewsProvider, FixtureProvider, ProviderError
+from core.providers import FixtureNewsProvider, FixtureProvider, ProviderError, Quote
 from core.signals import Action, SignalProposal
 from core.storage import SQLiteStore
 from core.time_rules import build_time_policy
@@ -126,13 +126,27 @@ class FailingBenchmarkProvider:
         raise ProviderError("benchmark unavailable", code="provider_unavailable", provider=self.provider_name)
 
 
+class StaleBenchmarkProvider:
+    provider_name = "stale_benchmark"
+
+    def __init__(self, bars):
+        self.bars = bars
+
+    def get_quote(self, instrument):
+        bar = self.bars[-1]
+        return Quote(instrument, bar.timestamp, bar.close)
+
+    def get_bars(self, _instrument, _timeframe, _limit=200):
+        return list(self.bars)
+
+
 class Phase6MigrationAndEvidenceTests(unittest.TestCase):
     def test_phase6_migration_is_idempotent_and_persists_typed_evidence_after_restart(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "phase6.sqlite3"
             store = SQLiteStore(path)
             store.initialize()
-            self.assertEqual(store.schema_version(), 9)
+            self.assertEqual(store.schema_version(), 10)
             self.assertEqual(store.get_benchmark_metadata("NVDA")["mapping_version"], "benchmark_mapping_v1")
             event = make_event("event-persist")
             store.save_event_context(
@@ -150,6 +164,10 @@ class Phase6MigrationAndEvidenceTests(unittest.TestCase):
                     "prediction_id": "memory-persist",
                     "source_type": "live",
                     "feature_as_of": POINT.isoformat(),
+                    "generated_at": (POINT - timedelta(days=2)).isoformat(),
+                    "symbol": "NVDA",
+                    "timeframe": "1h",
+                    "outcome_known_at": None,
                     "representation_version": MEMORY_FEATURE_VERSION,
                     "features": {"symbol": "NVDA", "trend_score": 0.5},
                     "outcome": None,
@@ -158,7 +176,7 @@ class Phase6MigrationAndEvidenceTests(unittest.TestCase):
             before = store.counts()
             reopened = SQLiteStore(path)
             reopened.initialize()
-            self.assertEqual(reopened.schema_version(), 9)
+            self.assertEqual(reopened.schema_version(), 10)
             self.assertEqual(reopened.counts()["phase6_events"], before["phase6_events"])
             self.assertEqual(reopened.counts()["phase6_event_clusters"], before["phase6_event_clusters"])
             self.assertEqual(reopened.counts()["market_memory_features"], before["market_memory_features"])
@@ -207,6 +225,22 @@ class Phase6MigrationAndEvidenceTests(unittest.TestCase):
         self.assertEqual(crypto_context.capability["total_market_context"], "unavailable")
         self.assertEqual(crypto_context.capability["dominance_context"], "unavailable")
 
+        stale_bars = [replace(bar, timestamp=bar.timestamp - timedelta(days=3)) for bar in bars]
+        stale = BenchmarkContextService(provider_factory=lambda _instrument: StaleBenchmarkProvider(stale_bars)).build(
+            instrument,
+            target_bars=bars,
+            target_quant=None,
+            timeframe="1h",
+            as_of=cutoff,
+            target_provider="fixture",
+        )
+        self.assertEqual(stale.status, "stale")
+        self.assertEqual(stale.freshness["target_status"], "fresh")
+        self.assertEqual(stale.freshness["benchmark_status"], "stale")
+        self.assertEqual(stale.capability["reason"], "benchmark_data_stale")
+        self.assertEqual(stale.freshness["target_data_as_of"], cutoff.isoformat())
+        self.assertLess(stale.freshness["benchmark_data_as_of"], cutoff.isoformat())
+
     def test_event_point_in_time_selection_clustering_credibility_and_time_policy_are_repeatable(self):
         past = make_event("past", source="Reuters")
         primary = make_event("primary", source="Company IR", title="NVDA earnings outlook", primary_source=True, sentiment=-0.5)
@@ -225,6 +259,19 @@ class Phase6MigrationAndEvidenceTests(unittest.TestCase):
         self.assertEqual(clusters[0].consensus, "confirmed")
         self.assertTrue(clusters[0].disagreement)
         self.assertEqual(clusters, cluster_event_evidence(selected, as_of=POINT))
+        same_source = cluster_event_evidence(
+            [make_event("same-url-a", source="Reuters"), make_event("same-url-b", source="Reuters")],
+            as_of=POINT,
+        )[0]
+        self.assertEqual(same_source.source_count, 1)
+        self.assertEqual(same_source.consensus, "unconfirmed_single_source")
+        self.assertEqual({source["source_identity"] for source in same_source.sources}, {"reuters"})
+        independent_sources = cluster_event_evidence(
+            [make_event("independent-a", source="Reuters"), make_event("independent-b", source="AP")],
+            as_of=POINT,
+        )[0]
+        self.assertEqual(independent_sources.source_count, 2)
+        self.assertEqual(independent_sources.consensus, "confirmed")
         self.assertGreater(source_credibility("Company IR", primary_source=True, reported=10), source_credibility("unknown", reported=100))
         policy = build_time_policy("1h", price=100.0, atr14=1.0, market_regime="range", event_evidence=selected, now=POINT)
         self.assertTrue(policy.event_risk)
@@ -302,6 +349,65 @@ class Phase6MemoryAndApiTests(unittest.TestCase):
             reopened = SQLiteStore(store.path)
             reopened.initialize()
             self.assertGreaterEqual(len(reopened.list_memory_features(as_of=POINT.isoformat())), 4)
+            materialized_query = MarketMemoryService(reopened, min_resolved_samples=2).query(
+                symbol="NVDA",
+                timeframe="1h",
+                as_of=POINT,
+                query_prediction=make_signal("query", POINT - timedelta(hours=1), context=context).to_dict(),
+                exclude_prediction_id="memory-0",
+                top_k=5,
+            )
+            self.assertEqual(materialized_query.provenance["data_source"], "materialized_features")
+            self.assertTrue(materialized_query.capability["materialized_features_consumed"])
+            self.assertEqual(materialized_query.resolved_sample_count, first.resolved_sample_count)
+            before_get = reopened.counts()
+            repeated_get = MarketMemoryService(reopened, min_resolved_samples=2).query(
+                symbol="NVDA",
+                timeframe="1h",
+                as_of=POINT,
+                query_prediction=make_signal("query", POINT - timedelta(hours=1), context=context).to_dict(),
+                exclude_prediction_id="memory-0",
+                top_k=5,
+            )
+            self.assertEqual(materialized_query.to_dict(), repeated_get.to_dict())
+            self.assertEqual(reopened.counts(), before_get)
+            historical = MarketMemoryService(reopened, min_resolved_samples=2).query(
+                symbol="NVDA",
+                timeframe="1h",
+                as_of=POINT - timedelta(hours=1),
+                query_prediction=make_signal("query", POINT - timedelta(days=10), context=context).to_dict(),
+                top_k=5,
+            )
+            self.assertEqual(historical.provenance["data_source"], "raw_prediction_ledger")
+            self.assertFalse(historical.capability["materialized_features_consumed"])
+
+    def test_memory_statistics_use_only_bounded_selected_cohort(self):
+        with tempfile.TemporaryDirectory() as temp:
+            store = SQLiteStore(Path(temp) / "cohort.sqlite3")
+            store.initialize()
+            close = make_signal("close-unresolved", POINT - timedelta(days=1), context=memory_context(trend=0.5))
+            distant_a = make_signal("distant-a", POINT - timedelta(days=2), context=memory_context(trend=10.0))
+            distant_b = make_signal("distant-b", POINT - timedelta(days=3), context=memory_context(trend=10.0))
+            store.save_prediction(close)
+            store.save_prediction(distant_a)
+            store.save_prediction(distant_b)
+            store.save_outcome(Outcome("distant-a", OutcomeStatus.TP1, POINT - timedelta(hours=2), 105.0, 1.0, 1.0, 0.0, 1, False))
+            store.save_outcome(Outcome("distant-b", OutcomeStatus.STOP, POINT - timedelta(hours=1), 95.0, -1.0, 0.0, -1.0, 1, False))
+            result = MarketMemoryService(store, min_resolved_samples=1).query(
+                symbol="NVDA",
+                timeframe="1h",
+                as_of=POINT,
+                query_prediction=make_signal("cohort-query", POINT - timedelta(hours=1), context=memory_context(trend=0.5)).to_dict(),
+                top_k=1,
+            )
+            self.assertEqual(result.eligible_sample_count, 3)
+            self.assertEqual(result.similar_count, 1)
+            self.assertEqual(result.matches[0].prediction_id, "close-unresolved")
+            self.assertEqual(result.resolved_sample_count, 0)
+            self.assertEqual(result.status, "preliminary")
+            self.assertIsNone(result.win_rate)
+            self.assertIsNone(result.avg_r)
+            self.assertEqual(result.typical_outcomes, ())
 
     def test_context_get_is_read_only_and_explicit_analysis_is_the_write_boundary(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Phase 6 supervisor repair — benchmark/event/memory evidence
+
+- Corrected benchmark aggregate freshness to require independently fresh target and benchmark data, normalized event publisher identity so same-source URLs cannot create consensus, and aligned Memory sample statistics with the selected `top_k` analogue cohort.
+- Added additive SQLite migration v10 with immutable materialized Memory provenance; reads consume point-in-time materialized features when valid and explicitly report unbounded raw-ledger fallback when they are unavailable. GET routes remain non-mutating.
+- Verification: 106 Python tests plus 10 subtests, 55 frontend tests, lint/typecheck/build/compileall/pip check PASS, full and production npm audits 0 vulnerabilities, standalone E2E 10/10 in 58.7s with 18 desktop/mobile axe scans and 18 overflow checks on Chrome 151.0.7922.140.
+- Phase 6 repair Gate: developer PASS / ready for supervisor acceptance. Phase 7 not started.
+
 ### Phase 6 developer Gate — Benchmark Context, Events and Market Memory
 
 - Added API/package contract `phase=6` / `0.6.0`, additive SQLite v9 typed benchmark/event/memory evidence, deterministic public-provider-routed benchmark context, point-in-time event selection, versioned source credibility/clustering and Python-owned major-event TimePolicy effects.

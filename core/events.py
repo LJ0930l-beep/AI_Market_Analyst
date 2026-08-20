@@ -285,6 +285,23 @@ def _is_primary_source(source: str, url: str | None) -> bool:
     return any(token in text for token in ("sec.gov", "ir.", "company ir", "investor.", "investor relations", "federalreserve.gov", "official"))
 
 
+def _source_identity(source: str) -> str:
+    """Normalize publisher identity without using article-specific URLs."""
+
+    normalized = _TOKEN_RE.sub(" ", str(source).lower()).strip()
+    aliases = {
+        "reuters news": "reuters",
+        "reuters news service": "reuters",
+        "associated press": "ap",
+        "the associated press": "ap",
+        "company investor relations": "company_ir",
+        "investor relations": "company_ir",
+        "company ir": "company_ir",
+        "federal reserve": "federal_reserve",
+    }
+    return aliases.get(normalized, normalized.replace(" ", "_") or "unknown")
+
+
 def source_credibility(source: str, *, primary_source: bool = False, reported: int | float | None = None) -> int:
     text = source.lower()
     if primary_source or any(token in text for token in ("sec", "federal reserve", "company ir", "company official", "official ir")):
@@ -335,8 +352,9 @@ def cluster_event_evidence(events: Iterable[EventEvidence], *, as_of: datetime) 
         symbols = tuple(sorted({symbol for event in group for symbol in event.affected_symbols}))
         identity = "|".join((_normalize_title(group[0].title), ",".join(symbols), group[0].event_at.date().isoformat()))
         cluster_id = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24]
-        distinct_sources = {f"{event.source.lower()}|{event.url or ''}" for event in group}
-        primary_count = sum(1 for event in group if event.primary_source)
+        distinct_sources = {_source_identity(event.source) for event in group}
+        primary_sources = {_source_identity(event.source) for event in group if event.primary_source}
+        primary_count = len(primary_sources)
         sentiments = []
         for event in group:
             if event.sentiment is not None:
@@ -358,6 +376,7 @@ def cluster_event_evidence(events: Iterable[EventEvidence], *, as_of: datetime) 
                 sources=tuple(
                     {
                         "source": event.source,
+                        "source_identity": _source_identity(event.source),
                         "source_type": event.source_type,
                         "url": event.url,
                         "primary_source": event.primary_source,

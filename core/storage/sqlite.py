@@ -219,6 +219,11 @@ class SQLiteStore:
                 "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                 (9, datetime.now(timezone.utc).isoformat()),
             )
+            self._ensure_phase6_memory_provenance_columns(db)
+            db.execute(
+                "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                (10, datetime.now(timezone.utc).isoformat()),
+            )
 
     @staticmethod
     def _ensure_prediction_columns(db: sqlite3.Connection) -> None:
@@ -514,6 +519,10 @@ class SQLiteStore:
                 prediction_id TEXT NOT NULL,
                 source_type TEXT NOT NULL,
                 feature_as_of TEXT NOT NULL,
+                generated_at TEXT,
+                symbol TEXT,
+                timeframe TEXT,
+                outcome_known_at TEXT,
                 representation_version TEXT NOT NULL,
                 features_json TEXT NOT NULL,
                 outcome_json TEXT,
@@ -569,6 +578,25 @@ class SQLiteStore:
                     now,
                 ),
             )
+
+    @staticmethod
+    def _ensure_phase6_memory_provenance_columns(db: sqlite3.Connection) -> None:
+        """Add immutable provenance columns to materialized memory rows."""
+
+        columns = {row[1] for row in db.execute("PRAGMA table_info(market_memory_features)").fetchall()}
+        additions = {
+            "generated_at": "TEXT",
+            "symbol": "TEXT",
+            "timeframe": "TEXT",
+            "outcome_known_at": "TEXT",
+        }
+        for name, definition in additions.items():
+            if name not in columns:
+                db.execute(f"ALTER TABLE market_memory_features ADD COLUMN {name} {definition}")
+        db.execute(
+            """CREATE INDEX IF NOT EXISTS idx_market_memory_provenance
+                 ON market_memory_features(symbol, timeframe, generated_at, feature_as_of, prediction_id)"""
+        )
 
     @staticmethod
     def _utc_timestamp(value: datetime | None = None) -> str:
@@ -1228,20 +1256,40 @@ class SQLiteStore:
         return results
 
     def save_memory_feature(self, payload: dict[str, Any]) -> None:
-        required = ("feature_id", "prediction_id", "source_type", "feature_as_of", "representation_version", "features")
+        required = (
+            "feature_id",
+            "prediction_id",
+            "source_type",
+            "feature_as_of",
+            "generated_at",
+            "symbol",
+            "timeframe",
+            "representation_version",
+            "features",
+        )
         if any(not payload.get(key) for key in required):
-            raise ValueError("memory feature is missing required identity")
+            raise ValueError("memory feature is missing required identity or provenance")
+        feature_as_of = _parse_utc_timestamp(payload["feature_as_of"])
+        generated_at = _parse_utc_timestamp(payload["generated_at"])
+        outcome_known_at = _parse_utc_timestamp(payload.get("outcome_known_at")) if payload.get("outcome_known_at") else None
+        if feature_as_of is None or generated_at is None or (payload.get("outcome_known_at") and outcome_known_at is None):
+            raise ValueError("memory feature timestamps must be timezone-aware ISO values")
         with self._connect() as db:
             db.execute(
                 """INSERT OR REPLACE INTO market_memory_features(
                     feature_id, prediction_id, source_type, feature_as_of,
+                    generated_at, symbol, timeframe, outcome_known_at,
                     representation_version, features_json, outcome_json, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     str(payload["feature_id"]),
                     str(payload["prediction_id"]),
                     str(payload["source_type"]),
-                    str(payload["feature_as_of"]),
+                    feature_as_of.isoformat(),
+                    generated_at.isoformat(),
+                    str(payload["symbol"]).strip().upper(),
+                    str(payload["timeframe"]).strip(),
+                    outcome_known_at.isoformat() if outcome_known_at else None,
                     str(payload["representation_version"]),
                     json.dumps(payload["features"], sort_keys=True),
                     json.dumps(payload["outcome"], sort_keys=True) if isinstance(payload.get("outcome"), dict) else None,
@@ -1255,7 +1303,10 @@ class SQLiteStore:
         if as_of is not None and cutoff is None:
             raise ValueError("as_of must be an ISO timestamp with timezone")
         query = "SELECT * FROM market_memory_features ORDER BY feature_as_of DESC, prediction_id ASC LIMIT ?"
-        params: list[Any] = [bounded_limit * 5 if cutoff is not None else bounded_limit]
+        # Retention is capped at 1,000 rows, so read the bounded table before
+        # applying historical filtering instead of allowing newer rows to
+        # starve a point-in-time query.
+        params: list[Any] = [1_000]
         with self._connect() as db:
             rows = db.execute(query, tuple(params)).fetchall()
         result: list[dict[str, object]] = []
@@ -1263,6 +1314,8 @@ class SQLiteStore:
             feature_as_of = _parse_utc_timestamp(row["feature_as_of"])
             if cutoff is not None and (feature_as_of is None or feature_as_of > cutoff):
                 continue
+            generated_at = _parse_utc_timestamp(row["generated_at"])
+            outcome_known_at = _parse_utc_timestamp(row["outcome_known_at"])
             try:
                 features = json.loads(row["features_json"])
                 outcome = json.loads(row["outcome_json"]) if row["outcome_json"] else None
@@ -1274,6 +1327,10 @@ class SQLiteStore:
                     "prediction_id": row["prediction_id"],
                     "source_type": row["source_type"],
                     "feature_as_of": row["feature_as_of"],
+                    "generated_at": generated_at.isoformat() if generated_at else row["generated_at"],
+                    "symbol": row["symbol"],
+                    "timeframe": row["timeframe"],
+                    "outcome_known_at": outcome_known_at.isoformat() if outcome_known_at else row["outcome_known_at"],
                     "representation_version": row["representation_version"],
                     "features": features,
                     "outcome": outcome,

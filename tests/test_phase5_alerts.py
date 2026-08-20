@@ -69,13 +69,13 @@ class AlertTests(unittest.TestCase):
             store.save_outcome(Outcome("live-alert", OutcomeStatus.TP1, POINT, 107.5, 1.5, 1.5, 0.0, 1, False))
 
             first = AlertReconciler(store=store, clock=lambda: POINT).run_once(as_of=POINT)
-            self.assertEqual(store.schema_version(), 9)
+            self.assertEqual(store.schema_version(), 10)
             self.assertEqual(first["counts"]["created"], 3)
             self.assertEqual(store.alert_counts(), {"total": 3, "open": 3, "unread": 3, "acknowledged": 0})
 
             reopened = self._store(path)
             second = AlertReconciler(store=reopened, clock=lambda: POINT + timedelta(minutes=1)).run_once(as_of=POINT + timedelta(minutes=1))
-            self.assertEqual(reopened.schema_version(), 9)
+            self.assertEqual(reopened.schema_version(), 10)
             self.assertEqual(reopened.alert_counts()["total"], 3)
             self.assertEqual(second["counts"]["created"], 0)
             self.assertGreaterEqual(second["counts"]["deduped"], 3)

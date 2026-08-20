@@ -184,6 +184,49 @@ class MarketMemoryContext:
         }
 
 
+def _materialized_record(row: dict[str, object], *, cutoff: datetime) -> dict[str, object] | None:
+    """Convert one durable row only when its immutable provenance is complete."""
+
+    features = row.get("features")
+    if not isinstance(features, dict) or row.get("representation_version") != MEMORY_FEATURE_VERSION:
+        return None
+    prediction_id = str(row.get("prediction_id") or "")
+    generated_at = _timestamp(row.get("generated_at"))
+    feature_as_of = _timestamp(row.get("feature_as_of"))
+    symbol = str(row.get("symbol") or features.get("symbol") or "").strip().upper()
+    timeframe = str(row.get("timeframe") or features.get("timeframe") or "").strip()
+    if not prediction_id or generated_at is None or feature_as_of is None or not symbol or not timeframe:
+        return None
+    if generated_at >= cutoff or feature_as_of > cutoff:
+        return None
+    outcome = row.get("outcome") if isinstance(row.get("outcome"), dict) else None
+    outcome_known_at = _timestamp(row.get("outcome_known_at"))
+    if outcome is not None:
+        settled_at = _timestamp(outcome.get("settled_at"))
+        # A materialized outcome without an immutable known-time boundary is
+        # not safe to use as historical evidence.
+        if outcome_known_at is None or settled_at is None:
+            return None
+        if outcome_known_at > cutoff or settled_at > cutoff:
+            outcome = None
+    prediction = {
+        "prediction_id": prediction_id,
+        "symbol": symbol,
+        "instrument": {"symbol": symbol},
+        "analysis_timeframe": timeframe,
+        "generated_at": generated_at.isoformat(),
+        "action": str(features.get("action", "")).upper(),
+        "source_type": row.get("source_type", "live"),
+    }
+    return {
+        "prediction": prediction,
+        "feature": dict(features),
+        "outcome": outcome,
+        "memory_source": "materialized_features",
+        "feature_as_of": feature_as_of.isoformat(),
+    }
+
+
 class MarketMemoryService:
     def __init__(self, store: object | None, *, min_resolved_samples: int = MEMORY_MIN_RESOLVED_SAMPLES) -> None:
         self.store = store
@@ -206,13 +249,46 @@ class MarketMemoryService:
             "analysis_timeframe": timeframe,
             "action": "WAIT",
         })
-        records = []
-        if self.store is not None and hasattr(self.store, "list_memory_source_records"):
+        records: list[dict[str, object]] = []
+        data_source = "unavailable"
+        materialized_row_count = 0
+        materialized_valid_count = 0
+        if self.store is not None and hasattr(self.store, "list_memory_features"):
+            materialized_rows = self.store.list_memory_features(  # type: ignore[attr-defined]
+                as_of=cutoff.isoformat(),
+                limit=MEMORY_RETENTION_LIMIT,
+            )
+            materialized_row_count = len(materialized_rows)
+            records = [
+                materialized_record
+                for row in materialized_rows
+                if (materialized_record := _materialized_record(row, cutoff=cutoff)) is not None
+                and str(materialized_record["prediction"].get("analysis_timeframe", "")) == timeframe
+            ]
+            materialized_valid_count = len(records)
+            if records:
+                # Repeated materialization creates immutable snapshots. Use
+                # only the newest snapshot known by this query boundary for
+                # each prediction, avoiding duplicate historical analogues.
+                newest_by_prediction: dict[str, dict[str, object]] = {}
+                for record in records:
+                    prediction = record["prediction"]
+                    assert isinstance(prediction, dict)
+                    prediction_id = str(prediction["prediction_id"])
+                    previous = newest_by_prediction.get(prediction_id)
+                    if previous is None or str(record["feature_as_of"]) > str(previous["feature_as_of"]):
+                        newest_by_prediction[prediction_id] = record
+                records = list(newest_by_prediction.values())
+                data_source = "materialized_features"
+        if not records and self.store is not None and hasattr(self.store, "list_memory_source_records"):
+            # Raw prediction-ledger fallback is intentionally explicit. It is
+            # not bounded by the materialized 1,000-row retention policy.
             records = self.store.list_memory_source_records(  # type: ignore[attr-defined]
                 as_of=cutoff.isoformat(),
                 timeframe=timeframe,
                 limit=10_000,
             )
+            data_source = "raw_prediction_ledger"
         eligible: list[tuple[float, dict[str, Any], dict[str, object], dict[str, Any] | None]] = []
         for record in records:
             prediction = record.get("prediction")
@@ -226,7 +302,7 @@ class MarketMemoryService:
                 continue
             if any(boundary > cutoff for boundary in _context_as_ofs(prediction)):
                 continue
-            feature = feature_from_prediction(prediction)
+            feature = record.get("feature") if isinstance(record.get("feature"), dict) else feature_from_prediction(prediction)
             if not _feature_is_eligible(feature):
                 continue
             outcome = record.get("outcome") if isinstance(record.get("outcome"), dict) else None
@@ -238,8 +314,9 @@ class MarketMemoryService:
                     outcome = None
             eligible.append((_distance(query_feature, feature), record, feature, outcome))
         eligible.sort(key=lambda item: (item[0], str(item[1].get("prediction", {}).get("prediction_id", ""))))
+        selected = eligible[: max(1, min(int(top_k), 20))]
         matches: list[MemoryMatch] = []
-        for distance, record, _feature, outcome in eligible[: max(1, min(int(top_k), 20))]:
+        for distance, record, _feature, outcome in selected:
             prediction = record["prediction"]
             assert isinstance(prediction, dict)
             matches.append(
@@ -253,10 +330,11 @@ class MarketMemoryService:
                     outcome_known_as_of=str(outcome.get("settled_at")) if outcome else None,
                 )
             )
-        # Eligibility and sample sufficiency are calculated over every
-        # point-in-time eligible record, while the returned matches remain
-        # bounded to ``top_k`` for the UI/context payload.
-        resolved_records = [item for item in eligible if isinstance(item[3], dict)]
+        # The displayed analogue cohort is the same bounded, deterministic
+        # cohort used for all statistical claims. Distant eligible rows are
+        # diagnostic only and cannot make this context READY or change its
+        # displayed metrics.
+        resolved_records = [item for item in selected if isinstance(item[3], dict)]
         values: list[float] = []
         typical_outcomes: set[str] = set()
         for _distance_value, _record, _feature, outcome in resolved_records:
@@ -277,7 +355,22 @@ class MarketMemoryService:
             "outcomes_after_as_of_excluded": True,
             "incomplete_features_excluded": True,
             "prediction_data_after_as_of_excluded": True,
+            "data_source": data_source,
+            "cohort_definition": "top_k_after_fixed_feature_distance_v1",
+            "materialized_features_consumed": data_source == "materialized_features",
+            "materialized_feature_retention_bounded": data_source == "materialized_features",
         }
+        if data_source == "materialized_features":
+            capability["retention_limit"] = MEMORY_RETENTION_LIMIT
+            capability["materialized_rows_considered"] = materialized_row_count
+            capability["materialized_rows_with_provenance"] = materialized_valid_count
+        elif data_source == "raw_prediction_ledger":
+            capability["retention_limit"] = None
+            capability["raw_ledger_fallback"] = True
+            capability["fallback_reason"] = "no_eligible_materialized_feature_cohort"
+        else:
+            capability["retention_limit"] = None
+            capability["reason"] = "memory_store_unavailable"
         if reason:
             capability["reason"] = reason
         return MarketMemoryContext(
@@ -299,6 +392,10 @@ class MarketMemoryService:
                 "computed_by": "python_deterministic",
                 "ranking": "fixed_feature_distance_v1",
                 "as_of_boundary": cutoff.isoformat(),
+                "data_source": data_source,
+                "retention_bounded": data_source == "materialized_features",
+                "retention_limit": MEMORY_RETENTION_LIMIT if data_source == "materialized_features" else None,
+                "cohort_size": len(selected),
                 "read_only": True,
             },
         )
@@ -323,14 +420,20 @@ class MarketMemoryService:
             features = feature_from_prediction(prediction)
             if not _feature_is_eligible(features):
                 continue
+            outcome = record.get("outcome") if isinstance(record.get("outcome"), dict) else None
+            outcome_known_at = _timestamp(outcome.get("settled_at")) if outcome else None
             feature = {
                 "feature_id": f"{MEMORY_VERSION}:{prediction.get('prediction_id')}:{cutoff.isoformat()}",
                 "prediction_id": prediction.get("prediction_id"),
                 "source_type": source_type,
                 "feature_as_of": cutoff.isoformat(),
+                "generated_at": generated_at.isoformat(),
+                "symbol": str(features["symbol"]),
+                "timeframe": str(features["timeframe"]),
+                "outcome_known_at": outcome_known_at.isoformat() if outcome_known_at else None,
                 "representation_version": MEMORY_FEATURE_VERSION,
                 "features": features,
-                "outcome": record.get("outcome") if isinstance(record.get("outcome"), dict) else None,
+                "outcome": outcome,
             }
             self.store.save_memory_feature(feature)  # type: ignore[attr-defined]
             saved += 1
@@ -342,6 +445,8 @@ class MarketMemoryService:
             "pruned": pruned,
             "as_of": cutoff.isoformat(),
             "source_type": source_type,
+            "retention_limit": MEMORY_RETENTION_LIMIT,
+            "data_source": "raw_prediction_ledger_snapshot",
             "future_evidence_excluded": True,
         }
 
@@ -353,6 +458,9 @@ def memory_capabilities() -> dict[str, object]:
         "ranking": "deterministic_fixed_feature_distance_v1",
         "minimum_resolved_samples": MEMORY_MIN_RESOLVED_SAMPLES,
         "retention_limit": MEMORY_RETENTION_LIMIT,
+        "materialized_query_preferred": True,
+        "raw_ledger_fallback_retention_bounded": False,
+        "feature_provenance": ["generated_at", "symbol", "timeframe", "feature_as_of", "outcome_known_at", "source_type"],
         "vector_database_required": False,
         "llm_calculates": False,
         "mutates_prediction_confidence": False,
