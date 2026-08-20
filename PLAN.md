@@ -2,9 +2,9 @@
 
 ## Current phase
 
-Phase 4 - Product UI and interaction.
+Phase 5 - Radar, watchlist, scanning and alerts.
 
-Current task: `P4-T07` - execute the Phase 4 user-flow E2E, accessibility/responsive pass and completion report.
+Current task: `P5-T01` - add durable Watchlist/AppSetting schema, migration and CRUD.
 
 P4-T04 execution split:
 
@@ -26,12 +26,12 @@ P4-T04 execution split:
    - Filters/details, PaperTrade-only Follow semantics, outcome metrics, calibration reliability/buckets and PRELIMINARY state.
 6. `P4-T06` Watchlist and Replay Lab UI - ACCEPTED
    - Phase 4 UI contract/shell for Watchlist and advanced replay visibility; Phase 5 owns live scanning/ranking behavior.
-7. `P4-T07` Phase 4 E2E, accessibility/responsive pass and completion report - IN PROGRESS
+7. `P4-T07` Phase 4 E2E, accessibility/responsive pass and completion report - ACCEPTED
    - Main workflow E2E, regression, build artifacts and Phase 4 Gate.
 
 ## Phase 5 task graph
 
-1. Watchlist/AppSetting schema, migration and CRUD.
+1. Watchlist/AppSetting schema, migration and CRUD - IN PROGRESS.
 2. Versioned auditable Opportunity Score and Radar API.
 3. Low-concurrency scheduler, market-session policy, caching and resource backoff.
 4. Alert model, deduplication, acknowledge flow and UI integration.

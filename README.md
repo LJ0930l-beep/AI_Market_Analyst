@@ -16,6 +16,17 @@ python -B scripts\run_phase2_demo.py --mode fixture --llm mock --news fixture --
 
 Fixture Demo 不依赖网络或 Ollama，覆盖 AAPL、NVDA、TSLA、AMD、BTCUSDT、ETHUSDT，并会保存 Prediction、PaperTrade 和 Outcome。
 
+## Phase 4 browser Gate
+
+```powershell
+cd D:\RJ\codex\ai-market-analyst\web
+npm ci
+npm run e2e:preflight
+npm run e2e
+```
+
+The E2E command builds the React app, starts the real FastAPI routes against a disposable SQLite database under the OS temporary directory, serves the build locally, and removes the temporary run directory after completion. It never uses the formal Phase 3 database. The default browser is the installed Chrome channel; use `npm run e2e:install`, then `$env:P4_E2E_BROWSER_CHANNEL = "chromium"` before `npm run e2e` to run the pinned Playwright Chromium instead. `npm run e2e:preflight` also accepts `P4_E2E_BROWSER_CHANNEL = "edge"` for installed Edge.
+
 ## 真实 Provider 烟测
 
 ```powershell

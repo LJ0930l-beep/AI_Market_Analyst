@@ -64,7 +64,11 @@ export function OhlcvChart({ symbol, timeframe, bars }: OhlcvChartProps) {
       <p className="chart-summary" id="ohlcv-chart-summary">
         {summary}
       </p>
-      <div className="ohlcv-chart__viewport">
+      <div
+        aria-label={`${symbol} ${timeframe} OHLCV chart scroll region`}
+        className="ohlcv-chart__viewport"
+        tabIndex={0}
+      >
         <svg
           className="ohlcv-chart__svg"
           role="img"

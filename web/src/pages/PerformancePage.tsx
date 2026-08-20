@@ -148,7 +148,7 @@ function SummaryPanel({ summary }: { summary: PerformanceSummary }) {
 
 function BucketTable({ buckets }: { buckets: PerformanceBucket[] }) {
   return (
-    <div className="table-wrap">
+    <div aria-label="Scrollable performance confidence buckets" className="table-wrap" tabIndex={0}>
       <table className="performance-table" aria-label="Performance confidence buckets">
         <thead><tr><th scope="col">Bucket</th><th scope="col">Count</th><th scope="col">Raw average confidence</th><th scope="col">Calibrated confidence</th><th scope="col">Empirical win rate</th></tr></thead>
         <tbody>{buckets.map((bucket, index) => <tr key={`${bucket.bucket ?? "bucket"}-${index}`}>
@@ -202,7 +202,7 @@ function CalibrationPanel({ data }: { data: CalibrationCurrent }) {
       <p className="panel-reading">Current calibration is a separate artifact and is not assumed to match arbitrary Performance filters.</p>
       <ResearchFacts facts={calibrationFacts(data)} />
       {buckets.length > 0 ? (
-        <div className="table-wrap"><table className="performance-table" aria-label="Current calibration buckets"><thead><tr><th scope="col">Lower</th><th scope="col">Upper</th><th scope="col">Sample</th><th scope="col">Wins</th><th scope="col">Empirical rate</th><th scope="col">Shrunk rate</th></tr></thead><tbody>{buckets.map((bucket, index) => <tr key={`${bucket.lower ?? "lower"}-${index}`}><td>{numberText(bucket.lower, 6)}</td><td>{numberText(bucket.upper, 6)}</td><td>{bucket.n === undefined ? "Not supplied" : String(bucket.n)}</td><td>{bucket.wins === undefined ? "Not supplied" : String(bucket.wins)}</td><td>{numberText(bucket.empirical_rate, 6)}</td><td>{numberText(bucket.shrunk_rate, 6)}</td></tr>)}</tbody></table></div>
+        <div aria-label="Scrollable current calibration buckets" className="table-wrap" tabIndex={0}><table className="performance-table" aria-label="Current calibration buckets"><thead><tr><th scope="col">Lower</th><th scope="col">Upper</th><th scope="col">Sample</th><th scope="col">Wins</th><th scope="col">Empirical rate</th><th scope="col">Shrunk rate</th></tr></thead><tbody>{buckets.map((bucket, index) => <tr key={`${bucket.lower ?? "lower"}-${index}`}><td>{numberText(bucket.lower, 6)}</td><td>{numberText(bucket.upper, 6)}</td><td>{bucket.n === undefined ? "Not supplied" : String(bucket.n)}</td><td>{bucket.wins === undefined ? "Not supplied" : String(bucket.wins)}</td><td>{numberText(bucket.empirical_rate, 6)}</td><td>{numberText(bucket.shrunk_rate, 6)}</td></tr>)}</tbody></table></div>
       ) : <p className="panel-reading">No current calibration buckets were returned.</p>}
     </>
   );

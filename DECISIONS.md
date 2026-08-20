@@ -77,3 +77,9 @@ The browser sets an immediate in-flight lock before starting a Follow request so
 Date: 2026-08-19
 
 Before Phase 5, Watchlist is a searchable view of the backend instrument roster and does not persist membership or claim ranking, scans or alerts. Replay Lab uses only replay GET endpoints and does not expose the API request-record creation endpoint because that endpoint stores PENDING CLI metadata without starting a worker. PENDING and RUNNING are displayed as returned state, while replay execution remains an explicit CLI workflow.
+
+## ADR-014 - Phase 4 Gate uses disposable real-browser infrastructure
+
+Date: 2026-08-20
+
+Phase 4 user-flow acceptance runs the production React build against real local FastAPI routes and a disposable SQLite database seeded through existing domain/storage APIs. Browser responses are not mocked. The harness is serial, local and paper-only; cleanup is restricted to a recognized direct child of the operating-system temporary directory, and the formal Phase 3 database is never opened or mutated.

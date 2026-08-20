@@ -6,9 +6,13 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:e2e": "node e2e/run-e2e.mjs --build-only",
+    "e2e": "node e2e/run-e2e.mjs",
+    "e2e:install": "playwright install chromium",
+    "e2e:preflight": "node e2e/preflight.mjs",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
-    "test": "vitest"
+    "test": "vitest src"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -16,7 +20,9 @@
     "react-router-dom": "^7.18.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.10.2",
     "@eslint/js": "^9.17.0",
+    "@playwright/test": "1.62.1",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
     "@types/node": "^22.10.5",

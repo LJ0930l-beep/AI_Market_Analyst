@@ -1,12 +1,12 @@
 # AI Market Analyst Status
 
-Updated: 2026-08-19
+Updated: 2026-08-20
 
 ## Overall
 
 - Target: V1.0 Final Acceptance through Phase 7.
-- Active phase: Phase 4.
-- Active task: P4-T07 Phase 4 user-flow E2E, accessibility/responsive pass and completion report.
+- Active phase: Phase 5.
+- Active task: P5-T01 Watchlist/AppSetting persistence schema, migration and CRUD.
 - Blockers: none.
 - Sole developer: `luna-max` (one persistent thread, serial tasks).
 
@@ -16,6 +16,7 @@ Updated: 2026-08-19
 - Phase 1: PASS.
 - Phase 2: PASS.
 - Phase 3: PASS with recorded model-output errors.
+- Phase 4: PASS.
 
 Phase 3 evidence:
 
@@ -86,4 +87,21 @@ Phase 3 evidence:
 
 ## Next action
 
-Delegate P4-T07 to the same `luna-max` thread, then run the Phase 4 user-flow E2E, accessibility/responsive audit, full regression and completion report Gate.
+Delegate P5-T01 to the same `luna-max` thread, then verify durable Watchlist/AppSetting CRUD, migration safety and restart persistence without adding scan/ranking behavior.
+
+## P4-T07 execution checkpoint — 2026-08-20
+
+- Milestone: P4-T07 Phase 4 user-flow E2E, accessibility/responsive pass and completion report.
+- Implementation summary: added a disposable FastAPI/SQLite fixture harness, production-build static/proxy server, pinned Playwright and axe dependencies, Playwright configuration, one serial Phase 4 browser spec, safe temporary-directory teardown, E2E/preflight/install scripts, README commands and `docs/phase4-completion-report.md`.
+- Evidence-backed product fixes: strengthened failing muted/long/wait/warning contrast tokens; constrained Asset Detail evidence grid tracks at mobile width; made the OHLCV scroll viewport and Performance table wrappers keyboard-focusable and labeled.
+- Changed files: `web/package.json`, `web/package-lock.json`, `web/playwright.config.ts`, `web/e2e/phase4.spec.ts`, `web/e2e/global-teardown.ts`, `web/e2e/preflight.mjs`, `web/e2e/preview-server.mjs`, `web/e2e/run-e2e.mjs`, `scripts/phase4_e2e_harness.py`, `web/src/styles.css`, `web/src/components/OhlcvChart.tsx`, `web/src/pages/PerformancePage.tsx`, `README.md`, `docs/phase4-completion-report.md`.
+- Verification: `npm run lint` PASS; `npm run typecheck` PASS; `npm run test -- --run` PASS, 11 files / 45 tests; `npm run build` PASS; full and production-only `npm audit --audit-level=high` PASS, 0 vulnerabilities; `npm run e2e:preflight` PASS; `npm run e2e` PASS, 7/7 tests, 1 worker, 24.1s, Chrome 151.0.7922.140; `python -m pytest -q` PASS, 49 tests; `python -B -m compileall -q apps core tests scripts` PASS; `python -m pip check` PASS; `git diff --check` PASS.
+- Browser coverage: 8 Phase 4 routes, desktop `1280x900` and mobile `390x844`, 16 axe scans and 16 page-level overflow checks; health/navigation, explicit WAIT analysis side-effect boundary, exactly-once Follow, linked PaperTrade/Outcome, Performance/calibration, Replay error/capability evidence, deep-link HTML and `/api/health` JSON all passed.
+
+## P4-T07 same-thread safety repair — 2026-08-20
+
+- Scope: harden only the new E2E cleanup and preview-server path guards; add one focused browser-run infrastructure safety check.
+- Implementation: `global-teardown.ts` now requires a resolved run directory to be a direct child of `os.tmpdir()` with the `ai-market-analyst-p4-` prefix; `preview-server.mjs` now uses resolved relative-path containment for static candidates; `phase4.spec.ts` covers nested/wrong-prefix cleanup and dist-escape cases.
+- Verification: `npm run lint` PASS; `npm run typecheck` PASS; `npm run test -- --run` PASS, 11 files / 45 tests; `npm run build` PASS; `npm run e2e` PASS, 7/7 tests, 1 worker, 24.4s, Chrome 151.0.7922.140; `git diff --check` PASS.
+- Blockers: none. Sol independent review and Phase 4 acceptance PASS.
+- Residual risks: fixture market data is intentionally stale and the model is disabled in the harness; the default run uses the installed local Chrome channel, with pinned Chromium install/use documented; this local serial suite does not claim production concurrency, real-provider freshness, cloud deployment, broker connectivity or real-order behavior.

@@ -13,3 +13,5 @@ web/node_modules/
 web/dist/
 web/coverage/
 web/.vite/
+web/playwright-report/
+web/test-results/

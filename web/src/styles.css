@@ -8,13 +8,13 @@
   --surface: #f8faf8;
   --surface-strong: #ffffff;
   --ink: #10211b;
-  --muted: #637169;
+  --muted: #536158;
   --rule: #c8d1cb;
   --info: #265f91;
-  --long: #087e6a;
+  --long: #006b58;
   --short: #b23a48;
-  --wait: #6d756f;
-  --warning: #b46a22;
+  --wait: #58655d;
+  --warning: #9a5c1d;
   --focus: #174f78;
   --display: "Aptos Display", "Segoe UI Variable Display", sans-serif;
   --data: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
@@ -1804,6 +1804,7 @@ summary:focus-visible,
 .news-evidence {
   display: grid;
   min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
 }
 

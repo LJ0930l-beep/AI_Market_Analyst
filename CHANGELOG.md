@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Phase 4 - P4-T07 browser Gate and completion
+
+- Added a disposable real FastAPI/SQLite E2E harness, production-build preview/proxy server and serial Playwright browser suite.
+- Covered shell health, Watchlist navigation, explicit WAIT analysis, exactly-once PaperTrade Follow, linked Outcome evidence, Performance/calibration, Replay capability/error evidence and SPA/API routing.
+- Added axe and page-overflow checks for all eight Phase 4 routes at desktop and 390x844 mobile, plus strict temporary-directory and static-root safety checks.
+- Fixed verified contrast, mobile grid and keyboard-focus issues in OHLCV and Performance scroll regions.
+- Verification: 45 frontend unit tests, 49 Python tests and 7 browser E2E tests PASS; 16 axe scans and 16 overflow checks PASS; dependency audits report 0 vulnerabilities.
+- Phase 4 Gate: PASS. See `docs/phase4-completion-report.md`.
+
 ### Phase 4 - P4-T06 Watchlist and Replay Lab
 
 - Replaced the final Phase 4 placeholders with a searchable/filterable read-only instrument roster and an advanced read-only Replay Lab.
