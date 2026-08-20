@@ -24,6 +24,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\phase7-local.ps1 -Ac
 
 The browser is available at `http://127.0.0.1:4173`; the API health document is `http://127.0.0.1:8000/health`. Scheduler settings remain disabled by default and startup does not analyze, scan, settle, alert, materialize memory, Follow, or create PaperTrades.
 
+The frontend language selector is available in the workspace header and supports `中文` and `English`. The selection is stored locally under `ai-market-analyst.language`, survives route changes and refreshes, and uses the browser language (`zh-*` or English fallback) when no choice is stored. Translation is presentation-only: API paths, symbols, URLs, numeric values, timestamps, database values and standard backend contracts are unchanged; provider/model free text remains evidence returned by the backend.
+
 ## Configuration
 
 All runtime configuration is local and bounded. Defaults are safe for a single-user development machine.
@@ -79,6 +81,8 @@ npm run e2e
 cd ..
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\phase7-launcher-ownership-smoke.ps1
 ```
+
+The frontend unit suite includes catalog key-parity, browser-language detection, manual switching and local persistence checks. The browser suite also verifies Chinese titles across all current routes and language persistence after navigation and refresh.
 
 The E2E suite builds and runs the real React app and FastAPI routes against a disposable SQLite database. It uses deterministic injected providers only for browser reproducibility; it does not claim live Yahoo/Binance/Ollama/ComfyUI behavior. `scripts\phase7_audit.py --output-dir docs` records the local npm/pip checks, optional-tool availability, tracked secret scan and dependency license inventory. An unavailable `pip-audit` or an unknown license remains explicitly marked in the report.
 

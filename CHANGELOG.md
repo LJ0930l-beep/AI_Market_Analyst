@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### V1.0 final-acceptance enhancement — English/中文 interface switching
+
+- Added a typed, dependency-free React language catalog with complete `en`/`zh-CN` key parity, browser-language detection, local persistence and an accessible global language selector.
+- Added presentation-only Chinese coverage for the existing shell, routes, controls, states, labels, statuses and accessibility text without changing API/database contracts, symbols, URLs, numeric values or timestamps.
+- Added unit and real-browser coverage for first-choice detection, manual switching, persistence, route-wide Chinese titles, refresh persistence, existing workflows, axe and responsive overflow checks.
+
 ### Phase 7 supervisor repair — offline restore and process ownership hardening
 
 - Added `phase7_launcher_v2` ownership fingerprints: exact UTC start-time ticks, command-line hash, child role and port markers; mismatches report and retain state without stopping a potentially reused or tampered PID. Added isolated same-executable stale-record refusal smoke coverage.

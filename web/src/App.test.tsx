@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
@@ -58,5 +58,17 @@ describe("application shell", () => {
 
     expect(await within(backendStatusRegion()).findByRole("status")).toHaveTextContent("Backend unavailable");
     expect(screen.getByText(/model and provider status is unknown/i)).toBeInTheDocument();
+  });
+
+  it("switches the shell and primary route copy to Chinese with local persistence", async () => {
+    const client = createFakeClient();
+    renderShell("/predictions", client);
+
+    fireEvent.change(await screen.findByLabelText("Language"), { target: { value: "zh-CN" } });
+
+    expect(await screen.findByRole("heading", { name: "预测" })).toBeInTheDocument();
+    expect(within(screen.getByRole("navigation", { name: "主导航" })).getByRole("link", { name: "关注列表" })).toBeInTheDocument();
+    expect(screen.getByLabelText("语言")).toHaveValue("zh-CN");
+    expect(window.localStorage.getItem("ai-market-analyst.language")).toBe("zh-CN");
   });
 });

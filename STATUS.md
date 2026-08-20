@@ -100,6 +100,15 @@ Phase 3 evidence:
 
 Sol/supervisor review of the Phase 7 completion evidence and machine-readable V1.0 Final Acceptance inventory; do not begin post-V1.0 work.
 
+## V1.0 interface language enhancement checkpoint — 2026-08-21
+
+- Milestone: add a complete local English/中文 presentation switch before V1.0 Final Acceptance; no Phase 8 or post-V1.0 work started.
+- Implementation: added `web/src/i18n.tsx` typed catalog/context with `en`/`zh-CN` parity, browser-language fallback, `localStorage` persistence, accessible header selector and presentation-only DOM localization. Added responsive selector styling, shell/page language tests and route-wide browser assertions.
+- Boundaries: API/database contracts, symbols, URLs, numeric/time semantics and backend free-text evidence remain unchanged; no new dependency, cloud service, model, scheduler, alert or trading path.
+- Changed files: `web/src/i18n.tsx`, `web/src/i18n.test.tsx`, `web/src/App.tsx`, `web/src/App.test.tsx`, `web/src/styles.css`, `web/e2e/phase4.spec.ts`, `README.md`, `CHANGELOG.md`, `STATUS.md`.
+- Final developer verification: `python -m pytest -q` PASS, 117 passed / 1 skipped / 10 subtests; `python -B -m unittest discover -s tests -q` PASS, 118 tests / 1 skipped; compileall and pip check PASS. `npm run lint`, `npm run typecheck`, `npm test -- --run` PASS (13 files / 59 tests), `npm run build` PASS (Vite 6.4.3), and both npm audits PASS with 0 vulnerabilities. Standalone `npm run e2e` PASS, 11/11 in 45.2s on Chrome, including 18 desktop/mobile axe and 18 page-level overflow checks. Launcher was restored and verified running on 127.0.0.1:8000/4173 with no ownership errors.
+- State: developer implementation complete; supervisor final acceptance remains pending. Known limitation: translated presentation intentionally leaves technical identifiers/API paths and backend-generated free text in their returned form.
+
 ## Phase 5 acceptance handoff — 2026-08-20
 
 - Supervisor Gate: ACCEPTED. The independent evidence above is the Phase 5 baseline for Phase 6.

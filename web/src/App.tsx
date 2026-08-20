@@ -14,6 +14,7 @@ import { PredictionsPage } from "./pages/PredictionsPage";
 import { ReplayLabPage } from "./pages/ReplayLabPage";
 import { SettingsHealthPage } from "./pages/SettingsHealthPage";
 import { WatchlistPage } from "./pages/WatchlistPage";
+import { I18nProvider, useI18n } from "./i18n";
 
 interface NavigationItem {
   label: string;
@@ -88,6 +89,23 @@ function MobileNavigation() {
           <NavigationLinks />
         </nav>
       </details>
+    </div>
+  );
+}
+
+function LanguageSelector() {
+  const { language, setLanguage, t } = useI18n();
+  return (
+    <div className="language-selector">
+      <label htmlFor="language-select">{t("language.label")}</label>
+      <select
+        id="language-select"
+        value={language}
+        onChange={(event) => setLanguage(event.target.value === "zh-CN" ? "zh-CN" : "en")}
+      >
+        <option value="zh-CN">{t("language.chinese")}</option>
+        <option value="en">{t("language.english")}</option>
+      </select>
     </div>
   );
 }
@@ -181,7 +199,7 @@ function WorkspaceRoutes({
   );
 }
 
-export function ApplicationShell({ apiClient = defaultApiClient }: ApplicationShellProps) {
+function ApplicationShellContent({ apiClient = defaultApiClient }: ApplicationShellProps) {
   const location = useLocation();
   const [healthState, setHealthState] = useState<BackendHealthState>("loading");
   const [health, setHealth] = useState<HealthResponse>();
@@ -217,7 +235,7 @@ export function ApplicationShell({ apiClient = defaultApiClient }: ApplicationSh
   }, [apiClient]);
 
   return (
-    <div className="app-frame">
+    <div className="app-frame" data-i18n-root="true">
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
@@ -229,7 +247,10 @@ export function ApplicationShell({ apiClient = defaultApiClient }: ApplicationSh
             <p className="eyebrow">Private local workstation</p>
             <p className="workspace-header__route">Research desk / {routeLabel(location.pathname)}</p>
           </div>
-          <p className="workspace-header__note">Orientation first · evidence follows</p>
+          <div className="workspace-header__controls">
+            <p className="workspace-header__note">Orientation first · evidence follows</p>
+            <LanguageSelector />
+          </div>
         </header>
         <main className="workspace-main" id="main-content" tabIndex={-1}>
           <div className="route-surface">
@@ -249,5 +270,13 @@ export function ApplicationShell({ apiClient = defaultApiClient }: ApplicationSh
         </main>
       </div>
     </div>
+  );
+}
+
+export function ApplicationShell(props: ApplicationShellProps) {
+  return (
+    <I18nProvider>
+      <ApplicationShellContent {...props} />
+    </I18nProvider>
   );
 }

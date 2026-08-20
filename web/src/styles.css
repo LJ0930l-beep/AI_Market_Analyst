@@ -300,6 +300,36 @@ summary:focus-visible,
   text-align: right;
 }
 
+.workspace-header__controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+}
+
+.language-selector {
+  display: grid;
+  min-width: 7.5rem;
+  gap: 0.25rem;
+}
+
+.language-selector label {
+  color: var(--muted);
+  font-family: var(--data);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.language-selector select {
+  min-height: 2.15rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--rule-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
 .workspace-main {
   display: grid;
   min-width: 0;
@@ -1823,6 +1853,17 @@ summary:focus-visible,
   .workspace-header__note {
     max-width: none;
     text-align: left;
+  }
+
+  .workspace-header__controls {
+    width: 100%;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.65rem;
+  }
+
+  .language-selector {
+    width: min(100%, 13rem);
   }
 
   .workspace-main {

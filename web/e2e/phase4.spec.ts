@@ -121,6 +121,39 @@ test("health, durable Watchlist, and read-only Asset Detail analysis", async ({ 
   expect(radarWatchlist.status()).toBe(200);
 });
 
+test("language selector switches to Chinese and persists across route navigation and refresh", async ({ page }) => {
+  await page.goto("/");
+  const language = page.getByLabel("Language");
+  await language.selectOption("zh-CN");
+  await expect(page.getByRole("heading", { name: "仪表盘", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "关注列表", exact: true }).first()).toBeVisible();
+
+  const chineseRouteTitles: Record<string, string> = {
+    "/": "仪表盘",
+    "/watchlist": "关注列表",
+    "/assets/NVDA": "资产详情 / NVDA",
+    "/predictions": "预测",
+    "/paper-trades": "纸面交易",
+    "/performance": "表现",
+    "/replay": "回放实验室",
+    "/alerts": "提醒中心",
+    "/settings": "设置 / 健康",
+  };
+  for (const [route, title] of Object.entries(chineseRouteTitles)) {
+    await page.goto(route);
+    await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
+  }
+
+  await page.getByRole("link", { name: "表现", exact: true }).first().click();
+  await expect(page.getByRole("heading", { name: "表现", exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("语言")).toHaveValue("zh-CN");
+  await expect(page.getByRole("heading", { name: "表现", exact: true })).toBeVisible();
+
+  await page.getByLabel("语言").selectOption("en");
+  await expect(page.getByRole("heading", { name: "Performance", exact: true })).toBeVisible();
+});
+
 test("Dashboard Market Radar reads existing evidence without creating analysis or trades", async ({ page }) => {
   const before = await (await page.request.get("/api/stats")).json();
   await page.goto("/");
