@@ -28,7 +28,7 @@ describe("SettingsHealthPage", () => {
     const { providerHealth } = renderSettings();
 
     const backend = screen.getByRole("region", { name: "Backend service" });
-    expect(await within(backend).findByText("0.5.0")).toBeInTheDocument();
+    expect(await within(backend).findByText("0.6.0")).toBeInTheDocument();
     expect(within(backend).getAllByText("false")).toHaveLength(2);
 
     const provider = screen.getByRole("region", { name: "Market and news routing" });
@@ -43,6 +43,7 @@ describe("SettingsHealthPage", () => {
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Local Watchlist scheduler" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Enable scheduler" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Phase 6 context capabilities" })).toHaveTextContent("market_memory_v1");
 
     fireEvent.click(within(provider).getByRole("button", { name: "Retry Market and news routing" }));
     expect(await within(provider).findByText("fixture_news")).toBeInTheDocument();

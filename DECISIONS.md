@@ -134,4 +134,24 @@ The scheduler reconciles alerts only after its settlement and Watchlist scan sta
 
 Retention is capped at 500 rows. Open/unacknowledged rows are retained ahead of acknowledged history; oldest acknowledged rows are pruned first, and old open rows are pruned only when necessary to respect the hard cap. API reads are bounded/filterable and side-effect free; single-alert acknowledgement is strict, idempotent and local. The UI exposes severity/source/status/evidence and keyboard-accessible acknowledgement without any outbound notifier, cloud service, Redis/Celery worker, broker/order path or PaperTrade mutation. Reconciliation never changes raw or calibrated confidence, calibration artifacts, Outcomes or Prediction records.
 
-Phase 5 implementation evidence is developer-complete and ready for Sol review; this ADR does not authorize Phase 6 implementation.
+Phase 5 implementation evidence is supervisor-accepted. Phase 6 is the active scope; this ADR does not authorize Phase 7 implementation.
+
+## ADR-021 - Phase 5 acceptance is the Phase 6 compatibility baseline
+
+Date: 2026-08-20
+
+Phase 5 is accepted on independent evidence of 99 Python tests plus 10 subtests, 55 frontend tests, frontend lint/typecheck/build, Python compileall and `pip check`, zero vulnerabilities in full and production npm audits, standalone E2E 10/10 with 18 desktop/mobile axe and overflow checks, and clean `git diff --check`. No repair defects were found.
+
+Phase 6 must preserve the accepted default-off scheduler lifecycle, serial model/resource behavior, point-in-time settlement, read-only Radar and local Alert Center, as well as the no-cloud/no-queue/no-broker/no-real-order/no-private-key/no-automatic-calibration boundaries. Phase 7 remains out of scope until Phase 6 is complete.
+
+## ADR-022 - Phase 6 context intelligence is typed, point-in-time and deterministic
+
+Date: 2026-08-20
+
+Phase 6 adds additive SQLite migration v9 and API/package contract `phase=6` / `0.6.0`. Benchmark metadata uses explicit versioned public mappings (`SPY`, `QQQ`, `SOXX`, and a BTCUSDT crypto baseline); Python computes relative performance/strength and returns provider, timeframe, freshness, `as_of` and capability provenance. Crypto total-market and dominance context remain explicitly unavailable rather than fabricated.
+
+Event evidence is typed with source/category, affected symbols, event/published/known/retrieved/revision timestamps, importance, credibility, primary-source flag, normalized identity and capability. Point-in-time selection excludes evidence not known/published/revised by the requested `as_of`. Deterministic clustering preserves source disagreement and provenance; versioned credibility prefers official/primary evidence without turning a weak single source into consensus. Major-event TimePolicy effects remain Python-owned and constrain validity/holding/re-evaluation; the LLM only receives supplied structured context and cannot calculate or override these rules.
+
+Market Memory uses `market_memory_v1` / `feature_representation_v1`, fixed Python feature distance, deterministic tie-breaking, bounded SQLite retention and an explicit minimum resolved-sample gate. Query and materialization exclude future generated/data/context boundaries, outcomes after `as_of`, self-matches and incomplete feature records; insufficient evidence is preliminary/unavailable. GET context routes are read-only; only the documented explicit `/memory/materialize` command persists feature evidence. Memory cannot mutate raw or calibrated confidence, calibration artifacts, Outcomes, PaperTrades or deterministic risk/time rules.
+
+The Phase 6 browser harness remains local and disposable: real built React plus FastAPI/SQLite routes, injected deterministic providers for repeatability, no browser network mocks, no cloud/Redis/Celery/notifier/broker/order/private-key integration. Historical event-calendar/revision coverage, live provider freshness, crypto total/dominance data, production Qwen/GPU contention and exchange holiday calendars remain capability limitations. This ADR records developer Gate completion for supervisor review and does not authorize Phase 7 implementation.

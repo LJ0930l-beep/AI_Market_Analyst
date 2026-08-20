@@ -2,12 +2,24 @@
 
 ## Unreleased
 
+### Phase 6 developer Gate — Benchmark Context, Events and Market Memory
+
+- Added API/package contract `phase=6` / `0.6.0`, additive SQLite v9 typed benchmark/event/memory evidence, deterministic public-provider-routed benchmark context, point-in-time event selection, versioned source credibility/clustering and Python-owned major-event TimePolicy effects.
+- Added leakage-safe fixed-feature Market Memory with explicit local materialization, as-of/self/future/incomplete evidence boundaries, read-only context APIs/UI, capability/degraded states and no model/confidence/calibration/Outcome/PaperTrade mutation.
+- Verification: 105 Python tests plus 10 subtests, 55 frontend tests, lint/typecheck/build/compileall/pip check PASS, full and production npm audits 0 vulnerabilities, standalone E2E 10/10 with 18 desktop/mobile axe scans and 18 overflow checks, Chrome 151.0.7922.140, and clean diff check apart from expected LF/CRLF warnings.
+- Phase 6 Gate: developer PASS / ready for supervisor acceptance. Phase 7 not started.
+
+### Phase 5 acceptance handoff
+
+- Recorded supervisor acceptance of the complete Phase 5 baseline: 99 Python tests plus 10 subtests, 55 frontend tests, full lint/typecheck/build/compile/pip checks, 0 npm audit vulnerabilities, standalone E2E 10/10 with 18 desktop/mobile axe and overflow checks, and clean diff check.
+- Phase 6 is now the active implementation scope; no Phase 7 work is included.
+
 ### Phase 5 - P5-T04 local Alert Center
 
 - Added SQLite v8 durable local alerts with `alert_policy_v1`, immutable event identity/evidence, deterministic prediction/outcome/Radar/news-event dedupe, bounded operational cooldown/coalescing, acknowledgement and retention-priority pruning.
 - Integrated isolated post-settlement/post-scan reconciliation, read-only bounded/filterable alert APIs, Settings/Health capability evidence and accessible responsive Alert Center UI; no outbound notifier, broker, order, PaperTrade, confidence or calibration mutation.
 - Verification: 99 Python tests plus 10 subtests, 55 frontend tests with lint/typecheck/build, npm audits 0 vulnerabilities, standalone E2E 10/10 PASS with 1 worker on Chrome 151.0.7922.140, axe/overflow coverage for 9 routes at desktop and 390x844, compileall/pip check/diff check PASS.
-- Phase 5 Gate: developer-verified and ready for Sol review; no Phase 6 implementation.
+- Phase 5 Gate: ACCEPTED by supervisor; Phase 6 is the active scope.
 
 ### Phase 5 - P5-T03b background Outcome settlement and live refresh
 

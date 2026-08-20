@@ -3,7 +3,7 @@ import { useCallback, useState } from "react";
 import type { ApplicationShellApiClient } from "../api/client";
 import { AsyncPanel, type PanelState } from "../components/AsyncPanel";
 import { CountLedger, HealthFacts, ModelFacts, ProviderRouting } from "../components/OperationalFacts";
-import type { AlertStatusResponse, SchedulerHistory, SchedulerStatus } from "../api/types";
+import type { AlertStatusResponse, ContextHealthResponse, SchedulerHistory, SchedulerStatus } from "../api/types";
 import type { AsyncResource } from "../hooks/useAsyncResource";
 import { useAsyncResource } from "../hooks/useAsyncResource";
 
@@ -42,6 +42,12 @@ function alertState(resource: AsyncResource<AlertStatusResponse>): PanelState {
   if (resource.status === "unavailable") return "unavailable";
   if (!resource.data) return "empty";
   return resource.data.last_reconciliation?.status === "COMPLETED_WITH_ERRORS" ? "degraded" : "ready";
+}
+
+function contextState(resource: AsyncResource<ContextHealthResponse>): PanelState {
+  if (resource.status === "loading") return "loading";
+  if (resource.status === "unavailable") return "unavailable";
+  return resource.data ? "ready" : "empty";
 }
 
 function schedulerText(value: unknown): string {
@@ -93,6 +99,7 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
   const schedulerLoader = useCallback((signal: AbortSignal) => apiClient.schedulerStatus(signal), [apiClient]);
   const schedulerHistoryLoader = useCallback((signal: AbortSignal) => apiClient.schedulerHistory(5, signal), [apiClient]);
   const alertLoader = useCallback((signal: AbortSignal) => apiClient.alertStatus(signal), [apiClient]);
+  const contextLoader = useCallback((signal: AbortSignal) => apiClient.contextHealth(signal), [apiClient]);
 
   const health = useAsyncResource(healthLoader);
   const provider = useAsyncResource(providerLoader);
@@ -101,6 +108,7 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
   const scheduler = useAsyncResource(schedulerLoader);
   const schedulerHistory = useAsyncResource(schedulerHistoryLoader);
   const alerts = useAsyncResource(alertLoader);
+  const context = useAsyncResource(contextLoader);
   const [action, setAction] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -241,6 +249,32 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
                 <div className="fact-list__row"><dt>Capabilities</dt><dd>{schedulerText(alerts.data.capabilities)}</dd></div>
               </dl>
               <p className="panel-reading">Alert evidence is deduped in SQLite and acknowledgement is idempotent. No cloud notification, broker, order, PaperTrade, calibration or confidence mutation is connected.</p>
+            </div>
+          ) : null}
+        </AsyncPanel>
+
+        <AsyncPanel
+          title="Phase 6 context capabilities"
+          source="GET /health/context"
+          freshness="versioned local capability contract"
+          state={contextState(context)}
+          error={context.error}
+          onRetry={context.retry}
+          emptyMessage="No Phase 6 context capability evidence was returned."
+          degradedMessage="One or more deterministic context providers are unavailable; no fallback is presented as verified data."
+          className="settings-panel--context"
+        >
+          {context.data ? (
+            <div className="scheduler-facts">
+              <dl className="fact-list fact-list--compact">
+                <div className="fact-list__row"><dt>Contract</dt><dd>phase {context.data.phase ?? "not supplied"} · API {context.data.api_version ?? "not supplied"}</dd></div>
+                <div className="fact-list__row"><dt>Benchmark</dt><dd>{schedulerText(context.data.benchmark)}</dd></div>
+                <div className="fact-list__row"><dt>Events</dt><dd>{schedulerText(context.data.events)}</dd></div>
+                <div className="fact-list__row"><dt>Memory</dt><dd>{schedulerText(context.data.memory)}</dd></div>
+                <div className="fact-list__row"><dt>TimePolicy owner</dt><dd>{schedulerText(context.data.time_policy)}</dd></div>
+                <div className="fact-list__row"><dt>GET boundary</dt><dd>read-only {String(context.data.read_only_get)} · cloud required {String(context.data.cloud_required)}</dd></div>
+              </dl>
+              <p className="panel-reading">Benchmark, event and memory context are deterministic Python evidence. GET reads do not create Predictions, Outcomes, PaperTrades, alerts or memory materializations.</p>
             </div>
           ) : null}
         </AsyncPanel>

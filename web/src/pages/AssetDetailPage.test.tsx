@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ApplicationShell } from "../App";
 import { ApiError } from "../api/client";
 import type { AnalysisResult, Instrument, InstrumentNews } from "../api/types";
-import { createFakeClient, fakeAnalysis, fakeInstrument, fakeNews, fakeSnapshot } from "../test/fakeClient";
+import { createFakeClient, fakeAnalysis, fakeInstrument, fakeMarketContext, fakeNews, fakeSnapshot } from "../test/fakeClient";
 
 function renderAsset(client = createFakeClient(), initialEntry = "/assets/NVDA") {
   return render(
@@ -42,8 +42,9 @@ describe("AssetDetailPage", () => {
   it("loads roster, snapshot and news without running analysis on mount", async () => {
     const snapshot = vi.fn().mockResolvedValue(fakeSnapshot);
     const news = vi.fn().mockResolvedValue(newsWithEvent);
+    const context = vi.fn().mockResolvedValue(fakeMarketContext);
     const analysis = vi.fn().mockResolvedValue(fakeAnalysis);
-    const client = createFakeClient({ instrumentSnapshot: snapshot, instrumentNews: news, analysis });
+    const client = createFakeClient({ instrumentSnapshot: snapshot, instrumentNews: news, instrumentContext: context, analysis });
 
     renderAsset(client);
 
@@ -54,6 +55,8 @@ describe("AssetDetailPage", () => {
     expect(within(panel("Market snapshot")).getByText("96")).toBeInTheDocument();
     expect(within(panel("News evidence")).getByText("GPU supply update")).toBeInTheDocument();
     expect(within(panel("News evidence")).getByText("Fixture Journal")).toBeInTheDocument();
+    expect(await within(panel("Benchmark, events and Market Memory")).findByText("benchmark_mapping_v1")).toBeInTheDocument();
+    expect(context).toHaveBeenCalledWith("NVDA", { timeframe: "1h", limit: 120 }, expect.any(AbortSignal));
     expect(snapshot).toHaveBeenCalledWith(
       "NVDA",
       { timeframe: "1h", limit: 120 },

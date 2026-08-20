@@ -10,6 +10,8 @@ import type {
   AppSettingResetResponse,
   AppSettingValue,
   CalibrationCurrent,
+  ContextHealthResponse,
+  ContextFilters,
   FollowRequest,
   FollowResponse,
   HealthResponse,
@@ -18,6 +20,7 @@ import type {
   InstrumentRegistrationResponse,
   InstrumentNews,
   MarketSnapshot,
+  MarketContextResponse,
   ModelHealthResponse,
   Outcome,
   OutcomeFilters,
@@ -97,6 +100,7 @@ export interface ApiClientOptions {
 export interface MarketApiClient {
   health(signal?: AbortSignal): Promise<HealthResponse>;
   providerHealth(signal?: AbortSignal): Promise<ProviderHealthResponse>;
+  contextHealth(signal?: AbortSignal): Promise<ContextHealthResponse>;
   modelHealth(signal?: AbortSignal): Promise<ModelHealthResponse>;
   stats(signal?: AbortSignal): Promise<StatsResponse>;
   schedulerStatus(signal?: AbortSignal): Promise<SchedulerStatus>;
@@ -117,6 +121,7 @@ export interface MarketApiClient {
   instrumentSnapshot(symbol: string, signal?: AbortSignal): Promise<MarketSnapshot>;
   instrumentSnapshot(symbol: string, filters?: SnapshotFilters, signal?: AbortSignal): Promise<MarketSnapshot>;
   instrumentNews(symbol: string, signal?: AbortSignal): Promise<InstrumentNews>;
+  instrumentContext(symbol: string, filters?: ContextFilters, signal?: AbortSignal): Promise<MarketContextResponse>;
   analysis(symbol: string, request?: AnalysisRequest, signal?: AbortSignal): Promise<AnalysisResult>;
   predictions(filters?: PredictionFilters, signal?: AbortSignal): Promise<Prediction[]>;
   prediction(predictionId: string, signal?: AbortSignal): Promise<Prediction>;
@@ -142,6 +147,7 @@ export type ApplicationShellApiClient = Pick<
   MarketApiClient,
   | "health"
   | "providerHealth"
+  | "contextHealth"
   | "modelHealth"
   | "stats"
   | "schedulerStatus"
@@ -161,6 +167,7 @@ export type ApplicationShellApiClient = Pick<
   | "resetAppSetting"
   | "instrumentSnapshot"
   | "instrumentNews"
+  | "instrumentContext"
   | "analysis"
   | "predictions"
   | "prediction"
@@ -281,6 +288,10 @@ export class ApiClient implements MarketApiClient {
     return this.request<ProviderHealthResponse>("/health/providers", { signal });
   }
 
+  contextHealth(signal?: AbortSignal): Promise<ContextHealthResponse> {
+    return this.request<ContextHealthResponse>("/health/context", { signal });
+  }
+
   modelHealth(signal?: AbortSignal): Promise<ModelHealthResponse> {
     return this.request<ModelHealthResponse>("/health/model", { signal });
   }
@@ -393,6 +404,17 @@ export class ApiClient implements MarketApiClient {
 
   instrumentNews(symbol: string, signal?: AbortSignal): Promise<InstrumentNews> {
     return this.request<InstrumentNews>(`/instruments/${encodePathSegment(symbol)}/news`, { signal });
+  }
+
+  instrumentContext(
+    symbol: string,
+    filters: ContextFilters = {},
+    signal?: AbortSignal,
+  ): Promise<MarketContextResponse> {
+    return this.request<MarketContextResponse>(`/instruments/${encodePathSegment(symbol)}/context`, {
+      query: filters,
+      signal,
+    });
   }
 
   analysis(symbol: string, request: AnalysisRequest = {}, signal?: AbortSignal): Promise<AnalysisResult> {

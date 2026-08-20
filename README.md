@@ -1,8 +1,8 @@
-# AI Market Analyst — Phase 2 + Phase 3
+# AI Market Analyst — Phase 6
 
-Phase 2 在 Phase 1 的边界上增量实现，Phase 3 在此基础上增加可复现的历史回放、绩效指标和置信度校准：
+Phase 6 在已验收的 Phase 0-5 纸面研究边界上增加 Benchmark Context、point-in-time 多源事件/TimePolicy 和 leakage-safe Market Memory：
 
-`Market Provider → QuantSnapshot → News/MarketContext → Ollama/Qwen → SignalProposal → Prediction → PaperTrade → Outcome`
+`Market Provider → QuantSnapshot → News/Events/Benchmark/Memory Context → Ollama/Qwen → SignalProposal → Prediction → PaperTrade → Outcome`
 
 系统只做研究与 Paper Tracking，不包含真实下单、券商账户、私钥或用户资金链路。
 
@@ -82,7 +82,7 @@ Phase 3 API 增加：`/performance/summary`、`/performance/by-symbol/{symbol}`�
 
 ## 最小 API
 
-当前 API 合同为 Phase 5 / 0.5.0；本任务启用 durable Watchlist/AppSetting foundation 与显式 public-provider-compatible symbol registration，未启用 Radar、扫描、调度或告警行为。
+当前 API 合同为 Phase 6 / 0.6.0；Phase 6 上下文接口保持 GET 只读，明确区分 response_time/data_as_of，并保留 Phase 5 的 Radar、默认关闭 scheduler、settlement 和本地 Alert Center 边界。
 
 ```powershell
 python -m pip install -e ".[api,market]"
@@ -104,6 +104,9 @@ python -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8000
 - `GET /settings`, `GET/PUT/DELETE /settings/{key}` for the four typed local scheduler-resource defaults; these endpoints do not activate background work.
 - `GET /health/providers`
 - `GET /health/model`
+- `GET /health/context` 返回 benchmark/event/memory/time-policy capability 与只读边界。
+- `GET /instruments/{symbol}/context`、`/events`、`/memory` 返回带 `response_time`、`data_as_of`、provider/capability provenance 的 Phase 6 上下文；这些 GET 不保存 Prediction、Outcome、PaperTrade、alert 或 Memory feature。
+- `POST /memory/materialize` 是唯一显式的本地 Memory feature materialization 边界，需要带时区的 `as_of`；普通 GET 不会物化历史样本。
 
 注册项会先经 Yahoo 公共 market data（equity）或 Binance 公共 USDT spot ticker（crypto）验证；超时/重试有界，失败或 provider 不可用不会写入 SQLite。扩展项的 exchange/sector 等元数据明确标记为 inferred/unknown，不使用 Fixture 作为兼容性证明。
 
@@ -114,6 +117,9 @@ API 同时返回 `data_as_of` 与 `response_time`，并明确标记真实、Fixt
 - `core/providers/`：统一 Bar/Quote、真实 Provider、Fixture、News RSS。
 - `core/quant/`：EMA、RSI、MACD、ATR、Volume Ratio、Support/Resistance、Regime。
 - `core/context.py`：不含原始 bars 的压缩 Structured Market Context 与 `input_hash`。
+- `core/benchmarks.py`：显式公共 benchmark mapping 与 Python 相对表现计算。
+- `core/events.py`：typed event evidence、point-in-time 选择、版本化来源可信度与多源 cluster。
+- `core/memory.py`：版本化固定特征距离、as_of 隔离、可选显式 materialize 的 Market Memory。
 - `core/ai/`：Ollama、Mock、Prompt、JSON Parser、一次 repair、Signal Validator。
 - `core/analysis_service.py`：完整 Phase 2 编排。
 - `core/storage/`：SQLite 增量迁移、canonical Watchlist/AppSetting、Prediction、News、ProviderSnapshot、ModelRun、PaperTrade、Outcome。

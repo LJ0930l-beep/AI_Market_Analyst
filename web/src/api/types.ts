@@ -22,6 +22,17 @@ export interface ProviderHealthResponse extends JsonRecord {
   news?: JsonRecord;
 }
 
+export interface ContextHealthResponse extends JsonRecord {
+  phase?: number;
+  api_version?: string;
+  benchmark?: JsonRecord;
+  events?: JsonRecord;
+  memory?: JsonRecord;
+  time_policy?: JsonRecord;
+  read_only_get?: boolean;
+  cloud_required?: boolean;
+}
+
 export interface ModelHealthResponse extends JsonRecord {
   provider?: string;
   available?: boolean;
@@ -191,6 +202,132 @@ export interface InstrumentNews extends JsonRecord {
   clusters?: NewsCluster[];
 }
 
+export interface BenchmarkMetadata extends JsonRecord {
+  symbol?: string;
+  benchmark_symbol?: string;
+  benchmark_asset_type?: AssetType | string;
+  provider?: string;
+  provider_symbol?: string;
+  mapping_version?: string;
+  relation?: string;
+  status?: string;
+  mapping_reason?: string;
+  metadata_labels?: Record<string, string>;
+  updated_at?: string | null;
+}
+
+export interface BenchmarkContext extends JsonRecord {
+  version?: string;
+  symbol?: string;
+  timeframe?: string;
+  as_of?: string;
+  status?: string;
+  benchmark?: BenchmarkMetadata;
+  provider?: string;
+  freshness?: JsonRecord;
+  target_return?: number | null;
+  benchmark_return?: number | null;
+  relative_performance?: number | null;
+  relative_strength?: number | null;
+  capability?: JsonRecord;
+  provenance?: JsonRecord;
+}
+
+export interface EventEvidence extends JsonRecord {
+  event_id?: string;
+  source?: string;
+  source_type?: string;
+  category?: string;
+  event_at?: string;
+  published_at?: string | null;
+  known_at?: string | null;
+  retrieved_at?: string | null;
+  importance?: number;
+  affected_symbols?: string[];
+  title?: string;
+  summary?: string | null;
+  url?: string | null;
+  primary_source?: boolean;
+  reported_credibility?: number;
+  credibility_score?: number;
+  revision_known_at?: string | null;
+  capability?: JsonRecord;
+}
+
+export interface EventClusterEvidence extends JsonRecord {
+  cluster_id?: string;
+  title?: string;
+  affected_symbols?: string[];
+  event_ids?: string[];
+  source_count?: number;
+  primary_source_count?: number;
+  credibility_score?: number;
+  importance?: number;
+  consensus?: string;
+  disagreement?: boolean;
+  sources?: JsonRecord[];
+  as_of?: string;
+}
+
+export interface EventIntelligence extends JsonRecord {
+  schema_version?: string;
+  cluster_version?: string;
+  credibility_version?: string;
+  symbol?: string;
+  as_of?: string;
+  provider?: string;
+  fetched_at?: string;
+  available?: boolean;
+  error_code?: string | null;
+  events?: EventEvidence[];
+  clusters?: EventClusterEvidence[];
+  capability?: JsonRecord;
+  provenance?: JsonRecord;
+}
+
+export interface MarketMemoryMatch extends JsonRecord {
+  prediction_id?: string;
+  symbol?: string;
+  generated_at?: string;
+  distance?: number;
+  outcome_status?: string | null;
+  realized_r?: number | null;
+  outcome_known_as_of?: string | null;
+}
+
+export interface MarketMemoryContext extends JsonRecord {
+  version?: string;
+  feature_version?: string;
+  status?: string;
+  query_symbol?: string;
+  query_timeframe?: string;
+  as_of?: string;
+  eligible_sample_count?: number;
+  resolved_sample_count?: number;
+  similar_count?: number;
+  win_rate?: number | null;
+  avg_r?: number | null;
+  typical_outcomes?: string[];
+  matches?: MarketMemoryMatch[];
+  capability?: JsonRecord;
+  provenance?: JsonRecord;
+}
+
+export interface MarketContextResponse extends JsonRecord {
+  symbol: string;
+  timeframe: Timeframe;
+  response_time?: string;
+  data_as_of?: string;
+  provider_snapshot?: ProviderSnapshot;
+  quote?: MarketQuote;
+  quant?: QuantFacts;
+  benchmark_context?: BenchmarkContext;
+  events?: EventIntelligence;
+  market_memory?: MarketMemoryContext;
+  time_policy?: TimePolicy | null;
+  provenance?: JsonRecord;
+}
+
 export interface TimePolicy extends JsonRecord {
   timeframe?: string;
   signal_validity_minutes?: number[];
@@ -274,6 +411,10 @@ export interface StatsResponse extends JsonRecord {
   scheduler_runs?: number;
   scheduler_items?: number;
   scheduler_cache_entries?: number;
+  benchmark_metadata?: number;
+  phase6_events?: number;
+  phase6_event_clusters?: number;
+  market_memory_features?: number;
 }
 
 export interface SchedulerItem extends JsonRecord {
@@ -688,6 +829,9 @@ export type AnalysisResult = JsonRecord & {
   quote?: MarketQuote;
   quant?: QuantFacts;
   news?: InstrumentNews;
+  benchmark_context?: BenchmarkContext | null;
+  events?: EventIntelligence | null;
+  market_memory?: MarketMemoryContext | null;
   time_policy?: TimePolicy | null;
   model?: ModelStatus;
   signal?: SignalProposal;
@@ -744,6 +888,12 @@ export interface ReplayRunFilters extends PaginationFilters {
 export interface AnalysisRequest {
   timeframe?: Timeframe;
   limit?: number;
+}
+
+export interface ContextFilters {
+  timeframe?: Timeframe;
+  limit?: number;
+  as_of?: string;
 }
 
 export interface FollowRequest {

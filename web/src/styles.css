@@ -870,7 +870,8 @@ summary:focus-visible,
 }
 
 .panel-degraded-note,
-.panel-reading {
+.panel-reading,
+.panel-boundary {
   margin: 0 0 0.75rem;
   color: var(--muted);
   font-size: 0.76rem;
@@ -879,6 +880,12 @@ summary:focus-visible,
 
 .panel-degraded-note {
   color: var(--warning);
+}
+
+.panel-boundary {
+  color: var(--muted);
+  font-family: var(--data);
+  font-size: 0.65rem;
 }
 
 .fact-list,

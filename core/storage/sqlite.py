@@ -17,6 +17,18 @@ from ..providers.runtime import ProviderSnapshot
 from ..signals.schema import SignalProposal
 
 
+def _parse_utc_timestamp(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 APP_SETTING_DEFINITIONS: dict[str, dict[str, object]] = {
     "scheduler.enabled": {
         "default": False,
@@ -201,6 +213,11 @@ class SQLiteStore:
             db.execute(
                 "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                 (8, datetime.now(timezone.utc).isoformat()),
+            )
+            self._ensure_phase6_tables(db)
+            db.execute(
+                "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                (9, datetime.now(timezone.utc).isoformat()),
             )
 
     @staticmethod
@@ -435,6 +452,123 @@ class SQLiteStore:
                 ON alerts(source, last_seen_at DESC, alert_id DESC);
             """
         )
+
+    @staticmethod
+    def _ensure_phase6_tables(db: sqlite3.Connection) -> None:
+        """Create additive Phase 6 context/evidence tables without touching prior data."""
+
+        db.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS benchmark_metadata (
+                symbol TEXT PRIMARY KEY,
+                benchmark_symbol TEXT NOT NULL,
+                benchmark_asset_type TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                provider_symbol TEXT NOT NULL,
+                mapping_version TEXT NOT NULL,
+                relation TEXT NOT NULL,
+                status TEXT NOT NULL,
+                metadata_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_benchmark_metadata_benchmark
+                ON benchmark_metadata(benchmark_symbol, mapping_version);
+            CREATE TABLE IF NOT EXISTS phase6_events (
+                event_id TEXT PRIMARY KEY,
+                source TEXT NOT NULL,
+                source_type TEXT NOT NULL,
+                category TEXT NOT NULL,
+                event_at TEXT NOT NULL,
+                published_at TEXT,
+                known_at TEXT,
+                retrieved_at TEXT,
+                importance INTEGER NOT NULL,
+                affected_symbols_json TEXT NOT NULL,
+                title TEXT NOT NULL,
+                summary TEXT,
+                url TEXT,
+                primary_source INTEGER NOT NULL DEFAULT 0,
+                reported_credibility INTEGER NOT NULL,
+                credibility_score INTEGER NOT NULL,
+                revision_known_at TEXT,
+                dedupe_hash TEXT,
+                provider TEXT NOT NULL,
+                capability_json TEXT NOT NULL DEFAULT '{}',
+                cluster_id TEXT,
+                payload_json TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_phase6_events_known
+                ON phase6_events(known_at, event_at, event_id);
+            CREATE INDEX IF NOT EXISTS idx_phase6_events_source
+                ON phase6_events(source, event_at, event_id);
+            CREATE TABLE IF NOT EXISTS phase6_event_clusters (
+                cluster_id TEXT PRIMARY KEY,
+                as_of TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                payload_json TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_phase6_event_clusters_as_of
+                ON phase6_event_clusters(as_of DESC, cluster_id ASC);
+            CREATE TABLE IF NOT EXISTS market_memory_features (
+                feature_id TEXT PRIMARY KEY,
+                prediction_id TEXT NOT NULL,
+                source_type TEXT NOT NULL,
+                feature_as_of TEXT NOT NULL,
+                representation_version TEXT NOT NULL,
+                features_json TEXT NOT NULL,
+                outcome_json TEXT,
+                created_at TEXT NOT NULL,
+                UNIQUE(prediction_id, feature_as_of, representation_version)
+            );
+            CREATE INDEX IF NOT EXISTS idx_market_memory_as_of
+                ON market_memory_features(feature_as_of, representation_version, prediction_id);
+            """
+        )
+        # These six mappings are explicit registry metadata, not provider data.
+        # They make restart/reopen behavior durable while keeping registered
+        # expansion mappings opt-in through BenchmarkContextService.
+        rows = (
+            ("AAPL", "QQQ", "Technology"),
+            ("NVDA", "SOXX", "Semiconductors"),
+            ("TSLA", "SPY", "broad_us_equity"),
+            ("AMD", "SOXX", "Semiconductors"),
+            ("BTCUSDT", "BTCUSDT", "crypto_market_baseline"),
+            ("ETHUSDT", "BTCUSDT", "crypto_market_baseline"),
+        )
+        now = datetime.now(timezone.utc).isoformat()
+        for symbol, benchmark_symbol, mapping_reason in rows:
+            asset_type = "crypto" if symbol.endswith("USDT") else "equity"
+            payload = {
+                "symbol": symbol,
+                "benchmark_symbol": benchmark_symbol,
+                "benchmark_asset_type": asset_type,
+                "provider": "public_market",
+                "provider_symbol": benchmark_symbol,
+                "mapping_version": "benchmark_mapping_v1",
+                "relation": "crypto_market_baseline" if asset_type == "crypto" else ("sector_benchmark" if benchmark_symbol != "SPY" else "broad_market_benchmark"),
+                "status": "mapped",
+                "mapping_reason": f"explicit_{mapping_reason}",
+                "metadata_labels": {"identity": "explicit", "sector": "known" if mapping_reason in {"Technology", "Semiconductors"} else "unknown_or_broad"},
+            }
+            db.execute(
+                """INSERT OR IGNORE INTO benchmark_metadata(
+                    symbol, benchmark_symbol, benchmark_asset_type, provider,
+                    provider_symbol, mapping_version, relation, status,
+                    metadata_json, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    symbol,
+                    benchmark_symbol,
+                    asset_type,
+                    "public_market",
+                    benchmark_symbol,
+                    "benchmark_mapping_v1",
+                    payload["relation"],
+                    "mapped",
+                    json.dumps(payload, sort_keys=True),
+                    now,
+                ),
+            )
 
     @staticmethod
     def _utc_timestamp(value: datetime | None = None) -> str:
@@ -885,6 +1019,332 @@ class SQLiteStore:
                 (key,),
             ).fetchone()
         return json.loads(row["value_json"]) if row is not None else None
+
+    def save_benchmark_metadata(self, payload: dict[str, Any], *, updated_at: str | None = None) -> None:
+        """Persist one explicit benchmark mapping; provider data is never inferred here."""
+
+        required = ("symbol", "benchmark_symbol", "benchmark_asset_type", "provider", "provider_symbol", "mapping_version", "relation", "status")
+        if any(not isinstance(payload.get(key), str) or not str(payload[key]).strip() for key in required):
+            raise ValueError("benchmark metadata is missing an allowlisted identity field")
+        symbol = str(payload["symbol"]).strip().upper()
+        timestamp = updated_at or self._utc_timestamp()
+        with self._connect() as db:
+            db.execute(
+                """INSERT INTO benchmark_metadata(
+                    symbol, benchmark_symbol, benchmark_asset_type, provider,
+                    provider_symbol, mapping_version, relation, status,
+                    metadata_json, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(symbol) DO UPDATE SET
+                    benchmark_symbol = excluded.benchmark_symbol,
+                    benchmark_asset_type = excluded.benchmark_asset_type,
+                    provider = excluded.provider,
+                    provider_symbol = excluded.provider_symbol,
+                    mapping_version = excluded.mapping_version,
+                    relation = excluded.relation,
+                    status = excluded.status,
+                    metadata_json = excluded.metadata_json,
+                    updated_at = excluded.updated_at""",
+                (
+                    symbol,
+                    str(payload["benchmark_symbol"]).strip().upper(),
+                    str(payload["benchmark_asset_type"]).strip().lower(),
+                    str(payload["provider"]).strip(),
+                    str(payload["provider_symbol"]).strip().upper(),
+                    str(payload["mapping_version"]).strip(),
+                    str(payload["relation"]).strip(),
+                    str(payload["status"]).strip(),
+                    json.dumps(payload, sort_keys=True),
+                    timestamp,
+                ),
+            )
+
+    def get_benchmark_metadata(self, symbol: str) -> dict[str, object] | None:
+        normalized = str(symbol).strip().upper()
+        if not normalized:
+            return None
+        with self._connect() as db:
+            row = db.execute("SELECT * FROM benchmark_metadata WHERE symbol = ?", (normalized,)).fetchone()
+        if row is None:
+            return None
+        try:
+            payload = json.loads(row["metadata_json"])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        payload.update(
+            {
+                "symbol": row["symbol"],
+                "benchmark_symbol": row["benchmark_symbol"],
+                "benchmark_asset_type": row["benchmark_asset_type"],
+                "provider": row["provider"],
+                "provider_symbol": row["provider_symbol"],
+                "mapping_version": row["mapping_version"],
+                "relation": row["relation"],
+                "status": row["status"],
+                "updated_at": row["updated_at"],
+            }
+        )
+        return payload
+
+    def list_benchmark_metadata(self, *, limit: int = 500) -> list[dict[str, object]]:
+        bounded_limit = max(1, min(int(limit), 1_000))
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT symbol FROM benchmark_metadata ORDER BY symbol ASC LIMIT ?",
+                (bounded_limit,),
+            ).fetchall()
+        return [record for row in rows if (record := self.get_benchmark_metadata(row["symbol"])) is not None]
+
+    def save_event_context(self, payload: dict[str, Any]) -> None:
+        """Save explicit analysis event evidence and its cluster audit trail."""
+
+        events = payload.get("events") if isinstance(payload.get("events"), list) else []
+        clusters = payload.get("clusters") if isinstance(payload.get("clusters"), list) else []
+        cluster_by_event: dict[str, str] = {}
+        timestamp = self._utc_timestamp()
+        with self._connect() as db:
+            for cluster in clusters:
+                if not isinstance(cluster, dict) or not isinstance(cluster.get("cluster_id"), str):
+                    continue
+                cluster_id = str(cluster["cluster_id"])
+                for event_id in cluster.get("event_ids", []):
+                    if isinstance(event_id, str):
+                        cluster_by_event[event_id] = cluster_id
+                db.execute(
+                    """INSERT OR REPLACE INTO phase6_event_clusters(cluster_id, as_of, created_at, payload_json)
+                       VALUES (?, ?, ?, ?)""",
+                    (cluster_id, str(cluster.get("as_of") or payload.get("as_of") or timestamp), timestamp, json.dumps(cluster, sort_keys=True)),
+                )
+            for event in events:
+                if not isinstance(event, dict) or not isinstance(event.get("event_id"), str):
+                    continue
+                event_id = str(event["event_id"])
+                symbols = event.get("affected_symbols", event.get("symbols", []))
+                if not isinstance(symbols, list):
+                    symbols = []
+                capability = event.get("capability") if isinstance(event.get("capability"), dict) else {}
+                db.execute(
+                    """INSERT OR IGNORE INTO phase6_events(
+                        event_id, source, source_type, category, event_at, published_at,
+                        known_at, retrieved_at, importance, affected_symbols_json, title,
+                        summary, url, primary_source, reported_credibility, credibility_score,
+                        revision_known_at, dedupe_hash, provider, capability_json, cluster_id,
+                        payload_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        event_id,
+                        str(event.get("source", "unknown")),
+                        str(event.get("source_type", "unknown")),
+                        str(event.get("category", "other")),
+                        str(event.get("event_at") or event.get("published_at") or timestamp),
+                        event.get("published_at"),
+                        event.get("known_at"),
+                        event.get("retrieved_at"),
+                        int(event.get("importance", 0) or 0),
+                        json.dumps([str(value).upper() for value in symbols], sort_keys=True),
+                        str(event.get("title", "")),
+                        event.get("summary", event.get("summary_raw")),
+                        event.get("url"),
+                        int(bool(event.get("primary_source"))),
+                        int(event.get("reported_credibility", event.get("credibility", 50)) or 0),
+                        int(event.get("credibility_score", event.get("credibility", 50)) or 0),
+                        event.get("revision_known_at"),
+                        event.get("dedupe_hash"),
+                        str(event.get("provider", payload.get("provider", "unknown"))),
+                        json.dumps(capability, sort_keys=True),
+                        cluster_by_event.get(event_id),
+                        json.dumps(event, sort_keys=True),
+                    ),
+                )
+
+    def list_event_evidence(
+        self,
+        *,
+        symbol: str | None = None,
+        as_of: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, object]]:
+        bounded_limit = max(1, min(int(limit), 500))
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT payload_json FROM phase6_events ORDER BY event_at DESC, event_id ASC LIMIT ?",
+                (max(bounded_limit * 5, bounded_limit),),
+            ).fetchall()
+        cutoff = _parse_utc_timestamp(as_of) if as_of is not None else None
+        if as_of is not None and cutoff is None:
+            raise ValueError("as_of must be an ISO timestamp with timezone")
+        normalized_symbol = symbol.strip().upper() if symbol else None
+        results: list[dict[str, object]] = []
+        for row in rows:
+            try:
+                payload = json.loads(row["payload_json"])
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+            if not isinstance(payload, dict):
+                continue
+            symbols = payload.get("affected_symbols", payload.get("symbols", []))
+            if normalized_symbol and normalized_symbol not in {str(value).upper() for value in symbols if isinstance(value, str)}:
+                continue
+            known_at = _parse_utc_timestamp(payload.get("known_at"))
+            published_at = _parse_utc_timestamp(payload.get("published_at"))
+            revision_at = _parse_utc_timestamp(payload.get("revision_known_at"))
+            if cutoff is not None and (known_at is None or known_at > cutoff or (published_at is not None and published_at > cutoff) or (revision_at is not None and revision_at > cutoff)):
+                continue
+            if cutoff is not None and known_at is None:
+                continue
+            results.append(payload)
+            if len(results) >= bounded_limit:
+                break
+        return results
+
+    def list_event_clusters(self, *, symbol: str | None = None, as_of: str | None = None, limit: int = 100) -> list[dict[str, object]]:
+        bounded_limit = max(1, min(int(limit), 500))
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT payload_json FROM phase6_event_clusters ORDER BY as_of DESC, cluster_id ASC LIMIT ?",
+                (bounded_limit * 5,),
+            ).fetchall()
+        results: list[dict[str, object]] = []
+        for row in rows:
+            try:
+                payload = json.loads(row["payload_json"])
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+            if not isinstance(payload, dict):
+                continue
+            if as_of:
+                cutoff = _parse_utc_timestamp(as_of)
+                payload_as_of = _parse_utc_timestamp(payload.get("as_of"))
+                if cutoff is None or payload_as_of is None or payload_as_of > cutoff:
+                    continue
+            symbols = payload.get("affected_symbols", payload.get("symbols", []))
+            if symbol and symbol.strip().upper() not in {str(value).upper() for value in symbols if isinstance(value, str)}:
+                continue
+            results.append(payload)
+            if len(results) >= bounded_limit:
+                break
+        return results
+
+    def save_memory_feature(self, payload: dict[str, Any]) -> None:
+        required = ("feature_id", "prediction_id", "source_type", "feature_as_of", "representation_version", "features")
+        if any(not payload.get(key) for key in required):
+            raise ValueError("memory feature is missing required identity")
+        with self._connect() as db:
+            db.execute(
+                """INSERT OR REPLACE INTO market_memory_features(
+                    feature_id, prediction_id, source_type, feature_as_of,
+                    representation_version, features_json, outcome_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    str(payload["feature_id"]),
+                    str(payload["prediction_id"]),
+                    str(payload["source_type"]),
+                    str(payload["feature_as_of"]),
+                    str(payload["representation_version"]),
+                    json.dumps(payload["features"], sort_keys=True),
+                    json.dumps(payload["outcome"], sort_keys=True) if isinstance(payload.get("outcome"), dict) else None,
+                    self._utc_timestamp(),
+                ),
+            )
+
+    def list_memory_features(self, *, as_of: str | None = None, limit: int = 100) -> list[dict[str, object]]:
+        bounded_limit = max(1, min(int(limit), 1_000))
+        cutoff = _parse_utc_timestamp(as_of) if as_of is not None else None
+        if as_of is not None and cutoff is None:
+            raise ValueError("as_of must be an ISO timestamp with timezone")
+        query = "SELECT * FROM market_memory_features ORDER BY feature_as_of DESC, prediction_id ASC LIMIT ?"
+        params: list[Any] = [bounded_limit * 5 if cutoff is not None else bounded_limit]
+        with self._connect() as db:
+            rows = db.execute(query, tuple(params)).fetchall()
+        result: list[dict[str, object]] = []
+        for row in rows:
+            feature_as_of = _parse_utc_timestamp(row["feature_as_of"])
+            if cutoff is not None and (feature_as_of is None or feature_as_of > cutoff):
+                continue
+            try:
+                features = json.loads(row["features_json"])
+                outcome = json.loads(row["outcome_json"]) if row["outcome_json"] else None
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+            result.append(
+                {
+                    "feature_id": row["feature_id"],
+                    "prediction_id": row["prediction_id"],
+                    "source_type": row["source_type"],
+                    "feature_as_of": row["feature_as_of"],
+                    "representation_version": row["representation_version"],
+                    "features": features,
+                    "outcome": outcome,
+                    "created_at": row["created_at"],
+                }
+            )
+            if len(result) >= bounded_limit:
+                break
+        return result
+
+    def prune_memory_features(self, *, keep: int = 1_000) -> int:
+        bounded_keep = max(1, min(int(keep), 1_000))
+        with self._connect() as db:
+            result = db.execute(
+                """DELETE FROM market_memory_features
+                     WHERE feature_id NOT IN (
+                         SELECT feature_id FROM market_memory_features
+                          ORDER BY feature_as_of DESC, prediction_id ASC LIMIT ?
+                     )""",
+                (bounded_keep,),
+            )
+        return result.rowcount
+
+    def list_memory_source_records(
+        self,
+        *,
+        as_of: str,
+        source_type: str | None = None,
+        timeframe: str | None = None,
+        limit: int = 10_000,
+    ) -> list[dict[str, Any]]:
+        """Return prediction features with outcomes known strictly before the cutoff."""
+
+        bounded_limit = max(1, min(int(limit), 100_000))
+        cutoff = _parse_utc_timestamp(as_of)
+        if cutoff is None:
+            raise ValueError("as_of must be an ISO timestamp with timezone")
+        clauses: list[str] = []
+        params: list[Any] = []
+        if source_type:
+            clauses.append("COALESCE(p.source_type, 'live') = ?")
+            params.append(source_type)
+        if timeframe:
+            clauses.append("json_extract(p.payload_json, '$.analysis_timeframe') = ?")
+            params.append(timeframe)
+        params.append(bounded_limit)
+        where_clause = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self._connect() as db:
+            rows = db.execute(
+                f"""SELECT p.payload_json AS prediction_json, o.payload_json AS outcome_json, o.settled_at
+                       FROM predictions p LEFT JOIN outcomes o ON o.prediction_id = p.prediction_id
+                      {where_clause}
+                      ORDER BY p.generated_at ASC, p.prediction_id ASC LIMIT ?""",
+                tuple(params),
+            ).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                prediction = json.loads(row["prediction_json"])
+                if not isinstance(prediction, dict):
+                    continue
+                outcome = json.loads(row["outcome_json"]) if row["outcome_json"] else None
+                generated_at = _parse_utc_timestamp(prediction.get("generated_at"))
+                if generated_at is None or generated_at >= cutoff:
+                    continue
+                if outcome is not None and (not isinstance(outcome, dict) or _parse_utc_timestamp(row["settled_at"]) is None or _parse_utc_timestamp(row["settled_at"]) > cutoff):
+                    outcome = None
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+            result.append({"prediction": prediction, "outcome": outcome})
+        return result
 
     @staticmethod
     def _alert_from_row(row: sqlite3.Row) -> dict[str, object]:
@@ -2064,6 +2524,10 @@ class SQLiteStore:
                 "scheduler_items",
                 "scheduler_cache_entries",
                 "alerts",
+                "benchmark_metadata",
+                "phase6_events",
+                "phase6_event_clusters",
+                "market_memory_features",
             )
         }
 

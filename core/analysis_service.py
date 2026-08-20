@@ -10,10 +10,13 @@ from typing import Callable
 
 from .ai import OllamaProvider, SignalPolicy, analyze_with_repair, to_signal_proposal
 from .ai.contracts import LLMError
+from .benchmarks import BenchmarkContext, BenchmarkContextService
 from .context import MarketContext
+from .events import EventIntelligenceResult, EventIntelligenceService, NewsEventProviderAdapter
 from .instruments import Instrument
-from .news_engine import NewsEngine, NewsFetchResult, RSSNewsProvider
-from .providers import FixtureNewsProvider, ProviderError, ProviderChain
+from .memory import MarketMemoryContext, MarketMemoryService
+from .news_engine import NewsFetchResult, RSSNewsProvider
+from .providers import FixtureNewsProvider, ProviderError, ProviderChain, Quote
 from .providers.runtime import MarketDataBundle, ProviderSnapshot, build_default_provider, fetch_market_data
 from .quant import QuantSnapshot, build_quant_snapshot
 from .signals import Action, SignalProposal, build_signal
@@ -38,6 +41,9 @@ class AnalysisResult:
     context: MarketContext
     signal: SignalProposal
     model_status: dict[str, object]
+    benchmark_context: BenchmarkContext | None = None
+    event_context: EventIntelligenceResult | None = None
+    memory_context: MarketMemoryContext | None = None
 
     @property
     def data_as_of(self) -> datetime:
@@ -64,6 +70,9 @@ class AnalysisResult:
             },
             "quant": self.context.quant.to_dict(),
             "news": self.news.to_dict(),
+            "benchmark_context": self.benchmark_context.to_dict() if self.benchmark_context else None,
+            "events": self.event_context.to_dict() if self.event_context else None,
+            "market_memory": self.memory_context.to_dict() if self.memory_context else None,
             "time_policy": self.context.time_policy.to_dict() if self.context.time_policy else None,
             "model": self.model_status,
             "signal": self.signal.to_dict(),
@@ -122,6 +131,52 @@ class MarketSnapshotResult:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class MarketContextSnapshotResult:
+    """Read-only deterministic Phase 6 context for Asset Detail and API reads."""
+
+    instrument: Instrument
+    timeframe: str
+    response_time: datetime
+    bundle: MarketDataBundle
+    quant: QuantSnapshot
+    benchmark_context: BenchmarkContext
+    event_context: EventIntelligenceResult
+    memory_context: MarketMemoryContext
+    time_policy: object
+
+    def to_dict(self) -> dict[str, object]:
+        quote = self.bundle.quote
+        return {
+            "symbol": self.instrument.symbol,
+            "timeframe": self.timeframe,
+            "response_time": self.response_time.astimezone(timezone.utc).isoformat(),
+            "data_as_of": self.bundle.data_as_of.astimezone(timezone.utc).isoformat(),
+            "provider_snapshot": self.bundle.snapshot.to_dict(),
+            "quote": {
+                "timestamp": quote.timestamp.astimezone(timezone.utc).isoformat(),
+                "price": quote.price,
+                "change_pct": quote.change_pct,
+                "high": quote.high,
+                "low": quote.low,
+            },
+            "quant": self.quant.to_dict(),
+            "benchmark_context": self.benchmark_context.to_dict(),
+            "events": self.event_context.to_dict(),
+            "market_memory": self.memory_context.to_dict(),
+            "time_policy": self.time_policy.to_dict() if hasattr(self.time_policy, "to_dict") else None,
+            "provenance": {
+                "computed_by": "python_deterministic",
+                "read_only": True,
+                "prediction_created": False,
+                "outcome_created": False,
+                "paper_trade_created": False,
+                "alert_created": False,
+                "memory_materialized": False,
+            },
+        }
+
+
 class AnalysisService:
     """One bounded analysis run with explicit provider/model state."""
 
@@ -130,17 +185,23 @@ class AnalysisService:
         *,
         market_provider_factory: Callable[[Instrument], object] | None = None,
         news_provider: object | None = None,
+        event_provider: object | None = None,
         llm_provider: object | None = None,
         store: SQLiteStore | None = None,
+        benchmark_provider_factory: Callable[[Instrument], object] | None = None,
     ) -> None:
         self.market_provider_factory = market_provider_factory or build_default_provider
         if news_provider is None:
             news_provider = FixtureNewsProvider() if os.environ.get("NEWS_MODE", "real").lower() == "fixture" else RSSNewsProvider()
         self.news_provider = news_provider
+        self.event_provider = event_provider or NewsEventProviderAdapter(news_provider)
         self.llm_provider = llm_provider
         self.store = store
         if self.store is not None:
             self.store.initialize()
+        self.event_service = EventIntelligenceService(self.event_provider)
+        self.benchmark_service = BenchmarkContextService(provider_factory=benchmark_provider_factory or self.market_provider_factory, store=store)
+        self.memory_service = MarketMemoryService(store) if store is not None else MarketMemoryService(None)
 
     def _bundle(self, instrument: Instrument, timeframe: str, limit: int) -> MarketDataBundle:
         provider = self.market_provider_factory(instrument)
@@ -181,6 +242,129 @@ class AnalysisService:
                 provider=bundle.snapshot.provider,
             ) from exc
         return MarketSnapshotResult(instrument, timeframe, response_time, snapshot_bundle, quant)
+
+    def _phase6_context(
+        self,
+        instrument: Instrument,
+        *,
+        timeframe: str,
+        bundle: MarketDataBundle,
+        quant: QuantSnapshot,
+        response_time: datetime,
+        persist_mapping: bool,
+        context_as_of: datetime | None = None,
+    ) -> tuple[EventIntelligenceResult, NewsFetchResult, BenchmarkContext, MarketMemoryContext, object]:
+        cutoff = (context_as_of or bundle.data_as_of).astimezone(timezone.utc)
+        event_context = self.event_service.collect(instrument, as_of=cutoff, limit=20)
+        news = event_context.to_news_result()
+        benchmark_context = self.benchmark_service.build(
+            instrument,
+            target_bars=bundle.bars,
+            target_quant=quant,
+            timeframe=timeframe,
+            as_of=cutoff,
+            target_provider=bundle.snapshot.provider,
+            persist_mapping=persist_mapping,
+        )
+        query_context = {
+            "quant": quant.to_dict(),
+            "market_context": {
+                "benchmark_context": benchmark_context.to_dict(),
+                "event_intelligence": event_context.to_dict(),
+            },
+            "risk_events": [event.to_dict() for event in event_context.events if event.importance >= 70],
+        }
+        query_prediction = {
+            "symbol": instrument.symbol,
+            "instrument": {
+                "symbol": instrument.symbol,
+                "asset_type": instrument.asset_type.value,
+            },
+            "analysis_timeframe": timeframe,
+            "action": "WAIT",
+            "context_json": json.dumps(query_context, sort_keys=True),
+        }
+        memory_context = self.memory_service.query(
+            symbol=instrument.symbol,
+            timeframe=timeframe,
+            as_of=cutoff,
+            query_prediction=query_prediction,
+            top_k=5,
+        )
+        policy = build_time_policy(
+            timeframe,
+            price=quant.price,
+            atr14=quant.atr14,
+            market_regime=quant.market_regime,
+            events=news.events,
+            event_evidence=event_context.events,
+            now=response_time,
+        )
+        return event_context, news, benchmark_context, memory_context, policy
+
+    def market_context_snapshot(
+        self,
+        instrument: Instrument,
+        *,
+        timeframe: str = "1h",
+        limit: int = 120,
+        snapshot_time: datetime | None = None,
+        as_of: datetime | None = None,
+    ) -> MarketContextSnapshotResult:
+        """Read-only Phase 6 context; never persists evidence or invokes a model."""
+
+        response_time = (snapshot_time or datetime.now(timezone.utc)).astimezone(timezone.utc)
+        source_bundle = self._bundle(instrument, timeframe, limit)
+        cutoff = (as_of or source_bundle.data_as_of).astimezone(timezone.utc)
+        bounded_bars = tuple(sorted((bar for bar in source_bundle.bars if bar.timestamp.astimezone(timezone.utc) <= cutoff), key=lambda bar: bar.timestamp))
+        if len(bounded_bars) < 60:
+            raise AnalysisError("not enough bars known by requested as_of", code="context_history_unavailable", provider=source_bundle.snapshot.provider)
+        snapshot = source_bundle.snapshot
+        if bounded_bars[-1].timestamp != source_bundle.data_as_of:
+            from .providers.runtime import ProviderSnapshot
+
+            snapshot = ProviderSnapshot(
+                provider=snapshot.provider,
+                fetched_at=snapshot.fetched_at,
+                data_as_of=bounded_bars[-1].timestamp,
+                stale=snapshot.stale,
+                error_code=snapshot.error_code,
+            )
+        quote = source_bundle.quote
+        if quote.timestamp.astimezone(timezone.utc) > cutoff:
+            last = bounded_bars[-1]
+            previous = bounded_bars[-2].close if len(bounded_bars) > 1 else None
+            quote = Quote(
+                instrument=instrument,
+                timestamp=last.timestamp,
+                price=last.close,
+                volume=last.volume,
+                change_pct=((last.close / previous) - 1.0) * 100.0 if previous else None,
+                high=last.high,
+                low=last.low,
+            )
+        bundle = MarketDataBundle(quote=quote, bars=bounded_bars, snapshot=snapshot)
+        quant = build_quant_snapshot(list(bundle.bars), timeframe, symbol=instrument.symbol)
+        event_context, _news, benchmark_context, memory_context, policy = self._phase6_context(
+            instrument,
+            timeframe=timeframe,
+            bundle=bundle,
+            quant=quant,
+            response_time=response_time,
+            persist_mapping=False,
+            context_as_of=cutoff,
+        )
+        return MarketContextSnapshotResult(
+            instrument,
+            timeframe,
+            response_time,
+            bundle,
+            quant,
+            benchmark_context,
+            event_context,
+            memory_context,
+            policy,
+        )
 
     @staticmethod
     def _risk_events(news: NewsFetchResult) -> tuple[dict[str, object], ...]:
@@ -246,6 +430,10 @@ class AnalysisService:
         self.store.save_snapshot(result.instrument.symbol, result.timeframe, result.response_time.isoformat(), result.context.to_dict())
         self.store.save_provider_snapshot(result.instrument.symbol, result.bundle.snapshot)
         self.store.save_news_events(result.instrument.symbol, result.news)
+        if result.benchmark_context is not None:
+            self.store.save_benchmark_metadata(result.benchmark_context.benchmark.to_dict())
+        if result.event_context is not None:
+            self.store.save_event_context(result.event_context.to_dict())
         self.store.save_prediction(signal)
         self.store.save_model_run(
             prediction_id=signal.prediction_id,
@@ -274,14 +462,13 @@ class AnalysisService:
             raise ValueError("replay analysis requires replay_run_id")
         bundle = self._bundle(instrument, timeframe, limit)
         quant = build_quant_snapshot(list(bundle.bars), timeframe, symbol=instrument.symbol)
-        news = NewsEngine(self.news_provider).collect(instrument, limit=10)  # type: ignore[arg-type]
-        policy = build_time_policy(
-            timeframe,
-            price=quant.price,
-            atr14=quant.atr14,
-            market_regime=quant.market_regime,
-            events=news.events,
-            now=response_time,
+        event_context, news, benchmark_context, memory_context, policy = self._phase6_context(
+            instrument,
+            timeframe=timeframe,
+            bundle=bundle,
+            quant=quant,
+            response_time=response_time,
+            persist_mapping=True,
         )
         market_context: dict[str, object] = {
             "news_available": news.available,
@@ -289,6 +476,9 @@ class AnalysisService:
             "news_error_code": news.error_code,
             "news_clusters": [cluster.to_dict() for cluster in news.clusters],
             "source_type": source_type,
+            "benchmark_context": benchmark_context.to_dict(),
+            "event_intelligence": event_context.to_dict(),
+            "market_memory": memory_context.to_dict(),
         }
         if replay_run_id:
             market_context["replay_run_id"] = replay_run_id
@@ -303,7 +493,7 @@ class AnalysisService:
             time_policy=policy,
             provider_snapshot=bundle.snapshot,
             market_context=market_context,
-            risk_events=self._risk_events(news),
+            risk_events=self._risk_events(news) + tuple(event.to_dict() for event in event_context.events if event.importance >= 70),
         )
         context_json = json.dumps(context.to_prompt_payload(max_news=8), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
         fallback_confidence_cap = 1.0
@@ -382,6 +572,18 @@ class AnalysisService:
                     source_type=source_type,
                     replay_run_id=replay_run_id,
                 )
-        result = AnalysisResult(instrument, timeframe, response_time, bundle, news, context, signal, model_status)
+        result = AnalysisResult(
+            instrument,
+            timeframe,
+            response_time,
+            bundle,
+            news,
+            context,
+            signal,
+            model_status,
+            benchmark_context,
+            event_context,
+            memory_context,
+        )
         self.persist(result)
         return result

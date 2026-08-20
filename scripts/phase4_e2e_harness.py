@@ -9,6 +9,7 @@ from pathlib import Path
 
 from core.ai.prompts import PROMPT_VERSION
 from core.analysis_service import AnalysisService
+from core.events import EventEvidence, source_credibility
 from core.outcomes import settle_prediction
 from core.performance.calibration import fit_calibration
 from core.instruments import InstrumentCandidate
@@ -110,6 +111,62 @@ class E2EInjectedSettlementProvider:
             raise ProviderError("no deterministic settlement bars", code="empty_data", provider=self.provider_name)
         bar = bars[-1]
         return Quote(instrument=instrument, timestamp=bar.timestamp, price=bar.close, volume=bar.volume)
+
+
+class E2EInjectedEventProvider:
+    """Typed, point-in-time event evidence for browser context coverage."""
+
+    provider_name = "e2e_typed_events"
+
+    def get_events(self, instrument, *, as_of: datetime, limit: int = 20) -> list[EventEvidence]:
+        event_at = datetime(2025, 12, 31, 20, 0, tzinfo=timezone.utc)
+        published_at = datetime(2025, 12, 31, 19, 0, tzinfo=timezone.utc)
+        known_at = datetime(2025, 12, 31, 19, 30, tzinfo=timezone.utc)
+        title = f"{instrument.symbol} earnings outlook"
+        return [
+            EventEvidence(
+                event_id=f"e2e-{instrument.symbol}-wire",
+                source="Reuters",
+                source_type="professional",
+                category="earnings",
+                event_at=event_at,
+                published_at=published_at,
+                known_at=known_at,
+                retrieved_at=as_of,
+                importance=72,
+                affected_symbols=(instrument.symbol,),
+                title=title,
+                summary="Deterministic typed event evidence for Phase 6 browser coverage.",
+                url=f"https://example.invalid/e2e/{instrument.symbol}/wire",
+                sentiment=0.2,
+                primary_source=False,
+                reported_credibility=80,
+                credibility_score=source_credibility("Reuters", reported=80),
+                provider=self.provider_name,
+                capability={"historical_known_time": True, "injected_test": True},
+            ),
+            EventEvidence(
+                event_id=f"e2e-{instrument.symbol}-ir",
+                source="Company IR",
+                source_type="official",
+                category="earnings",
+                event_at=event_at + timedelta(minutes=10),
+                published_at=published_at + timedelta(minutes=10),
+                known_at=known_at + timedelta(minutes=10),
+                retrieved_at=as_of,
+                importance=72,
+                affected_symbols=(instrument.symbol,),
+                title=title,
+                summary="Deterministic official-source event evidence for Phase 6 browser coverage.",
+                url=f"https://example.invalid/e2e/{instrument.symbol}/ir",
+                sentiment=-0.2,
+                primary_source=True,
+                reported_credibility=80,
+                credibility_score=source_credibility("Company IR", primary_source=True, reported=80),
+                provider=self.provider_name,
+                capability={"historical_known_time": True, "injected_test": True},
+            ),
+        ][:limit]
 
 
 def _signal(
@@ -319,7 +376,9 @@ def main() -> None:
 
     analysis_service = AnalysisService(
         market_provider_factory=lambda _instrument: FixtureProvider(),
+        benchmark_provider_factory=lambda _instrument: FixtureProvider(),
         news_provider=FixtureNewsProvider(),
+        event_provider=E2EInjectedEventProvider(),
         llm_provider=None,
         store=SQLiteStore(args.db),
     )
@@ -341,6 +400,7 @@ def main() -> None:
         create_app(
             store=scheduler_store,
             analysis_service=analysis_service,
+            event_provider=E2EInjectedEventProvider(),
             instrument_validator=E2EInjectedInstrumentValidator(),
             scheduler_executor=scheduler_executor,
             scheduler_resource_probe=E2EInjectedSchedulerResourceProbe(),

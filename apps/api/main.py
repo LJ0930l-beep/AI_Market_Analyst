@@ -1,8 +1,8 @@
 """Optional local FastAPI product API for paper-only market research.
 
 The stdlib core remains usable without FastAPI.  The API deliberately keeps
-existing successful response shapes stable while exposing the Phase 5 durable
-Watchlist/AppSetting foundation over the accepted Phase 0-4 paper-only core.
+existing successful response shapes stable while exposing Phase 6 deterministic
+context evidence over the accepted Phase 0-5 paper-only core.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from uuid import uuid4
 
 from core.ai import OllamaProvider
 from core.ai.prompts import PROMPT_VERSION
+from core.benchmarks import benchmark_capabilities
 from core.alerts import (
     ALERT_PAGE_LIMIT,
     ALERT_SEVERITIES,
@@ -24,6 +25,7 @@ from core.alerts import (
     alert_policy,
 )
 from core.analysis_service import AnalysisError, AnalysisService
+from core.events import NewsEventProviderAdapter, event_capabilities
 from core.instruments import (
     CandidateParseError,
     Instrument,
@@ -32,6 +34,7 @@ from core.instruments import (
     parse_instrument_candidate,
     phase1_universe,
 )
+from core.memory import MarketMemoryService, memory_capabilities
 from core.news_engine import NewsEngine, RSSNewsProvider
 from core.outcomes import OutcomeStatus
 from core.performance.metrics import build_performance_snapshot
@@ -57,8 +60,8 @@ from core.signals import Action
 from core.storage import APP_SETTING_DEFINITIONS, SQLiteStore, validate_app_setting_value
 
 _UNSET = object()
-API_VERSION = "0.5.0"
-API_PHASE = 5
+API_VERSION = "0.6.0"
+API_PHASE = 6
 DEFAULT_CORS_ORIGINS = (
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -137,6 +140,7 @@ def _service(
     provider: object | None = None,
     store: SQLiteStore | None = None,
     news_provider: object | None = None,
+    event_provider: object | None = None,
     llm_provider: object | None = _UNSET,
 ) -> AnalysisService:
     factory = (lambda _instrument: provider) if provider is not None else build_default_provider
@@ -146,6 +150,7 @@ def _service(
     return AnalysisService(
         market_provider_factory=factory,
         news_provider=selected_news,
+        event_provider=event_provider,
         llm_provider=selected_llm,
         store=selected_store,
     )
@@ -177,6 +182,12 @@ def get_news_provider() -> object:
     """FastAPI dependency boundary for the news provider."""
 
     return _news_provider()
+
+
+def get_event_provider() -> object:
+    """FastAPI dependency boundary for typed event evidence."""
+
+    return NewsEventProviderAdapter(_news_provider())
 
 
 def get_llm_provider() -> OllamaProvider | None:
@@ -220,11 +231,12 @@ if FastAPI is not None:
     def get_analysis_service(
         store: SQLiteStore = Depends(get_store),
         news_provider: object = Depends(get_news_provider),
+        event_provider: object = Depends(get_event_provider),
         llm_provider: object | None = Depends(get_llm_provider),
     ) -> AnalysisService:
         """Build the analysis service from overridable store/provider dependencies."""
 
-        return _service(store=store, news_provider=news_provider, llm_provider=llm_provider)
+        return _service(store=store, news_provider=news_provider, event_provider=event_provider, llm_provider=llm_provider)
 
 
     def get_snapshot_service(
@@ -462,6 +474,13 @@ def _parse_utc_timestamp(value: object) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
+def _required_utc_timestamp(value: object, *, field: str = "as_of") -> datetime:
+    parsed = _parse_utc_timestamp(value)
+    if parsed is None:
+        raise APIError(400, "INVALID_AS_OF", f"{field} must be an ISO timestamp with timezone", context={"field": field})
+    return parsed
+
+
 def _prediction_valid_until(prediction: dict[str, Any]) -> datetime | None:
     explicit = _parse_utc_timestamp(prediction.get("signal_valid_until"))
     if explicit is not None:
@@ -616,6 +635,23 @@ if FastAPI is not None:
                 "detail": str(exc),
             }
 
+    @router.get("/health/context")
+    def health_context() -> dict[str, object]:
+        return {
+            "phase": API_PHASE,
+            "api_version": API_VERSION,
+            "benchmark": benchmark_capabilities(),
+            "events": event_capabilities(),
+            "memory": memory_capabilities(),
+            "time_policy": {
+                "owner": "python",
+                "major_event_effects": "validity_cap_and_re_evaluation",
+                "llm_override": False,
+            },
+            "read_only_get": True,
+            "cloud_required": False,
+        }
+
     @router.get("/instruments")
     def instruments(store: SQLiteStore = Depends(get_store)) -> list[dict[str, object]]:
         return _instrument_catalog(store)
@@ -672,6 +708,11 @@ if FastAPI is not None:
             validation_provider=validation.provider,
             validated_at=validation.validated_at.astimezone(timezone.utc).isoformat(),
         )
+        # Registration is the explicit write boundary for the deterministic
+        # benchmark mapping; context GETs remain read-only.
+        from core.benchmarks import benchmark_metadata_for
+
+        store.save_benchmark_metadata(benchmark_metadata_for(candidate.instrument).to_dict())
         stored = store.get_instrument_record(symbol)
         assert stored is not None
         return {
@@ -915,6 +956,91 @@ if FastAPI is not None:
         except ValueError as exc:
             raise APIError(400, "INVALID_SYMBOL", "unsupported instrument symbol", detail=str(exc), context={"symbol": symbol}) from exc
         return NewsEngine(news_provider).collect(instrument, limit=10).to_dict()
+
+    @router.get("/instruments/{symbol}/context")
+    def instrument_context(
+        symbol: str,
+        timeframe: str = "1h",
+        limit: str = "120",
+        as_of: str | None = None,
+        service: AnalysisService = Depends(get_analysis_service),
+        store: SQLiteStore = Depends(get_store),
+    ) -> dict[str, object]:
+        timeframe = _normalize_timeframe(timeframe)
+        bounded_limit = _analysis_limit(limit, label="context")
+        cutoff = _required_utc_timestamp(as_of) if as_of is not None else None
+        try:
+            instrument = _resolve_instrument(store, symbol)
+            result = service.market_context_snapshot(
+                instrument,
+                timeframe=timeframe,
+                limit=bounded_limit,
+                as_of=cutoff,
+            )
+            return result.to_dict()
+        except ValueError as exc:
+            raise APIError(400, "INVALID_CONTEXT_REQUEST", "context request is invalid", detail=str(exc)) from exc
+        except AnalysisError as exc:
+            raise APIError(
+                503,
+                "CONTEXT_PROVIDER_ERROR",
+                "deterministic context provider failed",
+                detail=str(exc),
+                context={"provider": exc.provider, "provider_error_code": exc.code},
+            ) from exc
+
+    @router.get("/instruments/{symbol}/events")
+    def instrument_events(
+        symbol: str,
+        timeframe: str = "1h",
+        limit: str = "120",
+        as_of: str | None = None,
+        service: AnalysisService = Depends(get_analysis_service),
+        store: SQLiteStore = Depends(get_store),
+    ) -> dict[str, object]:
+        context = instrument_context(symbol, timeframe, limit, as_of, service, store)
+        return {
+            "symbol": context.get("symbol"),
+            "as_of": context.get("data_as_of"),
+            "events": context.get("events"),
+            "time_policy": context.get("time_policy"),
+            "provenance": context.get("provenance"),
+        }
+
+    @router.get("/instruments/{symbol}/memory")
+    def instrument_memory(
+        symbol: str,
+        timeframe: str = "1h",
+        limit: str = "120",
+        as_of: str | None = None,
+        service: AnalysisService = Depends(get_analysis_service),
+        store: SQLiteStore = Depends(get_store),
+    ) -> dict[str, object]:
+        context = instrument_context(symbol, timeframe, limit, as_of, service, store)
+        return {
+            "symbol": context.get("symbol"),
+            "as_of": context.get("data_as_of"),
+            "market_memory": context.get("market_memory"),
+            "provenance": context.get("provenance"),
+        }
+
+    @router.post("/memory/materialize")
+    def materialize_memory(
+        body: dict[str, Any] | None = Body(default=None),
+        store: SQLiteStore = Depends(get_store),
+    ) -> dict[str, object]:
+        body = body or {}
+        if set(body) - {"as_of", "source_type", "limit"} or "as_of" not in body:
+            raise APIError(400, "INVALID_MEMORY_MATERIALIZATION_PAYLOAD", "memory materialization requires only as_of, source_type and limit")
+        source_type = str(body.get("source_type", "live"))
+        if source_type not in VALID_SOURCE_TYPES:
+            raise APIError(400, "INVALID_SOURCE_TYPE", "memory source_type must be live or replay")
+        try:
+            limit = _clamp_limit(int(body.get("limit", 500)), maximum=1_000)
+        except (TypeError, ValueError) as exc:
+            raise APIError(400, "INVALID_LIMIT", "memory materialization limit must be an integer", detail=str(body.get("limit"))) from exc
+        service = MarketMemoryService(store)
+        return service.materialize(as_of=_required_utc_timestamp(body["as_of"]), source_type=source_type, limit=limit)
 
     @router.post("/analysis/{symbol}")
     def analysis(
@@ -1328,6 +1454,7 @@ def create_app(
     analysis_service: AnalysisService | None = None,
     snapshot_service: AnalysisService | None = None,
     news_provider: object | None = None,
+    event_provider: object | None = None,
     llm_provider: object | None = _UNSET,
     instrument_validator: InstrumentValidator | None = None,
     scheduler_runtime: LocalSchedulerRuntime | None = None,
@@ -1348,8 +1475,8 @@ def create_app(
     app = FastAPI(
         title="AI Market Analyst",
         version=API_VERSION,
-        description="Local-first Phase 5 market research API with durable Watchlist/AppSetting foundation, an explicit opt-in local Watchlist scan runtime disabled by default, and structured paper-only tracking.",
-        openapi_extra={"x-phase": API_PHASE, "x-product-baseline": "phase5"},
+        description="Local-first Phase 6 market research API with deterministic Benchmark Context, point-in-time event intelligence, leakage-safe Market Memory, explicit local scheduling and structured paper-only tracking.",
+        openapi_extra={"x-phase": API_PHASE, "x-product-baseline": "phase6"},
     )
     app.state.api_phase = API_PHASE
     app.state.api_version = API_VERSION
@@ -1410,6 +1537,9 @@ def create_app(
         app.dependency_overrides[get_store] = lambda: store
     if news_provider is not None:
         app.dependency_overrides[get_news_provider] = lambda: news_provider
+        app.dependency_overrides[get_event_provider] = lambda: event_provider or NewsEventProviderAdapter(news_provider)
+    elif event_provider is not None:
+        app.dependency_overrides[get_event_provider] = lambda: event_provider
     if llm_provider is not _UNSET:
         app.dependency_overrides[get_llm_provider] = lambda: llm_provider
     if instrument_validator is not None:
@@ -1433,6 +1563,7 @@ def create_app(
                 service_or_factory = lambda: _service(
                     store=scheduler_store,
                     news_provider=news_provider,
+                    event_provider=event_provider,
                     llm_provider=llm_provider,
                 )
             executor = DefaultScanAnalysisExecutor(service_or_factory, scheduler_store)

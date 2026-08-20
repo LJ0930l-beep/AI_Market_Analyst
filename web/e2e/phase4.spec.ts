@@ -37,6 +37,9 @@ test("health, durable Watchlist, and read-only Asset Detail analysis", async ({ 
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
   await expect(page.getByText("Backend connected")).toBeVisible();
   const before = await (await page.request.get("/api/stats")).json();
+  const contextHealth = await page.request.get("/api/health/context");
+  expect(contextHealth.status()).toBe(200);
+  expect(await contextHealth.json()).toMatchObject({ phase: 6, api_version: "0.6.0", read_only_get: true, cloud_required: false });
 
   await page.getByRole("link", { name: "Watchlist" }).press("Enter");
   await expect(page.getByRole("heading", { name: "Watchlist", exact: true })).toBeVisible();
@@ -64,10 +67,17 @@ test("health, durable Watchlist, and read-only Asset Detail analysis", async ({ 
   await expect(page.getByRole("heading", { name: "Asset detail / AAPL" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Run analysis" })).toBeVisible();
   await expect(page.getByText("OHLCV evidence")).toBeVisible();
+  const phase6Context = page.getByRole("region", { name: "Benchmark, events and Market Memory" });
+  await expect(phase6Context).toBeVisible();
+  await expect(phase6Context.getByText("benchmark_mapping_v1", { exact: true })).toBeVisible();
+  await expect(phase6Context.getByText("event_schema_v1", { exact: true })).toBeVisible();
+  await expect(phase6Context.getByText("market_memory_v1", { exact: true })).toBeVisible();
 
   const loaded = await (await page.request.get("/api/stats")).json();
   expect(loaded.predictions).toBe(before.predictions);
   expect(loaded.paper_trades).toBe(before.paper_trades);
+  expect(loaded.phase6_events).toBe(before.phase6_events);
+  expect(loaded.market_memory_features).toBe(before.market_memory_features);
 
   const analysisResponse = page.waitForResponse((response) => response.url().endsWith("/api/analysis/AAPL") && response.request().method() === "POST");
   await page.getByRole("button", { name: "Run analysis" }).press("Enter");
@@ -81,6 +91,8 @@ test("health, durable Watchlist, and read-only Asset Detail analysis", async ({ 
   const after = await (await page.request.get("/api/stats")).json();
   expect(after.predictions).toBe(before.predictions + 1);
   expect(after.paper_trades).toBe(before.paper_trades);
+  expect(after.phase6_events).toBeGreaterThan(loaded.phase6_events);
+  expect(after.market_memory_features).toBe(loaded.market_memory_features);
 
   await page.goto("/watchlist");
   await expect(page.getByRole("heading", { name: "Watchlist", exact: true })).toBeVisible();
@@ -179,6 +191,7 @@ test("explicit local scheduler scans Watchlist once, updates Radar, and stops cl
   await expect(scheduler.getByText(/effective model limit 1/)).toBeVisible();
   await expect(scheduler.getByText(/settlement_v1/)).toBeVisible();
   await expect(scheduler.getByText(/live_performance_v1/)).toBeVisible();
+  await expect(page.getByRole("region", { name: "Phase 6 context capabilities" })).toBeVisible();
   await expect(scheduler.getByRole("button", { name: "Enable scheduler" })).toBeVisible();
 });
 
@@ -320,10 +333,11 @@ test("SPA deep links return HTML while /api/health remains JSON", async ({ page 
   const health = await page.request.get("/api/health");
   expect(health.status()).toBe(200);
   expect(health.headers()["content-type"]).toContain("application/json");
-  expect(await health.json()).toMatchObject({ status: "ok", phase: 5, real_orders: false });
+  expect(await health.json()).toMatchObject({ status: "ok", phase: 6, api_version: "0.6.0", real_orders: false });
 });
 
-test("all Phase 4 routes pass axe and page-level overflow checks at desktop and 390x844", async ({ page }) => {
+test("all Phase 6 routes pass axe and page-level overflow checks at desktop and 390x844", async ({ page }) => {
+  test.setTimeout(120_000);
   for (const route of phase4Routes) {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(route);

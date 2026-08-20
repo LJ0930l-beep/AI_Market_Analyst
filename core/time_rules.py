@@ -115,6 +115,7 @@ def build_time_policy(
     atr14: float,
     market_regime: str,
     events: Iterable[NewsEvent] = (),
+    event_evidence: Iterable[object] = (),
     now: datetime | None = None,
 ) -> TimePolicy:
     """Build bounded time choices using only program-calculated inputs."""
@@ -124,6 +125,8 @@ def build_time_policy(
         raise ValueError(f"unsupported timeframe: {timeframe!r}")
     if price <= 0 or atr14 < 0:
         raise ValueError("price must be positive and ATR must be non-negative")
+    events = tuple(events)
+    event_evidence = tuple(event_evidence)
     validity, holding = PHASE2_RANGES[key]
     volatility_ratio = atr14 / max(price * 0.01, 1e-9)
     reasons: list[str] = ["timeframe_baseline"]
@@ -144,11 +147,15 @@ def build_time_policy(
     elif market_regime in {"bull_trend", "bear_trend"} and volatility_ratio < 1.25:
         validity_max = min(validity_max + max(15, validity_max // 10), validity_max * 2)
         reasons.append("trend_regime_allowed_extension")
-    event_risk = any(event.importance >= 70 for event in events)
+    event_risk = any(event.importance >= 70 for event in events) or any(
+        int(getattr(event, "importance", 0) or 0) >= 70 for event in event_evidence
+    )
     if event_risk:
         holding_max = max(holding_min, min(holding_max, 3 * 24 * 60))
         validity_max = min(validity_max, max(validity_min, 4 * 60))
         reasons.append("high_impact_event_cap")
+        if any(int(getattr(event, "importance", 0) or 0) >= 70 for event in event_evidence):
+            reasons.append("phase6_event_evidence")
     reevaluate_min = max(15, validity_min // 2)
     reevaluate_max = max(reevaluate_min, validity_max)
     validity_allowed = _allowed_values(_VALIDITY_VALUES[key], validity_min, validity_max)

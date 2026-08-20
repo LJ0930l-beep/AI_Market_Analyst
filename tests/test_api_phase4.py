@@ -170,7 +170,7 @@ class Phase4APITests(unittest.TestCase):
             metadata = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
             self.assertEqual(metadata["project"]["version"], API_VERSION)
             self.assertEqual(PROMPT_VERSION, "phase2-json-v8")
-            self.assertEqual(client.get("/health").json()["phase"], 5)
+            self.assertEqual(client.get("/health").json()["phase"], 6)
 
             cors = client.options(
                 "/health",

@@ -9,6 +9,8 @@ import type {
   AssetType,
   AppSetting,
   CalibrationCurrent,
+  ContextHealthResponse,
+  MarketContextResponse,
   HealthResponse,
   Instrument,
   InstrumentRegistrationResponse,
@@ -30,8 +32,8 @@ import type {
 
 export const fakeHealth: HealthResponse = {
   status: "ok",
-  phase: 5,
-  api_version: "0.5.0",
+  phase: 6,
+  api_version: "0.6.0",
   product: "AI Market Analyst",
   real_orders: false,
   private_keys: false,
@@ -255,6 +257,17 @@ export const fakeProviderHealth: ProviderHealthResponse = {
   news: { provider: "fixture_news", configured: true, probe: "deferred_until_symbol_request" },
 };
 
+export const fakeContextHealth: ContextHealthResponse = {
+  phase: 6,
+  api_version: "0.6.0",
+  benchmark: { context_version: "benchmark_context_v1", mapping_version: "benchmark_mapping_v1" },
+  events: { schema_version: "event_schema_v1", cluster_version: "event_cluster_v1" },
+  memory: { version: "market_memory_v1", feature_version: "feature_representation_v1", retention_limit: 1000 },
+  time_policy: { owner: "python", llm_override: false },
+  read_only_get: true,
+  cloud_required: false,
+};
+
 export const fakeStats: StatsResponse = {
   predictions: 12,
   paper_trades: 3,
@@ -390,6 +403,43 @@ export const fakeNews: InstrumentNews = {
   clusters: [],
 };
 
+export const fakeMarketContext: MarketContextResponse = {
+  symbol: "NVDA",
+  timeframe: "1h",
+  response_time: "2030-01-02T12:05:00Z",
+  data_as_of: "2030-01-02T12:00:00Z",
+  provider_snapshot: fakeSnapshot.provider_snapshot,
+  benchmark_context: {
+    version: "benchmark_context_v1",
+    status: "available",
+    benchmark: { benchmark_symbol: "SOXX", mapping_version: "benchmark_mapping_v1", status: "mapped" },
+    provider: "fixture",
+    relative_performance: 0.012,
+    relative_strength: 0.12,
+    capability: { future_bars_excluded: true },
+  },
+  events: {
+    schema_version: "event_schema_v1",
+    cluster_version: "event_cluster_v1",
+    credibility_version: "source_credibility_v1",
+    available: true,
+    events: [],
+    clusters: [],
+    capability: { point_in_time: true, future_evidence_excluded: true },
+  },
+  market_memory: {
+    version: "market_memory_v1",
+    feature_version: "feature_representation_v1",
+    status: "preliminary",
+    eligible_sample_count: 0,
+    resolved_sample_count: 0,
+    similar_count: 0,
+    capability: { reason: "insufficient_point_in_time_resolved_samples", future_evidence_excluded: true },
+  },
+  time_policy: { event_risk: false, reason_codes: ["timeframe_baseline"] },
+  provenance: { read_only: true, prediction_created: false, memory_materialized: false },
+};
+
 export const fakeAnalysis: AnalysisResult = {
   instrument: { symbol: "NVDA", asset_type: "equity", exchange: "NASDAQ", quote_currency: "USD" },
   timeframe: "1h",
@@ -420,6 +470,7 @@ export function createFakeClient(overrides: Partial<ApplicationShellApiClient> =
   const defaults: ApplicationShellApiClient = {
     health: vi.fn().mockResolvedValue(fakeHealth),
     providerHealth: vi.fn().mockResolvedValue(fakeProviderHealth),
+    contextHealth: vi.fn().mockResolvedValue(fakeContextHealth),
     modelHealth: vi.fn().mockResolvedValue({ provider: "ollama", available: true }),
     stats: vi.fn().mockResolvedValue(fakeStats),
     schedulerStatus: vi.fn().mockResolvedValue(fakeSchedulerStatus),
@@ -442,6 +493,7 @@ export function createFakeClient(overrides: Partial<ApplicationShellApiClient> =
     resetAppSetting: vi.fn().mockResolvedValue({ key: fakeAppSettings[0].key, deleted: true, setting: fakeAppSettings[0] }),
     instrumentSnapshot: vi.fn().mockResolvedValue(fakeSnapshot),
     instrumentNews: vi.fn().mockResolvedValue(fakeNews),
+    instrumentContext: vi.fn().mockResolvedValue(fakeMarketContext),
     analysis: vi.fn().mockResolvedValue(fakeAnalysis),
     predictions: vi.fn().mockResolvedValue([fakePrediction]),
     prediction: vi.fn().mockResolvedValue(fakePrediction),

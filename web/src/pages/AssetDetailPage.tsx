@@ -6,6 +6,7 @@ import type {
   Action,
   AnalysisResult,
   Instrument,
+  MarketContextResponse,
   InstrumentNews,
   MarketBar,
   MarketSnapshot,
@@ -312,6 +313,72 @@ function NewsClusters({ clusters }: { clusters: NewsCluster[] }) {
   );
 }
 
+function ContextEvidence({ context }: { context: MarketContextResponse }) {
+  const benchmark = context.benchmark_context;
+  const events = context.events;
+  const memory = context.market_memory;
+  const clusters = Array.isArray(events?.clusters) ? events.clusters : [];
+  return (
+    <div className="news-evidence">
+      <section aria-labelledby="benchmark-context-title">
+        <h3 id="benchmark-context-title" className="subsection-label">Benchmark Context</h3>
+        <DataFacts
+          entries={[
+            ["Status", stringText(benchmark?.status)],
+            ["Mapping", stringText(benchmark?.benchmark?.benchmark_symbol)],
+            ["Mapping version", stringText(benchmark?.benchmark?.mapping_version)],
+            ["Provider", stringText(benchmark?.provider)],
+            ["Relative performance", numberText(benchmark?.relative_performance)],
+            ["Relative strength", numberText(benchmark?.relative_strength)],
+            ["As of", timestampText(benchmark?.as_of)],
+          ]}
+        />
+        {benchmark?.status !== "available" ? <p className="panel-degraded-note" role="status">Benchmark comparison is unavailable; no benchmark identity or score is fabricated.</p> : null}
+      </section>
+      <section aria-labelledby="event-context-title">
+        <h3 id="event-context-title" className="subsection-label">Point-in-time Events</h3>
+        <DataFacts
+          entries={[
+            ["Provider", stringText(events?.provider)],
+            ["Available", booleanText(events?.available)],
+            ["Event schema", stringText(events?.schema_version)],
+            ["Clusters", numberText(clusters.length)],
+            ["As of", timestampText(events?.as_of)],
+          ]}
+        />
+        {events?.available === false ? <p className="panel-degraded-note" role="status">Event provider is unavailable; no historical event evidence is claimed.</p> : null}
+        {clusters.length > 0 ? (
+          <ul className="news-cluster-list">
+            {clusters.slice(0, 3).map((cluster, index) => (
+              <li key={cluster.cluster_id ?? `${cluster.title ?? "cluster"}-${index}`}>
+                <strong>{stringText(cluster.title)}</strong>
+                <span>{stringText(cluster.consensus)} · {numberText(cluster.source_count)} sources · importance {numberText(cluster.importance)}</span>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="panel-reading">No point-in-time event cluster was supplied.</p>}
+      </section>
+      <section aria-labelledby="memory-context-title">
+        <h3 id="memory-context-title" className="subsection-label">Market Memory</h3>
+        <DataFacts
+          entries={[
+            ["Status", stringText(memory?.status)],
+            ["Memory version", stringText(memory?.version)],
+            ["Feature version", stringText(memory?.feature_version)],
+            ["Eligible samples", numberText(memory?.eligible_sample_count)],
+            ["Resolved samples", numberText(memory?.resolved_sample_count)],
+            ["Similar records", numberText(memory?.similar_count)],
+            ["Win rate", numberText(memory?.win_rate)],
+            ["As of", timestampText(memory?.as_of)],
+          ]}
+        />
+        <p className="panel-reading">Historical analogues are deterministic and bounded by this as_of. Future outcomes and self-matches are excluded; preliminary samples do not create a score.</p>
+      </section>
+      <p className="panel-boundary">GET context is read-only. It does not create Predictions, Outcomes, PaperTrades, alerts or memory materializations.</p>
+    </div>
+  );
+}
+
 function actionText(action: Action | undefined): string {
   if (action === "LONG" || action === "SHORT") {
     return `${action} · actionable proposal`;
@@ -592,8 +659,13 @@ export function AssetDetailPage({ apiClient, onProvenanceChange }: AssetDetailPa
     (signal: AbortSignal) => apiClient.instrumentNews(canonicalSymbol, signal),
     [apiClient, canonicalSymbol],
   );
+  const contextLoader = useCallback(
+    (signal: AbortSignal) => apiClient.instrumentContext(canonicalSymbol, { timeframe, limit: SNAPSHOT_LIMIT }, signal),
+    [apiClient, canonicalSymbol, timeframe],
+  );
   const snapshot = useAsyncResource(snapshotLoader, Boolean(selectedInstrument));
   const news = useAsyncResource(newsLoader, Boolean(selectedInstrument));
+  const context = useAsyncResource(contextLoader, Boolean(selectedInstrument));
 
   useEffect(() => {
     if (selectedInstrument && selectedInstrument.symbol !== requestedSymbol) {
@@ -639,6 +711,8 @@ export function AssetDetailPage({ apiClient, onProvenanceChange }: AssetDetailPa
   const newsData = news.data;
   const newsEmpty = Boolean(newsData && newsData.available !== false && (newsData.events?.length ?? 0) === 0);
   const newsDegraded = newsData?.available === false;
+  const contextData = context.data;
+  const contextDegraded = contextData?.benchmark_context?.status === "unavailable" || contextData?.events?.available === false;
 
   const handleInstrumentSelect = (symbol: string) => {
     navigate(`/assets/${encodeURIComponent(symbol)}`);
@@ -738,6 +812,20 @@ export function AssetDetailPage({ apiClient, onProvenanceChange }: AssetDetailPa
               className="asset-panel"
             >
               {newsData ? <NewsEvidence news={newsData} /> : null}
+            </AsyncPanel>
+
+            <AsyncPanel
+              title="Benchmark, events and Market Memory"
+              source={`GET /instruments/${canonicalSymbol}/context?timeframe=${timeframe}&limit=${SNAPSHOT_LIMIT}`}
+              freshness={contextData?.data_as_of ? `data_as_of ${contextData.data_as_of}` : "data_as_of not supplied"}
+              state={resourcePanelState(context, !contextData, contextDegraded)}
+              error={context.error}
+              onRetry={context.retry}
+              emptyMessage="No deterministic Phase 6 context was returned."
+              degradedMessage="One or more Phase 6 context capabilities are unavailable; no fallback is presented as verified data."
+              className="asset-panel asset-panel--wide"
+            >
+              {contextData ? <ContextEvidence context={contextData} /> : null}
             </AsyncPanel>
 
             <AnalysisPanel state={analysisState} onRun={runAnalysis} />

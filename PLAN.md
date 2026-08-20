@@ -2,9 +2,9 @@
 
 ## Current phase
 
-Phase 5 - Radar, watchlist, scanning and alerts.
+Phase 6 - Benchmark Context, Events/TimePolicy, News Quality and Market Memory.
 
-Current task: `Phase 5 Gate` - developer-verified, ready for Sol review; no Phase 6 implementation.
+Current task: `Phase 6 Gate complete` - developer-verified and ready for supervisor acceptance; Phase 7 not started.
 
 P4-T04 execution split:
 
@@ -38,16 +38,18 @@ P4-T04 execution split:
 3. Low-concurrency scheduler, market-session policy, caching, resource backoff, background settlement and live refresh - ACCEPTED.
    - `P5-T03a` safe local Watchlist scheduler and scan execution foundation - ACCEPTED.
    - `P5-T03b` background Outcome settlement + performance/Radar refresh - ACCEPTED.
-4. `P5-T04` local alert model, deduplication, acknowledge flow and UI integration - DEVELOPER-VERIFIED.
-5. Restart/recovery, performance/resource tests, E2E and Phase 5 Gate evidence - READY FOR SOL REVIEW.
+4. `P5-T04` local alert model, deduplication, acknowledge flow and UI integration - ACCEPTED.
+5. Restart/recovery, performance/resource tests, E2E and Phase 5 Gate evidence - ACCEPTED.
 
 ## Phase 6 task graph
 
-1. Benchmark metadata/providers and deterministic Benchmark Context.
-2. Event schema/provider interfaces and major-event TimePolicy effects.
-3. Multi-source event clustering and credibility/primary-source model.
-4. Leakage-safe deterministic Market Memory and API/UI integration.
-5. Capability fallback, leakage tests, E2E and Phase 6 report.
+1. Benchmark metadata/providers and deterministic Benchmark Context - COMPLETE (developer-verified).
+2. Event schema/provider interfaces and major-event TimePolicy effects - COMPLETE (developer-verified).
+3. Multi-source event clustering and credibility/primary-source model - COMPLETE (developer-verified).
+4. Leakage-safe deterministic Market Memory and API/UI integration - COMPLETE (developer-verified).
+5. Capability fallback, leakage tests, E2E and Phase 6 report - COMPLETE (developer-verified; supervisor acceptance pending).
+
+Phase 6 Gate: PASS by developer verification; ready for Sol/supervisor review. Phase 7 remains pending and unimplemented.
 
 ## Phase 7 task graph
 
