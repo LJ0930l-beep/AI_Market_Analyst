@@ -28,7 +28,7 @@ describe("SettingsHealthPage", () => {
     const { providerHealth } = renderSettings();
 
     const backend = screen.getByRole("region", { name: "Backend service" });
-    expect(await within(backend).findByText("0.4.0")).toBeInTheDocument();
+    expect(await within(backend).findByText("0.5.0")).toBeInTheDocument();
     expect(within(backend).getAllByText("false")).toHaveLength(2);
 
     const provider = screen.getByRole("region", { name: "Market and news routing" });

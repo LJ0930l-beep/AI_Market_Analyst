@@ -1330,6 +1330,28 @@ summary:focus-visible,
   text-underline-offset: 0.16em;
 }
 
+.watchlist-roster__actions {
+  display: grid;
+  min-width: 0;
+  justify-items: end;
+  gap: 0.35rem;
+}
+
+.watchlist-roster__actions .quiet-button {
+  font-family: var(--data);
+  font-size: 0.62rem;
+}
+
+.watchlist-mutation-error {
+  margin: 0.8rem 0 0;
+  padding: 0.65rem 0.75rem;
+  border-left: 3px solid var(--short);
+  background: var(--surface);
+  color: var(--short);
+  font-family: var(--data);
+  font-size: 0.7rem;
+}
+
 .replay-run-table,
 .replay-sample-table {
   width: 100%;
@@ -1492,6 +1514,11 @@ summary:focus-visible,
   .capability-ledger {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .watchlist-roster__actions {
+    width: 100%;
+    justify-items: start;
   }
 
   .capability-ledger {

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Phase 5 - P5-T01a durable Watchlist and AppSetting foundation
+
+- Added idempotent SQLite schema migration v5 with durable `watchlist_entries` and typed `app_settings`.
+- Added strict canonical Watchlist CRUD and four validated scheduler-resource settings whose persistence does not activate background behavior.
+- Upgraded Watchlist to separate durable Saved membership from Available canonical instruments with real API Add/Remove actions.
+- Aligned API, Python and web package contracts to Phase 5 / version 0.5.0.
+- Verification: 52 Python tests, 47 frontend tests and 7 browser E2E tests PASS; migration/restart persistence and dependency audits PASS.
+
 ### Phase 4 - P4-T07 browser Gate and completion
 
 - Added a disposable real FastAPI/SQLite E2E harness, production-build preview/proxy server and serial Playwright browser suite.

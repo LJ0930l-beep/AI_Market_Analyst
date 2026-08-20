@@ -95,6 +95,35 @@ describe("ApiClient", () => {
     expect(fetchImpl).toHaveBeenCalledWith("http://localhost:8000/stats", expect.objectContaining({ method: "GET" }));
   });
 
+  it("keeps durable watchlist and safe setting CRUD routes typed", async () => {
+    const fetchImpl = vi
+      .fn<FetchMock>()
+      .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(response({ symbol: "NVDA", instrument: { symbol: "NVDA" }, added_at: "now", updated_at: "now" }))
+      .mockResolvedValueOnce(response({ symbol: "NVDA", instrument: { symbol: "NVDA" }, added_at: "now", updated_at: "later" }))
+      .mockResolvedValueOnce(response({ symbol: "NVDA", deleted: true }))
+      .mockResolvedValueOnce(response([{ key: "scheduler.enabled", value: false }]))
+      .mockResolvedValueOnce(response({ key: "scheduler.enabled", value: true }))
+      .mockResolvedValueOnce(response({ key: "scheduler.enabled", deleted: true, setting: { key: "scheduler.enabled", value: false } }));
+    const client = new ApiClient({ baseUrl: "http://localhost:8000", fetchImpl });
+
+    await client.watchlist();
+    await client.addWatchlist("NVDA");
+    await client.upsertWatchlist("NVDA");
+    await client.removeWatchlist("NVDA");
+    await client.appSettings();
+    await client.updateAppSetting("scheduler.enabled", true);
+    await client.resetAppSetting("scheduler.enabled");
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(1, "http://localhost:8000/watchlist", expect.objectContaining({ method: "GET" }));
+    expect(fetchImpl).toHaveBeenNthCalledWith(2, "http://localhost:8000/watchlist", expect.objectContaining({ method: "POST", body: JSON.stringify({ symbol: "NVDA" }) }));
+    expect(fetchImpl).toHaveBeenNthCalledWith(3, "http://localhost:8000/watchlist/NVDA", expect.objectContaining({ method: "PUT", body: JSON.stringify({ symbol: "NVDA" }) }));
+    expect(fetchImpl).toHaveBeenNthCalledWith(4, "http://localhost:8000/watchlist/NVDA", expect.objectContaining({ method: "DELETE" }));
+    expect(fetchImpl).toHaveBeenNthCalledWith(5, "http://localhost:8000/settings", expect.objectContaining({ method: "GET" }));
+    expect(fetchImpl).toHaveBeenNthCalledWith(6, "http://localhost:8000/settings/scheduler.enabled", expect.objectContaining({ method: "PUT", body: JSON.stringify({ value: true }) }));
+    expect(fetchImpl).toHaveBeenNthCalledWith(7, "http://localhost:8000/settings/scheduler.enabled", expect.objectContaining({ method: "DELETE" }));
+  });
+
   it("encodes snapshot filters and sends the explicit analysis body", async () => {
     const fetchImpl = vi
       .fn<FetchMock>()

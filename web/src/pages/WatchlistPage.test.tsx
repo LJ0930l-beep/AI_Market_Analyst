@@ -5,12 +5,13 @@ import { describe, expect, it, vi } from "vitest";
 import { ApplicationShell } from "../App";
 import { ApiError, type ApplicationShellApiClient } from "../api/client";
 import type { Instrument } from "../api/types";
-import { createFakeClient, fakeInstrument } from "../test/fakeClient";
+import { createFakeClient, fakeInstrument, fakeWatchlistEntry } from "../test/fakeClient";
 
-function renderWatchlist(instruments: ApplicationShellApiClient["instruments"]) {
+function renderWatchlist(overrides: Partial<ApplicationShellApiClient> = {}) {
+  const client = createFakeClient(overrides);
   return render(
     <MemoryRouter initialEntries={["/watchlist"]}>
-      <ApplicationShell apiClient={createFakeClient({ instruments })} />
+      <ApplicationShell apiClient={client} />
     </MemoryRouter>,
   );
 }
@@ -27,36 +28,62 @@ const cryptoInstrument: Instrument = {
 };
 
 describe("WatchlistPage", () => {
-  it("renders and searches the live roster with canonical Asset Detail links", async () => {
-    renderWatchlist(vi.fn().mockResolvedValue([fakeInstrument, cryptoInstrument]));
+  it("separates saved membership from the canonical available universe", async () => {
+    renderWatchlist({
+      instruments: vi.fn().mockResolvedValue([fakeInstrument, cryptoInstrument]),
+      watchlist: vi.fn().mockResolvedValue([fakeWatchlistEntry]),
+    });
 
-    const roster = await screen.findByRole("list", { name: "Read-only instrument roster" });
+    const roster = await screen.findByRole("list", { name: "Available instrument roster" });
+    const saved = screen.getByRole("list", { name: "Saved watchlist entries" });
+    expect(within(saved).getByText("NVDA")).toBeInTheDocument();
+    expect(within(saved).getByRole("button", { name: "Remove NVDA from saved watchlist" })).toBeInTheDocument();
     expect(within(roster).getByText("NASDAQ")).toBeInTheDocument();
     expect(within(roster).getByText("America/New_York")).toBeInTheDocument();
     expect(within(roster).getByText("Technology")).toBeInTheDocument();
     expect(within(roster).getAllByRole("link", { name: "Open asset detail" })[0]).toHaveAttribute("href", "/assets/NVDA");
     expect(within(roster).getAllByRole("link", { name: "Open asset detail" })[1]).toHaveAttribute("href", "/assets/BTC-USD");
 
-    fireEvent.change(screen.getByLabelText("Search roster"), { target: { value: "digital assets" } });
+    fireEvent.change(screen.getByLabelText("Search available instruments"), { target: { value: "digital assets" } });
     expect(within(roster).queryByText("NVDA")).not.toBeInTheDocument();
     expect(within(roster).getByText("BTC-USD")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Search roster"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Search available instruments"), { target: { value: "" } });
     fireEvent.change(screen.getByLabelText("Asset type"), { target: { value: "equity" } });
     expect(within(roster).getByText("NVDA")).toBeInTheDocument();
     expect(within(roster).queryByText("BTC-USD")).not.toBeInTheDocument();
-    expect(screen.getByText(/Saved membership, radar ranking, background scans and alerts are not active/)).toBeInTheDocument();
-    expect(screen.getByText(/This browser does not persist a watchlist/)).toBeInTheDocument();
+    expect(screen.getByText(/Ranking, opportunity scores, background scans, scheduling and alerts are not active/)).toBeInTheDocument();
+    expect(screen.getByText(/Membership changes only update local SQLite state/)).toBeInTheDocument();
     expect(screen.getByText("Neutral placeholder")).toBeInTheDocument();
+  });
+
+  it("adds and removes saved membership through the typed client and refreshes state", async () => {
+    const watchlist = vi.fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([fakeWatchlistEntry])
+      .mockResolvedValueOnce([]);
+    const addWatchlist = vi.fn().mockResolvedValue(fakeWatchlistEntry);
+    const removeWatchlist = vi.fn().mockResolvedValue({ symbol: "NVDA", deleted: true });
+    renderWatchlist({ watchlist, addWatchlist, removeWatchlist });
+
+    const available = await screen.findByRole("region", { name: "Available instruments" });
+    const saved = screen.getByRole("region", { name: "Saved watchlist" });
+    fireEvent.click(within(available).getByRole("button", { name: "Add NVDA to saved watchlist" }));
+    expect(addWatchlist).toHaveBeenCalledWith("NVDA");
+    expect(await within(saved).findByRole("button", { name: "Remove NVDA from saved watchlist" })).toBeInTheDocument();
+
+    fireEvent.click(within(saved).getByRole("button", { name: "Remove NVDA from saved watchlist" }));
+    expect(removeWatchlist).toHaveBeenCalledWith("NVDA");
+    expect(await within(saved).findByText("No instruments are saved yet. Add one from the available canonical universe.")).toBeInTheDocument();
   });
 
   it("distinguishes empty and unavailable roster states with scoped retry", async () => {
     const emptyThenLoaded = vi.fn()
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([fakeInstrument]);
-    const emptyView = renderWatchlist(emptyThenLoaded);
+    const emptyView = renderWatchlist({ instruments: emptyThenLoaded });
 
-    expect(await screen.findByText("The instrument endpoint returned no roster records.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Retry Instrument roster" }));
+    expect(await screen.findByText("The instrument endpoint returned no canonical instruments.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry Available instruments" }));
     expect(await screen.findByText("NVDA")).toBeInTheDocument();
     expect(emptyThenLoaded).toHaveBeenCalledTimes(2);
     emptyView.unmount();
@@ -64,19 +91,19 @@ describe("WatchlistPage", () => {
     const unavailableThenLoaded = vi.fn()
       .mockRejectedValueOnce(new ApiError(503, { code: "INSTRUMENTS_UNAVAILABLE", message: "roster unavailable" }))
       .mockResolvedValueOnce([fakeInstrument]);
-    renderWatchlist(unavailableThenLoaded);
+    renderWatchlist({ instruments: unavailableThenLoaded });
 
     expect(await screen.findByRole("alert")).toHaveTextContent("INSTRUMENTS_UNAVAILABLE: roster unavailable");
-    fireEvent.click(screen.getByRole("button", { name: "Retry Instrument roster" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry Available instruments" }));
     expect(await screen.findByText("NVDA")).toBeInTheDocument();
     expect(unavailableThenLoaded).toHaveBeenCalledTimes(2);
   });
 
   it("keeps an incomplete but usable roster visible as degraded", async () => {
     const incomplete: Instrument = { ...fakeInstrument, symbol: "AMD", trading_hours: "" };
-    renderWatchlist(vi.fn().mockResolvedValue([incomplete]));
+    renderWatchlist({ instruments: vi.fn().mockResolvedValue([incomplete]) });
 
-    const panel = await screen.findByRole("region", { name: "Instrument roster" });
+    const panel = await screen.findByRole("region", { name: "Available instruments" });
     expect(within(panel).getByText("Degraded")).toBeInTheDocument();
     expect(within(panel).getByText(/missing descriptive metadata/)).toBeInTheDocument();
     expect(within(panel).getByRole("link", { name: "Open asset detail" })).toHaveAttribute("href", "/assets/AMD");

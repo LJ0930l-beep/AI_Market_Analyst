@@ -3,6 +3,7 @@ import { vi } from "vitest";
 import type { ApplicationShellApiClient } from "../api/client";
 import type {
   AnalysisResult,
+  AppSetting,
   CalibrationCurrent,
   HealthResponse,
   Instrument,
@@ -16,12 +17,13 @@ import type {
   ProviderHealthResponse,
   ReplayRun,
   StatsResponse,
+  WatchlistEntry,
 } from "../api/types";
 
 export const fakeHealth: HealthResponse = {
   status: "ok",
-  phase: 4,
-  api_version: "0.4.0",
+  phase: 5,
+  api_version: "0.5.0",
   product: "AI Market Analyst",
   real_orders: false,
   private_keys: false,
@@ -37,6 +39,52 @@ export const fakeInstrument: Instrument = {
   trading_hours: "regular",
   sector: "Technology",
 };
+
+export const fakeWatchlistEntry: WatchlistEntry = {
+  symbol: fakeInstrument.symbol,
+  instrument: fakeInstrument,
+  added_at: "2030-01-02T12:00:00Z",
+  updated_at: "2030-01-02T12:00:00Z",
+};
+
+export const fakeAppSettings: AppSetting[] = [
+  {
+    key: "scheduler.enabled",
+    value: false,
+    default_value: false,
+    value_type: "boolean",
+    updated_at: null,
+    source: "default",
+    description: "Persisted opt-in flag; no background scheduler is activated by this setting.",
+  },
+  {
+    key: "scheduler.interval_seconds",
+    value: 900,
+    default_value: 900,
+    value_type: "integer",
+    updated_at: null,
+    source: "default",
+    description: "Future local scheduling interval; stored only in this task.",
+  },
+  {
+    key: "scheduler.concurrency",
+    value: 1,
+    default_value: 1,
+    value_type: "integer",
+    updated_at: null,
+    source: "default",
+    description: "Future local resource concurrency limit; stored only in this task.",
+  },
+  {
+    key: "scheduler.session_policy",
+    value: "market_hours",
+    default_value: "market_hours",
+    value_type: "string",
+    updated_at: null,
+    source: "default",
+    description: "Future local session policy; stored only in this task.",
+  },
+];
 
 export const fakePrediction: Prediction = {
   prediction_id: "prediction-latest",
@@ -212,6 +260,14 @@ export function createFakeClient(overrides: Partial<ApplicationShellApiClient> =
     modelHealth: vi.fn().mockResolvedValue({ provider: "ollama", available: true }),
     stats: vi.fn().mockResolvedValue(fakeStats),
     instruments: vi.fn().mockResolvedValue([fakeInstrument]),
+    watchlist: vi.fn().mockResolvedValue([]),
+    addWatchlist: vi.fn().mockResolvedValue(fakeWatchlistEntry),
+    upsertWatchlist: vi.fn().mockResolvedValue(fakeWatchlistEntry),
+    removeWatchlist: vi.fn().mockResolvedValue({ symbol: fakeInstrument.symbol, deleted: true }),
+    appSettings: vi.fn().mockResolvedValue(fakeAppSettings),
+    appSetting: vi.fn().mockResolvedValue(fakeAppSettings[0]),
+    updateAppSetting: vi.fn().mockResolvedValue(fakeAppSettings[0]),
+    resetAppSetting: vi.fn().mockResolvedValue({ key: fakeAppSettings[0].key, deleted: true, setting: fakeAppSettings[0] }),
     instrumentSnapshot: vi.fn().mockResolvedValue(fakeSnapshot),
     instrumentNews: vi.fn().mockResolvedValue(fakeNews),
     analysis: vi.fn().mockResolvedValue(fakeAnalysis),

@@ -38,6 +38,43 @@ export interface Instrument extends JsonRecord {
   sector: string;
 }
 
+export interface WatchlistEntry extends JsonRecord {
+  symbol: string;
+  instrument: Instrument;
+  added_at: string;
+  updated_at: string;
+}
+
+export interface WatchlistDeleteResponse extends JsonRecord {
+  symbol: string;
+  deleted: boolean;
+}
+
+export type AppSettingKey =
+  | "scheduler.enabled"
+  | "scheduler.interval_seconds"
+  | "scheduler.concurrency"
+  | "scheduler.session_policy";
+
+export type AppSettingValue = boolean | number | string;
+export type AppSettingValueType = "boolean" | "integer" | "string";
+
+export interface AppSetting extends JsonRecord {
+  key: AppSettingKey;
+  value: AppSettingValue;
+  default_value: AppSettingValue;
+  value_type: AppSettingValueType;
+  updated_at: string | null;
+  source: "default" | "stored";
+  description: string;
+}
+
+export interface AppSettingResetResponse extends JsonRecord {
+  key: AppSettingKey;
+  deleted: boolean;
+  setting: AppSetting;
+}
+
 export interface ProviderSnapshot extends JsonRecord {
   provider?: string;
   fetched_at?: string;
@@ -211,6 +248,8 @@ export interface StatsResponse extends JsonRecord {
   replay_runs?: number;
   replay_samples?: number;
   calibration_results?: number;
+  watchlist_entries?: number;
+  app_settings?: number;
 }
 
 export type Prediction = JsonRecord & {

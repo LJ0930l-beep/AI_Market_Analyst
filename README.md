@@ -82,6 +82,8 @@ Phase 3 API 增加：`/performance/summary`、`/performance/by-symbol/{symbol}`�
 
 ## 最小 API
 
+当前 API 合同为 Phase 5 / 0.5.0；本任务启用 durable canonical Watchlist/AppSetting foundation，未启用 Radar、扫描、调度或告警行为。
+
 ```powershell
 python -m pip install -e ".[api,market]"
 $env:MARKET_DATA_MODE = "real"
@@ -97,6 +99,8 @@ python -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8000
 - `POST /analysis/{symbol}`，body 可传 `{"timeframe":"1h","limit":120}`
 - `GET /predictions`
 - `POST /predictions/{id}/follow`
+- `GET /watchlist`, `POST /watchlist`, `PUT /watchlist/{symbol}`, `DELETE /watchlist/{symbol}`
+- `GET /settings`, `GET/PUT/DELETE /settings/{key}` for the four typed local scheduler-resource defaults; these endpoints do not activate background work.
 - `GET /health/providers`
 - `GET /health/model`
 
@@ -109,7 +113,7 @@ API 同时返回 `data_as_of` 与 `response_time`，并明确标记真实、Fixt
 - `core/context.py`：不含原始 bars 的压缩 Structured Market Context 与 `input_hash`。
 - `core/ai/`：Ollama、Mock、Prompt、JSON Parser、一次 repair、Signal Validator。
 - `core/analysis_service.py`：完整 Phase 2 编排。
-- `core/storage/`：SQLite 增量迁移、Prediction、News、ProviderSnapshot、ModelRun、PaperTrade、Outcome。
+- `core/storage/`：SQLite 增量迁移、canonical Watchlist/AppSetting、Prediction、News、ProviderSnapshot、ModelRun、PaperTrade、Outcome。
 
 完整验收记录见 [docs/phase2-completion-report.md](docs/phase2-completion-report.md)。
 

@@ -83,3 +83,9 @@ Before Phase 5, Watchlist is a searchable view of the backend instrument roster 
 Date: 2026-08-20
 
 Phase 4 user-flow acceptance runs the production React build against real local FastAPI routes and a disposable SQLite database seeded through existing domain/storage APIs. Browser responses are not mocked. The harness is serial, local and paper-only; cleanup is restricted to a recognized direct child of the operating-system temporary directory, and the formal Phase 3 database is never opened or mutated.
+
+## ADR-015 - Watchlist persistence is canonical first and settings remain inert
+
+Date: 2026-08-20
+
+Phase 5 begins with an idempotent v5 migration for Watchlist membership and typed local scheduler-resource settings. P5-T01a accepts only symbols resolved by the existing canonical registry; public-provider-compatible expansion is isolated in P5-T01b so network validation cannot weaken migration or CRUD safety. Persisted settings do not activate a scheduler, scan, ranking, alert or execution behavior by themselves.

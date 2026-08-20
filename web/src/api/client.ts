@@ -1,6 +1,10 @@
 import type {
   AnalysisRequest,
   AnalysisResult,
+  AppSetting,
+  AppSettingKey,
+  AppSettingResetResponse,
+  AppSettingValue,
   CalibrationCurrent,
   FollowRequest,
   FollowResponse,
@@ -24,6 +28,8 @@ import type {
   ReplayRunFilters,
   SnapshotFilters,
   StatsResponse,
+  WatchlistDeleteResponse,
+  WatchlistEntry,
 } from "./types";
 
 type QueryValue = string | number | boolean | null | undefined;
@@ -84,6 +90,14 @@ export interface MarketApiClient {
   modelHealth(signal?: AbortSignal): Promise<ModelHealthResponse>;
   stats(signal?: AbortSignal): Promise<StatsResponse>;
   instruments(signal?: AbortSignal): Promise<Instrument[]>;
+  watchlist(signal?: AbortSignal): Promise<WatchlistEntry[]>;
+  addWatchlist(symbol: string, signal?: AbortSignal): Promise<WatchlistEntry>;
+  upsertWatchlist(symbol: string, signal?: AbortSignal): Promise<WatchlistEntry>;
+  removeWatchlist(symbol: string, signal?: AbortSignal): Promise<WatchlistDeleteResponse>;
+  appSettings(signal?: AbortSignal): Promise<AppSetting[]>;
+  appSetting(key: AppSettingKey, signal?: AbortSignal): Promise<AppSetting>;
+  updateAppSetting(key: AppSettingKey, value: AppSettingValue, signal?: AbortSignal): Promise<AppSetting>;
+  resetAppSetting(key: AppSettingKey, signal?: AbortSignal): Promise<AppSettingResetResponse>;
   instrumentSnapshot(symbol: string, signal?: AbortSignal): Promise<MarketSnapshot>;
   instrumentSnapshot(symbol: string, filters?: SnapshotFilters, signal?: AbortSignal): Promise<MarketSnapshot>;
   instrumentNews(symbol: string, signal?: AbortSignal): Promise<InstrumentNews>;
@@ -111,6 +125,14 @@ export type ApplicationShellApiClient = Pick<
   | "modelHealth"
   | "stats"
   | "instruments"
+  | "watchlist"
+  | "addWatchlist"
+  | "upsertWatchlist"
+  | "removeWatchlist"
+  | "appSettings"
+  | "appSetting"
+  | "updateAppSetting"
+  | "resetAppSetting"
   | "instrumentSnapshot"
   | "instrumentNews"
   | "analysis"
@@ -179,7 +201,7 @@ export class ApiClient implements MarketApiClient {
   private async request<T>(
     path: string,
     options: {
-      method?: "GET" | "POST";
+      method?: "GET" | "POST" | "PUT" | "DELETE";
       query?: QueryParams;
       body?: unknown;
       signal?: AbortSignal;
@@ -239,6 +261,56 @@ export class ApiClient implements MarketApiClient {
 
   instruments(signal?: AbortSignal): Promise<Instrument[]> {
     return this.request<Instrument[]>("/instruments", { signal });
+  }
+
+  watchlist(signal?: AbortSignal): Promise<WatchlistEntry[]> {
+    return this.request<WatchlistEntry[]>("/watchlist", { signal });
+  }
+
+  addWatchlist(symbol: string, signal?: AbortSignal): Promise<WatchlistEntry> {
+    return this.request<WatchlistEntry>("/watchlist", {
+      method: "POST",
+      body: { symbol },
+      signal,
+    });
+  }
+
+  upsertWatchlist(symbol: string, signal?: AbortSignal): Promise<WatchlistEntry> {
+    return this.request<WatchlistEntry>(`/watchlist/${encodePathSegment(symbol)}`, {
+      method: "PUT",
+      body: { symbol },
+      signal,
+    });
+  }
+
+  removeWatchlist(symbol: string, signal?: AbortSignal): Promise<WatchlistDeleteResponse> {
+    return this.request<WatchlistDeleteResponse>(`/watchlist/${encodePathSegment(symbol)}`, {
+      method: "DELETE",
+      signal,
+    });
+  }
+
+  appSettings(signal?: AbortSignal): Promise<AppSetting[]> {
+    return this.request<AppSetting[]>("/settings", { signal });
+  }
+
+  appSetting(key: AppSettingKey, signal?: AbortSignal): Promise<AppSetting> {
+    return this.request<AppSetting>(`/settings/${encodePathSegment(key)}`, { signal });
+  }
+
+  updateAppSetting(key: AppSettingKey, value: AppSettingValue, signal?: AbortSignal): Promise<AppSetting> {
+    return this.request<AppSetting>(`/settings/${encodePathSegment(key)}`, {
+      method: "PUT",
+      body: { value },
+      signal,
+    });
+  }
+
+  resetAppSetting(key: AppSettingKey, signal?: AbortSignal): Promise<AppSettingResetResponse> {
+    return this.request<AppSettingResetResponse>(`/settings/${encodePathSegment(key)}`, {
+      method: "DELETE",
+      signal,
+    });
   }
 
   instrumentSnapshot(

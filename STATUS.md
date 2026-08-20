@@ -6,7 +6,7 @@ Updated: 2026-08-20
 
 - Target: V1.0 Final Acceptance through Phase 7.
 - Active phase: Phase 5.
-- Active task: P5-T01 Watchlist/AppSetting persistence schema, migration and CRUD.
+- Active task: P5-T01b public-provider-compatible Watchlist symbol expansion.
 - Blockers: none.
 - Sole developer: `luna-max` (one persistent thread, serial tasks).
 
@@ -29,7 +29,8 @@ Phase 3 evidence:
 
 - Historical-news replay is capability-limited and marked `technical_only`.
 - The formal Phase 3 run is `COMPLETED_WITH_ERRORS`; no zero-error claim is made.
-- All Phase 4 product routes are live. Watchlist remains deliberately read-only until Phase 5 persistence/scanning, and Replay Lab remains read-only over stored replay evidence.
+- All Phase 4 product routes are live. Watchlist now has durable membership but no scan/ranking behavior yet; Replay Lab remains read-only over stored replay evidence.
+- Watchlist membership and safe scheduler-resource settings are durable; membership is still limited to the six canonical instruments until P5-T01b.
 
 ## Phase 4 progress
 
@@ -87,7 +88,7 @@ Phase 3 evidence:
 
 ## Next action
 
-Delegate P5-T01 to the same `luna-max` thread, then verify durable Watchlist/AppSetting CRUD, migration safety and restart persistence without adding scan/ranking behavior.
+Delegate P5-T01b to the same `luna-max` thread, then verify provider-compatible symbol expansion, durable metadata and failure-safe validation without adding scan/ranking behavior.
 
 ## P4-T07 execution checkpoint — 2026-08-20
 
@@ -105,3 +106,23 @@ Delegate P5-T01 to the same `luna-max` thread, then verify durable Watchlist/App
 - Verification: `npm run lint` PASS; `npm run typecheck` PASS; `npm run test -- --run` PASS, 11 files / 45 tests; `npm run build` PASS; `npm run e2e` PASS, 7/7 tests, 1 worker, 24.4s, Chrome 151.0.7922.140; `git diff --check` PASS.
 - Blockers: none. Sol independent review and Phase 4 acceptance PASS.
 - Residual risks: fixture market data is intentionally stale and the model is disabled in the harness; the default run uses the installed local Chrome channel, with pinned Chromium install/use documented; this local serial suite does not claim production concurrency, real-provider freshness, cloud deployment, broker connectivity or real-order behavior.
+
+## P5-T01a execution checkpoint — 2026-08-20
+
+- Milestone: durable Watchlist/AppSetting foundation and CRUD over the accepted six-symbol universe.
+- Implementation summary: added idempotent schema migration v5 with `watchlist_entries` and `app_settings`; canonical symbol/timestamp storage and CRUD; four typed, defaulted, validation-bounded scheduler-resource settings with no activation; API routes, typed client/fakes, durable Saved/Available Watchlist UI, focused restart/API/storage tests and real-browser assertions.
+- Changed files: `core/storage/sqlite.py`, `core/storage/__init__.py`, `apps/api/main.py`, `tests/test_migration.py`, `tests/test_storage.py`, `tests/test_phase5_watchlist.py`, `web/src/api/types.ts`, `web/src/api/client.ts`, `web/src/api/client.test.ts`, `web/src/test/fakeClient.ts`, `web/src/pages/WatchlistPage.tsx`, `web/src/pages/WatchlistPage.test.tsx`, `web/src/styles.css`, `web/e2e/phase4.spec.ts`, `README.md`.
+- Verification: `python -B -m unittest discover -s tests -v` PASS, 52 tests; `python -B -m compileall -q apps core tests scripts` PASS; `python -m pip check` PASS; `npm run lint` PASS; `npm run typecheck` PASS; `npm run test -- --run` PASS, 11 files / 47 tests; `npm run build` PASS; full and production-only `npm audit --audit-level=high` PASS, 0 vulnerabilities; `npm run e2e:preflight` PASS, Playwright 1.62.1; `npm run e2e` PASS, 7/7 tests, 1 worker, 25.0s, Chrome 151.0.7922.140; `git diff --check` PASS.
+- Boundaries: no ranking, scans, scheduler/background execution, alerts, provider probing, secret/broker settings, real orders or public-symbol expansion were added. Sol independent review and P5-T01a acceptance PASS.
+- Residual risks: settings are intentionally foundation-only and the E2E harness remains fixture-backed with a disabled model; no production scheduler/concurrency claim is made.
+
+## P5-T01a version-contract repair — 2026-08-20
+
+- Scope: align the active product contract to Phase 5 / `0.5.0`; preserve the historical Phase 4 report unchanged.
+- Implementation: API `API_PHASE=5`, `API_VERSION=0.5.0`, Phase 5 OpenAPI description/baseline; Python and web package versions; fake health, API test, frontend test and E2E health expectations; README active-contract note.
+- Changed files: `pyproject.toml`, `apps/api/main.py`, `web/package.json`, `web/package-lock.json`, `web/src/test/fakeClient.ts`, `web/src/pages/SettingsHealthPage.test.tsx`, `tests/test_api_phase4.py`, `web/e2e/phase4.spec.ts`, `README.md`, `STATUS.md`.
+- Focused verification: version contract check PASS; `python -B -m unittest tests.test_api_phase4.Phase4APITests.test_factory_metadata_cors_and_injected_services -v` PASS, 1 test; `npx --no-install vitest run src/pages/SettingsHealthPage.test.tsx` PASS, 1 test.
+- Full verification: `python -m pytest -q` PASS, 52 tests (1 known Starlette/httpx deprecation warning); `python -B -m unittest discover -s tests -v` PASS, 52 tests; `python -B -m compileall -q apps core tests scripts` PASS; `python -m pip check` PASS; `npm run lint` PASS; `npm run typecheck` PASS; `npm run test -- --run` PASS, 11 files / 47 tests; `npm run build` PASS; full and production-only `npm audit --audit-level=high` PASS, 0 vulnerabilities; `npm run e2e:preflight` PASS, Playwright 1.62.1 with installed Chrome/Edge candidates; `npm run e2e` PASS, 7/7 tests, 1 worker, 25.0s, Chrome 151.0.7922.140; `git diff --check` PASS with only expected LF/CRLF warnings.
+- Historical evidence: `docs/phase4-completion-report.md` has no diff.
+- Boundaries: no product behavior was expanded, Phase 5 scheduler/Radar/scans/alerts remain inactive, and no commit was created.
+- Residual risks: E2E remains fixture-backed with a disabled model; dependency-owned `0.4.0` entries in the lockfile were intentionally left unchanged.

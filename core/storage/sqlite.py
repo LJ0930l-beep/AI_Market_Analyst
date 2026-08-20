@@ -9,12 +9,69 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from ..instruments import Instrument
+from ..instruments import Instrument, instrument_for
 from ..news_engine import NewsFetchResult
 from ..outcomes.engine import Outcome
 from ..providers.news import NewsEvent
 from ..providers.runtime import ProviderSnapshot
 from ..signals.schema import SignalProposal
+
+
+APP_SETTING_DEFINITIONS: dict[str, dict[str, object]] = {
+    "scheduler.enabled": {
+        "default": False,
+        "value_type": "boolean",
+        "description": "Persisted opt-in flag; no background scheduler is activated by this setting.",
+    },
+    "scheduler.interval_seconds": {
+        "default": 900,
+        "value_type": "integer",
+        "minimum": 60,
+        "maximum": 86_400,
+        "description": "Future local scheduling interval; stored only in this task.",
+    },
+    "scheduler.concurrency": {
+        "default": 1,
+        "value_type": "integer",
+        "minimum": 1,
+        "maximum": 4,
+        "description": "Future local resource concurrency limit; stored only in this task.",
+    },
+    "scheduler.session_policy": {
+        "default": "market_hours",
+        "value_type": "string",
+        "allowed_values": ("market_hours", "always"),
+        "description": "Future local session policy; stored only in this task.",
+    },
+}
+
+APP_SETTING_DEFAULTS: dict[str, object] = {
+    key: definition["default"] for key, definition in APP_SETTING_DEFINITIONS.items()
+}
+
+
+def validate_app_setting_value(key: str, value: Any) -> Any:
+    definition = APP_SETTING_DEFINITIONS.get(key)
+    if definition is None:
+        raise ValueError(f"unsupported app setting: {key}")
+
+    value_type = definition["value_type"]
+    if value_type == "boolean" and type(value) is not bool:
+        raise ValueError(f"{key} must be a boolean")
+    if value_type == "integer":
+        if type(value) is not int:
+            raise ValueError(f"{key} must be an integer")
+        minimum = int(definition["minimum"])
+        maximum = int(definition["maximum"])
+        if value < minimum or value > maximum:
+            raise ValueError(f"{key} must be between {minimum} and {maximum}")
+    if value_type == "string":
+        if type(value) is not str:
+            raise ValueError(f"{key} must be a string")
+        allowed_values = definition.get("allowed_values", ())
+        if value not in allowed_values:
+            raise ValueError(f"{key} must be one of: {', '.join(str(item) for item in allowed_values)}")
+    return value
 
 
 class SQLiteStore:
@@ -125,6 +182,11 @@ class SQLiteStore:
                 "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                 (4, datetime.now(timezone.utc).isoformat()),
             )
+            self._ensure_phase5_tables(db)
+            db.execute(
+                "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                (5, datetime.now(timezone.utc).isoformat()),
+            )
 
     @staticmethod
     def _ensure_prediction_columns(db: sqlite3.Connection) -> None:
@@ -226,6 +288,123 @@ class SQLiteStore:
             );
             """
         )
+
+    @staticmethod
+    def _ensure_phase5_tables(db: sqlite3.Connection) -> None:
+        db.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS watchlist_entries (
+                symbol TEXT PRIMARY KEY,
+                added_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS app_settings (
+                setting_key TEXT PRIMARY KEY,
+                value_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            """
+        )
+
+    @staticmethod
+    def _utc_timestamp(value: datetime | None = None) -> str:
+        timestamp = value or datetime.now(timezone.utc)
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=timezone.utc)
+        return timestamp.astimezone(timezone.utc).isoformat()
+
+    def list_watchlist_entries(self) -> list[dict[str, str]]:
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT symbol, added_at, updated_at FROM watchlist_entries ORDER BY added_at ASC, symbol ASC"
+            ).fetchall()
+        return [
+            {
+                "symbol": row["symbol"],
+                "added_at": row["added_at"],
+                "updated_at": row["updated_at"],
+            }
+            for row in rows
+        ]
+
+    def upsert_watchlist_entry(self, symbol: str, *, now: datetime | None = None) -> dict[str, str]:
+        canonical_symbol = instrument_for(symbol).symbol
+        timestamp = self._utc_timestamp(now)
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT added_at FROM watchlist_entries WHERE symbol = ?",
+                (canonical_symbol,),
+            ).fetchone()
+            if row is None:
+                added_at = timestamp
+                db.execute(
+                    "INSERT INTO watchlist_entries(symbol, added_at, updated_at) VALUES (?, ?, ?)",
+                    (canonical_symbol, added_at, timestamp),
+                )
+            else:
+                added_at = str(row["added_at"])
+                db.execute(
+                    "UPDATE watchlist_entries SET updated_at = ? WHERE symbol = ?",
+                    (timestamp, canonical_symbol),
+                )
+        return {"symbol": canonical_symbol, "added_at": added_at, "updated_at": timestamp}
+
+    def delete_watchlist_entry(self, symbol: str) -> bool:
+        canonical_symbol = instrument_for(symbol).symbol
+        with self._connect() as db:
+            result = db.execute("DELETE FROM watchlist_entries WHERE symbol = ?", (canonical_symbol,))
+        return result.rowcount > 0
+
+    @staticmethod
+    def _app_setting_record(key: str, row: sqlite3.Row | None) -> dict[str, object]:
+        definition = APP_SETTING_DEFINITIONS[key]
+        value = definition["default"] if row is None else json.loads(row["value_json"])
+        return {
+            "key": key,
+            "value": value,
+            "default_value": definition["default"],
+            "value_type": definition["value_type"],
+            "updated_at": row["updated_at"] if row is not None else None,
+            "source": "stored" if row is not None else "default",
+            "description": definition["description"],
+        }
+
+    def list_app_settings(self) -> list[dict[str, object]]:
+        with self._connect() as db:
+            rows = {
+                row["setting_key"]: row
+                for row in db.execute(
+                    "SELECT setting_key, value_json, updated_at FROM app_settings"
+                ).fetchall()
+            }
+        return [self._app_setting_record(key, rows.get(key)) for key in APP_SETTING_DEFINITIONS]
+
+    def get_app_setting(self, key: str) -> dict[str, object]:
+        if key not in APP_SETTING_DEFINITIONS:
+            raise ValueError(f"unsupported app setting: {key}")
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT setting_key, value_json, updated_at FROM app_settings WHERE setting_key = ?",
+                (key,),
+            ).fetchone()
+        return self._app_setting_record(key, row)
+
+    def upsert_app_setting(self, key: str, value: Any, *, now: datetime | None = None) -> dict[str, object]:
+        validate_app_setting_value(key, value)
+        timestamp = self._utc_timestamp(now)
+        with self._connect() as db:
+            db.execute(
+                "INSERT OR REPLACE INTO app_settings(setting_key, value_json, updated_at) VALUES (?, ?, ?)",
+                (key, json.dumps(value, sort_keys=True), timestamp),
+            )
+        return self.get_app_setting(key)
+
+    def delete_app_setting(self, key: str) -> bool:
+        if key not in APP_SETTING_DEFINITIONS:
+            raise ValueError(f"unsupported app setting: {key}")
+        with self._connect() as db:
+            result = db.execute("DELETE FROM app_settings WHERE setting_key = ?", (key,))
+        return result.rowcount > 0
 
     def save_instrument(self, instrument: Instrument) -> None:
         payload = {
@@ -962,6 +1141,8 @@ class SQLiteStore:
                 "performance_snapshots",
                 "calibration_results",
                 "calibration_buckets",
+                "watchlist_entries",
+                "app_settings",
             )
         }
 

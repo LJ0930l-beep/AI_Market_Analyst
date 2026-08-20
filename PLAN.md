@@ -4,7 +4,7 @@
 
 Phase 5 - Radar, watchlist, scanning and alerts.
 
-Current task: `P5-T01` - add durable Watchlist/AppSetting schema, migration and CRUD.
+Current task: `P5-T01b` - add public-provider-compatible Watchlist symbol expansion.
 
 P4-T04 execution split:
 
@@ -32,6 +32,8 @@ P4-T04 execution split:
 ## Phase 5 task graph
 
 1. Watchlist/AppSetting schema, migration and CRUD - IN PROGRESS.
+   - `P5-T01a` durable canonical membership, safe settings, migration and CRUD - ACCEPTED.
+   - `P5-T01b` public-provider-compatible symbol expansion - IN PROGRESS.
 2. Versioned auditable Opportunity Score and Radar API.
 3. Low-concurrency scheduler, market-session policy, caching and resource backoff.
 4. Alert model, deduplication, acknowledge flow and UI integration.

@@ -31,14 +31,34 @@ test("test infrastructure rejects unsafe cleanup and static-root paths", () => {
   expect(resolveStaticCandidate(distDirectory, "/../phase4-dist-evil/secret.txt")).toBe(path.resolve(distDirectory, "index.html"));
 });
 
-test("health, Watchlist navigation, and read-only Asset Detail analysis", async ({ page }) => {
+test("health, durable Watchlist, and read-only Asset Detail analysis", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
   await expect(page.getByText("Backend connected")).toBeVisible();
   const before = await (await page.request.get("/api/stats")).json();
 
   await page.getByRole("link", { name: "Watchlist" }).press("Enter");
-  await expect(page.getByRole("heading", { name: "Watchlist" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Watchlist", exact: true })).toBeVisible();
+  const savedWatchlist = page.getByRole("region", { name: "Saved watchlist" });
+  const availableInstruments = page.getByRole("region", { name: "Available instruments" });
+  await expect(savedWatchlist.getByText("No instruments are saved yet. Add one from the available canonical universe.")).toBeVisible();
+  await availableInstruments.getByRole("button", { name: "Add AAPL to saved watchlist" }).press("Enter");
+  await expect(savedWatchlist.getByRole("link", { name: "Open asset detail" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("region", { name: "Saved watchlist" }).getByText("AAPL")).toBeVisible();
+  await page.getByRole("region", { name: "Saved watchlist" }).getByRole("button", { name: "Remove AAPL from saved watchlist" }).press("Enter");
+  await expect(page.getByRole("region", { name: "Saved watchlist" }).getByText("No instruments are saved yet. Add one from the available canonical universe.")).toBeVisible();
+
+  const defaultSettings = await page.request.get("/api/settings");
+  expect(defaultSettings.status()).toBe(200);
+  expect((await defaultSettings.json()).find((item: { key: string }) => item.key === "scheduler.enabled").value).toBe(false);
+  const changedSetting = await page.request.put("/api/settings/scheduler.interval_seconds", { data: { value: 600 } });
+  expect(changedSetting.status()).toBe(200);
+  expect((await changedSetting.json()).value).toBe(600);
+  const resetSetting = await page.request.delete("/api/settings/scheduler.interval_seconds");
+  expect(resetSetting.status()).toBe(200);
+  expect((await resetSetting.json()).setting.value).toBe(900);
+
   await page.getByRole("link", { name: "Open asset detail" }).first().press("Enter");
   await expect(page.getByRole("heading", { name: "Asset detail / AAPL" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Run analysis" })).toBeVisible();
@@ -144,7 +164,7 @@ test("SPA deep links return HTML while /api/health remains JSON", async ({ page 
   const health = await page.request.get("/api/health");
   expect(health.status()).toBe(200);
   expect(health.headers()["content-type"]).toContain("application/json");
-  expect(await health.json()).toMatchObject({ status: "ok", phase: 4, real_orders: false });
+  expect(await health.json()).toMatchObject({ status: "ok", phase: 5, real_orders: false });
 });
 
 test("all Phase 4 routes pass axe and page-level overflow checks at desktop and 390x844", async ({ page }) => {

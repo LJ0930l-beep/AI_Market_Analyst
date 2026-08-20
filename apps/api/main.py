@@ -1,8 +1,8 @@
 """Optional local FastAPI product API for paper-only market research.
 
 The stdlib core remains usable without FastAPI.  The API deliberately keeps
-existing successful response shapes stable while adding a small, injectable
-Phase 4 contract for the future UI.
+existing successful response shapes stable while exposing the Phase 5 durable
+Watchlist/AppSetting foundation over the accepted Phase 0-4 paper-only core.
 """
 
 from __future__ import annotations
@@ -21,11 +21,11 @@ from core.outcomes import OutcomeStatus
 from core.performance.metrics import build_performance_snapshot
 from core.providers import FixtureNewsProvider, ProviderChain, build_default_provider
 from core.signals import Action
-from core.storage import SQLiteStore
+from core.storage import APP_SETTING_DEFINITIONS, SQLiteStore, validate_app_setting_value
 
 _UNSET = object()
-API_VERSION = "0.4.0"
-API_PHASE = 4
+API_VERSION = "0.5.0"
+API_PHASE = 5
 DEFAULT_CORS_ORIGINS = (
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -264,6 +264,48 @@ def _normalize_symbol(value: str | None) -> str | None:
         raise APIError(400, "INVALID_SYMBOL", "unsupported instrument symbol", detail=str(exc), context={"symbol": value}) from exc
 
 
+def _watchlist_entry_payload(entry: dict[str, str]) -> dict[str, object]:
+    return {
+        **entry,
+        "instrument": item_payload(instrument_for(entry["symbol"])),
+    }
+
+
+def _watchlist_body_symbol(body: dict[str, Any] | None, *, required: bool) -> str | None:
+    if body is None:
+        if required:
+            raise APIError(400, "INVALID_WATCHLIST_PAYLOAD", "watchlist payload must contain only a symbol")
+        return None
+    unknown = set(body) - {"symbol"}
+    if unknown:
+        raise APIError(
+            400,
+            "INVALID_WATCHLIST_PAYLOAD",
+            "watchlist payload may contain only symbol",
+            context={"unknown_fields": sorted(unknown)},
+        )
+    if "symbol" not in body:
+        if required:
+            raise APIError(400, "INVALID_WATCHLIST_PAYLOAD", "watchlist payload must contain symbol")
+        return None
+    raw_symbol = body["symbol"]
+    if not isinstance(raw_symbol, str) or not raw_symbol.strip():
+        raise APIError(400, "INVALID_WATCHLIST_PAYLOAD", "watchlist symbol must be a non-empty string")
+    return _normalize_symbol(raw_symbol)
+
+
+def _normalize_setting_key(value: str) -> str:
+    normalized = value.strip()
+    if normalized not in APP_SETTING_DEFINITIONS:
+        raise APIError(
+            404,
+            "APP_SETTING_NOT_FOUND",
+            "unsupported app setting key",
+            context={"key": value, "allowed_keys": sorted(APP_SETTING_DEFINITIONS)},
+        )
+    return normalized
+
+
 def _normalize_paper_status(value: object) -> str:
     if value is None:
         raise APIError(400, "INVALID_PAPER_TRADE_STATUS", "paper trade status must be a non-empty string")
@@ -407,6 +449,82 @@ if FastAPI is not None:
     @router.get("/instruments")
     def instruments() -> list[dict[str, object]]:
         return [item_payload(item) for item in phase1_universe()]
+
+    @router.get("/watchlist")
+    def watchlist(store: SQLiteStore = Depends(get_store)) -> list[dict[str, object]]:
+        return [_watchlist_entry_payload(entry) for entry in store.list_watchlist_entries()]
+
+    @router.post("/watchlist")
+    def add_watchlist(
+        body: dict[str, Any] | None = Body(default=None),
+        store: SQLiteStore = Depends(get_store),
+    ) -> dict[str, object]:
+        symbol = _watchlist_body_symbol(body, required=True)
+        assert symbol is not None
+        return _watchlist_entry_payload(store.upsert_watchlist_entry(symbol))
+
+    @router.put("/watchlist/{symbol}")
+    def upsert_watchlist(
+        symbol: str,
+        body: dict[str, Any] | None = Body(default=None),
+        store: SQLiteStore = Depends(get_store),
+    ) -> dict[str, object]:
+        canonical_symbol = _normalize_symbol(symbol)
+        assert canonical_symbol is not None
+        body_symbol = _watchlist_body_symbol(body, required=False)
+        if body_symbol is not None and body_symbol != canonical_symbol:
+            raise APIError(
+                400,
+                "WATCHLIST_SYMBOL_MISMATCH",
+                "watchlist body symbol must match the path symbol",
+                context={"path_symbol": canonical_symbol, "body_symbol": body_symbol},
+            )
+        return _watchlist_entry_payload(store.upsert_watchlist_entry(canonical_symbol))
+
+    @router.delete("/watchlist/{symbol}")
+    def delete_watchlist(symbol: str, store: SQLiteStore = Depends(get_store)) -> dict[str, object]:
+        canonical_symbol = _normalize_symbol(symbol)
+        assert canonical_symbol is not None
+        return {"symbol": canonical_symbol, "deleted": store.delete_watchlist_entry(canonical_symbol)}
+
+    @router.get("/settings")
+    def settings(store: SQLiteStore = Depends(get_store)) -> list[dict[str, object]]:
+        return store.list_app_settings()
+
+    @router.get("/settings/{key}")
+    def app_setting(key: str, store: SQLiteStore = Depends(get_store)) -> dict[str, object]:
+        return store.get_app_setting(_normalize_setting_key(key))
+
+    @router.put("/settings/{key}")
+    def update_app_setting(
+        key: str,
+        body: dict[str, Any] | None = Body(default=None),
+        store: SQLiteStore = Depends(get_store),
+    ) -> dict[str, object]:
+        normalized_key = _normalize_setting_key(key)
+        if body is None or set(body) != {"value"}:
+            raise APIError(
+                400,
+                "INVALID_APP_SETTING_PAYLOAD",
+                "app setting payload must contain only value",
+            )
+        try:
+            validate_app_setting_value(normalized_key, body["value"])
+            return store.upsert_app_setting(normalized_key, body["value"])
+        except ValueError as exc:
+            raise APIError(
+                400,
+                "INVALID_APP_SETTING_VALUE",
+                "app setting value failed validation",
+                detail=str(exc),
+                context={"key": normalized_key},
+            ) from exc
+
+    @router.delete("/settings/{key}")
+    def reset_app_setting(key: str, store: SQLiteStore = Depends(get_store)) -> dict[str, object]:
+        normalized_key = _normalize_setting_key(key)
+        deleted = store.delete_app_setting(normalized_key)
+        return {"key": normalized_key, "deleted": deleted, "setting": store.get_app_setting(normalized_key)}
 
     @router.get("/instruments/{symbol}/snapshot")
     def snapshot(
@@ -844,8 +962,8 @@ def create_app(
     app = FastAPI(
         title="AI Market Analyst",
         version=API_VERSION,
-        description="Local-first Phase 4 market research API with structured paper-only tracking.",
-        openapi_extra={"x-phase": API_PHASE, "x-product-baseline": "phase4"},
+        description="Local-first Phase 5 market research API with durable Watchlist/AppSetting foundation and structured paper-only tracking.",
+        openapi_extra={"x-phase": API_PHASE, "x-product-baseline": "phase5"},
     )
     app.state.api_phase = API_PHASE
     app.state.api_version = API_VERSION
