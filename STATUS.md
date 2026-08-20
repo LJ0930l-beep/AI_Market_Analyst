@@ -6,7 +6,7 @@ Updated: 2026-08-20
 
 - Target: V1.0 Final Acceptance through Phase 7.
 - Active phase: Phase 5.
-- Active task: P5-T03b background Outcome settlement + performance/Radar refresh.
+- Active task: P5-T04 local alerts/dedupe/ack.
 - Blockers: none.
 - Sole developer: `luna-max` (one persistent thread, serial tasks).
 
@@ -30,7 +30,7 @@ Phase 3 evidence:
 - Historical-news replay is capability-limited and marked `technical_only`.
 - The formal Phase 3 run is `COMPLETED_WITH_ERRORS`; no zero-error claim is made.
 - All Phase 4 product routes are live. Watchlist has durable membership; the P5-T03a local scan runtime is explicit opt-in and Radar remains read-only over saved evidence.
-- Additional public equity/USDT symbols require explicit successful provider validation; scheduler background execution is disabled by default and no alerts, settlement or ranking side effects are activated by settings.
+- Additional public equity/USDT symbols require explicit successful provider validation; scheduler background execution remains disabled by default, settlement is read-only within the explicit lifecycle, and settings alone activate no alerts or ranking behavior.
 
 ## Phase 4 progress
 
@@ -88,7 +88,7 @@ Phase 3 evidence:
 
 ## Next action
 
-Begin P5-T03b background Outcome settlement + performance/Radar refresh; do not enable the local scheduler implicitly or begin alert work.
+Begin P5-T04 local alerts/dedupe/ack; do not begin implementation in this milestone.
 
 ## P4-T07 execution checkpoint — 2026-08-20
 
@@ -188,3 +188,24 @@ Begin P5-T03b background Outcome settlement + performance/Radar refresh; do not 
 - Browser verification: `npm run e2e:preflight` PASS, Playwright 1.62.1 with installed Chrome `151.0.7922.140` and Edge `151.0.4129.93`; `npm run e2e` PASS, 9/9 tests, 1 worker, 29.1s on Chrome. Existing suite retained scheduler Watchlist-to-Radar/no-PaperTrade flow, 16 axe scans and 16 desktop/390x844 overflow checks.
 - Blockers: none. Supervisor Gate: ACCEPTED.
 - Residual risks: E2E uses the injected deterministic resource probe and does not claim live GPU/provider/model freshness; `nvidia-smi` behavior is covered by injected parser/failure tests. Exchange holiday calendars, production concurrency, alerts, outcome settlement, broker connectivity and real orders remain out of scope.
+
+## P5-T03b accepted execution checkpoint — 2026-08-20
+
+- Milestone: background Outcome settlement with live Performance/Radar refresh; implementation complete. Supervisor Gate: ACCEPTED.
+- Implementation summary: added strict stored `SignalProposal` rehydration; point-in-time `evaluate_outcome_as_of` preserving replay timeout behavior; idempotent no-overwrite Outcome persistence; SQLite migration v7 for settlement-stage/provider/as-of/capability/retry evidence; bounded live settlement service covering non-Watchlist and registered symbols, WAIT `NOT_ACTIONABLE`, provider batching/failure backoff, cooperative interruption and versioned live performance snapshots; integrated settlement before model scan without using GPU/resource probe; exposed settlement/performance capability evidence in scheduler status and Settings/Health; deterministic E2E provider now proves a non-Follow fresh LONG settles before the scan and remains paper-trade free.
+- Changed files: `apps/api/main.py`, `core/outcomes/__init__.py`, `core/outcomes/engine.py`, `core/scheduler.py`, `core/settlement.py`, `core/signals/__init__.py`, `core/signals/schema.py`, `core/storage/sqlite.py`, `scripts/phase4_e2e_harness.py`, `tests/test_migration.py`, `tests/test_outcomes.py`, `tests/test_phase5_scheduler.py`, `tests/test_phase5_settlement.py`, `tests/test_phase5_watchlist.py`, `tests/test_storage.py`, `web/e2e/phase4.spec.ts`, `web/src/api/types.ts`, `web/src/pages/SettingsHealthPage.test.tsx`, `web/src/pages/SettingsHealthPage.tsx`, `web/src/test/fakeClient.ts`, `STATUS.md`.
+- Focused verification: `python -m pytest -q tests/test_outcomes.py tests/test_phase5_settlement.py tests/test_migration.py tests/test_storage.py tests/test_phase5_scheduler.py` PASS, 30 tests; `python -m pytest -q tests/test_api_phase4.py tests/test_phase5_watchlist.py tests/test_phase5_radar.py tests/test_performance_phase3.py` PASS, 24 tests.
+- Full verification: `python -m pytest -q` PASS, 91 tests / 10 subtests / 1 existing Starlette-httpx deprecation warning; `python -B -m unittest discover -s tests` PASS, 91 tests; `python -m compileall -q core apps scripts tests` PASS; `python -m pip check` PASS; `npm run lint` PASS; `npm run typecheck` PASS; `npm run test -- --run` PASS, 11 files / 53 tests; `npm run build` PASS, Vite 6.4.3; `npm audit --audit-level=high` and `npm audit --omit=dev` PASS, 0 vulnerabilities; `git diff --check` PASS with expected LF/CRLF warnings.
+- Browser verification: `npm run e2e:preflight` PASS, Playwright 1.62.1 with installed Chrome/Edge candidates; `npm run e2e` PASS, 9/9 tests, 1 worker, 30.9s, Chrome 151.0.7922.140; scheduler run asserted settlement planned/settled/WAIT counts, TP1 evidence, increased resolved-actionable Performance metrics, changed Radar category after the scan, Settings/Health settlement and performance versions/capability, and unchanged PaperTrade boundary; 16 axe scans and 16 desktop/390x844 page-overflow checks remain passing.
+- Blockers: none. Residual risks: public provider availability and exchange holiday calendars remain explicit runtime limitations; settlement is bounded and provider-retry evidence is persisted, but no distributed scheduler/queue or cross-process lease was added; no alerts, Phase6 events, calibration mutation, broker connectivity or real orders are included.
+
+## P5-T03b accepted Gate — 2026-08-20
+
+- Scope: narrow correctness and long-running durability repair; no new API surface, alerts, calibration behavior or trading behavior.
+- Implementation: performance refresh now filters only `source_type=live`; snapshot version/refresh source/settlement as-of are persisted as audit metadata and scheduler state. Equivalent live metrics reuse the prior snapshot with explicit `reused` evidence; live snapshots are capped at 100 with deterministic pruning. Point-in-time TIMEOUT now requires an observed bar at or after `max_hold_until`; missing/weekend bars remain pending and horizon settlement uses the horizon bar timestamp. Candidate SQL excludes active settlement retry windows before applying batch limits; malformed payload/evaluation errors receive bounded quarantine retry evidence. Registered-symbol settlement test metadata now uses `registry_source=registered`.
+- Changed files: `core/outcomes/engine.py`, `core/settlement.py`, `core/scheduler.py`, `core/storage/sqlite.py`, `tests/test_outcomes.py`, `tests/test_phase5_settlement.py`, `STATUS.md`.
+- Focused verification: `python -m pytest -q tests/test_outcomes.py tests/test_phase5_settlement.py tests/test_phase5_scheduler.py` PASS, 29 tests / 1 existing Starlette-httpx deprecation warning.
+- Full verification: `python -m pytest -q` PASS, 93 tests / 10 subtests; `python -B -m unittest discover -s tests` PASS, 93 tests; compileall and `pip check` PASS; frontend lint/typecheck/build PASS; frontend unit PASS, 11 files / 53 tests; `npm audit --audit-level=high` and `npm audit --omit=dev --audit-level=high` PASS, 0 vulnerabilities.
+- Browser verification: `npm run e2e:preflight` PASS; `npm run e2e` PASS, 9/9 tests, 1 worker, 28.0s, Playwright 1.62.1 with Chrome 151.0.7922.140; axe and desktop/390x844 overflow coverage remains 16/16.
+- Independent supervisor evidence: 93 Python tests plus 10 subtests; frontend lint/typecheck/build and 53 tests; npm audits 0 vulnerabilities; standalone E2E 9/9 PASS; `git diff --check` clean with only LF/CRLF warnings. Supervisor Gate: ACCEPTED.
+- Blockers: none. Residual risks: retention is local SQLite-only and bounded to 100 live snapshots; retry quarantine is time-bounded and requires payload/provider recovery; no distributed queue or cross-process settlement lease was added.

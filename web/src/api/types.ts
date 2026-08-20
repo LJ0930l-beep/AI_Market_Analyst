@@ -289,6 +289,13 @@ export interface SchedulerItem extends JsonRecord {
   cache_status?: string | null;
   error_code?: string | null;
   prediction_id?: string | null;
+  stage?: "scan" | "settlement" | string;
+  provider?: string | null;
+  provider_as_of?: string | null;
+  as_of?: string | null;
+  capability?: JsonRecord | null;
+  outcome_status?: OutcomeStatus | string | null;
+  retry_after_at?: string | null;
 }
 
 export interface SchedulerRun extends JsonRecord {
@@ -322,6 +329,8 @@ export interface SchedulerStatus extends JsonRecord {
   resource?: JsonRecord;
   backoff?: JsonRecord;
   cache?: JsonRecord;
+  settlement?: JsonRecord | null;
+  performance_refresh?: JsonRecord | null;
   capabilities?: JsonRecord;
 }
 

@@ -62,9 +62,11 @@ function SchedulerFacts({ status, history }: { status: SchedulerStatus; history?
         <div className="fact-list__row"><dt>Resource</dt><dd>{schedulerText(status.resource)}</dd></div>
         <div className="fact-list__row"><dt>Backoff</dt><dd>{schedulerText(status.backoff)}</dd></div>
         <div className="fact-list__row"><dt>Cache</dt><dd>{schedulerText(status.cache)}</dd></div>
+        <div className="fact-list__row"><dt>Settlement</dt><dd>{status.settlement ? schedulerText(status.settlement) : "No settlement run recorded"}</dd></div>
+        <div className="fact-list__row"><dt>Performance refresh</dt><dd>{status.performance_refresh ? schedulerText(status.performance_refresh) : "No live refresh recorded"}</dd></div>
       </dl>
       <p className="panel-reading">Model analysis is serial (effective concurrency 1). Scheduler cache metadata survives restart, while cached context is intentionally cold after restart.</p>
-      <p className="panel-reading">No alerts, outcome settlement, broker connectivity or real orders are activated. Regular-equity session checks omit exchange holiday calendars; `always` is an explicit user override.</p>
+      <p className="panel-reading">Outcome settlement is deterministic, point-in-time and read-only for live records; it never creates PaperTrades or real orders. No alerts or broker connectivity are activated. Regular-equity session checks omit exchange holiday calendars; `always` is an explicit user override.</p>
       {history && history.runs.length > 0 ? (
         <ul className="scheduler-history" aria-label="Recent scheduler runs">
           {history.runs.slice(0, 3).map((run) => (
@@ -132,7 +134,7 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
         <p className="page-intro__description">
           Separate backend, market/news routing, model, scheduler and stored-count signals. Scheduler controls are explicit and local.
         </p>
-        <p className="page-boundary">No secrets, broker connections, real orders, alerts or outcome settlement are exposed here.</p>
+        <p className="page-boundary">No secrets, broker connections, real orders or alerts are exposed here; outcome settlement and performance refresh are read-only evidence.</p>
       </header>
 
       <div className="settings-grid">

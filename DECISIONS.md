@@ -113,3 +113,13 @@ The P5-T03a scheduler is disabled by default and runs only through an explicit l
 Scheduler context caching uses version `context_cache_v1` with a key containing symbol, timeframe, as-of, provider and context capability. The resource guard is read-only and bounded, using `nvidia-smi` when available; missing or failed probes are unavailable rather than assumed healthy. Resource failures use bounded persisted backoff. A process-wide lease keyed by canonical SQLite path prevents duplicate runtimes, and cooperative stop finishes at most the current analysis before marking remaining items interrupted.
 
 This foundation does not introduce Redis/Celery, process-killing behavior, alerts, outcome settlement, broker connectivity or real orders.
+
+## ADR-019 - P5-T03b uses point-in-time, idempotent background settlement
+
+Date: 2026-08-20
+
+Live settlement is evaluated in Python at a supplied `as_of`, using only bars after `generated_at` and no later than that point. WAIT Predictions settle to `NOT_ACTIONABLE`; they never count as wins or losses, create R/R evidence or create PaperTrades. Final Outcomes are immutable and saved idempotently, so retries and concurrent/repeated runs cannot overwrite an existing result.
+
+Public-provider bars are batched and reused by symbol/timeframe within a bounded settlement round. Provider, `as_of`, capability and error evidence are persisted. Provider failures, malformed SignalProposal payloads and evaluation failures are isolated with bounded retry/quarantine evidence rather than producing fabricated Outcomes. Settlement runs before model scanning and is independent of the model GPU/resource guard; provider availability still controls whether a settlement item can complete.
+
+Live Performance snapshots use only real live-record dimensions for filtering, reuse equivalent snapshots when metrics have not changed, and apply bounded retention. Settlement does not retrain or activate calibration, alter raw confidence, or mutate PaperTrade records.

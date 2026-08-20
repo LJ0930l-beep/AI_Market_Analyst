@@ -12,10 +12,11 @@ from core.analysis_service import AnalysisService
 from core.outcomes import settle_prediction
 from core.performance.calibration import fit_calibration
 from core.instruments import InstrumentCandidate
-from core.providers import Bar, FixtureNewsProvider, FixtureProvider, InstrumentValidationResult
+from core.providers import Bar, FixtureNewsProvider, FixtureProvider, InstrumentValidationResult, ProviderError, Quote
 from core.quant import build_quant_snapshot
 from core.scheduler import DefaultScanAnalysisExecutor, ResourceProbeResult
-from core.signals import Action, SignalProposal, build_signal
+from core.settlement import SettlementService
+from core.signals import Action, SignalProposal, build_signal, signal_from_payload
 from core.storage import SQLiteStore
 from core.instruments import instrument_for
 
@@ -64,6 +65,51 @@ class E2EInjectedSchedulerExecutor:
     def execute(self, *args, **kwargs):
         self.calls += 1
         return self._delegate.execute(*args, **kwargs)
+
+
+class E2EInjectedSettlementProvider:
+    """Deterministic point-in-time bars for the un-followed fresh LONG."""
+
+    provider_name = "e2e_settlement_provider"
+    stale = False
+
+    def __init__(self, signal: SignalProposal) -> None:
+        self.signal = signal
+
+    def get_bars(self, instrument, timeframe: str, limit: int = 200) -> list[Bar]:
+        if instrument.symbol != self.signal.instrument.symbol:
+            return []
+        assert self.signal.entry_low is not None
+        assert self.signal.entry_high is not None
+        assert self.signal.stop is not None
+        assert self.signal.tp1 is not None
+        entry = (self.signal.entry_low + self.signal.entry_high) / 2.0
+        if self.signal.action is Action.LONG:
+            bar = Bar(
+                self.signal.generated_at + timedelta(hours=1),
+                entry,
+                self.signal.tp1 * 1.01,
+                (entry + self.signal.stop) / 2.0,
+                self.signal.tp1,
+                100.0,
+            )
+        else:
+            bar = Bar(
+                self.signal.generated_at + timedelta(hours=1),
+                entry,
+                (entry + self.signal.stop) / 2.0,
+                self.signal.tp1 * 0.99,
+                self.signal.tp1,
+                100.0,
+            )
+        return [bar][:limit]
+
+    def get_quote(self, instrument) -> Quote:
+        bars = self.get_bars(instrument, "1h", 1)
+        if not bars:
+            raise ProviderError("no deterministic settlement bars", code="empty_data", provider=self.provider_name)
+        bar = bars[-1]
+        return Quote(instrument=instrument, timestamp=bar.timestamp, price=bar.close, volume=bar.volume)
 
 
 def _signal(
@@ -120,10 +166,10 @@ def _save_prediction(store: SQLiteStore, signal: SignalProposal, *, follow: bool
 def seed_database(db_path: Path) -> dict[str, int]:
     store = SQLiteStore(db_path)
     store.initialize()
-    now = datetime.now(timezone.utc).replace(microsecond=0)
+    now = E2ESchedulerClock.value
 
     # The browser follows this fresh signal. It is intentionally not followed here.
-    fresh = _signal("TSLA", "p4-fresh-long", action=Action.LONG, generated_at=now)
+    fresh = _signal("TSLA", "p4-fresh-long", action=Action.LONG, generated_at=now - timedelta(hours=3))
     _save_prediction(store, fresh)
 
     # Explicit browser analysis is model-disabled and therefore persists a WAIT.
@@ -275,6 +321,15 @@ def main() -> None:
     scheduler_store = SQLiteStore(args.db)
     scheduler_executor = E2EInjectedSchedulerExecutor(analysis_service, scheduler_store)
     scheduler_clock = E2ESchedulerClock()
+    fresh_payload = scheduler_store.load_prediction_payload("p4-fresh-long")
+    if fresh_payload is None:
+        raise RuntimeError("fresh E2E settlement prediction was not seeded")
+    fresh_signal = signal_from_payload(fresh_payload, instrument=instrument_for("TSLA"))
+    settlement_service = SettlementService(
+        store=scheduler_store,
+        provider_factory=lambda _instrument: E2EInjectedSettlementProvider(fresh_signal),
+        clock=scheduler_clock.now,
+    )
 
     print(f"P4_E2E_API_READY http://{args.host}:{args.port}", flush=True)
     uvicorn.run(
@@ -285,6 +340,7 @@ def main() -> None:
             scheduler_executor=scheduler_executor,
             scheduler_resource_probe=E2EInjectedSchedulerResourceProbe(),
             scheduler_clock=scheduler_clock.now,
+            settlement_service=settlement_service,
         ),
         host=args.host,
         port=args.port,

@@ -129,6 +129,9 @@ test("Dashboard Market Radar reads existing evidence without creating analysis o
 
 test("explicit local scheduler scans Watchlist once, updates Radar, and stops cleanly", async ({ page }) => {
   const before = await (await page.request.get("/api/stats")).json();
+  const beforePerformance = await (await page.request.get("/api/performance/summary?source_type=live")).json();
+  const beforeRadar = await (await page.request.get("/api/radar")).json();
+  const beforeTsla = beforeRadar.entries.find((entry: { symbol: string }) => entry.symbol === "TSLA");
   const initial = await page.request.get("/api/scheduler/status");
   expect(initial.status()).toBe(200);
   expect(await initial.json()).toMatchObject({ enabled: false, running: false, thread_alive: false, effective_concurrency: 1 });
@@ -144,11 +147,18 @@ test("explicit local scheduler scans Watchlist once, updates Radar, and stops cl
   expect(runPayload.run.status).toBe("COMPLETED");
   expect(runPayload.run.counts.planned).toBeGreaterThanOrEqual(1);
   expect(runPayload.run.counts.wait).toBeGreaterThanOrEqual(1);
+  expect(runPayload.run.counts.settlement_planned).toBeGreaterThanOrEqual(1);
+  expect(runPayload.run.counts.settlement_settled).toBeGreaterThanOrEqual(1);
+  expect(runPayload.run.counts.settlement_wait).toBeGreaterThanOrEqual(1);
+  expect(runPayload.items.some((item: { stage?: string; prediction_id?: string; outcome_status?: string }) => item.stage === "settlement" && item.prediction_id === "p4-fresh-long" && item.outcome_status === "TP1")).toBe(true);
   expect(runPayload.items.some((item: { symbol: string; status: string; prediction_id?: string | null }) => item.symbol === "TSLA" && item.status === "COMPLETED" && typeof item.prediction_id === "string")).toBe(true);
 
   const radar = await (await page.request.get("/api/radar")).json();
   const tsla = radar.entries.find((entry: { symbol: string }) => entry.symbol === "TSLA");
   expect(tsla.action).toBe("WAIT");
+  expect(tsla.category).not.toBe(beforeTsla.category);
+  const afterPerformance = await (await page.request.get("/api/performance/summary?source_type=live")).json();
+  expect(afterPerformance.metrics.resolved_actionable).toBeGreaterThan(beforePerformance.metrics.resolved_actionable);
   const after = await (await page.request.get("/api/stats")).json();
   expect(after.predictions).toBeGreaterThan(before.predictions);
   expect(after.paper_trades).toBe(before.paper_trades);
@@ -166,6 +176,8 @@ test("explicit local scheduler scans Watchlist once, updates Radar, and stops cl
   const scheduler = page.getByRole("region", { name: "Local Watchlist scheduler" });
   await expect(scheduler.getByText("COMPLETED", { exact: true }).last()).toBeVisible();
   await expect(scheduler.getByText(/effective model limit 1/)).toBeVisible();
+  await expect(scheduler.getByText(/settlement_v1/)).toBeVisible();
+  await expect(scheduler.getByText(/live_performance_v1/)).toBeVisible();
   await expect(scheduler.getByRole("button", { name: "Enable scheduler" })).toBeVisible();
 });
 
@@ -197,7 +209,8 @@ test("fresh LONG double-click Follow creates exactly one PaperTrade and linked d
   await expect(page.getByRole("heading", { name: "Paper trades" })).toBeVisible();
   await page.getByRole("button", { name: "p4-fresh-long" }).click();
   await expect(page.getByText("Linked Prediction", { exact: true })).toBeVisible();
-  await expect(page.getByText("No linked Outcome record was returned.")).toBeVisible();
+  await expect(page.getByText("Linked Outcome", { exact: true })).toBeVisible();
+  await expect(page.getByText("TP1").last()).toBeVisible();
   await page.getByRole("button", { name: "p4-paper-outcome" }).click();
   await expect(page.getByText("Linked Outcome", { exact: true })).toBeVisible();
   await expect(page.getByText("TP1").last()).toBeVisible();

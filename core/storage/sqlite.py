@@ -192,6 +192,11 @@ class SQLiteStore:
                 "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                 (6, datetime.now(timezone.utc).isoformat()),
             )
+            self._ensure_phase5_settlement_columns(db)
+            db.execute(
+                "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                (7, datetime.now(timezone.utc).isoformat()),
+            )
 
     @staticmethod
     def _ensure_prediction_columns(db: sqlite3.Connection) -> None:
@@ -345,6 +350,13 @@ class SQLiteStore:
                 error_code TEXT,
                 error_detail TEXT,
                 prediction_id TEXT,
+                stage TEXT NOT NULL DEFAULT 'scan',
+                provider TEXT,
+                provider_as_of TEXT,
+                as_of TEXT,
+                capability_json TEXT,
+                outcome_status TEXT,
+                retry_after_at TEXT,
                 FOREIGN KEY(run_id) REFERENCES scheduler_runs(run_id)
             );
             CREATE INDEX IF NOT EXISTS idx_scheduler_items_run
@@ -371,6 +383,22 @@ class SQLiteStore:
             );
             """
         )
+
+    @staticmethod
+    def _ensure_phase5_settlement_columns(db: sqlite3.Connection) -> None:
+        columns = {row[1] for row in db.execute("PRAGMA table_info(scheduler_items)").fetchall()}
+        additions = {
+            "stage": "TEXT NOT NULL DEFAULT 'scan'",
+            "provider": "TEXT",
+            "provider_as_of": "TEXT",
+            "as_of": "TEXT",
+            "capability_json": "TEXT",
+            "outcome_status": "TEXT",
+            "retry_after_at": "TEXT",
+        }
+        for name, definition in additions.items():
+            if name not in columns:
+                db.execute(f"ALTER TABLE scheduler_items ADD COLUMN {name} {definition}")
 
     @staticmethod
     def _utc_timestamp(value: datetime | None = None) -> str:
@@ -489,6 +517,11 @@ class SQLiteStore:
 
     @staticmethod
     def _scheduler_item_from_row(row: sqlite3.Row) -> dict[str, object]:
+        raw_capability = row["capability_json"]
+        try:
+            capability = json.loads(raw_capability) if raw_capability else None
+        except (TypeError, ValueError):
+            capability = {"parse_error": "invalid capability evidence"}
         return {
             "item_id": row["item_id"],
             "run_id": row["run_id"],
@@ -505,6 +538,13 @@ class SQLiteStore:
             "error_code": row["error_code"],
             "error_detail": row["error_detail"],
             "prediction_id": row["prediction_id"],
+            "stage": row["stage"],
+            "provider": row["provider"],
+            "provider_as_of": row["provider_as_of"],
+            "as_of": row["as_of"],
+            "capability": capability,
+            "outcome_status": row["outcome_status"],
+            "retry_after_at": row["retry_after_at"],
         }
 
     def create_scheduler_run(
@@ -588,13 +628,15 @@ class SQLiteStore:
         symbol: str,
         timeframe: str,
         status: str = "PENDING",
+        stage: str = "scan",
+        prediction_id: str | None = None,
     ) -> None:
         with self._connect() as db:
             db.execute(
                 """INSERT INTO scheduler_items(
-                    item_id, run_id, symbol, timeframe, status
-                ) VALUES (?, ?, ?, ?, ?)""",
-                (item_id, run_id, symbol, timeframe, status),
+                    item_id, run_id, symbol, timeframe, status, stage, prediction_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (item_id, run_id, symbol, timeframe, status, stage, prediction_id),
             )
 
     def update_scheduler_item(
@@ -612,6 +654,13 @@ class SQLiteStore:
         error_code: str | None = None,
         error_detail: str | None = None,
         prediction_id: str | None = None,
+        stage: str | None = None,
+        provider: str | None = None,
+        provider_as_of: str | None = None,
+        as_of: str | None = None,
+        capability: dict[str, object] | None = None,
+        outcome_status: str | None = None,
+        retry_after_at: str | None = None,
     ) -> None:
         updates: list[str] = []
         values: list[object] = []
@@ -627,6 +676,13 @@ class SQLiteStore:
             ("error_code", error_code),
             ("error_detail", error_detail),
             ("prediction_id", prediction_id),
+            ("stage", stage),
+            ("provider", provider),
+            ("provider_as_of", provider_as_of),
+            ("as_of", as_of),
+            ("capability_json", json.dumps(capability, sort_keys=True) if capability is not None else None),
+            ("outcome_status", outcome_status),
+            ("retry_after_at", retry_after_at),
         ):
             if value is not None:
                 updates.append(f"{name} = ?")
@@ -649,6 +705,17 @@ class SQLiteStore:
                 (run_id,),
             ).fetchall()
         return [self._scheduler_item_from_row(row) for row in rows]
+
+    def get_latest_settlement_item(self, prediction_id: str) -> dict[str, object] | None:
+        with self._connect() as db:
+            row = db.execute(
+                """SELECT * FROM scheduler_items
+                   WHERE stage = 'settlement' AND prediction_id = ?
+                   ORDER BY COALESCE(finished_at, started_at, '') DESC, item_id DESC
+                   LIMIT 1""",
+                (prediction_id,),
+            ).fetchone()
+        return self._scheduler_item_from_row(row) if row is not None else None
 
     def recover_scheduler_runs(self, *, recovered_at: str | None = None) -> int:
         timestamp = recovered_at or self._utc_timestamp()
@@ -1191,23 +1258,45 @@ class SQLiteStore:
         params.append(bounded_limit)
         with self._connect() as db:
             rows = db.execute(query, tuple(params)).fetchall()
-        return [
-            {
-                "snapshot_id": row["snapshot_id"],
-                "scope": json.loads(row["scope_json"]),
-                "window_start": row["window_start"],
-                "window_end": row["window_end"],
-                "sample_count": row["sample_count"],
-                "actionable_count": row["actionable_count"],
-                "metrics": json.loads(row["metrics_json"]),
-                "model_id": row["model_id"],
-                "prompt_version": row["prompt_version"],
-                "source_type": row["source_type"],
-                "created_at": row["created_at"],
-                "status": row["status"],
-            }
-            for row in rows
-        ]
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            metrics = json.loads(row["metrics_json"])
+            results.append(
+                {
+                    "snapshot_id": row["snapshot_id"],
+                    "scope": json.loads(row["scope_json"]),
+                    "window_start": row["window_start"],
+                    "window_end": row["window_end"],
+                    "sample_count": row["sample_count"],
+                    "actionable_count": row["actionable_count"],
+                    "metrics": metrics,
+                    "audit_metadata": metrics.get("audit_metadata") if isinstance(metrics, dict) else None,
+                    "model_id": row["model_id"],
+                    "prompt_version": row["prompt_version"],
+                    "source_type": row["source_type"],
+                    "created_at": row["created_at"],
+                    "status": row["status"],
+                }
+            )
+        return results
+
+    def prune_performance_snapshots(self, *, source_type: str = "live", keep: int = 100) -> int:
+        """Keep at most 100 snapshots per source type for bounded local runtime storage."""
+
+        bounded_keep = max(1, min(int(keep), 100))
+        with self._connect() as db:
+            result = db.execute(
+                """DELETE FROM performance_snapshots
+                     WHERE source_type = ?
+                       AND snapshot_id NOT IN (
+                           SELECT snapshot_id FROM performance_snapshots
+                            WHERE source_type = ?
+                            ORDER BY created_at DESC, snapshot_id DESC
+                            LIMIT ?
+                       )""",
+                (source_type, source_type, bounded_keep),
+            )
+        return result.rowcount
 
     def save_calibration_result(self, payload: dict[str, Any]) -> None:
         buckets = payload.get("buckets") or []
@@ -1493,6 +1582,66 @@ class SQLiteStore:
         outcome["outcome_status"] = record["outcome_status"]
         return outcome
 
+    def list_unsettled_live_prediction_records(
+        self,
+        *,
+        limit: int = 100,
+        as_of: datetime | str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return bounded live predictions without outcomes and active retry windows."""
+
+        bounded_limit = max(1, min(int(limit), 500))
+        if isinstance(as_of, datetime):
+            retry_cutoff = self._utc_timestamp(as_of)
+        elif isinstance(as_of, str) and as_of:
+            try:
+                retry_cutoff = self._utc_timestamp(datetime.fromisoformat(as_of.replace("Z", "+00:00")))
+            except ValueError:
+                retry_cutoff = as_of
+        else:
+            retry_cutoff = self._utc_timestamp()
+        with self._connect() as db:
+            rows = db.execute(
+                """WITH latest_settlement AS (
+                         SELECT prediction_id, retry_after_at,
+                                ROW_NUMBER() OVER (
+                                    PARTITION BY prediction_id
+                                    ORDER BY COALESCE(finished_at, started_at, '') DESC, item_id DESC
+                                ) AS latest_rank
+                           FROM scheduler_items
+                          WHERE stage = 'settlement'
+                     )
+                     SELECT p.prediction_id, p.symbol, p.generated_at, p.action, p.payload_json
+                       FROM predictions p
+                  LEFT JOIN outcomes o ON o.prediction_id = p.prediction_id
+                  LEFT JOIN latest_settlement ls
+                         ON ls.prediction_id = p.prediction_id AND ls.latest_rank = 1
+                      WHERE COALESCE(p.source_type, 'live') = 'live'
+                        AND o.prediction_id IS NULL
+                        AND (ls.retry_after_at IS NULL OR ls.retry_after_at <= ?)
+                      ORDER BY p.generated_at ASC, p.prediction_id ASC
+                      LIMIT ?""",
+                (retry_cutoff, bounded_limit),
+            ).fetchall()
+        records: list[dict[str, Any]] = []
+        for row in rows:
+            record: dict[str, Any] = {
+                "prediction_id": row["prediction_id"],
+                "symbol": row["symbol"],
+                "generated_at": row["generated_at"],
+                "action": row["action"],
+                "prediction": None,
+            }
+            try:
+                prediction = json.loads(row["payload_json"])
+                if not isinstance(prediction, dict):
+                    raise ValueError("stored prediction payload must be an object")
+                record["prediction"] = prediction
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                record["prediction_error"] = str(exc)
+            records.append(record)
+        return records
+
     def list_prediction_records(
         self,
         *,
@@ -1535,14 +1684,19 @@ class SQLiteStore:
             params.append(max(1, min(int(limit), 100000)))
         with self._connect() as db:
             rows = db.execute(query, tuple(params)).fetchall()
-        return [
-            {
-                "prediction": json.loads(row["prediction_json"]),
-                "outcome": json.loads(row["outcome_json"]) if row["outcome_json"] else None,
-                "outcome_status": row["outcome_status"],
-            }
-            for row in rows
-        ]
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                prediction = json.loads(row["prediction_json"])
+                if not isinstance(prediction, dict):
+                    continue
+                outcome = json.loads(row["outcome_json"]) if row["outcome_json"] else None
+                if outcome is not None and not isinstance(outcome, dict):
+                    continue
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+            results.append({"prediction": prediction, "outcome": outcome, "outcome_status": row["outcome_status"]})
+        return results
 
     def list_latest_prediction_records(
         self,
@@ -1610,15 +1764,18 @@ class SQLiteStore:
                     (prediction_id, followed_at, status),
                 )
 
-    def save_outcome(self, outcome: Outcome) -> None:
+    def save_outcome(self, outcome: Outcome) -> bool:
         with self._connect() as db:
             exists = db.execute("SELECT 1 FROM predictions WHERE prediction_id = ?", (outcome.prediction_id,)).fetchone()
             if exists is None:
                 raise KeyError(f"prediction not found: {outcome.prediction_id}")
-            db.execute(
-                "INSERT OR REPLACE INTO outcomes(prediction_id, settled_at, status, payload_json) VALUES (?, ?, ?, ?)",
+            result = db.execute(
+                """INSERT INTO outcomes(prediction_id, settled_at, status, payload_json)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(prediction_id) DO NOTHING""",
                 (outcome.prediction_id, outcome.settled_at.isoformat(), outcome.status.value, json.dumps(outcome.to_dict(), sort_keys=True)),
             )
+        return result.rowcount > 0
 
     def counts(self) -> dict[str, int]:
         with self._connect() as db:

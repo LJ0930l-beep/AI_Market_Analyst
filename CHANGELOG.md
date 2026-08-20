@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Phase 5 - P5-T03b background Outcome settlement and live refresh
+
+- Added bounded point-in-time settlement for live Predictions and deduplicated live Performance/Radar refresh evidence while preserving WAIT, paper-only and no-calibration boundaries.
+- Verification: 93 Python tests plus 10 subtests, 53 frontend tests with lint/typecheck/build, 0 npm audit vulnerabilities, standalone E2E 9/9 PASS and clean diff check (LF/CRLF warnings only).
+- P5-T03b Gate: ACCEPTED.
+
 ### Phase 5 - P5-T03a safe local Watchlist scheduler
 
 - Added the default-disabled, explicit-lifecycle local Watchlist scan runtime with serial model execution, deterministic market-session policy, versioned context caching, bounded resource backoff, restart recovery, process-scoped SQLite-path leasing and cooperative stop.

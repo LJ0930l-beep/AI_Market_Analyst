@@ -35,6 +35,7 @@ from core.scheduler import (
     ScanAnalysisExecutor,
     SchedulerRuntimeError,
 )
+from core.settlement import SettlementService
 from core.providers import (
     FixtureNewsProvider,
     InstrumentValidationError,
@@ -1247,6 +1248,7 @@ def create_app(
     scheduler_executor: ScanAnalysisExecutor | None = None,
     scheduler_resource_probe: ResourceProbe | Callable[[], object] | None = None,
     scheduler_clock: Callable[[], datetime] | None = None,
+    settlement_service: SettlementService | None = None,
 ):
     """Create an API app with optional service injections for isolated tests."""
 
@@ -1352,6 +1354,7 @@ def create_app(
             analysis_executor=executor,
             resource_probe=scheduler_resource_probe or LocalResourceProbe(),
             clock=scheduler_clock or (lambda: datetime.now(timezone.utc)),
+            settlement_service=settlement_service,
         )
 
     app.state.scheduler_factory = scheduler_factory

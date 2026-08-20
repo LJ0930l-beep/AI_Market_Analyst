@@ -96,8 +96,60 @@ def settle_prediction(signal: SignalProposal, bars: list[Bar]) -> Outcome:
     return Outcome(signal.prediction_id, OutcomeStatus.TIMEOUT, last.timestamp, last.close, _realized_r(signal.action, entry, last.close, risk), mfe, mae, len(ordered), True)
 
 
+def evaluate_outcome_as_of(signal: SignalProposal, bars: list[Bar], as_of: datetime) -> Outcome | None:
+    """Evaluate only evidence known at a point in time.
+
+    Unlike the historical replay helper, this incremental evaluator never uses
+    the last available bar as an implicit timeout. An actionable signal stays
+    pending until a known bar reaches a threshold or reaches the max-hold
+    horizon. Bars after ``as_of`` are ignored, including bars that would have
+    produced a later trigger.
+    """
+
+    if as_of.tzinfo is None:
+        raise ValueError("as_of must be timezone-aware")
+    point = as_of.astimezone(timezone.utc)
+    if signal.action is Action.WAIT:
+        return Outcome(signal.prediction_id, OutcomeStatus.NOT_ACTIONABLE, point, None, None, None, None, 0, False)
+    assert signal.entry_low is not None and signal.entry_high is not None
+    assert signal.stop is not None and signal.tp1 is not None and signal.tp2 is not None
+    entry = (signal.entry_low + signal.entry_high) / 2.0
+    risk = abs(entry - signal.stop)
+    if risk <= 0:
+        raise ValueError("signal risk must be positive")
+    ordered = sorted(
+        (bar for bar in bars if signal.generated_at < bar.timestamp <= point),
+        key=lambda bar: bar.timestamp,
+    )
+    if not ordered:
+        return None
+    mfe = 0.0
+    mae = 0.0
+    for index, bar in enumerate(ordered, start=1):
+        if signal.action is Action.LONG:
+            mfe = max(mfe, (bar.high - entry) / risk)
+            mae = min(mae, (bar.low - entry) / risk)
+            if bar.low <= signal.stop:
+                return Outcome(signal.prediction_id, OutcomeStatus.STOP, bar.timestamp, signal.stop, -1.0, mfe, mae, index, False)
+            if bar.high >= signal.tp2:
+                return Outcome(signal.prediction_id, OutcomeStatus.TP2, bar.timestamp, signal.tp2, (signal.tp2 - entry) / risk, mfe, mae, index, False)
+            if bar.high >= signal.tp1:
+                return Outcome(signal.prediction_id, OutcomeStatus.TP1, bar.timestamp, signal.tp1, (signal.tp1 - entry) / risk, mfe, mae, index, False)
+        else:
+            mfe = max(mfe, (entry - bar.low) / risk)
+            mae = min(mae, (entry - bar.high) / risk)
+            if bar.high >= signal.stop:
+                return Outcome(signal.prediction_id, OutcomeStatus.STOP, bar.timestamp, signal.stop, -1.0, mfe, mae, index, False)
+            if bar.low <= signal.tp2:
+                return Outcome(signal.prediction_id, OutcomeStatus.TP2, bar.timestamp, signal.tp2, (entry - signal.tp2) / risk, mfe, mae, index, False)
+            if bar.low <= signal.tp1:
+                return Outcome(signal.prediction_id, OutcomeStatus.TP1, bar.timestamp, signal.tp1, (entry - signal.tp1) / risk, mfe, mae, index, False)
+        if bar.timestamp >= signal.max_hold_until:
+            return Outcome(signal.prediction_id, OutcomeStatus.TIMEOUT, bar.timestamp, bar.close, _realized_r(signal.action, entry, bar.close, risk), mfe, mae, index, True)
+    return None
+
+
 def _realized_r(action: Action, entry: float, exit_price: float, risk: float) -> float:
     if action is Action.LONG:
         return (exit_price - entry) / risk
     return (entry - exit_price) / risk
-

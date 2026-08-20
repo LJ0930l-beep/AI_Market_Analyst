@@ -5,9 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
-from typing import Any
+import math
+from typing import Any, Mapping
 
-from ..instruments import Instrument
+from ..instruments import Instrument, instrument_from_payload
 
 
 class Action(StrEnum):
@@ -167,3 +168,135 @@ class SignalProposal:
             "calibration_sample_size": self.calibration_sample_size,
             "calibration_fallback": self.calibration_fallback,
         }
+
+
+def _payload_datetime(payload: Mapping[str, Any], key: str, *, required: bool) -> datetime | None:
+    value = payload.get(key)
+    if value is None and not required:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"signal payload field {key!r} must be an ISO timestamp")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"signal payload field {key!r} is not a valid ISO timestamp") from exc
+    if parsed.tzinfo is None:
+        raise ValueError(f"signal payload field {key!r} must include a timezone")
+    return parsed.astimezone(timezone.utc)
+
+
+def _payload_number(payload: Mapping[str, Any], key: str, *, required: bool) -> float | None:
+    value = payload.get(key)
+    if value is None and not required:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+        raise ValueError(f"signal payload field {key!r} must be a finite number")
+    return float(value)
+
+
+def _payload_integer(payload: Mapping[str, Any], key: str, *, required: bool) -> int | None:
+    value = payload.get(key)
+    if value is None and not required:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"signal payload field {key!r} must be an integer")
+    return int(value)
+
+
+def _payload_strings(payload: Mapping[str, Any], key: str) -> tuple[str, ...]:
+    value = payload.get(key)
+    if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
+        raise ValueError(f"signal payload field {key!r} must be a list of non-empty strings")
+    return tuple(value)
+
+
+def _payload_optional_string(payload: Mapping[str, Any], key: str) -> str | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"signal payload field {key!r} must be a string or null")
+    return value
+
+
+def signal_from_payload(payload: Mapping[str, Any], *, instrument: Instrument | None = None) -> SignalProposal:
+    """Rehydrate a stored SignalProposal through the same financial validators.
+
+    Settlement never constructs a signal by trusting a subset of JSON fields.
+    The nested instrument is validated and, when a durable store resolution is
+    supplied, must match it exactly before ``SignalProposal`` validates all
+    action levels, horizons and confidence bounds.
+    """
+
+    if not isinstance(payload, Mapping):
+        raise ValueError("stored signal payload must be an object")
+    nested_instrument = payload.get("instrument")
+    if not isinstance(nested_instrument, dict):
+        raise ValueError("stored signal payload instrument is invalid")
+    stored_instrument = instrument_from_payload(nested_instrument)
+    if instrument is None:
+        instrument = stored_instrument
+    elif instrument != stored_instrument:
+        raise ValueError("stored signal instrument does not match the durable instrument registry")
+    prediction_id = payload.get("prediction_id")
+    timeframe = payload.get("analysis_timeframe")
+    summary = payload.get("summary")
+    if not isinstance(prediction_id, str) or not prediction_id:
+        raise ValueError("stored signal prediction_id is invalid")
+    if not isinstance(timeframe, str) or not timeframe:
+        raise ValueError("stored signal analysis_timeframe is invalid")
+    if not isinstance(summary, str) or not summary:
+        raise ValueError("stored signal summary is invalid")
+    try:
+        action = Action(str(payload["action"]))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("stored signal action is invalid") from exc
+    generated_at = _payload_datetime(payload, "generated_at", required=True)
+    reevaluate_at = _payload_datetime(payload, "reevaluate_at", required=True)
+    signal_validity_minutes = _payload_integer(payload, "signal_validity_minutes", required=True)
+    expected_hold_minutes = _payload_integer(payload, "expected_hold_minutes", required=True)
+    max_hold_minutes = _payload_integer(payload, "max_hold_minutes", required=True)
+    raw_confidence = _payload_number(payload, "raw_confidence", required=True)
+    calibrated_confidence = _payload_number(payload, "calibrated_confidence", required=False)
+    calibration_sample_size = _payload_integer(payload, "calibration_sample_size", required=False)
+    latency_ms = _payload_number(payload, "latency_ms", required=False)
+    source_type = payload.get("source_type", "live")
+    if not isinstance(source_type, str):
+        raise ValueError("stored signal source_type is invalid")
+    replay_run_id = _payload_optional_string(payload, "replay_run_id")
+    return SignalProposal(
+        prediction_id=prediction_id,
+        instrument=instrument,
+        analysis_timeframe=timeframe,
+        generated_at=generated_at,
+        action=action,
+        entry_low=_payload_number(payload, "entry_low", required=False),
+        entry_high=_payload_number(payload, "entry_high", required=False),
+        stop=_payload_number(payload, "stop", required=False),
+        tp1=_payload_number(payload, "tp1", required=False),
+        tp2=_payload_number(payload, "tp2", required=False),
+        signal_validity_minutes=signal_validity_minutes,  # type: ignore[arg-type]
+        expected_hold_minutes=expected_hold_minutes,  # type: ignore[arg-type]
+        max_hold_minutes=max_hold_minutes,  # type: ignore[arg-type]
+        reevaluate_at=reevaluate_at,  # type: ignore[arg-type]
+        invalidation=_payload_strings(payload, "invalidation"),
+        raw_confidence=raw_confidence,  # type: ignore[arg-type]
+        reason_codes=_payload_strings(payload, "reason_codes"),
+        summary=summary,
+        model_id=str(payload.get("model_id", "phase1-quant-baseline")),
+        model_version=_payload_optional_string(payload, "model_version"),
+        prompt_version=_payload_optional_string(payload, "prompt_version"),
+        input_hash=_payload_optional_string(payload, "input_hash"),
+        data_as_of=_payload_datetime(payload, "data_as_of", required=False),
+        context_json=_payload_optional_string(payload, "context_json"),
+        raw_model_response=_payload_optional_string(payload, "raw_model_response"),
+        parse_status=str(payload.get("parse_status", "not_applicable")),
+        latency_ms=latency_ms,
+        source_type=source_type,
+        replay_run_id=replay_run_id,
+        calibrated_confidence=calibrated_confidence,
+        calibration_version=_payload_optional_string(payload, "calibration_version"),
+        calibration_scope=_payload_optional_string(payload, "calibration_scope"),
+        calibration_sample_size=calibration_sample_size,
+        calibration_fallback=_payload_optional_string(payload, "calibration_fallback"),
+    )

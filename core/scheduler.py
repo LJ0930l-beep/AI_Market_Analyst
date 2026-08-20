@@ -23,6 +23,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .analysis_service import AnalysisError, AnalysisService
 from .instruments import AssetType, Instrument, TradingHours
+from .providers import build_default_provider
+from .settlement import SettlementService
 from .storage import SQLiteStore
 
 
@@ -693,12 +695,18 @@ class LocalSchedulerRuntime:
         backoff_base_seconds: int = RESOURCE_BACKOFF_BASE_SECONDS,
         backoff_max_seconds: int = RESOURCE_BACKOFF_MAX_SECONDS,
         timeframe: str = DEFAULT_SCAN_TIMEFRAME,
+        settlement_service: SettlementService | None = None,
     ) -> None:
         self.store = store
         self.analysis_executor = analysis_executor
         self.resource_probe = resource_probe or LocalResourceProbe()
         self.clock = clock
         self.timeframe = timeframe
+        self.settlement_service = settlement_service or SettlementService(
+            store=store,
+            provider_factory=build_default_provider,
+            clock=clock,
+        )
         self.cache = ContextCache(
             ttl_seconds=cache_ttl_seconds,
             capacity=cache_capacity,
@@ -821,6 +829,8 @@ class LocalSchedulerRuntime:
         latest_run = latest[0] if latest else None
         cache_stats = self.cache.stats(now=self._now())
         persisted_cache = self.store.list_scheduler_cache_entries(limit=500)
+        last_settlement = self.store.get_scheduler_state("last_settlement")
+        last_performance_refresh = self.store.get_scheduler_state("last_performance_refresh")
         running = self._thread_alive()
         if running:
             state = "running"
@@ -850,6 +860,8 @@ class LocalSchedulerRuntime:
                 "persisted_metadata_entries": len(persisted_cache),
                 "persisted_hit_count": sum(int(item["hit_count"]) for item in persisted_cache),
             },
+            "settlement": last_settlement,
+            "performance_refresh": last_performance_refresh,
             "capabilities": {
                 "runtime": "local_thread_explicit_lifecycle",
                 "model_analysis_concurrency": MODEL_ANALYSIS_CONCURRENCY_LIMIT,
@@ -859,7 +871,9 @@ class LocalSchedulerRuntime:
                 "cache": "scheduler_only_metadata_persists_cold_restart",
                 "real_orders": False,
                 "alerts": False,
-                "outcome_settlement": False,
+                "outcome_settlement": True,
+                "outcome_settlement_mode": "live_point_in_time_before_model_scan",
+                "performance_refresh": "versioned_live_snapshot_no_calibration_mutation",
             },
             "recovered_runs": self.recovered_runs,
         }
@@ -974,11 +988,42 @@ class LocalSchedulerRuntime:
             "skipped_resource": 0,
             "errors": 0,
             "interrupted": 0,
+            "settlement_planned": 0,
+            "settlement_settled": 0,
+            "settlement_pending": 0,
+            "settlement_wait": 0,
+            "settlement_errors": 0,
+            "settlement_provider_errors": 0,
+            "settlement_interrupted": 0,
+            "settlement_idempotent": 0,
+            "settlement_provider_fetches": 0,
+            "settlement_provider_reused": 0,
+            "performance_refreshes": 0,
+            "performance_reused": 0,
         }
         backoff_triggered = False
         stop_requested = False
         context_capability = dict(DEFAULT_CONTEXT_CAPABILITY)
         try:
+            try:
+                settlement_result = self.settlement_service.run_once(
+                    run_id=run_id,
+                    as_of=started,
+                    stop_event=stop_event,
+                )
+                settlement_counts = settlement_result.get("counts", {})
+                if isinstance(settlement_counts, dict):
+                    for key, value in settlement_counts.items():
+                        target = f"settlement_{key}"
+                        if target in counts:
+                            counts[target] = int(value)
+                    counts["performance_refreshes"] = int(settlement_counts.get("performance_refreshes", 0))
+                    counts["performance_reused"] = int(settlement_counts.get("performance_reused", 0))
+                if settlement_result.get("status") == "INTERRUPTED":
+                    stop_requested = True
+            except Exception as exc:  # isolate settlement stage from scan items
+                counts["settlement_errors"] += 1
+                self._last_error = {"code": "SETTLEMENT_STAGE_ERROR", "message": str(exc)}
             entries = self.store.list_watchlist_entries()
             counts["planned"] = len(entries)
             for index, entry in enumerate(entries):
@@ -1147,7 +1192,7 @@ class LocalSchedulerRuntime:
                 "INTERRUPTED"
                 if stop_requested
                 else "COMPLETED_WITH_ERRORS"
-                if counts["errors"] or counts["skipped_resource"]
+                if counts["errors"] or counts["skipped_resource"] or counts["settlement_errors"] or counts["settlement_provider_errors"]
                 else "COMPLETED"
             )
             finished = self._now()

@@ -279,6 +279,17 @@ export const fakeSchedulerStatus: SchedulerStatus = {
     persisted_metadata_entries: 0,
     restart_behavior: "metadata_only_cold_restart",
   },
+  settlement: {
+    version: "settlement_v1",
+    status: "idle",
+    counts: { planned: 0, settled: 0, pending: 0, wait: 0, errors: 0 },
+    capability: { model_scan_resource_guard: "not_used" },
+  },
+  performance_refresh: {
+    version: "live_performance_v1",
+    status: "PRELIMINARY",
+    capability: "live_records_only_no_calibration_mutation",
+  },
   capabilities: {
     runtime: "local_thread_explicit_lifecycle",
     model_analysis_concurrency: 1,
@@ -286,7 +297,8 @@ export const fakeSchedulerStatus: SchedulerStatus = {
     crypto_24_7: true,
     real_orders: false,
     alerts: false,
-    outcome_settlement: false,
+    outcome_settlement: true,
+    outcome_settlement_mode: "live_point_in_time_before_model_scan",
   },
 };
 
