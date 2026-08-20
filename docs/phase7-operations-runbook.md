@@ -10,7 +10,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\phase7-local.ps1 -Ac
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\phase7-local.ps1 -Action stop
 ```
 
-Use `-DatabasePath`, `-ApiPort` and `-WebPort` for an explicit local instance. `start` validates Python/uvicorn/Node/npm, creates only the selected database parent, refuses occupied ports, builds a missing UI, waits for `/health`, and then starts the static proxy. It never enables the scheduler or invokes analysis. `stop` checks the recorded PID and executable path before a graceful close and bounded owned-process fallback; it does not use process names, `taskkill`, recursive deletion, or a broad port kill. Child logs and the state file are under `%TEMP%\ai-market-analyst-phase7-launcher`.
+Use `-DatabasePath`, `-ApiPort` and `-WebPort` for an explicit local instance. `start` validates Python/uvicorn/Node/npm, creates only the selected database parent, refuses occupied ports, builds a missing UI, waits for `/health`, and then starts the static proxy. It never enables the scheduler or invokes analysis. The v2 state records each child’s executable, exact UTC start-time ticks, command-line hash, role and port markers. `status` reports `ownership_mismatch`; `stop` refuses to act and retains the state if any fingerprint differs. Otherwise it checks the recorded PID and fingerprint before a graceful close and bounded owned-process fallback; it does not use process names, `taskkill`, recursive deletion, or a broad port kill. Child logs and the state file are under `%TEMP%\ai-market-analyst-phase7-launcher`.
 
 If a port is occupied, choose another port or stop the process through its owner. Do not use this launcher to stop an unrelated service. If the state file is malformed, inspect it and remove only that one state file after confirming the recorded children are gone.
 
@@ -23,7 +23,7 @@ python -B scripts\phase7_backup.py backup --database data\market_analyst.sqlite3
 python -B scripts\phase7_backup.py restore --input data\backups\before-maintenance --database data\market_analyst.sqlite3
 ```
 
-The backup directory must be new/empty and the target parent must already exist. The manifest records format `phase7_backup_v1`, app version, schema, UTC time, checksum and domain counts. Restore performs manifest/checksum/integrity/schema validation before making a sibling safety artifact for an existing target. It stages and atomically replaces the target, retaining the safety artifact. A failure before replacement leaves the target untouched; a post-replacement validation failure attempts recovery from the safety artifact and reports the artifact path. Do not manually delete safety artifacts until the restored database has been reopened and verified.
+The backup directory must be new/empty and the target parent must already exist. The manifest records format `phase7_backup_v1`, app version, schema, UTC time, checksum and domain counts. Restore is offline-only: stop the owned launcher, close every database connection, and confirm there is no target `-wal` or `-shm` sidecar before invoking it. A sidecar or persisted WAL journal mode is rejected before safety-backup creation or target mutation; no live checkpoint is attempted. Restore performs manifest/checksum/integrity/schema validation before making a sibling safety artifact for an existing target. It stages and atomically replaces the target, retaining the safety artifact. A failure before replacement leaves the target untouched; a post-replacement validation failure recovers an existing target from its safety artifact, while a previously absent target is moved to an exact `*.restore-failed-*` quarantine (or removed) so it does not remain partially accepted. Do not manually delete safety or failure artifacts until the restored database has been reopened and verified.
 
 ## Health and degraded operation
 
@@ -39,12 +39,13 @@ Provider, model, GPU and database failures are capability/degraded evidence. A p
 
 ## Recovery checklist
 
-1. Stop only the owned local instance and preserve its logs.
-2. Make a fresh SQLite backup artifact if the source opens and passes health.
-3. If corruption is suspected, restore the last validated artifact to a new filename first, reopen it with `SQLiteStore.initialize()`, and compare `/stats` plus the manifest counts.
-4. Restore over the active target only after the validation step; keep the generated `*.pre-restore-*` artifact.
-5. Restart the launcher and verify `/health/release`, scheduler disabled state, Watchlist, Predictions, Outcomes, PaperTrades and alerts.
-6. Do not infer live-provider/model availability from a successful database restore.
+1. Stop only the owned local instance and preserve its logs; do not restore while the launcher or any database connection is active.
+2. Confirm the target has no `-wal` or `-shm` sidecar and is not in persisted WAL mode; the restore command fails closed otherwise.
+3. Make a fresh SQLite backup artifact if the source opens and passes health.
+4. If corruption is suspected, restore the last validated artifact to a new filename first, reopen it with `SQLiteStore.initialize()`, and compare `/stats` plus the manifest counts.
+5. Restore over the inactive target only after the validation step; keep the generated `*.pre-restore-*` or `*.restore-failed-*` artifact.
+6. Restart the launcher and verify `/health/release`, scheduler disabled state, Watchlist, Predictions, Outcomes, PaperTrades and alerts.
+7. Do not infer live-provider/model availability from a successful database restore.
 
 ## Privacy and ownership
 

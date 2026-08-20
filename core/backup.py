@@ -67,7 +67,7 @@ def _absolute(path: str | Path) -> Path:
 def _reject_symlink_components(path: Path) -> None:
     current = path
     while True:
-        if current.exists() and current.is_symlink():
+        if current.is_symlink():
             raise BackupError(f"symlink path is not allowed: {path}")
         if current == current.parent:
             return
@@ -280,6 +280,63 @@ def _safety_destination(target: Path) -> Path:
     return target.parent / f"{target.name}.pre-restore-{stamp}-{uuid.uuid4().hex[:8]}"
 
 
+def _restore_failure_destination(target: Path) -> Path:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return target.parent / f"{target.name}.restore-failed-{stamp}-{uuid.uuid4().hex[:8]}"
+
+
+def _assert_restore_target_offline(target: Path) -> None:
+    """Fail closed when target WAL/SHM state could mix with a replacement."""
+
+    for suffix in ("-wal", "-shm"):
+        sidecar = Path(f"{target}{suffix}")
+        _reject_symlink_components(sidecar)
+        if sidecar.exists():
+            raise BackupError(
+                "restore requires an offline SQLite target; "
+                f"active sidecar {sidecar.name} exists. Stop the owned launcher "
+                "and close all database connections before retrying."
+            )
+    if not target.exists():
+        return
+    try:
+        connection = sqlite3.connect(f"{target.as_uri()}?mode=ro", uri=True, timeout=0.2)
+    except (OSError, sqlite3.Error) as exc:
+        raise BackupError(
+            "restore requires an offline SQLite target; journal mode could not be inspected"
+        ) from exc
+    try:
+        mode_row = connection.execute("PRAGMA journal_mode").fetchone()
+        mode = str(mode_row[0]).lower() if mode_row else "unknown"
+    except sqlite3.Error as exc:
+        raise BackupError(
+            "restore requires an offline SQLite target; journal mode could not be inspected"
+        ) from exc
+    finally:
+        connection.close()
+    if mode == "wal":
+        raise BackupError(
+            "restore requires an offline SQLite target; WAL journal mode is active. "
+            "Stop the owned launcher and close all database connections before retrying."
+        )
+
+
+def _quarantine_new_target(target: Path) -> Path | None:
+    """Move only a newly created failed target, retaining forensic evidence."""
+
+    quarantine = _restore_failure_destination(target)
+    try:
+        os.replace(target, quarantine)
+        return quarantine
+    except Exception:
+        if target.is_file() and not target.is_symlink():
+            try:
+                target.unlink()
+            except OSError:
+                pass
+        return None
+
+
 def restore_database(artifact: str | Path, target: str | Path) -> dict[str, Any]:
     """Validate an artifact, preserve the target, then atomically restore it."""
 
@@ -290,8 +347,10 @@ def restore_database(artifact: str | Path, target: str | Path) -> dict[str, Any]
         raise BackupError("restore target cannot be inside the backup artifact")
     if target_path.exists() and target_path.is_symlink():
         raise BackupError("restore target may not be a symlink")
+    _assert_restore_target_offline(target_path)
+    target_existed = target_path.exists()
     safety_path: Path | None = None
-    if target_path.exists():
+    if target_existed:
         safety_path = _safety_destination(target_path)
         backup_database(target_path, safety_path)
     temporary = target_path.with_name(f".{target_path.name}.{uuid.uuid4().hex}.restore")
@@ -315,6 +374,17 @@ def restore_database(artifact: str | Path, target: str | Path) -> dict[str, Any]
                 raise BackupError(
                     f"restore failed and safety recovery failed; safety artifact remains at {safety_path}"
                 ) from recovery_exc
+        if replaced and not target_existed:
+            quarantine_path = _quarantine_new_target(target_path)
+            if quarantine_path is not None:
+                raise BackupError(
+                    "restore failed after replacing a previously absent target; "
+                    f"failed database quarantined at {quarantine_path.name}"
+                ) from exc
+            raise BackupError(
+                "restore failed after replacing a previously absent target; "
+                "the exact failed target could not be quarantined or removed"
+            ) from exc
         safety_note = f"; safety backup: {safety_path}" if safety_path is not None else ""
         raise BackupError(f"restore failed before completion{ safety_note}") from exc
     return {

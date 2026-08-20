@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Phase 7 supervisor repair — offline restore and process ownership hardening
+
+- Added `phase7_launcher_v2` ownership fingerprints: exact UTC start-time ticks, command-line hash, child role and port markers; mismatches report and retain state without stopping a potentially reused or tampered PID. Added isolated same-executable stale-record refusal smoke coverage.
+- Made restore explicitly offline and fail closed on target `-wal`/`-shm` sidecars or persisted WAL mode before safety-backup creation; existing-target failures recover from the safety artifact and previously absent failed targets are quarantined or removed only as the exact target file.
+- Updated the V1.0 runbook, completion report, ADR-026 and final acceptance evidence to preserve these recovery semantics and the existing `pip-audit`/license review limitations. Consolidated repair Gate: 117 pytest tests plus 10 subtests, 118 unittest tests, 55 frontend tests, standalone E2E 10/10 in 39.0s, launcher/recovery/release smoke PASS, and both npm audits at 0 vulnerabilities.
+
 ### Phase 7 V1.0 release-hardening — developer-ready
 
 - Set the package/API release contract to `1.0.0` / Phase 7; added bounded local configuration, redacted health errors, `/health/release`, explicit capability evidence and loopback-only startup defaults.

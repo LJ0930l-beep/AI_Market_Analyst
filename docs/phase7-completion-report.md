@@ -11,7 +11,7 @@ Phase 7 adds:
 - package/API version `1.0.0` / API Phase `7`, with truthful local capability health at `GET /health/release`;
 - bounded local configuration defaults, loopback CORS/host policy, redacted unexpected/model errors and explicit local-only capability flags;
 - `core/backup.py` and `scripts/phase7_backup.py`, using SQLite’s online backup API, manifest/checksum/schema/count validation, atomic staged restore and retained sibling safety artifacts;
-- Windows `scripts/phase7-local.ps1` plus `web` `start:local`/`stop:local`/`status:local`/audit scripts for owned API/UI child lifecycle;
+- Windows `scripts/phase7-local.ps1` plus `web` `start:local`/`stop:local`/`status:local`/audit scripts for owned API/UI child lifecycle, with v2 start-time/command-line/role/port ownership fingerprints;
 - reproducible security/license summaries (`scripts/phase7_audit.py`) and a bounded backup/resource release smoke (`scripts/phase7-release-smoke.py`);
 - final README, operations runbook, this report and machine-readable acceptance inventory.
 
@@ -19,9 +19,9 @@ The architecture remains local-first: public/fixture data → deterministic Pyth
 
 ## Backup/restore evidence
 
-`tests/test_phase7_hardening.py` covers consistent backup/reopen/count preservation, tampered artifact rejection before target mutation, target-replace failure with retained safety artifact, self-target rejection, empty/broad destination rejection and symlink rejection logic. The symlink case is safely skipped on this Windows account because symlink creation is unavailable; the runtime path guard remains covered by the implementation and non-symlink path checks.
+`tests/test_phase7_hardening.py` covers consistent backup/reopen/count preservation, tampered artifact rejection before target mutation, target-replace failure with retained safety artifact, target sidecar and persisted-WAL refusal before safety-backup creation, existing-target recovery after post-replacement validation failure, new-target failure quarantine, self-target rejection, empty/broad destination rejection and symlink rejection logic. The symlink case is safely skipped on this Windows account because symlink creation is unavailable; the runtime path guard remains covered by the implementation and non-symlink path checks.
 
-Artifacts contain only `database.sqlite3` and `manifest.json`. The manifest records `phase7_backup_v1`, app version, current schema `10`, UTC timestamp, source basename, SHA-256 and table counts. Restore validates all of those plus SQLite integrity before creating a safety backup or replacing the target. No recursive delete is used.
+Artifacts contain only `database.sqlite3` and `manifest.json`. The manifest records `phase7_backup_v1`, app version, current schema `10`, UTC timestamp, source basename, SHA-256 and table counts. Restore is offline-only and rejects target `-wal`/`-shm` sidecars or persisted WAL mode before creating a safety backup or replacing the target. Existing targets recover from their retained safety artifact after a post-replacement validation failure; a previously absent failed target is quarantined as `*.restore-failed-*` or removed only as that exact file. No recursive delete is used.
 
 ## Startup/resource evidence
 
@@ -35,7 +35,7 @@ Invoke-WebRequest -UseBasicParsing http://127.0.0.1:14173/
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\phase7-local.ps1 -Action stop -ApiPort 18000 -WebPort 14173
 ```
 
-Observed: API/UI reached ready state, `/health/release` returned Phase 7 / `1.0.0` / schema 10, the UI returned HTTP 200, status showed both owned PIDs, and stop released both ports. The launcher does not kill unrelated processes. The bounded release smoke ran on Windows 11, Python 3.12.10, 12 logical CPUs, temporary fixture SQLite, no network/model/orders; the recorded backup/restore timings and read-only `nvidia-smi` capability result are in [phase7-release-smoke.json](phase7-release-smoke.json). The current desktop GPU guard reported `gpu_competition` with bounded retry evidence; this is capability evidence, not a performance threshold or a request to stop any process.
+Observed: API/UI reached ready state, `/health/release` returned Phase 7 / `1.0.0` / schema 10, the UI returned HTTP 200, status showed both fingerprinted owned PIDs, and stop released both ports. `scripts\phase7-launcher-ownership-smoke.ps1` additionally passed stale same-executable PID refusal, state retention and normal lifecycle cleanup. The launcher does not kill unrelated processes. The bounded release smoke ran on Windows 11, Python 3.12.10, 12 logical CPUs, temporary fixture SQLite, no network/model/orders; the recorded backup/restore timings and read-only `nvidia-smi` capability result are in [phase7-release-smoke.json](phase7-release-smoke.json). The current desktop GPU guard reported `gpu_competition` with bounded retry evidence; this is capability evidence, not a performance threshold or a request to stop any process.
 
 ## Exact automated evidence
 
@@ -43,8 +43,8 @@ The final local Gate commands and observed results are:
 
 | Area | Command | Result |
 | --- | --- | --- |
-| Python regression | `python -m pytest -q` | PASS — 113 passed, 1 skipped, 10 subtests, one known Starlette/httpx deprecation warning; the symlink-specific hardening test is a safe environment skip. |
-| Python unittest | `python -B -m unittest discover -s tests -v` | PASS — 114 tests, 1 skipped. |
+| Python regression | `python -m pytest -q` | PASS — 117 passed, 1 skipped, 10 subtests, one known Starlette/httpx deprecation warning; the symlink-specific hardening test is a safe environment skip. |
+| Python unittest | `python -B -m unittest discover -s tests -v` | PASS — 118 tests, 1 skipped. |
 | Python syntax | `python -B -m compileall -q apps core tests scripts` | PASS. |
 | Python dependencies | `python -m pip check` | PASS — no broken requirements. |
 | Frontend lint | `npm run lint` | PASS. |
@@ -54,8 +54,9 @@ The final local Gate commands and observed results are:
 | npm full audit | `npm audit --audit-level=high` | PASS — 0 vulnerabilities. |
 | npm production audit | `npm audit --omit=dev --audit-level=high` | PASS — 0 vulnerabilities. |
 | Browser preflight | `npm run e2e:preflight` | PASS — pinned Playwright 1.62.1, installed Chrome/Edge candidates. |
-| Standalone browser Gate | `npm run e2e` | PASS — 10/10, one worker, 40.9s, Chrome `151.0.7922.140`, real built React + FastAPI/SQLite; 18 desktop/mobile axe scans and 18 overflow checks. |
-| Release smoke | `python -B scripts/phase7-release-smoke.py --output docs/phase7-release-smoke.json` | PASS — bounded backup/restore/resource evidence; no threshold claim. |
+| Standalone browser Gate | `npm run e2e` | PASS — 10/10, one worker, 39.0s, Chrome `151.0.7922.140`, real built React + FastAPI/SQLite; 18 desktop/mobile axe scans and 18 overflow checks. |
+| Launcher ownership smoke | `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/phase7-launcher-ownership-smoke.ps1` | PASS — stale same-executable record refused and retained, helper stayed alive, normal start/stop lifecycle passed. |
+| Release smoke | `python -B scripts/phase7-release-smoke.py --output docs/phase7-release-smoke.json` | PASS — temporary SQLite backup `14.55ms`, restore `22.349ms`, read-only resource probe `96.93ms`; no threshold claim; GPU reported bounded `gpu_competition`. |
 | Security/license artifacts | `python -B scripts/phase7_audit.py --output-dir docs` | PASS for pip check/npm audits/secret scan; `pip-audit` unavailable and license inventory `review_required` are preserved honestly. |
 | Diff hygiene | `git diff --check` | PASS; only expected repository LF/CRLF conversion warnings may be emitted by Git on Windows. |
 

@@ -1,6 +1,7 @@
 import json
 import hashlib
 import os
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,6 +9,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+import core.backup as backup_module
 from apps.api.main import API_PHASE, API_VERSION, create_app
 from core.backup import BackupError, backup_database, restore_database
 from core.config import database_path_from_env
@@ -114,6 +116,92 @@ class Phase7BackupTests(unittest.TestCase):
                 with self.assertRaises(BackupError) as raised:
                     restore_database(backup, target)
             self.assertIn("safety backup", str(raised.exception))
+            self.assertEqual(SQLiteStore(target).counts(), original_counts)
+            self.assertTrue(list(root.glob("target.sqlite3.pre-restore-*")))
+
+    def test_restore_rejects_target_sidecar_before_safety_backup_or_mutation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "source.sqlite3"
+            target = root / "target.sqlite3"
+            backup = root / "backup-artifact"
+            self._seed(source)
+            target_store = self._seed(target, prediction_id="target-only")
+            original_counts = target_store.counts()
+            backup_database(source, backup)
+            Path(f"{target}-wal").write_bytes(b"active-wal-marker")
+            with self.assertRaisesRegex(BackupError, "offline.*sidecar"):
+                restore_database(backup, target)
+            self.assertEqual(SQLiteStore(target).counts(), original_counts)
+            self.assertFalse(list(root.glob("target.sqlite3.pre-restore-*")))
+
+    def test_restore_rejects_persisted_wal_mode_before_safety_backup(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "source.sqlite3"
+            target = root / "target.sqlite3"
+            backup = root / "backup-artifact"
+            self._seed(source)
+            self._seed(target, prediction_id="target-only")
+            backup_database(source, backup)
+            connection = sqlite3.connect(target)
+            try:
+                self.assertEqual(connection.execute("PRAGMA journal_mode=WAL").fetchone()[0], "wal")
+            finally:
+                connection.close()
+            with self.assertRaisesRegex(BackupError, "offline.*WAL"):
+                restore_database(backup, target)
+            self.assertFalse(list(root.glob("target.sqlite3.pre-restore-*")))
+
+    def test_new_target_post_replace_failure_is_quarantined(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "source.sqlite3"
+            target = root / "new-target.sqlite3"
+            backup = root / "backup-artifact"
+            self._seed(source)
+            backup_database(source, backup)
+            real_metadata = backup_module._read_sqlite_metadata
+            calls = 0
+
+            def fail_after_replacement(path):
+                nonlocal calls
+                calls += 1
+                if calls == 3:
+                    raise BackupError("simulated post-replacement validation failure")
+                return real_metadata(path)
+
+            with patch("core.backup._read_sqlite_metadata", side_effect=fail_after_replacement):
+                with self.assertRaisesRegex(BackupError, "quarantined"):
+                    restore_database(backup, target)
+            self.assertFalse(target.exists())
+            quarantines = list(root.glob("new-target.sqlite3.restore-failed-*"))
+            self.assertEqual(len(quarantines), 1)
+            self.assertTrue(quarantines[0].is_file())
+
+    def test_existing_target_post_replace_failure_recovers_from_safety_artifact(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "source.sqlite3"
+            target = root / "target.sqlite3"
+            backup = root / "backup-artifact"
+            self._seed(source)
+            target_store = self._seed(target, prediction_id="target-only")
+            original_counts = target_store.counts()
+            backup_database(source, backup)
+            real_metadata = backup_module._read_sqlite_metadata
+            calls = 0
+
+            def fail_after_replacement(path):
+                nonlocal calls
+                calls += 1
+                if calls == 4:
+                    raise BackupError("simulated post-replacement validation failure")
+                return real_metadata(path)
+
+            with patch("core.backup._read_sqlite_metadata", side_effect=fail_after_replacement):
+                with self.assertRaisesRegex(BackupError, "safety backup"):
+                    restore_database(backup, target)
             self.assertEqual(SQLiteStore(target).counts(), original_counts)
             self.assertTrue(list(root.glob("target.sqlite3.pre-restore-*")))
 

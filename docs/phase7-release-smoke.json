@@ -1,6 +1,6 @@
 {
   "backup": {
-    "elapsed_ms": 17.169,
+    "elapsed_ms": 14.55,
     "schema_version": 10
   },
   "fixture_context": {
@@ -29,12 +29,12 @@
     "capability": "nvidia_smi",
     "details": {
       "free_memory_mb": [
-        5552.0
+        5349.0
       ],
       "minimum_free_memory_mb": null,
       "process_count": 38
     },
-    "elapsed_ms": 90.514,
+    "elapsed_ms": 96.93,
     "reason": "gpu_competition",
     "retry_after_seconds": 30
   },
@@ -64,8 +64,8 @@
       "scheduler_runs": 0,
       "watchlist_entries": 0
     },
-    "elapsed_ms": 25.7,
+    "elapsed_ms": 22.349,
     "restored": true
   },
-  "started_at": "2026-08-20T15:30:40.179430+00:00"
+  "started_at": "2026-08-20T16:26:17.417125+00:00"
 }

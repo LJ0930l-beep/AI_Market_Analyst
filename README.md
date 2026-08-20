@@ -15,7 +15,7 @@ cd ..
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\phase7-local.ps1 -Action start
 ```
 
-The launcher binds the API and built UI to loopback (`127.0.0.1`), checks Python/uvicorn/Node/npm, checks the database path and ports, and writes only owned-child state under the OS temporary directory. It never searches by process name or stops ComfyUI, Ollama, or another unrelated process. If the build is missing, `start` builds it; use `-Build` to force a rebuild.
+The launcher binds the API and built UI to loopback (`127.0.0.1`), checks Python/uvicorn/Node/npm, checks the database path and ports, and writes only owned-child state under the OS temporary directory. Each child record includes the executable, exact UTC start-time ticks, command-line hash, role and port markers. Status reports `ownership_mismatch`, and stop retains the state without acting, if any fingerprint does not match. It never searches by process name or stops ComfyUI, Ollama, or another unrelated process. If the build is missing, `start` builds it; use `-Build` to force a rebuild.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\phase7-local.ps1 -Action status
@@ -56,7 +56,7 @@ python -B scripts\phase7_backup.py restore `
   --database data\market_analyst.sqlite3
 ```
 
-Each artifact contains `database.sqlite3` and `manifest.json` with `phase7_backup_v1`, app version, schema version, UTC creation time, source basename, SHA-256 and table-count evidence. Restore validates the manifest, checksum, SQLite integrity and supported schema before touching the target. An existing target first receives a sibling `*.pre-restore-<UTC>-<nonce>` safety artifact; replacement is staged and atomic. Invalid, tampered, self-referential, symlinked, broad or path-confused targets are rejected. Safety artifacts are retained for operator recovery and no recursive delete is used.
+Each artifact contains `database.sqlite3` and `manifest.json` with `phase7_backup_v1`, app version, schema version, UTC creation time, source basename, SHA-256 and table-count evidence. Restore is explicitly offline: stop the owned launcher and close all SQLite connections first. A target `-wal`/`-shm` sidecar or persisted WAL journal mode is rejected before a safety artifact is created or the target is touched; the tool does not checkpoint or merge live WAL state. Restore validates the manifest, checksum, SQLite integrity and supported schema before touching the target. An existing target first receives a sibling `*.pre-restore-<UTC>-<nonce>` safety artifact; replacement is staged and atomic, with recovery from that artifact if post-replacement validation fails. If a previously absent target fails post-replacement validation, the exact failed file is quarantined as `*.restore-failed-<UTC>-<nonce>` (or removed if quarantine is unavailable), so the original absent state is preserved. Invalid, tampered, self-referential, symlinked, broad or path-confused targets are rejected. Safety and failure artifacts are retained for operator recovery and no recursive delete is used.
 
 ## Developer setup and verification
 
@@ -75,6 +75,9 @@ npm run audit
 npm run audit:production
 npm run e2e:preflight
 npm run e2e
+
+cd ..
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\phase7-launcher-ownership-smoke.ps1
 ```
 
 The E2E suite builds and runs the real React app and FastAPI routes against a disposable SQLite database. It uses deterministic injected providers only for browser reproducibility; it does not claim live Yahoo/Binance/Ollama/ComfyUI behavior. `scripts\phase7_audit.py --output-dir docs` records the local npm/pip checks, optional-tool availability, tracked secret scan and dependency license inventory. An unavailable `pip-audit` or an unknown license remains explicitly marked in the report.

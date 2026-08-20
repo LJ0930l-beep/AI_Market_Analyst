@@ -8,8 +8,8 @@
     "scope": "Phase 0 through Phase 7 only"
   },
   "checks": [
-    {"id": "python_pytest", "status": "PASS", "command": "python -m pytest -q", "evidence": "113 passed; 1 skipped; 10 subtests; one known Starlette/httpx deprecation warning"},
-    {"id": "python_unittest", "status": "PASS", "command": "python -B -m unittest discover -s tests -v", "evidence": "114 tests; 1 skipped"},
+    {"id": "python_pytest", "status": "PASS", "command": "python -m pytest -q", "evidence": "117 passed; 1 skipped; 10 subtests; one known Starlette/httpx deprecation warning"},
+    {"id": "python_unittest", "status": "PASS", "command": "python -B -m unittest discover -s tests -v", "evidence": "118 tests; 1 skipped"},
     {"id": "compileall", "status": "PASS", "command": "python -B -m compileall -q apps core tests scripts"},
     {"id": "pip_check", "status": "PASS", "command": "python -m pip check", "evidence": "No broken requirements found"},
     {"id": "frontend_lint", "status": "PASS", "command": "npm run lint"},
@@ -19,9 +19,10 @@
     {"id": "npm_full_audit", "status": "PASS", "command": "npm audit --audit-level=high", "evidence": "0 vulnerabilities"},
     {"id": "npm_production_audit", "status": "PASS", "command": "npm audit --omit=dev --audit-level=high", "evidence": "0 vulnerabilities"},
     {"id": "browser_preflight", "status": "PASS", "command": "npm run e2e:preflight", "evidence": "Playwright 1.62.1 with installed Chrome/Edge candidates"},
-    {"id": "standalone_e2e", "status": "PASS", "command": "npm run e2e", "evidence": "10/10 in 40.9s on Chrome 151.0.7922.140; 18 desktop/mobile axe scans; 18 overflow checks"},
-    {"id": "backup_restore", "status": "PASS", "command": "python -m pytest -q tests/test_phase7_hardening.py", "evidence": "7 passed; 1 skipped because symlink creation is unavailable on current Windows account"},
-    {"id": "release_smoke", "status": "PASS", "command": "python -B scripts/phase7-release-smoke.py --output docs/phase7-release-smoke.json", "evidence": "bounded temporary SQLite backup/restore and read-only GPU capability probe"},
+    {"id": "standalone_e2e", "status": "PASS", "command": "npm run e2e", "evidence": "10/10 in 39.0s on Chrome 151.0.7922.140; 18 desktop/mobile axe scans; 18 overflow checks"},
+    {"id": "backup_restore", "status": "PASS", "command": "python -m pytest -q tests/test_phase7_hardening.py", "evidence": "11 passed; 1 skipped; sidecar/WAL refusal, existing-target recovery and new-target quarantine covered; symlink creation unavailable on current Windows account"},
+    {"id": "launcher_ownership_smoke", "status": "PASS", "command": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/phase7-launcher-ownership-smoke.ps1", "evidence": "phase7_launcher_v2 stale same-executable record refused and retained; helper remained alive; normal start/stop lifecycle passed"},
+    {"id": "release_smoke", "status": "PASS", "command": "python -B scripts/phase7-release-smoke.py --output docs/phase7-release-smoke.json", "evidence": "Windows 11/Python 3.12.10/12 CPU; backup 14.55ms, restore 22.349ms, read-only probe 96.93ms; bounded gpu_competition capability, no threshold claim"},
     {"id": "security_audit", "status": "PASS_WITH_LIMITATIONS", "command": "python -B scripts/phase7_audit.py --output-dir docs", "evidence": "npm/pip checks and tracked secret scan pass; pip-audit unavailable"},
     {"id": "license_inventory", "status": "REVIEW_REQUIRED", "command": "python -B scripts/phase7_audit.py --output-dir docs", "evidence": "unknown package metadata retained; no legal clean claim"},
     {"id": "diff_check", "status": "PASS", "command": "git diff --check"}
@@ -44,6 +45,8 @@
   "limitations": [
     "Live Yahoo/Binance/Ollama/Qwen/ComfyUI behavior is not claimed by fixture E2E.",
     "The accepted equity holiday-calendar limitation remains.",
+    "Restore is deliberately offline-only and rejects target WAL/SHM sidecars or persisted WAL mode; operators must stop the owned launcher and close database connections first.",
+    "Launcher ownership mismatches retain state for manual inspection rather than attempting recovery by process name, port or PID reuse.",
     "Current environment has no pip-audit executable and has license metadata requiring review.",
     "Final inventory is developer-ready pending supervisor acceptance."
   ]

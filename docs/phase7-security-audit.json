@@ -8,7 +8,7 @@
     "telemetry": false,
     "timeouts_retries_bounded": true
   },
-  "generated_at": "2026-08-20T15:30:40.696511+00:00",
+  "generated_at": "2026-08-20T16:28:30.171588+00:00",
   "npm_audit_full": {
     "command": [
       "npm.cmd",
