@@ -28,6 +28,8 @@ import type {
   ProviderHealthResponse,
   ReplayRun,
   ReplayRunFilters,
+  RadarFilters,
+  RadarResponse,
   SnapshotFilters,
   StatsResponse,
   WatchlistDeleteResponse,
@@ -116,6 +118,7 @@ export interface MarketApiClient {
   performanceBuckets(filters?: Pick<PerformanceFilters, "source_type" | "model_id" | "prompt_version" | "replay_run_id">, signal?: AbortSignal): Promise<PerformanceBuckets>;
   calibrationCurrent(signal?: AbortSignal): Promise<CalibrationCurrent>;
   predictionCalibration(predictionId: string, signal?: AbortSignal): Promise<PredictionCalibration>;
+  radar(filters?: RadarFilters, signal?: AbortSignal): Promise<RadarResponse>;
   replayRuns(filters?: ReplayRunFilters, signal?: AbortSignal): Promise<ReplayRun[]>;
   replayRun(runId: string, signal?: AbortSignal): Promise<ReplayRun>;
   followPrediction(predictionId: string, request?: FollowRequest, signal?: AbortSignal): Promise<FollowResponse>;
@@ -149,6 +152,7 @@ export type ApplicationShellApiClient = Pick<
   | "performanceSummary"
   | "performanceBuckets"
   | "calibrationCurrent"
+  | "radar"
   | "replayRuns"
   | "replayRun"
   | "followPrediction"
@@ -409,6 +413,10 @@ export class ApiClient implements MarketApiClient {
       `/predictions/${encodePathSegment(predictionId)}/calibration`,
       { signal },
     );
+  }
+
+  radar(filters: RadarFilters = {}, signal?: AbortSignal): Promise<RadarResponse> {
+    return this.request<RadarResponse>("/radar", { query: filters, signal });
   }
 
   replayRuns(filters: ReplayRunFilters = {}, signal?: AbortSignal): Promise<ReplayRun[]> {

@@ -190,6 +190,20 @@ describe("ApiClient", () => {
     expect(fetchImpl).toHaveBeenNthCalledWith(3, "http://localhost:8000/predictions/p%2F1/follow", expect.objectContaining({ method: "POST", body: "{}" }));
   });
 
+  it("requests the read-only versioned Radar with stable filters", async () => {
+    const fetchImpl = vi.fn<FetchMock>().mockResolvedValue(
+      response({ scoring_version: "opportunity_v1", status: "empty", entries: [] }),
+    );
+    const client = new ApiClient({ baseUrl: "http://localhost:8000", fetchImpl });
+
+    await client.radar({ asset_type: "crypto", category: "WAIT" });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "http://localhost:8000/radar?asset_type=crypto&category=WAIT",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
   it("encodes replay run filters and the selected run path", async () => {
     const fetchImpl = vi
       .fn<FetchMock>()

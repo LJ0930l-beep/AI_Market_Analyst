@@ -17,6 +17,7 @@ import type {
   PerformanceSummary,
   Prediction,
   ProviderHealthResponse,
+  RadarResponse,
   ReplayRun,
   StatsResponse,
   WatchlistEntry,
@@ -153,6 +154,50 @@ export const fakeCalibrationCurrent: CalibrationCurrent = {
   status: "INSUFFICIENT_SAMPLE",
   sample_count: 0,
   buckets: [],
+};
+
+export const fakeRadar: RadarResponse = {
+  scoring_version: "opportunity_v1",
+  config: {
+    version: "opportunity_v1",
+    weights: {
+      calibrated_confidence: 0.3,
+      risk_reward: 0.2,
+      freshness: 0.15,
+      regime_alignment: 0.15,
+      news_event_risk: 0.1,
+      data_quality: 0.1,
+    },
+  },
+  status: "ready",
+  as_of: "2030-01-02T12:00:00Z",
+  counts: { total: 1, ranking_eligible: 1, strong_opportunity: 1, watch: 0, avoid: 0, wait: 0 },
+  entries: [{
+    symbol: fakeInstrument.symbol,
+    instrument: fakeInstrument,
+    prediction_id: fakePrediction.prediction_id,
+    action: "LONG",
+    category: "STRONG_OPPORTUNITY",
+    status: "ranked",
+    ranking_eligible: true,
+    score: 0.81,
+    rank: 1,
+    generated_at: fakePrediction.generated_at,
+    data_as_of: "2030-01-02T11:55:00Z",
+    signal_valid_until: fakePrediction.signal_valid_until,
+    inputs: {
+      raw_confidence: 0.72,
+      calibrated_confidence: 0.64,
+      risk_reward: 2.1,
+      regime: "bull_trend",
+      news_event_risk: "none",
+      data_quality: "verified",
+    },
+    components: {},
+    missing_reasons: [],
+    degraded_reasons: [],
+    provenance: { read_only: true, model_invoked: false, writes: false },
+  }],
 };
 
 export const fakeReplayRun: ReplayRun = {
@@ -296,6 +341,7 @@ export function createFakeClient(overrides: Partial<ApplicationShellApiClient> =
     performanceSummary: vi.fn().mockResolvedValue(fakePerformanceSummary),
     performanceBuckets: vi.fn().mockResolvedValue(fakePerformanceBuckets),
     calibrationCurrent: vi.fn().mockResolvedValue(fakeCalibrationCurrent),
+    radar: vi.fn().mockResolvedValue(fakeRadar),
     replayRuns: vi.fn().mockResolvedValue([fakeReplayRun]),
     replayRun: vi.fn().mockResolvedValue(fakeReplayRun),
     followPrediction: vi.fn().mockResolvedValue({

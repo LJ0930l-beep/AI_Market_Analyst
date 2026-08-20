@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import { ApplicationShell } from "../App";
-import { createFakeClient, fakePrediction } from "../test/fakeClient";
+import { createFakeClient, fakePrediction, fakeRadar } from "../test/fakeClient";
 
 function renderDashboard(client = createFakeClient()) {
   return render(
@@ -18,6 +18,40 @@ function panel(name: string): HTMLElement {
 }
 
 describe("DashboardPage", () => {
+  it("renders versioned read-only Radar evidence and its Asset Detail link", async () => {
+    const view = renderDashboard();
+
+    const radar = panel("Market Radar");
+    expect(await within(radar).findByText(/opportunity_v1/)).toBeInTheDocument();
+    expect(within(within(radar).getByRole("listitem")).getByText("Strong Opportunity", { exact: true })).toBeInTheDocument();
+    expect(within(radar).getByRole("link", { name: /^NVDA$/ })).toHaveAttribute("href", "/assets/NVDA");
+    expect(within(radar).getByText(/No model, scan, scheduler, alert or trading action/)).toBeInTheDocument();
+
+    view.unmount();
+    const unrankedEntry = {
+      ...fakeRadar.entries[0],
+      category: "NOT_RANKED" as const,
+      status: "calibration_not_eligible",
+      ranking_eligible: false,
+      score: null,
+      rank: null,
+    };
+    const unrankedClient = createFakeClient({
+      radar: vi.fn().mockResolvedValue({ ...fakeRadar, status: "degraded", entries: [unrankedEntry] }),
+    });
+    const unrankedView = renderDashboard(unrankedClient);
+    const unrankedRadar = panel("Market Radar");
+    const unrankedItem = await within(unrankedRadar).findByRole("listitem");
+    expect(unrankedItem.querySelector(".radar-category")).toHaveTextContent("Not ranked");
+
+    unrankedView.unmount();
+    const client = createFakeClient({
+      radar: vi.fn().mockResolvedValue({ ...fakeRadar, entries: [], status: "empty" }),
+    });
+    renderDashboard(client);
+    expect(await within(panel("Market Radar")).findByText(/No durable Watchlist entries are available for Radar/)).toBeInTheDocument();
+  });
+
   it("renders actual health, routing, counts, instruments, predictions, performance and provenance", async () => {
     const waitPrediction = {
       ...fakePrediction,

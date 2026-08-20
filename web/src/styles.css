@@ -601,6 +601,115 @@ summary:focus-visible,
   grid-column: 1 / -1;
 }
 
+.radar-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 0.85rem;
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.radar-filters label {
+  display: grid;
+  min-width: 0;
+  gap: 0.3rem;
+  color: var(--muted);
+  font-size: 0.62rem;
+  line-height: 1.3;
+}
+
+.radar-filters select {
+  width: 100%;
+  min-width: 0;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  background: var(--canvas);
+  color: var(--ink);
+  font: inherit;
+}
+
+.radar-list {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.radar-list__item {
+  min-width: 0;
+  padding: 0.7rem;
+  border: 1px solid var(--rule);
+  background: var(--canvas);
+}
+
+.radar-entry {
+  min-width: 0;
+}
+
+.radar-entry__header {
+  display: flex;
+  min-width: 0;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.radar-entry__header h3 {
+  margin: 0.15rem 0 0;
+  font-family: var(--data);
+  font-size: 0.95rem;
+}
+
+.radar-entry__header h3 a {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.radar-entry__header h3 a:hover {
+  color: var(--info);
+  text-decoration: underline;
+}
+
+.radar-entry__score {
+  display: grid;
+  flex: 0 0 auto;
+  justify-items: end;
+  gap: 0.18rem;
+  text-align: right;
+}
+
+.radar-category {
+  color: var(--info);
+  font-family: var(--data);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.radar-entry__score strong {
+  font-family: var(--data);
+  font-size: 1.05rem;
+}
+
+.radar-entry__audit {
+  margin-top: 0.7rem;
+  border-top: 1px solid var(--rule);
+}
+
+.radar-entry__audit summary {
+  padding: 0.55rem 0;
+  color: var(--info);
+  cursor: pointer;
+  font-family: var(--data);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .async-panel {
   min-width: 0;
   border: 1px solid var(--rule);
@@ -990,6 +1099,15 @@ summary:focus-visible,
   .dashboard-grid,
   .settings-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .radar-filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .radar-entry__header {
+    align-items: flex-start;
+    flex-wrap: wrap;
   }
 
   .dashboard-panel--wide {

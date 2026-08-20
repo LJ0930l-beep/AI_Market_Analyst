@@ -95,3 +95,11 @@ Phase 5 begins with an idempotent v5 migration for Watchlist membership and type
 Date: 2026-08-20
 
 P5-T01b accepts only strictly parsed public equity candidates or unambiguous Binance-compatible USDT spot candidates. Equity validation uses Yahoo public market data and crypto validation uses Binance public spot data, with bounded timeout/retry behavior; fixture or stale provider data is never compatibility proof. Expansion candidates are persisted in the existing `instruments` table only after a successful unambiguous probe, while failed or ambiguous probes do not persist. Registered expansion metadata remains explicitly labeled `inferred` or `unknown` rather than inventing exchange, sector or other descriptive facts.
+
+## ADR-017 - Opportunity Radar is deterministic, auditable and read-only
+
+Date: 2026-08-20
+
+P5-T02 uses the versioned `opportunity_v1` deterministic Python scorer. Explicit weights, normalized component scores and per-component contributions are returned for audit; no LLM calculates or orders the score. Actionable ranking requires an ACTIVE Phase 3 calibration artifact with an effective sample count of at least 100 and compatible scope. WAIT is fixed `WAIT` and never ranked; incomplete evidence is `NOT_RANKED`; invalid or expired signals are `AVOID`.
+
+Radar reads only durable Watchlist membership, each symbol's latest existing Prediction/Outcome, current calibration and saved context. GET `/radar` has no analysis, model, Prediction, PaperTrade, scheduler, scan, alert or broker side effect. Stored `time_policy.event_risk=true` and high-importance `risk_events` take precedence over news evidence; unavailable event/news evidence remains explicit and conservative.

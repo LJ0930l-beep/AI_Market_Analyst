@@ -100,6 +100,31 @@ test("health, durable Watchlist, and read-only Asset Detail analysis", async ({ 
   await expect(page.getByText("OHLCV evidence")).toBeVisible();
   await page.getByRole("button", { name: "Run analysis" }).click();
   await expect(page.getByText("WAIT · saved coverage result")).toBeVisible();
+
+  const radarWatchlist = await page.request.post("/api/watchlist", { data: { symbol: "TSLA" } });
+  expect(radarWatchlist.status()).toBe(200);
+});
+
+test("Dashboard Market Radar reads existing evidence without creating analysis or trades", async ({ page }) => {
+  const before = await (await page.request.get("/api/stats")).json();
+  await page.goto("/");
+
+  const radar = page.getByRole("region", { name: "Market Radar" });
+  await expect(radar.getByText(/opportunity_v1/)).toBeVisible();
+  await expect(radar.getByRole("link", { name: "TSLA", exact: true })).toHaveAttribute("href", "/assets/TSLA");
+  const radarEntry = radar.getByRole("listitem").filter({ hasText: "TSLA" });
+  await expect(radarEntry.locator(".radar-category")).toHaveText("Not ranked");
+  await expect(radarEntry.locator("strong").filter({ hasText: "Not ranked" })).toBeVisible();
+  await expect(radarEntry.getByText(/data_quality_unknown|regime_unavailable|stale_data/).first()).toBeVisible();
+  await radarEntry.getByText("Component audit", { exact: true }).click();
+  await expect(radarEntry.getByText("risk reward", { exact: true })).toBeVisible();
+
+  await radar.getByLabel("Asset type").selectOption("crypto");
+  await expect(radar.getByText(/No durable Watchlist entries are available for Radar/)).toBeVisible();
+
+  const after = await (await page.request.get("/api/stats")).json();
+  expect(after.predictions).toBe(before.predictions);
+  expect(after.paper_trades).toBe(before.paper_trades);
 });
 
 test("fresh LONG double-click Follow creates exactly one PaperTrade and linked detail", async ({ page }) => {

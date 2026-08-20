@@ -495,6 +495,61 @@ export type PredictionCalibration = JsonRecord & {
   source_type?: SourceType;
 };
 
+export type RadarCategory = "STRONG_OPPORTUNITY" | "WATCH" | "AVOID" | "WAIT" | "NOT_RANKED";
+
+export interface RadarFilters {
+  asset_type?: AssetType;
+  category?: RadarCategory;
+}
+
+export interface RadarComponent extends JsonRecord {
+  name: string;
+  input?: unknown;
+  score?: number | null;
+  weight?: number;
+  contribution?: number | null;
+  status?: string;
+  available?: boolean;
+  reason?: string | null;
+  provenance?: string;
+}
+
+export interface RadarEntry extends JsonRecord {
+  symbol: string;
+  instrument: Instrument;
+  prediction_id?: string | null;
+  action?: Action | null;
+  category: RadarCategory;
+  status: string;
+  ranking_eligible: boolean;
+  score?: number | null;
+  rank?: number | null;
+  generated_at?: string | null;
+  data_as_of?: string | null;
+  signal_valid_until?: string | null;
+  freshness?: JsonRecord;
+  inputs?: JsonRecord;
+  components: Record<string, RadarComponent>;
+  missing_reasons?: string[];
+  degraded_reasons?: string[];
+  outcome?: JsonRecord | null;
+  provenance?: JsonRecord;
+}
+
+export interface RadarResponse extends JsonRecord {
+  scoring_version: string;
+  config: JsonRecord & {
+    version?: string;
+    weights?: Record<string, number>;
+  };
+  status: string;
+  as_of: string;
+  filters?: RadarFilters;
+  counts?: JsonRecord;
+  provenance?: JsonRecord;
+  entries: RadarEntry[];
+}
+
 export type AnalysisResult = JsonRecord & {
   instrument?: AnalysisInstrument;
   timeframe?: Timeframe;

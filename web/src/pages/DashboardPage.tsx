@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
 import type { ApplicationShellApiClient } from "../api/client";
-import type { PerformanceSummary, Prediction, JsonRecord } from "../api/types";
+import type { PerformanceSummary, Prediction, RadarCategory, RadarEntry, RadarResponse, JsonRecord } from "../api/types";
 import type { ProvenanceRailState } from "../components/TimeProvenanceRail";
 import type { AsyncResource } from "../hooks/useAsyncResource";
 import { useAsyncResource } from "../hooks/useAsyncResource";
@@ -174,6 +175,104 @@ function performanceState(resource: AsyncResource<PerformanceSummary>): PanelSta
   return resolvedActionable === undefined || resolvedActionable === 0 ? "degraded" : "ready";
 }
 
+function radarState(resource: AsyncResource<RadarResponse>): PanelState {
+  if (resource.status === "loading") {
+    return "loading";
+  }
+  if (resource.status === "unavailable") {
+    return "unavailable";
+  }
+  if ((resource.data?.entries.length ?? 0) === 0 || resource.data?.status === "empty") {
+    return "empty";
+  }
+  return resource.data?.status === "degraded" ? "degraded" : "ready";
+}
+
+function radarCategoryText(category: RadarCategory): string {
+  return category === "STRONG_OPPORTUNITY"
+    ? "Strong Opportunity"
+    : category === "WAIT"
+      ? "WAIT"
+    : category === "NOT_RANKED"
+      ? "Not ranked"
+      : category.charAt(0) + category.slice(1).toLowerCase().replaceAll("_", " ");
+}
+
+function radarValueText(value: unknown): string {
+  if (value === null || value === undefined || value === "") {
+    return "Not supplied";
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value.toFixed(4) : "Not finite";
+  }
+  if (typeof value === "string" || typeof value === "boolean") {
+    return String(value);
+  }
+  try {
+    return JSON.stringify(value) ?? "Not displayable";
+  } catch {
+    return "Not displayable";
+  }
+}
+
+function RadarComponentAudit({ entry }: { entry: RadarEntry }) {
+  return (
+    <details className="radar-entry__audit">
+      <summary>Component audit</summary>
+      <dl className="fact-list fact-list--compact">
+        {Object.entries(entry.components).map(([name, component]) => (
+          <div className="fact-list__row" key={name}>
+            <dt>{name.replaceAll("_", " ")}</dt>
+            <dd>
+              input {radarValueText(component.input)} · score {radarValueText(component.score)} · weight {radarValueText(component.weight)} · contribution {radarValueText(component.contribution)} · {component.status ?? "status not supplied"}
+              {component.reason ? ` · ${component.reason}` : ""}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </details>
+  );
+}
+
+function RadarView({ radar }: { radar: RadarResponse }) {
+  return (
+    <div className="radar-view">
+      <p className="panel-reading">
+        Version {radar.scoring_version} · read-only deterministic evidence. Ranking eligible: {radarValueText(radar.counts?.ranking_eligible ?? 0)}.
+      </p>
+      <p className="panel-reading">
+        No model, scan, scheduler, alert or trading action is invoked. Unranked entries explain missing calibration or capability evidence.
+      </p>
+      <ul className="radar-list" aria-label="Market Radar entries">
+        {radar.entries.map((entry) => (
+          <li className="radar-list__item" key={entry.symbol}>
+            <article className="radar-entry">
+              <header className="radar-entry__header">
+                <div>
+                  <p className="eyebrow">{entry.action ?? "No prediction"} · {entry.status}</p>
+                  <h3><Link to={`/assets/${encodeURIComponent(entry.symbol)}`}>{entry.symbol}</Link></h3>
+                </div>
+                <div className="radar-entry__score">
+                  <span className="radar-category">{radarCategoryText(entry.category)}</span>
+                  <strong>{entry.score === null || entry.score === undefined ? "Not ranked" : entry.score.toFixed(3)}</strong>
+                </div>
+              </header>
+              <dl className="fact-list fact-list--compact">
+                <div className="fact-list__row"><dt>Rank</dt><dd>{entry.rank ?? "Not ranked"}</dd></div>
+                <div className="fact-list__row"><dt>Raw confidence</dt><dd>{radarValueText(entry.inputs?.raw_confidence)}</dd></div>
+                <div className="fact-list__row"><dt>Calibrated confidence</dt><dd>{radarValueText(entry.inputs?.calibrated_confidence)}</dd></div>
+                <div className="fact-list__row"><dt>Freshness</dt><dd>{radarValueText(entry.freshness?.status)} · {radarValueText(entry.data_as_of)}</dd></div>
+                <div className="fact-list__row"><dt>Reasons</dt><dd>{[...(entry.missing_reasons ?? []), ...(entry.degraded_reasons ?? [])].join(", ") || "None"}</dd></div>
+              </dl>
+              <RadarComponentAudit entry={entry} />
+            </article>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function PerformanceView({ summary }: { summary: PerformanceSummary }) {
   const metrics = performanceMetrics(summary);
   const resolvedActionable = resolvedActionableCount(summary);
@@ -241,6 +340,8 @@ function PredictionLedger({ predictions }: { predictions: Prediction[] }) {
 }
 
 export function DashboardPage({ apiClient, onProvenanceChange }: DashboardPageProps) {
+  const [radarAssetType, setRadarAssetType] = useState<"" | "equity" | "crypto">("");
+  const [radarCategory, setRadarCategory] = useState<"" | RadarCategory>("");
   const healthLoader = useCallback((signal: AbortSignal) => apiClient.health(signal), [apiClient]);
   const providerLoader = useCallback((signal: AbortSignal) => apiClient.providerHealth(signal), [apiClient]);
   const modelLoader = useCallback((signal: AbortSignal) => apiClient.modelHealth(signal), [apiClient]);
@@ -251,6 +352,10 @@ export function DashboardPage({ apiClient, onProvenanceChange }: DashboardPagePr
     (signal: AbortSignal) => apiClient.performanceSummary({ source_type: "live" }, signal),
     [apiClient],
   );
+  const radarLoader = useCallback(
+    (signal: AbortSignal) => apiClient.radar({ asset_type: radarAssetType || undefined, category: radarCategory || undefined }, signal),
+    [apiClient, radarAssetType, radarCategory],
+  );
 
   const health = useAsyncResource(healthLoader);
   const provider = useAsyncResource(providerLoader);
@@ -259,6 +364,7 @@ export function DashboardPage({ apiClient, onProvenanceChange }: DashboardPagePr
   const instruments = useAsyncResource(instrumentsLoader);
   const predictions = useAsyncResource(predictionsLoader);
   const performance = useAsyncResource(performanceLoader);
+  const radar = useAsyncResource(radarLoader);
 
   const provenance = useMemo(() => provenanceFor(predictions.data ?? []), [predictions.data]);
   useEffect(() => onProvenanceChange(provenance), [onProvenanceChange, provenance]);
@@ -278,8 +384,43 @@ export function DashboardPage({ apiClient, onProvenanceChange }: DashboardPagePr
         <p className="page-intro__description">
           A read-only desk for orientation, provenance and the records returned by the local research backend.
         </p>
-        <p className="page-boundary">No radar ranking, watchlist scan or trading action is performed here.</p>
-      </header>
+      <p className="page-boundary">Market Radar is a read-only opportunity view; no watchlist scan, scheduler, alert or trading action is performed here.</p>
+    </header>
+
+      <AsyncPanel
+        title="Market Radar"
+        source="GET /radar"
+        freshness="as_of and per-entry data_as_of returned by the deterministic scorer"
+        state={radarState(radar)}
+        error={radar.error}
+        onRetry={radar.retry}
+        emptyMessage="No durable Watchlist entries are available for Radar. Save membership first; no analysis is started here."
+        degradedMessage="Radar evidence is present but no entry is currently eligible for a trustworthy opportunity rank."
+        className="dashboard-panel dashboard-panel--wide dashboard-panel--radar"
+      >
+        <div className="radar-filters" aria-label="Market Radar filters">
+          <label>
+            Asset type
+            <select value={radarAssetType} onChange={(event) => setRadarAssetType(event.target.value as "" | "equity" | "crypto")}>
+              <option value="">All asset types</option>
+              <option value="equity">equity</option>
+              <option value="crypto">crypto</option>
+            </select>
+          </label>
+          <label>
+            Category
+            <select value={radarCategory} onChange={(event) => setRadarCategory(event.target.value as "" | RadarCategory)}>
+              <option value="">All categories</option>
+              <option value="STRONG_OPPORTUNITY">Strong Opportunity</option>
+              <option value="WATCH">Watch</option>
+              <option value="AVOID">Avoid</option>
+              <option value="WAIT">WAIT</option>
+              <option value="NOT_RANKED">Not ranked</option>
+            </select>
+          </label>
+        </div>
+        {radar.data ? <RadarView radar={radar.data} /> : null}
+      </AsyncPanel>
 
       <div className="dashboard-grid">
         <AsyncPanel

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Phase 5 - P5-T02 auditable Opportunity Score and read-only Market Radar
+
+- Added deterministic, versioned `opportunity_v1` scoring over durable Watchlist/latest Prediction evidence with auditable weights, components, contributions, calibration gating and conservative WAIT/NOT_RANKED/AVOID boundaries.
+- Added read-only `/radar` API and Dashboard integration with asset/category filters, registered-symbol compatibility, event-risk provenance and no-analysis/no-trade side effects.
+- Verification: 68 Python tests, 52 frontend tests and 8 browser E2E tests PASS; 16 axe scans, 16 overflow checks and dependency audits PASS.
+- P5-T02 Gate: ACCEPTED.
+
 ### Phase 5 - P5-T01b public-provider-compatible symbol expansion
 
 - Added strict equity/crypto candidate parsing, bounded Yahoo/Binance public validation, durable registered Instrument metadata and Watchlist/API/client support with explicit inferred/unknown metadata.

@@ -7,7 +7,7 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterable, Iterator
 
 from ..instruments import Instrument, instrument_for, instrument_from_payload
 from ..news_engine import NewsFetchResult
@@ -1166,6 +1166,43 @@ class SQLiteStore:
             }
             for row in rows
         ]
+
+    def list_latest_prediction_records(
+        self,
+        symbols: Iterable[str],
+        *,
+        source_type: str = "live",
+    ) -> dict[str, dict[str, Any]]:
+        """Return the newest read-only prediction/outcome record per requested symbol."""
+
+        normalized_symbols = sorted({str(symbol).strip().upper() for symbol in symbols if str(symbol).strip()})
+        if not normalized_symbols:
+            return {}
+        placeholders = ", ".join("?" for _ in normalized_symbols)
+        query = f"""SELECT p.payload_json AS prediction_json, o.payload_json AS outcome_json,
+                           o.status AS outcome_status
+                      FROM predictions p
+                 LEFT JOIN outcomes o ON o.prediction_id = p.prediction_id
+                     WHERE COALESCE(p.source_type, 'live') = ?
+                       AND p.symbol IN ({placeholders})
+                  ORDER BY p.symbol ASC, p.generated_at DESC, p.prediction_id DESC"""
+        with self._connect() as db:
+            rows = db.execute(query, (source_type, *normalized_symbols)).fetchall()
+        results: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            prediction = json.loads(row["prediction_json"])
+            if not isinstance(prediction, dict):
+                continue
+            instrument = prediction.get("instrument")
+            nested_symbol = instrument.get("symbol") if isinstance(instrument, dict) else None
+            symbol = str(prediction.get("symbol") or nested_symbol or "").upper()
+            if symbol and symbol not in results:
+                results[symbol] = {
+                    "prediction": prediction,
+                    "outcome": json.loads(row["outcome_json"]) if row["outcome_json"] else None,
+                    "outcome_status": row["outcome_status"],
+                }
+        return results
 
     def list_replay_model_latencies(self, replay_run_id: str) -> list[float]:
         """Return successful model latencies for every prediction in one replay run."""

@@ -26,6 +26,7 @@ from core.instruments import (
 from core.news_engine import NewsEngine, RSSNewsProvider
 from core.outcomes import OutcomeStatus
 from core.performance.metrics import build_performance_snapshot
+from core.radar import RADAR_CATEGORIES, build_radar
 from core.providers import (
     FixtureNewsProvider,
     InstrumentValidationError,
@@ -365,6 +366,34 @@ def _normalize_setting_key(value: str) -> str:
             "APP_SETTING_NOT_FOUND",
             "unsupported app setting key",
             context={"key": value, "allowed_keys": sorted(APP_SETTING_DEFINITIONS)},
+        )
+    return normalized
+
+
+def _normalize_radar_asset_type(value: str | None) -> str | None:
+    if value is None or value.strip() == "":
+        return None
+    normalized = value.strip().lower()
+    if normalized not in {"equity", "crypto"}:
+        raise APIError(
+            400,
+            "INVALID_RADAR_ASSET_TYPE",
+            "radar asset_type must be equity or crypto",
+            context={"asset_type": value, "allowed": ["equity", "crypto"]},
+        )
+    return normalized
+
+
+def _normalize_radar_category(value: str | None) -> str | None:
+    if value is None or value.strip() == "":
+        return None
+    normalized = value.strip().upper().replace(" ", "_")
+    if normalized not in RADAR_CATEGORIES:
+        raise APIError(
+            400,
+            "INVALID_RADAR_CATEGORY",
+            "radar category is unsupported",
+            context={"category": value, "allowed": sorted(RADAR_CATEGORIES)},
         )
     return normalized
 
@@ -929,6 +958,28 @@ if FastAPI is not None:
     @router.get("/stats")
     def stats(store: SQLiteStore = Depends(get_store)) -> dict[str, int]:
         return store.counts()
+
+    @router.get("/radar")
+    def radar(
+        asset_type: str | None = None,
+        category: str | None = None,
+        store: SQLiteStore = Depends(get_store),
+    ) -> dict[str, object]:
+        normalized_asset_type = _normalize_radar_asset_type(asset_type)
+        normalized_category = _normalize_radar_category(category)
+        watchlist_entries = store.list_watchlist_entries()
+        symbols = [entry["symbol"] for entry in watchlist_entries]
+        instruments = {symbol: store.resolve_instrument(symbol) for symbol in symbols}
+        predictions = store.list_latest_prediction_records(symbols, source_type="live")
+        calibrations = store.list_calibration_results(limit=1)
+        return build_radar(
+            watchlist_entries,
+            instruments=instruments,
+            predictions=predictions,
+            calibration=calibrations[0] if calibrations else None,
+            asset_type=normalized_asset_type,
+            category=normalized_category,
+        )
 
     def _performance_summary(
         store: SQLiteStore,

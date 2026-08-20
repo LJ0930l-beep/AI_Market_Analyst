@@ -4,7 +4,7 @@
 
 Phase 5 - Radar, watchlist, scanning and alerts.
 
-Current task: `P5-T02` - add versioned auditable Opportunity Score and Radar API.
+Current task: `P5-T03` - low-concurrency scheduler/session policy/cache/backoff/background execution foundation.
 
 P4-T04 execution split:
 
@@ -34,7 +34,7 @@ P4-T04 execution split:
 1. `P5-T01` Watchlist/AppSetting foundation and public symbol registration - ACCEPTED.
    - `P5-T01a` durable canonical membership, safe settings, migration and CRUD - ACCEPTED.
    - `P5-T01b` public-provider-compatible symbol expansion - ACCEPTED.
-2. Versioned auditable Opportunity Score and Radar API.
+2. Versioned auditable Opportunity Score and Radar API - ACCEPTED.
 3. Low-concurrency scheduler, market-session policy, caching and resource backoff.
 4. Alert model, deduplication, acknowledge flow and UI integration.
 5. Restart/recovery, performance/resource tests, E2E and Phase 5 report.
