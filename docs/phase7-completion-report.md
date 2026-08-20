@@ -1,8 +1,14 @@
-# Phase 7 completion report — developer-ready V1.0 release hardening
+# Phase 7 completion report — V1.0 Final Acceptance
 
-Status: `DEVELOPER_READY_PENDING_SUPERVISOR_FINAL_GATE`
+Status: `SUPERVISOR_ACCEPTED / PASS`
+
+Supervisor final acceptance covers Phase 7 and the V1.0 release boundary. The security/recovery repair is recorded in commit `bd32acc`; the English/中文 interface enhancement is recorded in commit `55af154`. No Phase 8 or post-V1.0 work is included.
 
 This report covers the bounded Phase 7 release work on the accepted Phase 0-6 baseline. No Phase 8 work is included.
+
+## Independent final acceptance evidence
+
+The supervisor independently recorded PASS for pytest (`117 passed`, `1 skipped`, `1 warning`, `10 subtests`), frontend `13 files / 59 tests`, lint, typecheck, production build, compileall and pip check, and both full/production npm audits (`0 vulnerabilities`). Standalone E2E passed `11/11` in `43.9s`, including Chinese switching, all current routes, refresh persistence, accepted workflows, axe and overflow checks. `git diff --check` and `git status` were clean. The project launcher was restored to `running` with `ownership_errors=[]`; API and UI returned HTTP 200.
 
 ## Scope and architecture boundary
 
@@ -49,12 +55,12 @@ The final local Gate commands and observed results are:
 | Python dependencies | `python -m pip check` | PASS — no broken requirements. |
 | Frontend lint | `npm run lint` | PASS. |
 | Frontend types | `npm run typecheck` | PASS. |
-| Frontend unit | `npm test -- --run` | PASS — 12 files / 55 tests. |
+| Frontend unit | `npm test -- --run` | PASS — 13 files / 59 tests. |
 | Frontend build | `npm run build` | PASS — Vite 6.4.3. |
 | npm full audit | `npm audit --audit-level=high` | PASS — 0 vulnerabilities. |
 | npm production audit | `npm audit --omit=dev --audit-level=high` | PASS — 0 vulnerabilities. |
 | Browser preflight | `npm run e2e:preflight` | PASS — pinned Playwright 1.62.1, installed Chrome/Edge candidates. |
-| Standalone browser Gate | `npm run e2e` | PASS — 10/10, one worker, 39.0s, Chrome `151.0.7922.140`, real built React + FastAPI/SQLite; 18 desktop/mobile axe scans and 18 overflow checks. |
+| Standalone browser Gate | `npm run e2e` | PASS — 11/11, one worker, 43.9s, Chrome `151.0.7922.140`, real built React + FastAPI/SQLite; Chinese switching, all current routes, refresh persistence and accepted workflows; 18 desktop/mobile axe scans and 18 overflow checks. |
 | Launcher ownership smoke | `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/phase7-launcher-ownership-smoke.ps1` | PASS — stale same-executable record refused and retained, helper stayed alive, normal start/stop lifecycle passed. |
 | Release smoke | `python -B scripts/phase7-release-smoke.py --output docs/phase7-release-smoke.json` | PASS — temporary SQLite backup `14.55ms`, restore `22.349ms`, read-only resource probe `96.93ms`; no threshold claim; GPU reported bounded `gpu_competition`. |
 | Security/license artifacts | `python -B scripts/phase7_audit.py --output-dir docs` | PASS for pip check/npm audits/secret scan; `pip-audit` unavailable and license inventory `review_required` are preserved honestly. |
@@ -72,4 +78,4 @@ The browser suite retains the accepted Phase 4-6 side-effect assertions: explici
 - The GPU smoke observed other desktop compute processes and therefore reported conservative competition; no process was killed or altered. Injected scheduler tests cover parser/failure/backoff behavior without using real GPU state.
 - Public-provider outages, missing optional packages and model unavailability remain explicit degraded capabilities. Fixture browser data is not provider compatibility proof.
 - License review requires human/legal follow-up for unknown metadata; `pip-audit` should be installed and rerun in the release environment when available.
-- The final acceptance inventory is developer-ready only. Sol/supervisor must perform the final Gate acceptance.
+- The final acceptance inventory is supervisor-accepted. Live Yahoo/Binance/Ollama/Qwen/ComfyUI behavior remains outside fixture-based proof; no live-provider, model-quality or real-trading claim is made.

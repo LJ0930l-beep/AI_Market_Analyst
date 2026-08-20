@@ -1,12 +1,12 @@
 # AI Market Analyst Status
 
-Updated: 2026-08-20
+Updated: 2026-08-21
 
 ## Overall
 
 - Target: V1.0 Final Acceptance through Phase 7.
 - Active phase: Phase 7.
-- Active task: Phase 7 completion and V1.0 Final Acceptance evidence. Developer Gate is complete and pending supervisor final acceptance; no post-V1.0 work is started.
+- Active task: V1.0 Final Acceptance — SUPERVISOR_ACCEPTED / PASS; no post-V1.0 work is started.
 - Blockers: none.
 - Sole developer: `luna-max` (one persistent thread, serial tasks).
 
@@ -98,7 +98,7 @@ Phase 3 evidence:
 
 ## Next action
 
-Sol/supervisor review of the Phase 7 completion evidence and machine-readable V1.0 Final Acceptance inventory; do not begin post-V1.0 work.
+V1.0 Final Acceptance is supervisor-accepted; do not begin post-V1.0 work.
 
 ## V1.0 interface language enhancement checkpoint — 2026-08-21
 
@@ -106,8 +106,8 @@ Sol/supervisor review of the Phase 7 completion evidence and machine-readable V1
 - Implementation: added `web/src/i18n.tsx` typed catalog/context with `en`/`zh-CN` parity, browser-language fallback, `localStorage` persistence, accessible header selector and presentation-only DOM localization. Added responsive selector styling, shell/page language tests and route-wide browser assertions.
 - Boundaries: API/database contracts, symbols, URLs, numeric/time semantics and backend free-text evidence remain unchanged; no new dependency, cloud service, model, scheduler, alert or trading path.
 - Changed files: `web/src/i18n.tsx`, `web/src/i18n.test.tsx`, `web/src/App.tsx`, `web/src/App.test.tsx`, `web/src/styles.css`, `web/e2e/phase4.spec.ts`, `README.md`, `CHANGELOG.md`, `STATUS.md`.
-- Final developer verification: `python -m pytest -q` PASS, 117 passed / 1 skipped / 10 subtests; `python -B -m unittest discover -s tests -q` PASS, 118 tests / 1 skipped; compileall and pip check PASS. `npm run lint`, `npm run typecheck`, `npm test -- --run` PASS (13 files / 59 tests), `npm run build` PASS (Vite 6.4.3), and both npm audits PASS with 0 vulnerabilities. Standalone `npm run e2e` PASS, 11/11 in 45.2s on Chrome, including 18 desktop/mobile axe and 18 page-level overflow checks. Launcher was restored and verified running on 127.0.0.1:8000/4173 with no ownership errors.
-- State: developer implementation complete; supervisor final acceptance remains pending. Known limitation: translated presentation intentionally leaves technical identifiers/API paths and backend-generated free text in their returned form.
+- Final verification: `python -m pytest -q` PASS, 117 passed / 1 skipped / 1 warning / 10 subtests; `python -B -m unittest discover -s tests -q` PASS, 118 tests / 1 skipped; compileall and pip check PASS. `npm run lint`, `npm run typecheck`, `npm test -- --run` PASS (13 files / 59 tests), `npm run build` PASS (Vite 6.4.3), and both npm audits PASS with 0 vulnerabilities. Standalone `npm run e2e` PASS, 11/11 in 43.9s on Chrome, including Chinese switching, all current routes, refresh persistence, accepted workflows, 18 desktop/mobile axe and 18 page-level overflow checks. Launcher was restored and verified running on 127.0.0.1:8000/4173 with no ownership errors.
+- State: SUPERVISOR_ACCEPTED / PASS. Known limitation: translated presentation intentionally leaves technical identifiers/API paths and backend-generated free text in their returned form.
 
 ## Phase 5 acceptance handoff — 2026-08-20
 
@@ -263,7 +263,7 @@ Sol/supervisor review of the Phase 7 completion evidence and machine-readable V1
 
 ## Phase 7 developer Gate checkpoint — 2026-08-20
 
-- Milestone: V1.0 security/dependency/license/privacy/configuration hardening, SQLite backup/restore and recovery, Windows local lifecycle/resource health, resilience/release smoke, documentation and Final Acceptance inventory. Developer implementation is complete and ready for supervisor final Gate; Phase 8 is not started.
+- Milestone: V1.0 security/dependency/license/privacy/configuration hardening, SQLite backup/restore and recovery, Windows local lifecycle/resource health, resilience/release smoke, documentation and Final Acceptance inventory. Initial developer evidence is complete; the supervisor final Gate is recorded below as accepted. Phase 8 is not started.
 - Implementation: package/API `1.0.0` / Phase 7; bounded `core/config.py`; redacted `/health/model` and read-only `/health/release`; safe `phase7_backup_v1` SQLite artifact/manifest/restore CLI with checksum, schema, integrity, count, path/symlink, atomic-stage and retained safety-backup controls; Windows loopback-only `scripts/phase7-local.ps1` with owned PID/executable validation, port/dependency checks and graceful bounded stop; reproducible `phase7_audit.py` and non-SLO `phase7-release-smoke.py`; final README, operations runbook, completion report and JSON acceptance inventory.
 - Changed files: `core/config.py`, `core/backup.py`, `apps/api/main.py`, `pyproject.toml`, `web/package.json`, `web/package-lock.json`, `web/src/api/types.ts`, `web/src/api/client.ts`, `web/src/test/fakeClient.ts`, `web/src/pages/SettingsHealthPage.tsx`, `web/src/pages/SettingsHealthPage.test.tsx`, `web/e2e/phase4.spec.ts`, `web/e2e/preview-server.mjs`, `tests/test_api_phase4.py`, `tests/test_phase7_hardening.py`, `scripts/phase7_backup.py`, `scripts/phase7_audit.py`, `scripts/phase7-release-smoke.py`, `scripts/phase7-local.ps1`, `README.md`, `docs/phase7-completion-report.md`, `docs/phase7-operations-runbook.md`, `docs/phase7-security-audit.json`, `docs/phase7-license-audit.json`, `docs/phase7-release-smoke.json`, `docs/final-acceptance-evidence.json`, `PLAN.md`, `CHANGELOG.md`, `DECISIONS.md`, `STATUS.md`.
 - Python evidence: `python -m pytest -q` PASS with 113 tests, 10 subtests and one environment-only symlink-permission skip; `python -B -m unittest discover -s tests -v` PASS, 114 tests with one skip; `python -B -m compileall -q apps core tests scripts` PASS; `python -m pip check` PASS. One known Starlette/httpx deprecation warning remains.
@@ -279,3 +279,10 @@ Sol/supervisor review of the Phase 7 completion evidence and machine-readable V1
 - Implementation: `phase7_launcher_v2` records exact UTC start-time ticks, command-line SHA-256, role and port markers. `status` reports `ownership_mismatch`; `stop` validates both children first and retains state on any mismatch. Restore rejects target `-wal`/`-shm` sidecars and persisted WAL mode before safety-backup creation or target mutation; existing targets recover from safety artifacts and new failed targets are quarantined or removed only as the exact target file.
 - Focused evidence: `python -m pytest -q tests/test_phase7_hardening.py` PASS, 11 passed / 1 skipped; PowerShell parser PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/phase7-launcher-ownership-smoke.ps1` PASS, stale same-executable record refused, helper remained alive, normal lifecycle passed.
 - Full Phase 7 Gate rerun: `pytest` PASS, 117 tests / 1 skip / 10 subtests; unittest PASS, 118 / 1 skip; compileall and pip check PASS; frontend lint/typecheck/build and 55 tests PASS; full and production npm audits PASS, 0 vulnerabilities; standalone E2E PASS, 10/10 in 39.0s with Chrome 151.0.7922.140, 18 axe and 18 overflow checks; release smoke PASS with temporary backup 14.55ms, restore 22.349ms and read-only resource probe 96.93ms; launcher start/status/health/UI/stop and ownership smoke PASS with ports released. Limitations remain `pip-audit` unavailable, license metadata review required, and symlink creation unavailable on this Windows account.
+
+## Phase 7 / V1.0 Final Acceptance — 2026-08-21
+
+- Supervisor Gate: `SUPERVISOR_ACCEPTED / PASS`. Security/recovery repair commit: `bd32acc`; English/中文 interface commit: `55af154`.
+- Independent evidence: pytest `117 passed`, `1 skipped`, `1 warning`, `10 subtests`; frontend `13 files / 59 tests`; lint, typecheck, production build, compileall and pip check PASS; full and production npm audits `0 vulnerabilities`; standalone E2E `11/11` in `43.9s`, including Chinese switching, all routes, refresh persistence, accepted workflows, axe and overflow checks.
+- Release state: `git diff --check` and `git status` clean; project launcher restored `running`, `ownership_errors=[]`, API HTTP 200 and UI HTTP 200. Package/API version remains `1.0.0` / Phase 7.
+- Honest limitations: `pip-audit` is unavailable; license metadata requires human review; one Windows symlink-permission case remains a safe skip; browser/provider/model/resource evidence uses deterministic fixtures/local capability checks and does not claim live Yahoo/Binance/Qwen/ComfyUI behavior; no cloud, external notification, broker, private key or real-trading path is claimed.

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### V1.0 Final Acceptance — SUPERVISOR_ACCEPTED / PASS
+
+- Recorded the independent Phase 7/V1.0 Final Acceptance evidence: pytest 117 passed, 1 skipped, 1 warning and 10 subtests; frontend 13 files / 59 tests; lint, typecheck, production build, compileall and pip check PASS; full and production npm audits at 0 vulnerabilities; standalone E2E 11/11 in 43.9s with Chinese switching, all routes, refresh persistence, accepted workflows, axe and overflow checks; clean diff/status and restored running launcher with `ownership_errors=[]` and API/UI HTTP 200.
+- Recorded security/recovery repair commit `bd32acc` and English/中文 interface commit `55af154`. V1.0 remains local-only and makes no live-provider, Qwen/ComfyUI, broker or real-trading claim.
+
 ### V1.0 final-acceptance enhancement — English/中文 interface switching
 
 - Added a typed, dependency-free React language catalog with complete `en`/`zh-CN` key parity, browser-language detection, local persistence and an accessible global language selector.
@@ -18,7 +23,7 @@
 
 - Set the package/API release contract to `1.0.0` / Phase 7; added bounded local configuration, redacted health errors, `/health/release`, explicit capability evidence and loopback-only startup defaults.
 - Added SQLite-consistent `phase7_backup_v1` manifest/checksum/schema/count backup and atomic restore with retained safety artifacts, plus the Windows owned-child API/UI launcher and reproducible audit/release-smoke artifacts.
-- Added V1.0 README, operations runbook, completion report and machine-readable final acceptance inventory. Developer Gate: 113 pytest tests plus 10 subtests, 114 unittest tests, 55 frontend tests, lint/typecheck/build/compileall/pip check PASS, npm audits 0, standalone E2E 10/10 in 40.9s with 18 axe/overflow desktop-mobile checks; `pip-audit` unavailable and license metadata review remains explicit. Supervisor final acceptance is pending.
+- Added V1.0 README, operations runbook, completion report and machine-readable final acceptance inventory. The initial developer Gate recorded 113 pytest tests plus 10 subtests, 114 unittest tests, 55 frontend tests, lint/typecheck/build/compileall/pip check PASS, npm audits 0, standalone E2E 10/10 in 40.9s with 18 axe/overflow desktop-mobile checks; `pip-audit` unavailable and license metadata review remains explicit. Final supervisor acceptance is recorded in the V1.0 Final Acceptance entry above.
 
 ### Phase 6 supervisor acceptance handoff
 

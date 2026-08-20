@@ -1,25 +1,31 @@
 {
   "inventory_version": "v1_final_acceptance_evidence_v1",
-  "verdict": "DEVELOPER_READY_PENDING_SUPERVISOR_FINAL_GATE",
+  "verdict": "SUPERVISOR_ACCEPTED",
   "release": {
     "package_version": "1.0.0",
     "api_phase": 7,
     "schema_version": 10,
     "scope": "Phase 0 through Phase 7 only"
   },
+  "acceptance": {
+    "status": "PASS",
+    "security_repair_commit": "bd32acc",
+    "interface_language_commit": "55af154",
+    "independent_evidence": "pytest 117 passed; 1 skipped; 1 warning; 10 subtests; frontend 13 files / 59 tests; lint, typecheck, production build, compileall and pip check passed; full and production npm audits reported 0 vulnerabilities; standalone E2E 11/11 in 43.9s with Chinese switching, all routes, refresh persistence, accepted workflows, axe and overflow coverage; git diff --check and git status clean; launcher restored running with ownership_errors=[] and API/UI HTTP 200."
+  },
   "checks": [
-    {"id": "python_pytest", "status": "PASS", "command": "python -m pytest -q", "evidence": "117 passed; 1 skipped; 10 subtests; one known Starlette/httpx deprecation warning"},
+    {"id": "python_pytest", "status": "PASS", "command": "python -m pytest -q", "evidence": "117 passed; 1 skipped; 1 known Starlette/httpx deprecation warning; 10 subtests"},
     {"id": "python_unittest", "status": "PASS", "command": "python -B -m unittest discover -s tests -v", "evidence": "118 tests; 1 skipped"},
     {"id": "compileall", "status": "PASS", "command": "python -B -m compileall -q apps core tests scripts"},
     {"id": "pip_check", "status": "PASS", "command": "python -m pip check", "evidence": "No broken requirements found"},
     {"id": "frontend_lint", "status": "PASS", "command": "npm run lint"},
     {"id": "frontend_typecheck", "status": "PASS", "command": "npm run typecheck"},
-    {"id": "frontend_unit", "status": "PASS", "command": "npm test -- --run", "evidence": "12 files / 55 tests"},
+    {"id": "frontend_unit", "status": "PASS", "command": "npm test -- --run", "evidence": "13 files / 59 tests"},
     {"id": "frontend_build", "status": "PASS", "command": "npm run build", "evidence": "Vite 6.4.3"},
     {"id": "npm_full_audit", "status": "PASS", "command": "npm audit --audit-level=high", "evidence": "0 vulnerabilities"},
     {"id": "npm_production_audit", "status": "PASS", "command": "npm audit --omit=dev --audit-level=high", "evidence": "0 vulnerabilities"},
     {"id": "browser_preflight", "status": "PASS", "command": "npm run e2e:preflight", "evidence": "Playwright 1.62.1 with installed Chrome/Edge candidates"},
-    {"id": "standalone_e2e", "status": "PASS", "command": "npm run e2e", "evidence": "10/10 in 39.0s on Chrome 151.0.7922.140; 18 desktop/mobile axe scans; 18 overflow checks"},
+    {"id": "standalone_e2e", "status": "PASS", "command": "npm run e2e", "evidence": "11/11 in 43.9s on Chrome 151.0.7922.140; Chinese switching, all current routes, refresh persistence and accepted workflows; 18 desktop/mobile axe scans; 18 overflow checks"},
     {"id": "backup_restore", "status": "PASS", "command": "python -m pytest -q tests/test_phase7_hardening.py", "evidence": "11 passed; 1 skipped; sidecar/WAL refusal, existing-target recovery and new-target quarantine covered; symlink creation unavailable on current Windows account"},
     {"id": "launcher_ownership_smoke", "status": "PASS", "command": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/phase7-launcher-ownership-smoke.ps1", "evidence": "phase7_launcher_v2 stale same-executable record refused and retained; helper remained alive; normal start/stop lifecycle passed"},
     {"id": "release_smoke", "status": "PASS", "command": "python -B scripts/phase7-release-smoke.py --output docs/phase7-release-smoke.json", "evidence": "Windows 11/Python 3.12.10/12 CPU; backup 14.55ms, restore 22.349ms, read-only probe 96.93ms; bounded gpu_competition capability, no threshold claim"},
@@ -48,6 +54,6 @@
     "Restore is deliberately offline-only and rejects target WAL/SHM sidecars or persisted WAL mode; operators must stop the owned launcher and close database connections first.",
     "Launcher ownership mismatches retain state for manual inspection rather than attempting recovery by process name, port or PID reuse.",
     "Current environment has no pip-audit executable and has license metadata requiring review.",
-    "Final inventory is developer-ready pending supervisor acceptance."
+    "V1.0 Final Acceptance is supervisor-accepted; live provider/model/resource behavior remains outside fixture-based proof."
   ]
 }

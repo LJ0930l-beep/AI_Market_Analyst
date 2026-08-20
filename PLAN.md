@@ -2,9 +2,9 @@
 
 ## Current phase
 
-Phase 7 - Security/release hardening, backup/restore, one-command startup and V1.0 Final Acceptance.
+Phase 7 - Security/release hardening, backup/restore, one-command startup and V1.0 Final Acceptance — SUPERVISOR_ACCEPTED.
 
-Current task: `Phase 7 completion` - developer-ready pending supervisor final Gate; do not begin post-V1.0 work.
+Current task: `V1.0 Final Acceptance` - SUPERVISOR_ACCEPTED / PASS; do not begin post-V1.0 work.
 
 P4-T04 execution split:
 
@@ -53,13 +53,13 @@ Phase 6 Gate: ACCEPTED by supervisor on independent final evidence: 106 pytest t
 
 ## Phase 7 task graph
 
-1. Dependency/license/security/privacy audit and configuration hardening - COMPLETE (developer-verified; supervisor review pending).
-2. SQLite backup/restore and restart-persistence tooling/tests - COMPLETE (developer-verified; supervisor review pending).
-3. One-command startup, shutdown and resource-health behavior - COMPLETE (developer-verified; supervisor review pending).
-4. Full unit/integration/E2E/replay/resilience/performance/release smoke - COMPLETE (developer-verified; supervisor review pending).
-5. User/developer README, reports, artifact inventory and final acceptance - COMPLETE (developer-verified; supervisor review pending).
+1. Dependency/license/security/privacy audit and configuration hardening - ACCEPTED.
+2. SQLite backup/restore and restart-persistence tooling/tests - ACCEPTED.
+3. One-command startup, shutdown and resource-health behavior - ACCEPTED.
+4. Full unit/integration/E2E/replay/resilience/performance/release smoke - ACCEPTED.
+5. User/developer README, reports, artifact inventory and final acceptance - ACCEPTED.
 
-Phase 7 Gate: DEVELOPER-READY for supervisor final acceptance: 113 pytest tests plus 10 subtests (one safe symlink-permission skip), 114 unittest tests with one safe symlink-permission skip, frontend lint/typecheck/build and 55 tests, compileall/pip check PASS, full and production npm audits 0, standalone E2E 10/10 in 40.9s with 18 desktop/mobile axe and 18 overflow checks, backup/restore and repeated launcher smoke PASS, bounded release smoke recorded, and diff check clean.
+Phase 7 / V1.0 Final Acceptance: SUPERVISOR_ACCEPTED / PASS. Security repair commit `bd32acc`; English/中文 interface commit `55af154`. Independent evidence: pytest 117 passed, 1 skipped, 1 warning, 10 subtests; frontend 13 files / 59 tests; lint, typecheck, production build, compileall and pip check PASS; full and production npm audits 0 vulnerabilities; standalone E2E 11/11 in 43.9s covering Chinese switching, all routes, refresh persistence, accepted workflows, axe and overflow; `git diff --check` and `git status` clean; launcher restored running with `ownership_errors=[]` and API/UI HTTP 200.
 
 ## Task-pack policy
 
