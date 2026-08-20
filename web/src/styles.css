@@ -597,6 +597,29 @@ summary:focus-visible,
   margin-top: 0.8rem;
 }
 
+.settings-panel--scheduler {
+  grid-column: 1 / -1;
+}
+
+.scheduler-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+}
+
+.scheduler-history {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.85rem 0 0;
+  padding: 0.7rem 0.85rem 0.7rem 1.8rem;
+  border: 1px solid var(--rule);
+  color: var(--muted);
+  font-family: var(--data);
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
 .dashboard-panel--wide {
   grid-column: 1 / -1;
 }

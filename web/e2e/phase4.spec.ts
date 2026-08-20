@@ -127,6 +127,48 @@ test("Dashboard Market Radar reads existing evidence without creating analysis o
   expect(after.paper_trades).toBe(before.paper_trades);
 });
 
+test("explicit local scheduler scans Watchlist once, updates Radar, and stops cleanly", async ({ page }) => {
+  const before = await (await page.request.get("/api/stats")).json();
+  const initial = await page.request.get("/api/scheduler/status");
+  expect(initial.status()).toBe(200);
+  expect(await initial.json()).toMatchObject({ enabled: false, running: false, thread_alive: false, effective_concurrency: 1 });
+
+  const enabled = await page.request.put("/api/settings/scheduler.enabled", { data: { value: true } });
+  expect(enabled.status()).toBe(200);
+  const ready = await page.request.get("/api/scheduler/status");
+  expect(await ready.json()).toMatchObject({ enabled: true, running: false, session_policy: "market_hours" });
+
+  const run = await page.request.post("/api/scheduler/run-once");
+  expect(run.status()).toBe(200);
+  const runPayload = await run.json();
+  expect(runPayload.run.status).toBe("COMPLETED");
+  expect(runPayload.run.counts.planned).toBeGreaterThanOrEqual(1);
+  expect(runPayload.run.counts.wait).toBeGreaterThanOrEqual(1);
+  expect(runPayload.items.some((item: { symbol: string; status: string; prediction_id?: string | null }) => item.symbol === "TSLA" && item.status === "COMPLETED" && typeof item.prediction_id === "string")).toBe(true);
+
+  const radar = await (await page.request.get("/api/radar")).json();
+  const tsla = radar.entries.find((entry: { symbol: string }) => entry.symbol === "TSLA");
+  expect(tsla.action).toBe("WAIT");
+  const after = await (await page.request.get("/api/stats")).json();
+  expect(after.predictions).toBeGreaterThan(before.predictions);
+  expect(after.paper_trades).toBe(before.paper_trades);
+
+  const disabled = await page.request.put("/api/settings/scheduler.enabled", { data: { value: false } });
+  expect(disabled.status()).toBe(200);
+  const stopped = await page.request.post("/api/scheduler/stop");
+  expect(stopped.status()).toBe(200);
+  expect(await stopped.json()).toMatchObject({ enabled: false, running: false, thread_alive: false });
+  const rejected = await page.request.post("/api/scheduler/run-once");
+  expect(rejected.status()).toBe(409);
+  expect((await rejected.json()).error.code).toBe("SCHEDULER_DISABLED");
+
+  await page.goto("/settings");
+  const scheduler = page.getByRole("region", { name: "Local Watchlist scheduler" });
+  await expect(scheduler.getByText("COMPLETED", { exact: true }).last()).toBeVisible();
+  await expect(scheduler.getByText(/effective model limit 1/)).toBeVisible();
+  await expect(scheduler.getByRole("button", { name: "Enable scheduler" })).toBeVisible();
+});
+
 test("fresh LONG double-click Follow creates exactly one PaperTrade and linked detail", async ({ page }) => {
   const before = await (await page.request.get("/api/stats")).json();
   let followPosts = 0;

@@ -20,6 +20,8 @@ import type {
   RadarResponse,
   ReplayRun,
   StatsResponse,
+  SchedulerHistory,
+  SchedulerStatus,
   WatchlistEntry,
 } from "../api/types";
 
@@ -71,7 +73,7 @@ export const fakeAppSettings: AppSetting[] = [
     value_type: "boolean",
     updated_at: null,
     source: "default",
-    description: "Persisted opt-in flag; no background scheduler is activated by this setting.",
+    description: "Explicit local scheduler opt-in; start remains a separate lifecycle action.",
   },
   {
     key: "scheduler.interval_seconds",
@@ -80,7 +82,7 @@ export const fakeAppSettings: AppSetting[] = [
     value_type: "integer",
     updated_at: null,
     source: "default",
-    description: "Future local scheduling interval; stored only in this task.",
+    description: "Local Watchlist scan interval used by the explicit scheduler lifecycle.",
   },
   {
     key: "scheduler.concurrency",
@@ -89,7 +91,7 @@ export const fakeAppSettings: AppSetting[] = [
     value_type: "integer",
     updated_at: null,
     source: "default",
-    description: "Future local resource concurrency limit; stored only in this task.",
+    description: "Requested local scan concurrency; model analysis is capped at one.",
   },
   {
     key: "scheduler.session_policy",
@@ -98,7 +100,7 @@ export const fakeAppSettings: AppSetting[] = [
     value_type: "string",
     updated_at: null,
     source: "default",
-    description: "Future local session policy; stored only in this task.",
+    description: "Local Watchlist scan session policy; market_hours is the conservative default.",
   },
 ];
 
@@ -257,6 +259,42 @@ export const fakeStats: StatsResponse = {
   unknown_counter: 2,
 };
 
+export const fakeSchedulerStatus: SchedulerStatus = {
+  state: "disabled",
+  enabled: false,
+  running: false,
+  thread_alive: false,
+  interval_seconds: 900,
+  configured_concurrency: 1,
+  effective_concurrency: 1,
+  session_policy: "market_hours",
+  timeframe: "1h",
+  last_run: null,
+  next_run_at: null,
+  resource: { available: true, reason: "ready", capability: "not_probed" },
+  backoff: { active: false, attempts: 0, remaining_seconds: 0 },
+  cache: {
+    version: "context_cache_v1",
+    entries: 0,
+    persisted_metadata_entries: 0,
+    restart_behavior: "metadata_only_cold_restart",
+  },
+  capabilities: {
+    runtime: "local_thread_explicit_lifecycle",
+    model_analysis_concurrency: 1,
+    session_policy: "weekday_hours_only_no_holiday_calendar",
+    crypto_24_7: true,
+    real_orders: false,
+    alerts: false,
+    outcome_settlement: false,
+  },
+};
+
+export const fakeSchedulerHistory: SchedulerHistory = {
+  runs: [],
+  status: fakeSchedulerStatus,
+};
+
 export const fakeSnapshot: MarketSnapshot = {
   symbol: "NVDA",
   timeframe: "1h",
@@ -319,6 +357,11 @@ export function createFakeClient(overrides: Partial<ApplicationShellApiClient> =
     providerHealth: vi.fn().mockResolvedValue(fakeProviderHealth),
     modelHealth: vi.fn().mockResolvedValue({ provider: "ollama", available: true }),
     stats: vi.fn().mockResolvedValue(fakeStats),
+    schedulerStatus: vi.fn().mockResolvedValue(fakeSchedulerStatus),
+    schedulerHistory: vi.fn().mockResolvedValue(fakeSchedulerHistory),
+    startScheduler: vi.fn().mockResolvedValue({ ...fakeSchedulerStatus, state: "running", enabled: true, running: true, thread_alive: true }),
+    stopScheduler: vi.fn().mockResolvedValue(fakeSchedulerStatus),
+    runSchedulerOnce: vi.fn().mockResolvedValue({ run: null, items: [], status: fakeSchedulerStatus }),
     instruments: vi.fn().mockResolvedValue([fakeInstrument]),
     registerInstrument: vi.fn<(symbol: string, assetType: AssetType) => Promise<InstrumentRegistrationResponse>>().mockResolvedValue(fakeInstrumentRegistration),
     watchlist: vi.fn().mockResolvedValue([]),

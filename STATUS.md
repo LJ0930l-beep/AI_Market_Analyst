@@ -6,7 +6,7 @@ Updated: 2026-08-20
 
 - Target: V1.0 Final Acceptance through Phase 7.
 - Active phase: Phase 5.
-- Active task: P5-T02 versioned auditable Opportunity Score and Radar API.
+- Active task: P5-T03b background Outcome settlement + performance/Radar refresh.
 - Blockers: none.
 - Sole developer: `luna-max` (one persistent thread, serial tasks).
 
@@ -29,8 +29,8 @@ Phase 3 evidence:
 
 - Historical-news replay is capability-limited and marked `technical_only`.
 - The formal Phase 3 run is `COMPLETED_WITH_ERRORS`; no zero-error claim is made.
-- All Phase 4 product routes are live. Watchlist now has durable membership but no scan/ranking behavior yet; Replay Lab remains read-only over stored replay evidence.
-- Watchlist membership and safe scheduler-resource settings are durable; additional public equity/USDT symbols require explicit successful provider validation, while ranking and scanning remain inactive.
+- All Phase 4 product routes are live. Watchlist has durable membership; the P5-T03a local scan runtime is explicit opt-in and Radar remains read-only over saved evidence.
+- Additional public equity/USDT symbols require explicit successful provider validation; scheduler background execution is disabled by default and no alerts, settlement or ranking side effects are activated by settings.
 
 ## Phase 4 progress
 
@@ -88,7 +88,7 @@ Phase 3 evidence:
 
 ## Next action
 
-Begin P5-T02 planning and implementation; do not activate ranking, scans, scheduling or alerts outside its accepted scope.
+Begin P5-T03b background Outcome settlement + performance/Radar refresh; do not enable the local scheduler implicitly or begin alert work.
 
 ## P4-T07 execution checkpoint — 2026-08-20
 
@@ -164,3 +164,27 @@ Begin P5-T02 planning and implementation; do not activate ranking, scans, schedu
 - Verification: focused Radar `python -m pytest -q tests/test_phase5_radar.py` PASS, 11 tests; affected Dashboard `npx --no-install vitest run src/pages/DashboardPage.test.tsx` PASS, 6 tests; frontend full unit PASS, 11 files / 52 tests; lint/typecheck/build PASS with Vite 6.4.3; full Python `python -m pytest -q` PASS, 68 tests / 10 subtests; compileall and `pip check` PASS; both npm audits PASS, 0 vulnerabilities; `npm run e2e` PASS, 8/8 tests, 1 worker, 26.9s, Playwright 1.62.1, Chrome 151.0.7922.140; `git diff --check` PASS.
 - Browser coverage: existing eight route scans remain passing at desktop `1280x900` and mobile `390x844`, with 16 axe scans and 16 page-level overflow checks; Radar E2E now asserts `Not ranked` rather than `Watch` for incomplete evidence.
 - Supervisor Gate: ACCEPTED. One earlier parallel Gate observation showed transient empty Performance data; the standalone deterministic E2E rerun remained 8/8 PASS, so it is not reported as a product defect. Blockers: none.
+
+## P5-T03a accepted execution checkpoint — 2026-08-20
+
+- Milestone: safe local scheduler and Watchlist scan execution foundation; implementation complete. Supervisor Gate: ACCEPTED.
+- Design: added independent `LocalSchedulerRuntime` with default-disabled explicit enable/start/stop/run-once lifecycle, one-at-a-time model analysis, injectable clock/resource probe/analysis executor, deterministic equity session policy (stored timezone, weekday 09:30-16:00, Crypto 24/7), explicit `always` override, bounded resource backoff and restart recovery. Exchange holiday calendars are not implemented and are surfaced as a capability limitation.
+- Persistence: added idempotent SQLite migration v6 with scheduler runs/items, settings snapshots, session/resource/cache/error/Prediction evidence, bounded cache metadata and persisted runtime state. Running records become `INTERRUPTED` on runtime reconstruction; in-memory context cache is scheduler-only and cold after restart while metadata remains auditable.
+- API/UI: added read-only `/scheduler/status` and `/scheduler/history`, explicit `/scheduler/start`, `/scheduler/stop` and `/scheduler/run-once` routes with structured conflicts; Settings/Health now exposes enabled/running/last/next run, concurrency, resource/backoff/cache capability and explicit lifecycle controls. No settings update starts background work; no alerts, outcome settlement, broker or real-order behavior is activated.
+- Changed files: `apps/api/main.py`, `core/scheduler.py`, `core/storage/sqlite.py`, `scripts/phase4_e2e_harness.py`, `tests/test_migration.py`, `tests/test_phase5_scheduler.py`, `tests/test_phase5_watchlist.py`, `tests/test_storage.py`, `web/e2e/phase4.spec.ts`, `web/src/api/client.test.ts`, `web/src/api/client.ts`, `web/src/api/types.ts`, `web/src/pages/SettingsHealthPage.test.tsx`, `web/src/pages/SettingsHealthPage.tsx`, `web/src/styles.css`, `web/src/test/fakeClient.ts`.
+- Focused verification: `python -m pytest -q tests/test_phase5_scheduler.py` PASS, 8 tests; frontend client/settings coverage included in the full 53-test run.
+- Full verification: `python -m pytest -q` PASS, 76 tests / 10 subtests; `python -B -m unittest discover -s tests -v` PASS, 76 tests; `python -B -m compileall -q apps core tests scripts` PASS; `python -m pip check` PASS; `npm run lint` PASS; `npm run typecheck` PASS; `npm run test -- --run` PASS, 11 files / 53 tests; `npm run build` PASS with Vite 6.4.3; full and production-only `npm audit --audit-level=high` PASS, 0 vulnerabilities; `npm run e2e:preflight` PASS, Playwright 1.62.1 with installed Chrome/Edge candidates; `npm run e2e` PASS, 9/9 tests, 1 worker, 28.8s, Chrome 151.0.7922.140; `git diff --check` PASS with expected LF/CRLF warnings.
+- Browser/API coverage: disabled-default and structured lifecycle conflicts, injected fake clock/resource probe/analysis executor, Watchlist scan producing WAIT evidence readable by Radar, cache/dedupe and no PaperTrade changes, explicit disable and zero thread residue; eight routes at desktop `1280x900` and mobile `390x844` produced 16 axe scans and 16 page-level overflow checks.
+- Blockers: none. Residual risks: public provider/model latency and live Qwen/ComfyUI contention are represented through injectable/non-invasive guards but not claimed as production measurements; session policy has no exchange holiday calendar; cache context is intentionally cold after restart; scheduler concurrency, alerts, outcome settlement, broker connectivity and real orders remain out of scope.
+
+## P5-T03a accepted supervisor repair — 2026-08-20
+
+- Milestone: narrow safety repair for persistent backoff, process-wide SQLite scheduler lease, read-only GPU resource probing and cooperative stop. Supervisor Gate: ACCEPTED.
+- Implementation: restored backoff now blocks manual runs with structured `SCHEDULER_BACKOFF_ACTIVE` context and makes background start wait interruptibly before scanning. Scheduler ownership is leased per canonical SQLite path (`:memory:` remains store-instance scoped), with release on stop, natural loop exit, run-once finalization and exceptions. `LocalResourceProbe` now performs bounded, shell-free `nvidia-smi` compute-process/free-memory checks, explicitly allows Ollama, reports ComfyUI/python/Blender/unknown competition and low-memory states, and safely returns `probe_unavailable` on probe failure. Background scans check stop requests before each item; active runs finish the current analysis, mark remaining items interrupted and never leave completed runs with `RUNNING` items.
+- Changed files: `core/scheduler.py`, `apps/api/main.py`, `tests/test_phase5_scheduler.py`, `STATUS.md`.
+- Focused verification: `python -m pytest -q tests/test_phase5_scheduler.py` PASS, 14 tests; API backoff context, restart backoff, lease ownership/release, injected GPU CSV/timeout/competition/low-memory cases and blocking-executor stop coverage included.
+- Full Python verification: `python -m pytest -q` PASS, 82 tests / 10 subtests / 1 existing Starlette-httpx deprecation warning; `python -B -m unittest discover -s tests -v` PASS, 82 tests; `python -B -m compileall -q apps core tests scripts` PASS; `python -m pip check` PASS.
+- Frontend verification: `npm run lint` PASS; `npm run typecheck` PASS; `npm run test -- --run` PASS, 11 files / 53 tests; `npm run build` PASS with Vite 6.4.3; full and production-only `npm audit --audit-level=high` PASS, 0 vulnerabilities.
+- Browser verification: `npm run e2e:preflight` PASS, Playwright 1.62.1 with installed Chrome `151.0.7922.140` and Edge `151.0.4129.93`; `npm run e2e` PASS, 9/9 tests, 1 worker, 29.1s on Chrome. Existing suite retained scheduler Watchlist-to-Radar/no-PaperTrade flow, 16 axe scans and 16 desktop/390x844 overflow checks.
+- Blockers: none. Supervisor Gate: ACCEPTED.
+- Residual risks: E2E uses the injected deterministic resource probe and does not claim live GPU/provider/model freshness; `nvidia-smi` behavior is covered by injected parser/failure tests. Exchange holiday calendars, production concurrency, alerts, outcome settlement, broker connectivity and real orders remain out of scope.

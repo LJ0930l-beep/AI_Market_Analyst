@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid4
 
 from core.ai import OllamaProvider
@@ -27,6 +27,14 @@ from core.news_engine import NewsEngine, RSSNewsProvider
 from core.outcomes import OutcomeStatus
 from core.performance.metrics import build_performance_snapshot
 from core.radar import RADAR_CATEGORIES, build_radar
+from core.scheduler import (
+    DefaultScanAnalysisExecutor,
+    LocalResourceProbe,
+    LocalSchedulerRuntime,
+    ResourceProbe,
+    ScanAnalysisExecutor,
+    SchedulerRuntimeError,
+)
 from core.providers import (
     FixtureNewsProvider,
     InstrumentValidationError,
@@ -165,6 +173,19 @@ def get_llm_provider() -> OllamaProvider | None:
     """FastAPI dependency boundary for the local model provider."""
 
     return _llm_provider()
+
+
+def get_scheduler(request: Request) -> LocalSchedulerRuntime:
+    """Return the app-scoped scheduler without starting it implicitly."""
+
+    runtime = getattr(request.app.state, "scheduler_runtime", None)
+    if runtime is None:
+        factory = getattr(request.app.state, "scheduler_factory", None)
+        if not callable(factory):
+            raise RuntimeError("scheduler runtime is not configured")
+        runtime = factory()
+        request.app.state.scheduler_runtime = runtime
+    return runtime
 
 
 def get_instrument_validator() -> InstrumentValidator:
@@ -675,6 +696,38 @@ if FastAPI is not None:
         assert canonical_symbol is not None
         return {"symbol": canonical_symbol, "deleted": store.delete_watchlist_entry(canonical_symbol)}
 
+    @router.get("/scheduler/status")
+    def scheduler_status(scheduler: LocalSchedulerRuntime = Depends(get_scheduler)) -> dict[str, object]:
+        return scheduler.status()
+
+    @router.get("/scheduler/history")
+    def scheduler_history(
+        limit: int = 20,
+        scheduler: LocalSchedulerRuntime = Depends(get_scheduler),
+    ) -> dict[str, object]:
+        return scheduler.history(limit=max(1, min(int(limit), 100)))
+
+    @router.post("/scheduler/start")
+    def scheduler_start(scheduler: LocalSchedulerRuntime = Depends(get_scheduler)) -> dict[str, object]:
+        try:
+            return scheduler.start()
+        except SchedulerRuntimeError as exc:
+            raise APIError(409, exc.code, exc.message, context=exc.context) from exc
+
+    @router.post("/scheduler/stop")
+    def scheduler_stop(scheduler: LocalSchedulerRuntime = Depends(get_scheduler)) -> dict[str, object]:
+        try:
+            return scheduler.stop()
+        except SchedulerRuntimeError as exc:
+            raise APIError(409, exc.code, exc.message, context=exc.context) from exc
+
+    @router.post("/scheduler/run-once")
+    def scheduler_run_once(scheduler: LocalSchedulerRuntime = Depends(get_scheduler)) -> dict[str, object]:
+        try:
+            return scheduler.run_once()
+        except SchedulerRuntimeError as exc:
+            raise APIError(409, exc.code, exc.message, context=exc.context) from exc
+
     @router.get("/settings")
     def settings(store: SQLiteStore = Depends(get_store)) -> list[dict[str, object]]:
         return store.list_app_settings()
@@ -688,6 +741,7 @@ if FastAPI is not None:
         key: str,
         body: dict[str, Any] | None = Body(default=None),
         store: SQLiteStore = Depends(get_store),
+        scheduler: LocalSchedulerRuntime = Depends(get_scheduler),
     ) -> dict[str, object]:
         normalized_key = _normalize_setting_key(key)
         if body is None or set(body) != {"value"}:
@@ -698,7 +752,13 @@ if FastAPI is not None:
             )
         try:
             validate_app_setting_value(normalized_key, body["value"])
-            return store.upsert_app_setting(normalized_key, body["value"])
+            setting = store.upsert_app_setting(normalized_key, body["value"])
+            if normalized_key == "scheduler.enabled" and body["value"] is False:
+                try:
+                    scheduler.stop()
+                except SchedulerRuntimeError as exc:
+                    raise APIError(409, exc.code, exc.message, context=exc.context) from exc
+            return setting
         except ValueError as exc:
             raise APIError(
                 400,
@@ -709,9 +769,18 @@ if FastAPI is not None:
             ) from exc
 
     @router.delete("/settings/{key}")
-    def reset_app_setting(key: str, store: SQLiteStore = Depends(get_store)) -> dict[str, object]:
+    def reset_app_setting(
+        key: str,
+        store: SQLiteStore = Depends(get_store),
+        scheduler: LocalSchedulerRuntime = Depends(get_scheduler),
+    ) -> dict[str, object]:
         normalized_key = _normalize_setting_key(key)
         deleted = store.delete_app_setting(normalized_key)
+        if normalized_key == "scheduler.enabled":
+            try:
+                scheduler.stop()
+            except SchedulerRuntimeError as exc:
+                raise APIError(409, exc.code, exc.message, context=exc.context) from exc
         return {"key": normalized_key, "deleted": deleted, "setting": store.get_app_setting(normalized_key)}
 
     @router.get("/instruments/{symbol}/snapshot")
@@ -1174,6 +1243,10 @@ def create_app(
     news_provider: object | None = None,
     llm_provider: object | None = _UNSET,
     instrument_validator: InstrumentValidator | None = None,
+    scheduler_runtime: LocalSchedulerRuntime | None = None,
+    scheduler_executor: ScanAnalysisExecutor | None = None,
+    scheduler_resource_probe: ResourceProbe | Callable[[], object] | None = None,
+    scheduler_clock: Callable[[], datetime] | None = None,
 ):
     """Create an API app with optional service injections for isolated tests."""
 
@@ -1186,7 +1259,7 @@ def create_app(
     app = FastAPI(
         title="AI Market Analyst",
         version=API_VERSION,
-        description="Local-first Phase 5 market research API with durable Watchlist/AppSetting foundation and structured paper-only tracking.",
+        description="Local-first Phase 5 market research API with durable Watchlist/AppSetting foundation, an explicit opt-in local Watchlist scan runtime disabled by default, and structured paper-only tracking.",
         openapi_extra={"x-phase": API_PHASE, "x-product-baseline": "phase5"},
     )
     app.state.api_phase = API_PHASE
@@ -1258,6 +1331,41 @@ def create_app(
         app.dependency_overrides[get_snapshot_service] = lambda: snapshot_service
     elif analysis_service is not None:
         app.dependency_overrides[get_snapshot_service] = lambda: analysis_service
+
+    def scheduler_factory() -> LocalSchedulerRuntime:
+        scheduler_store = store if store is not None else _store()
+        if scheduler_executor is not None:
+            executor = scheduler_executor
+        else:
+            service_or_factory: AnalysisService | Callable[[], AnalysisService]
+            if analysis_service is not None:
+                service_or_factory = analysis_service
+            else:
+                service_or_factory = lambda: _service(
+                    store=scheduler_store,
+                    news_provider=news_provider,
+                    llm_provider=llm_provider,
+                )
+            executor = DefaultScanAnalysisExecutor(service_or_factory, scheduler_store)
+        return LocalSchedulerRuntime(
+            store=scheduler_store,
+            analysis_executor=executor,
+            resource_probe=scheduler_resource_probe or LocalResourceProbe(),
+            clock=scheduler_clock or (lambda: datetime.now(timezone.utc)),
+        )
+
+    app.state.scheduler_factory = scheduler_factory
+    app.state.scheduler_runtime = scheduler_runtime
+
+    async def shutdown_scheduler() -> None:
+        runtime = getattr(app.state, "scheduler_runtime", None)
+        if runtime is not None:
+            try:
+                runtime.stop()
+            except SchedulerRuntimeError:
+                pass
+
+    app.router.on_shutdown.append(shutdown_scheduler)
     return app
 
 

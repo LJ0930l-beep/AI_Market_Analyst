@@ -8,11 +8,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from core.ai.prompts import PROMPT_VERSION
+from core.analysis_service import AnalysisService
 from core.outcomes import settle_prediction
 from core.performance.calibration import fit_calibration
 from core.instruments import InstrumentCandidate
-from core.providers import Bar, FixtureProvider, InstrumentValidationResult
+from core.providers import Bar, FixtureNewsProvider, FixtureProvider, InstrumentValidationResult
 from core.quant import build_quant_snapshot
+from core.scheduler import DefaultScanAnalysisExecutor, ResourceProbeResult
 from core.signals import Action, SignalProposal, build_signal
 from core.storage import SQLiteStore
 from core.instruments import instrument_for
@@ -34,6 +36,34 @@ class E2EInjectedInstrumentValidator:
             data_as_of=now,
             mode="injected_test",
         )
+
+
+class E2ESchedulerClock:
+    """A deterministic weekday market-open clock for scheduler browser coverage."""
+
+    value = datetime(2030, 1, 2, 15, 0, tzinfo=timezone.utc)
+
+    def now(self) -> datetime:
+        return self.value
+
+
+class E2EInjectedSchedulerResourceProbe:
+    """Deterministic resource guard; it never inspects or stops local processes."""
+
+    def probe(self) -> ResourceProbeResult:
+        return ResourceProbeResult(True, reason="e2e_ready", capability="injected_test")
+
+
+class E2EInjectedSchedulerExecutor:
+    """Counts scheduler calls while delegating to the real AnalysisService path."""
+
+    def __init__(self, service: AnalysisService, store: SQLiteStore) -> None:
+        self.calls = 0
+        self._delegate = DefaultScanAnalysisExecutor(service, store)
+
+    def execute(self, *args, **kwargs):
+        self.calls += 1
+        return self._delegate.execute(*args, **kwargs)
 
 
 def _signal(
@@ -236,9 +266,26 @@ def main() -> None:
     import uvicorn
     from apps.api.main import create_app
 
+    analysis_service = AnalysisService(
+        market_provider_factory=lambda _instrument: FixtureProvider(),
+        news_provider=FixtureNewsProvider(),
+        llm_provider=None,
+        store=SQLiteStore(args.db),
+    )
+    scheduler_store = SQLiteStore(args.db)
+    scheduler_executor = E2EInjectedSchedulerExecutor(analysis_service, scheduler_store)
+    scheduler_clock = E2ESchedulerClock()
+
     print(f"P4_E2E_API_READY http://{args.host}:{args.port}", flush=True)
     uvicorn.run(
-        create_app(instrument_validator=E2EInjectedInstrumentValidator()),
+        create_app(
+            store=scheduler_store,
+            analysis_service=analysis_service,
+            instrument_validator=E2EInjectedInstrumentValidator(),
+            scheduler_executor=scheduler_executor,
+            scheduler_resource_probe=E2EInjectedSchedulerResourceProbe(),
+            scheduler_clock=scheduler_clock.now,
+        ),
         host=args.host,
         port=args.port,
         log_level="warning",

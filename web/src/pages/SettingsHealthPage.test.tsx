@@ -38,8 +38,10 @@ describe("SettingsHealthPage", () => {
     const model = screen.getByRole("region", { name: "Local model" });
     expect(await within(model).findByText(/Model health is degraded or unavailable/)).toBeInTheDocument();
     expect(within(model).getByText("MODEL_NOT_CONFIGURED")).toBeInTheDocument();
-    expect(screen.getByText(/No secrets, scheduler claims, broker connections or execution controls/)).toBeInTheDocument();
+    expect(screen.getByText(/No secrets, broker connections, real orders, alerts or outcome settlement/)).toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Local Watchlist scheduler" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Enable scheduler" })).toBeInTheDocument();
 
     fireEvent.click(within(provider).getByRole("button", { name: "Retry Market and news routing" }));
     expect(await within(provider).findByText("fixture_news")).toBeInTheDocument();

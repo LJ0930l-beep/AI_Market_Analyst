@@ -103,3 +103,13 @@ Date: 2026-08-20
 P5-T02 uses the versioned `opportunity_v1` deterministic Python scorer. Explicit weights, normalized component scores and per-component contributions are returned for audit; no LLM calculates or orders the score. Actionable ranking requires an ACTIVE Phase 3 calibration artifact with an effective sample count of at least 100 and compatible scope. WAIT is fixed `WAIT` and never ranked; incomplete evidence is `NOT_RANKED`; invalid or expired signals are `AVOID`.
 
 Radar reads only durable Watchlist membership, each symbol's latest existing Prediction/Outcome, current calibration and saved context. GET `/radar` has no analysis, model, Prediction, PaperTrade, scheduler, scan, alert or broker side effect. Stored `time_policy.event_risk=true` and high-importance `risk_events` take precedence over news evidence; unavailable event/news evidence remains explicit and conservative.
+
+## ADR-018 - P5-T03a uses a safe, explicit local scheduler lifecycle
+
+Date: 2026-08-20
+
+The P5-T03a scheduler is disabled by default and runs only through an explicit lifecycle. Model analysis has a hard effective concurrency limit of one. Equity session policy is deterministic weekday regular-hours in the instrument timezone; Crypto is 24/7, and the missing exchange holiday calendar is exposed as a limitation.
+
+Scheduler context caching uses version `context_cache_v1` with a key containing symbol, timeframe, as-of, provider and context capability. The resource guard is read-only and bounded, using `nvidia-smi` when available; missing or failed probes are unavailable rather than assumed healthy. Resource failures use bounded persisted backoff. A process-wide lease keyed by canonical SQLite path prevents duplicate runtimes, and cooperative stop finishes at most the current analysis before marking remaining items interrupted.
+
+This foundation does not introduce Redis/Celery, process-killing behavior, alerts, outcome settlement, broker connectivity or real orders.

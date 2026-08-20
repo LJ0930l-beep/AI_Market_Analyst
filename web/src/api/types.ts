@@ -271,6 +271,63 @@ export interface StatsResponse extends JsonRecord {
   calibration_results?: number;
   watchlist_entries?: number;
   app_settings?: number;
+  scheduler_runs?: number;
+  scheduler_items?: number;
+  scheduler_cache_entries?: number;
+}
+
+export interface SchedulerItem extends JsonRecord {
+  item_id: string;
+  run_id: string;
+  symbol: string;
+  timeframe: Timeframe | string;
+  status: string;
+  session_state?: string | null;
+  skip_reason?: string | null;
+  resource_reason?: string | null;
+  cache_key?: string | null;
+  cache_status?: string | null;
+  error_code?: string | null;
+  prediction_id?: string | null;
+}
+
+export interface SchedulerRun extends JsonRecord {
+  run_id: string;
+  trigger: string;
+  status: string;
+  started_at: string;
+  finished_at?: string | null;
+  next_run_at?: string | null;
+  settings?: JsonRecord;
+  counts?: JsonRecord;
+  error_code?: string | null;
+  error_detail?: string | null;
+  items?: SchedulerItem[];
+}
+
+export interface SchedulerStatus extends JsonRecord {
+  state: string;
+  enabled: boolean;
+  running: boolean;
+  thread_alive: boolean;
+  active_run_id?: string | null;
+  interval_seconds: number;
+  configured_concurrency: number;
+  effective_concurrency: number;
+  session_policy: string;
+  timeframe: string;
+  last_run?: SchedulerRun | null;
+  next_run_at?: string | null;
+  last_error?: JsonRecord | null;
+  resource?: JsonRecord;
+  backoff?: JsonRecord;
+  cache?: JsonRecord;
+  capabilities?: JsonRecord;
+}
+
+export interface SchedulerHistory extends JsonRecord {
+  runs: SchedulerRun[];
+  status: SchedulerStatus;
 }
 
 export type Prediction = JsonRecord & {

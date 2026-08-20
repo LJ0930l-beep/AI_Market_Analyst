@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Phase 5 - P5-T03a safe local Watchlist scheduler
+
+- Added the default-disabled, explicit-lifecycle local Watchlist scan runtime with serial model execution, deterministic market-session policy, versioned context caching, bounded resource backoff, restart recovery, process-scoped SQLite-path leasing and cooperative stop.
+- Added read-only scheduler status/history and explicit start/stop/run-once controls without alerts, outcome settlement, broker access or real orders.
+- Verification: 82 Python tests, 53 frontend tests and 9 browser E2E tests PASS; compile/pip checks, lint/typecheck/build, dependency audits, axe and responsive overflow checks PASS.
+- P5-T03a Gate: ACCEPTED.
+
 ### Phase 5 - P5-T02 auditable Opportunity Score and read-only Market Radar
 
 - Added deterministic, versioned `opportunity_v1` scoring over durable Watchlist/latest Prediction evidence with auditable weights, components, contributions, calibration gating and conservative WAIT/NOT_RANKED/AVOID boundaries.

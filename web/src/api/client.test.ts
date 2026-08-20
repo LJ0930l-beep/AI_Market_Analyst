@@ -124,6 +124,29 @@ describe("ApiClient", () => {
     expect(fetchImpl).toHaveBeenNthCalledWith(7, "http://localhost:8000/settings/scheduler.enabled", expect.objectContaining({ method: "DELETE" }));
   });
 
+  it("keeps local scheduler status, history and lifecycle routes explicit", async () => {
+    const fetchImpl = vi
+      .fn<FetchMock>()
+      .mockResolvedValueOnce(response({ state: "disabled", enabled: false, running: false }))
+      .mockResolvedValueOnce(response({ runs: [], status: { state: "disabled" } }))
+      .mockResolvedValueOnce(response({ state: "running", enabled: true, running: true }))
+      .mockResolvedValueOnce(response({ run: { status: "COMPLETED" }, items: [], status: { state: "stopped" } }))
+      .mockResolvedValueOnce(response({ state: "disabled", enabled: false, running: false }));
+    const client = new ApiClient({ baseUrl: "http://localhost:8000", fetchImpl });
+
+    await client.schedulerStatus();
+    await client.schedulerHistory(5);
+    await client.startScheduler();
+    await client.runSchedulerOnce();
+    await client.stopScheduler();
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(1, "http://localhost:8000/scheduler/status", expect.objectContaining({ method: "GET" }));
+    expect(fetchImpl).toHaveBeenNthCalledWith(2, "http://localhost:8000/scheduler/history?limit=5", expect.objectContaining({ method: "GET" }));
+    expect(fetchImpl).toHaveBeenNthCalledWith(3, "http://localhost:8000/scheduler/start", expect.objectContaining({ method: "POST" }));
+    expect(fetchImpl).toHaveBeenNthCalledWith(4, "http://localhost:8000/scheduler/run-once", expect.objectContaining({ method: "POST" }));
+    expect(fetchImpl).toHaveBeenNthCalledWith(5, "http://localhost:8000/scheduler/stop", expect.objectContaining({ method: "POST" }));
+  });
+
   it("posts the narrow provider-validation registration payload", async () => {
     const fetchImpl = vi.fn<FetchMock>().mockResolvedValue(
       response({

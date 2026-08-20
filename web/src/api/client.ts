@@ -31,6 +31,8 @@ import type {
   RadarFilters,
   RadarResponse,
   SnapshotFilters,
+  SchedulerHistory,
+  SchedulerStatus,
   StatsResponse,
   WatchlistDeleteResponse,
   WatchlistEntry,
@@ -93,6 +95,11 @@ export interface MarketApiClient {
   providerHealth(signal?: AbortSignal): Promise<ProviderHealthResponse>;
   modelHealth(signal?: AbortSignal): Promise<ModelHealthResponse>;
   stats(signal?: AbortSignal): Promise<StatsResponse>;
+  schedulerStatus(signal?: AbortSignal): Promise<SchedulerStatus>;
+  schedulerHistory(limit?: number, signal?: AbortSignal): Promise<SchedulerHistory>;
+  startScheduler(signal?: AbortSignal): Promise<SchedulerStatus>;
+  stopScheduler(signal?: AbortSignal): Promise<SchedulerStatus>;
+  runSchedulerOnce(signal?: AbortSignal): Promise<{ run?: unknown; items?: unknown[]; status: SchedulerStatus }>;
   instruments(signal?: AbortSignal): Promise<Instrument[]>;
   registerInstrument(symbol: string, assetType: AssetType, signal?: AbortSignal): Promise<InstrumentRegistrationResponse>;
   watchlist(signal?: AbortSignal): Promise<WatchlistEntry[]>;
@@ -130,6 +137,11 @@ export type ApplicationShellApiClient = Pick<
   | "providerHealth"
   | "modelHealth"
   | "stats"
+  | "schedulerStatus"
+  | "schedulerHistory"
+  | "startScheduler"
+  | "stopScheduler"
+  | "runSchedulerOnce"
   | "instruments"
   | "registerInstrument"
   | "watchlist"
@@ -265,6 +277,29 @@ export class ApiClient implements MarketApiClient {
 
   stats(signal?: AbortSignal): Promise<StatsResponse> {
     return this.request<StatsResponse>("/stats", { signal });
+  }
+
+  schedulerStatus(signal?: AbortSignal): Promise<SchedulerStatus> {
+    return this.request<SchedulerStatus>("/scheduler/status", { signal });
+  }
+
+  schedulerHistory(limit = 20, signal?: AbortSignal): Promise<SchedulerHistory> {
+    return this.request<SchedulerHistory>("/scheduler/history", { query: { limit }, signal });
+  }
+
+  startScheduler(signal?: AbortSignal): Promise<SchedulerStatus> {
+    return this.request<SchedulerStatus>("/scheduler/start", { method: "POST", signal });
+  }
+
+  stopScheduler(signal?: AbortSignal): Promise<SchedulerStatus> {
+    return this.request<SchedulerStatus>("/scheduler/stop", { method: "POST", signal });
+  }
+
+  runSchedulerOnce(signal?: AbortSignal): Promise<{ run?: unknown; items?: unknown[]; status: SchedulerStatus }> {
+    return this.request<{ run?: unknown; items?: unknown[]; status: SchedulerStatus }>("/scheduler/run-once", {
+      method: "POST",
+      signal,
+    });
   }
 
   instruments(signal?: AbortSignal): Promise<Instrument[]> {

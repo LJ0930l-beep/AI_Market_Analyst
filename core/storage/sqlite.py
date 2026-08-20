@@ -21,27 +21,27 @@ APP_SETTING_DEFINITIONS: dict[str, dict[str, object]] = {
     "scheduler.enabled": {
         "default": False,
         "value_type": "boolean",
-        "description": "Persisted opt-in flag; no background scheduler is activated by this setting.",
+        "description": "Explicit local scheduler opt-in; start remains a separate lifecycle action.",
     },
     "scheduler.interval_seconds": {
         "default": 900,
         "value_type": "integer",
         "minimum": 60,
         "maximum": 86_400,
-        "description": "Future local scheduling interval; stored only in this task.",
+        "description": "Local Watchlist scan interval used by the explicit scheduler lifecycle.",
     },
     "scheduler.concurrency": {
         "default": 1,
         "value_type": "integer",
         "minimum": 1,
         "maximum": 4,
-        "description": "Future local resource concurrency limit; stored only in this task.",
+        "description": "Requested local scan concurrency; model analysis is capped at one.",
     },
     "scheduler.session_policy": {
         "default": "market_hours",
         "value_type": "string",
         "allowed_values": ("market_hours", "always"),
-        "description": "Future local session policy; stored only in this task.",
+        "description": "Local Watchlist scan session policy; market_hours is the conservative default.",
     },
 }
 
@@ -187,6 +187,11 @@ class SQLiteStore:
                 "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                 (5, datetime.now(timezone.utc).isoformat()),
             )
+            self._ensure_phase5_scheduler_tables(db)
+            db.execute(
+                "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                (6, datetime.now(timezone.utc).isoformat()),
+            )
 
     @staticmethod
     def _ensure_prediction_columns(db: sqlite3.Connection) -> None:
@@ -307,6 +312,67 @@ class SQLiteStore:
         )
 
     @staticmethod
+    def _ensure_phase5_scheduler_tables(db: sqlite3.Connection) -> None:
+        db.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS scheduler_runs (
+                run_id TEXT PRIMARY KEY,
+                trigger TEXT NOT NULL,
+                status TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                next_run_at TEXT,
+                settings_json TEXT NOT NULL,
+                counts_json TEXT NOT NULL DEFAULT '{}',
+                error_code TEXT,
+                error_detail TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_scheduler_runs_started
+                ON scheduler_runs(started_at DESC, run_id DESC);
+            CREATE TABLE IF NOT EXISTS scheduler_items (
+                item_id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                timeframe TEXT NOT NULL,
+                status TEXT NOT NULL,
+                started_at TEXT,
+                finished_at TEXT,
+                session_state TEXT,
+                skip_reason TEXT,
+                resource_reason TEXT,
+                cache_key TEXT,
+                cache_status TEXT,
+                error_code TEXT,
+                error_detail TEXT,
+                prediction_id TEXT,
+                FOREIGN KEY(run_id) REFERENCES scheduler_runs(run_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_scheduler_items_run
+                ON scheduler_items(run_id, symbol, item_id);
+            CREATE TABLE IF NOT EXISTS scheduler_cache_entries (
+                cache_key TEXT PRIMARY KEY,
+                cache_version TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                timeframe TEXT NOT NULL,
+                as_of TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                context_capability_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                last_accessed_at TEXT NOT NULL,
+                hit_count INTEGER NOT NULL DEFAULT 0,
+                prediction_id TEXT,
+                status TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS scheduler_state (
+                state_key TEXT PRIMARY KEY,
+                value_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            """
+        )
+
+    @staticmethod
     def _utc_timestamp(value: datetime | None = None) -> str:
         timestamp = value or datetime.now(timezone.utc)
         if timestamp.tzinfo is None:
@@ -405,6 +471,317 @@ class SQLiteStore:
         with self._connect() as db:
             result = db.execute("DELETE FROM app_settings WHERE setting_key = ?", (key,))
         return result.rowcount > 0
+
+    @staticmethod
+    def _scheduler_run_from_row(row: sqlite3.Row) -> dict[str, object]:
+        return {
+            "run_id": row["run_id"],
+            "trigger": row["trigger"],
+            "status": row["status"],
+            "started_at": row["started_at"],
+            "finished_at": row["finished_at"],
+            "next_run_at": row["next_run_at"],
+            "settings": json.loads(row["settings_json"]),
+            "counts": json.loads(row["counts_json"]),
+            "error_code": row["error_code"],
+            "error_detail": row["error_detail"],
+        }
+
+    @staticmethod
+    def _scheduler_item_from_row(row: sqlite3.Row) -> dict[str, object]:
+        return {
+            "item_id": row["item_id"],
+            "run_id": row["run_id"],
+            "symbol": row["symbol"],
+            "timeframe": row["timeframe"],
+            "status": row["status"],
+            "started_at": row["started_at"],
+            "finished_at": row["finished_at"],
+            "session_state": row["session_state"],
+            "skip_reason": row["skip_reason"],
+            "resource_reason": row["resource_reason"],
+            "cache_key": row["cache_key"],
+            "cache_status": row["cache_status"],
+            "error_code": row["error_code"],
+            "error_detail": row["error_detail"],
+            "prediction_id": row["prediction_id"],
+        }
+
+    def create_scheduler_run(
+        self,
+        *,
+        run_id: str,
+        trigger: str,
+        started_at: str,
+        settings: dict[str, object],
+        status: str = "RUNNING",
+    ) -> None:
+        with self._connect() as db:
+            db.execute(
+                """INSERT INTO scheduler_runs(
+                    run_id, trigger, status, started_at, settings_json
+                ) VALUES (?, ?, ?, ?, ?)""",
+                (run_id, trigger, status, started_at, json.dumps(settings, sort_keys=True)),
+            )
+
+    def update_scheduler_run(
+        self,
+        run_id: str,
+        *,
+        status: str | None = None,
+        finished_at: str | None = None,
+        next_run_at: str | None = None,
+        counts: dict[str, object] | None = None,
+        error_code: str | None = None,
+        error_detail: str | None = None,
+    ) -> None:
+        updates: list[str] = []
+        values: list[object] = []
+        if status is not None:
+            updates.append("status = ?")
+            values.append(status)
+        if finished_at is not None:
+            updates.append("finished_at = ?")
+            values.append(finished_at)
+        if next_run_at is not None:
+            updates.append("next_run_at = ?")
+            values.append(next_run_at)
+        if counts is not None:
+            updates.append("counts_json = ?")
+            values.append(json.dumps(counts, sort_keys=True))
+        if error_code is not None:
+            updates.append("error_code = ?")
+            values.append(error_code)
+        if error_detail is not None:
+            updates.append("error_detail = ?")
+            values.append(error_detail)
+        if not updates:
+            return
+        values.append(run_id)
+        with self._connect() as db:
+            result = db.execute(
+                f"UPDATE scheduler_runs SET {', '.join(updates)} WHERE run_id = ?",
+                tuple(values),
+            )
+            if result.rowcount == 0:
+                raise KeyError(f"scheduler run not found: {run_id}")
+
+    def get_scheduler_run(self, run_id: str) -> dict[str, object] | None:
+        with self._connect() as db:
+            row = db.execute("SELECT * FROM scheduler_runs WHERE run_id = ?", (run_id,)).fetchone()
+        return self._scheduler_run_from_row(row) if row is not None else None
+
+    def list_scheduler_runs(self, *, limit: int = 20) -> list[dict[str, object]]:
+        bounded_limit = max(1, min(int(limit), 100))
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT * FROM scheduler_runs ORDER BY started_at DESC, run_id DESC LIMIT ?",
+                (bounded_limit,),
+            ).fetchall()
+        return [self._scheduler_run_from_row(row) for row in rows]
+
+    def create_scheduler_item(
+        self,
+        *,
+        item_id: str,
+        run_id: str,
+        symbol: str,
+        timeframe: str,
+        status: str = "PENDING",
+    ) -> None:
+        with self._connect() as db:
+            db.execute(
+                """INSERT INTO scheduler_items(
+                    item_id, run_id, symbol, timeframe, status
+                ) VALUES (?, ?, ?, ?, ?)""",
+                (item_id, run_id, symbol, timeframe, status),
+            )
+
+    def update_scheduler_item(
+        self,
+        item_id: str,
+        *,
+        status: str | None = None,
+        started_at: str | None = None,
+        finished_at: str | None = None,
+        session_state: str | None = None,
+        skip_reason: str | None = None,
+        resource_reason: str | None = None,
+        cache_key: str | None = None,
+        cache_status: str | None = None,
+        error_code: str | None = None,
+        error_detail: str | None = None,
+        prediction_id: str | None = None,
+    ) -> None:
+        updates: list[str] = []
+        values: list[object] = []
+        for name, value in (
+            ("status", status),
+            ("started_at", started_at),
+            ("finished_at", finished_at),
+            ("session_state", session_state),
+            ("skip_reason", skip_reason),
+            ("resource_reason", resource_reason),
+            ("cache_key", cache_key),
+            ("cache_status", cache_status),
+            ("error_code", error_code),
+            ("error_detail", error_detail),
+            ("prediction_id", prediction_id),
+        ):
+            if value is not None:
+                updates.append(f"{name} = ?")
+                values.append(value)
+        if not updates:
+            return
+        values.append(item_id)
+        with self._connect() as db:
+            result = db.execute(
+                f"UPDATE scheduler_items SET {', '.join(updates)} WHERE item_id = ?",
+                tuple(values),
+            )
+            if result.rowcount == 0:
+                raise KeyError(f"scheduler item not found: {item_id}")
+
+    def list_scheduler_items(self, run_id: str) -> list[dict[str, object]]:
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT * FROM scheduler_items WHERE run_id = ? ORDER BY item_id ASC",
+                (run_id,),
+            ).fetchall()
+        return [self._scheduler_item_from_row(row) for row in rows]
+
+    def recover_scheduler_runs(self, *, recovered_at: str | None = None) -> int:
+        timestamp = recovered_at or self._utc_timestamp()
+        with self._connect() as db:
+            runs = db.execute("SELECT run_id FROM scheduler_runs WHERE status = 'RUNNING'").fetchall()
+            db.execute(
+                """UPDATE scheduler_runs
+                   SET status = 'INTERRUPTED', finished_at = ?, error_code = 'PROCESS_RESTARTED',
+                       error_detail = 'scheduler run was interrupted before restart'
+                 WHERE status = 'RUNNING'""",
+                (timestamp,),
+            )
+            db.execute(
+                """UPDATE scheduler_items
+                   SET status = 'INTERRUPTED', finished_at = ?, error_code = 'PROCESS_RESTARTED',
+                       error_detail = 'scheduler item was interrupted before restart'
+                 WHERE status = 'RUNNING'""",
+                (timestamp,),
+            )
+        return len(runs)
+
+    def upsert_scheduler_cache_entry(
+        self,
+        *,
+        cache_key: str,
+        cache_version: str,
+        symbol: str,
+        timeframe: str,
+        as_of: str,
+        provider: str,
+        context_capability: dict[str, object],
+        created_at: str,
+        expires_at: str,
+        prediction_id: str | None,
+        status: str,
+    ) -> None:
+        with self._connect() as db:
+            db.execute(
+                """INSERT INTO scheduler_cache_entries(
+                    cache_key, cache_version, symbol, timeframe, as_of, provider,
+                    context_capability_json, created_at, expires_at, last_accessed_at,
+                    hit_count, prediction_id, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                ON CONFLICT(cache_key) DO UPDATE SET
+                    cache_version = excluded.cache_version,
+                    symbol = excluded.symbol,
+                    timeframe = excluded.timeframe,
+                    as_of = excluded.as_of,
+                    provider = excluded.provider,
+                    context_capability_json = excluded.context_capability_json,
+                    expires_at = excluded.expires_at,
+                    last_accessed_at = excluded.last_accessed_at,
+                    prediction_id = excluded.prediction_id,
+                    status = excluded.status""",
+                (
+                    cache_key,
+                    cache_version,
+                    symbol,
+                    timeframe,
+                    as_of,
+                    provider,
+                    json.dumps(context_capability, sort_keys=True),
+                    created_at,
+                    expires_at,
+                    created_at,
+                    prediction_id,
+                    status,
+                ),
+            )
+
+    def record_scheduler_cache_hit(self, cache_key: str, *, accessed_at: str) -> None:
+        with self._connect() as db:
+            db.execute(
+                """UPDATE scheduler_cache_entries
+                   SET hit_count = hit_count + 1, last_accessed_at = ?, status = 'hit'
+                 WHERE cache_key = ?""",
+                (accessed_at, cache_key),
+            )
+
+    def prune_scheduler_cache_entries(self, *, now: str, capacity: int = 500) -> None:
+        bounded_capacity = max(1, min(int(capacity), 5000))
+        with self._connect() as db:
+            db.execute("DELETE FROM scheduler_cache_entries WHERE expires_at <= ?", (now,))
+            db.execute(
+                """DELETE FROM scheduler_cache_entries
+                 WHERE cache_key NOT IN (
+                     SELECT cache_key FROM scheduler_cache_entries
+                      ORDER BY last_accessed_at DESC, cache_key ASC LIMIT ?
+                 )""",
+                (bounded_capacity,),
+            )
+
+    def list_scheduler_cache_entries(self, *, limit: int = 100) -> list[dict[str, object]]:
+        bounded_limit = max(1, min(int(limit), 500))
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT * FROM scheduler_cache_entries ORDER BY last_accessed_at DESC, cache_key ASC LIMIT ?",
+                (bounded_limit,),
+            ).fetchall()
+        return [
+            {
+                "cache_key": row["cache_key"],
+                "cache_version": row["cache_version"],
+                "symbol": row["symbol"],
+                "timeframe": row["timeframe"],
+                "as_of": row["as_of"],
+                "provider": row["provider"],
+                "context_capability": json.loads(row["context_capability_json"]),
+                "created_at": row["created_at"],
+                "expires_at": row["expires_at"],
+                "last_accessed_at": row["last_accessed_at"],
+                "hit_count": int(row["hit_count"]),
+                "prediction_id": row["prediction_id"],
+                "status": row["status"],
+            }
+            for row in rows
+        ]
+
+    def set_scheduler_state(self, key: str, value: object, *, updated_at: str | None = None) -> None:
+        timestamp = updated_at or self._utc_timestamp()
+        with self._connect() as db:
+            db.execute(
+                "INSERT OR REPLACE INTO scheduler_state(state_key, value_json, updated_at) VALUES (?, ?, ?)",
+                (key, json.dumps(value, sort_keys=True), timestamp),
+            )
+
+    def get_scheduler_state(self, key: str) -> object | None:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT value_json FROM scheduler_state WHERE state_key = ?",
+                (key,),
+            ).fetchone()
+        return json.loads(row["value_json"]) if row is not None else None
 
     @staticmethod
     def _instrument_record_from_row(row: sqlite3.Row) -> dict[str, object]:
@@ -1263,6 +1640,9 @@ class SQLiteStore:
                 "calibration_buckets",
                 "watchlist_entries",
                 "app_settings",
+                "scheduler_runs",
+                "scheduler_items",
+                "scheduler_cache_entries",
             )
         }
 
