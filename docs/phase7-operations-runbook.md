@@ -1,8 +1,10 @@
 # Phase 7 local operations runbook
 
-This runbook covers the supported Windows local lifecycle for V1.0. It owns only the API and static UI child processes started by `scripts\phase7-local.ps1`.
+This runbook covers the supported Windows local lifecycle through V1.1. It owns only the API and static UI child processes started by `scripts\phase7-local.ps1`.
 
 ## Start, status and stop
+
+For normal use, double-click `Start_AI_Market_Analyst.cmd`. First-time model preparation is `Prepare_AI_Models.cmd`; status and stop wrappers are also provided. These wrappers only delegate to the safe launcher and exact Ollama model pulls.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\phase7-local.ps1 -Action start
@@ -39,7 +41,7 @@ Provider, model, GPU and database failures are capability/degraded evidence. A p
 
 ### Post-V1.0 Qwen consultation
 
-`GET /health/model` also reports the redacted `qwen_consult_v1` capability and fixed configured model. It does not expose `OLLAMA_BASE_URL`; startup and `GET /health/release` do not invoke Qwen. The browser's **Qwen Consult / Qwen 咨询** page streams through `POST /consult/stream`. Availability depends on the existing loopback Ollama service and installed configured model. A missing service/model is an honest unavailable state with no generated fallback.
+`GET /health/model` reports the redacted `qwen_consult_v2` capability, deterministic `qwen_route_v1` policy and configured Fast/Smart model IDs. It does not expose `OLLAMA_BASE_URL`; startup and `GET /health/release` do not invoke Qwen. The browser's **AI Assistant / Qwen 咨询** page streams through `POST /consult/stream`. Availability depends on loopback Ollama and the selected routed model. A missing model is an honest unavailable state; Auto routing never invents a response or silently changes a user-selected tier.
 
 Consult requests are serial and bounded by the `QWEN_CONSULT_*` limits documented in the README. Stop cancels only the current HTTP/model request; it does not stop Ollama or any process. Clear removes only this tab's browser session conversation. Chat text is not a database/backup artifact and should not appear in project logs. Optional symbol context reads existing saved evidence only and does not trigger a provider fetch, analysis, scheduler, settlement, Follow or financial write.
 

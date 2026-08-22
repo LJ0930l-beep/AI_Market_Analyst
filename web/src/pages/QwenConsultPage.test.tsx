@@ -66,7 +66,7 @@ describe("QwenConsultPage", () => {
     const consultStream = vi.fn((_request: ConsultRequest, onEvent: (event: ConsultStreamEvent) => void, signal?: AbortSignal) => {
       onEvent({
         type: "meta",
-        contract_version: "qwen_consult_v1",
+        contract_version: "qwen_consult_v2",
         request_id: "blocking-request",
         provider: "fake_local_qwen",
         model_id: "qwen3.5:4b",
@@ -110,7 +110,7 @@ describe("QwenConsultPage", () => {
       modelHealth: vi.fn().mockResolvedValue({
         provider: "ollama",
         available: false,
-        consult: { contract_version: "qwen_consult_v1", configured: true, available: false, model_id: "qwen3.5:4b" },
+        consult: { contract_version: "qwen_consult_v2", configured: true, available: false, model_id: "qwen3.5:4b" },
       }),
     });
     const first = renderConsult(unavailable);

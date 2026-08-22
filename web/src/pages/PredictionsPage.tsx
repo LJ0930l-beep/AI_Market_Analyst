@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 
 import { ApiError, type ApplicationShellApiClient } from "../api/client";
 import type { OutcomeStatus, Prediction, PredictionFilters, SourceType, Timeframe } from "../api/types";
 import { AsyncPanel, type PanelState } from "../components/AsyncPanel";
-import { ResearchFacts, exactNumberText, numberText, timestampText } from "../components/ResearchFacts";
+import { ResearchFacts, useResearchFormatters } from "../components/ResearchFacts";
 import type { AsyncResource } from "../hooks/useAsyncResource";
 import { useAsyncResource } from "../hooks/useAsyncResource";
-import { EMPTY_DASHBOARD_PROVENANCE, type DashboardProvenance } from "./DashboardPage";
-import { actionLabel, predictionProvenance, predictionValidity } from "./workflowUtils";
+import { useI18n, type TranslationKey } from "../i18n";
+import { emptyDashboardProvenance, type DashboardProvenance } from "./DashboardPage";
+import { actionLabel, predictionProvenance, predictionValidity, sourceTypeLabel } from "./workflowUtils";
 
 interface PredictionsPageProps {
   apiClient: ApplicationShellApiClient;
@@ -80,19 +82,19 @@ function buildFilters(draft: FilterDraft, limit: number): PredictionFilters {
   };
 }
 
-function predictionSymbol(prediction: Prediction): string {
-  return prediction.symbol ?? prediction.instrument?.symbol ?? "Symbol not supplied";
+function predictionSymbol(prediction: Prediction, fallback: string): string {
+  return prediction.symbol ?? prediction.instrument?.symbol ?? fallback;
 }
 
-function predictionStatus(prediction: Prediction): string {
+function predictionStatus(prediction: Prediction, t: (key: TranslationKey) => string): string {
   const validity = predictionValidity(prediction);
   if (validity === "expired") {
-    return "Expired validity window";
+    return t("predictions.expiredValidity");
   }
   if (validity === "active") {
-    return "Active validity window";
+    return t("predictions.activeValidity");
   }
-  return prediction.signal_valid_until ? "Validity not parseable" : "Validity not supplied";
+  return prediction.signal_valid_until ? t("predictions.validityNotParseable") : t("predictions.unknownValidity");
 }
 
 interface PredictionDetailProps {
@@ -102,85 +104,90 @@ interface PredictionDetailProps {
   onFollow: () => void;
 }
 
-function followDecision(prediction: Prediction): { enabled: boolean; reason: string } {
+function followDecision(prediction: Prediction, t: (key: TranslationKey) => string): { enabled: boolean; reason: string } {
   if (prediction.paper_trade) {
-    return { enabled: false, reason: "Already followed as a PaperTrade record." };
+    return { enabled: false, reason: t("predictions.alreadyFollowed") };
   }
   if (prediction.action === "WAIT") {
-    return { enabled: false, reason: "WAIT is retained for coverage only; it cannot be followed." };
+    return { enabled: false, reason: t("predictions.waitNoFollow") };
   }
   if (prediction.action !== "LONG" && prediction.action !== "SHORT") {
-    return { enabled: false, reason: "Only a returned LONG or SHORT signal can be followed." };
+    return { enabled: false, reason: t("predictions.onlyActionable") };
   }
   const validity = predictionValidity(prediction);
   if (validity === "expired") {
-    return { enabled: false, reason: "The returned signal validity window has expired." };
+    return { enabled: false, reason: t("predictions.expired") };
   }
   if (validity === "unknown") {
-    return { enabled: false, reason: "Signal expiry was not supplied or was not parseable; Follow is unavailable." };
+    return { enabled: false, reason: t("predictions.expiryUnknown") };
   }
-  return { enabled: true, reason: "Creates or retains one local PaperTrade record; no order is sent." };
+  return { enabled: true, reason: t("predictions.followReason") };
 }
 
 function PredictionDetail({ prediction, followState, followMessage, onFollow }: PredictionDetailProps) {
-  const decision = followDecision(prediction);
+  const { t } = useI18n();
+  const { exactNumberText, numberText, timestampText } = useResearchFormatters();
+  const decision = followDecision(prediction, t);
   const outcome = prediction.outcome;
   const levelFacts = ([
-    ["Entry low", prediction.entry_low],
-    ["Entry high", prediction.entry_high],
-    ["Stop", prediction.stop],
-    ["TP1", prediction.tp1],
-    ["TP2", prediction.tp2],
-  ] as const).flatMap(([label, value]) => typeof value === "number" && Number.isFinite(value) ? [{ label, value: numberText(value) }] : []);
+    ["common.entryLow", prediction.entry_low],
+    ["common.entryHigh", prediction.entry_high],
+    ["common.stop", prediction.stop],
+    ["common.statusTp1", prediction.tp1],
+    ["common.statusTp2", prediction.tp2],
+  ] as const).flatMap(([label, value]) => typeof value === "number" && Number.isFinite(value) ? [{ label: t(label), value: numberText(value) }] : []);
 
   return (
     <div className="record-detail">
       <div className="record-detail__heading">
         <div>
-          <p className="eyebrow">Allowlisted prediction evidence</p>
+          <p className="eyebrow">{t("predictions.allowlisted")}</p>
           <h3>{prediction.prediction_id}</h3>
         </div>
         <span className={`status-chip status-chip--${(prediction.action ?? "neutral").toLowerCase()}`}>
-          {prediction.action ?? "Action not supplied"}
+          {prediction.action ?? t("common.actionNotSupplied")}
         </span>
       </div>
+      <Link className="quiet-button asset-consult-link" to={`/consult?symbol=${encodeURIComponent(predictionSymbol(prediction, ""))}&prediction_id=${encodeURIComponent(prediction.prediction_id)}`}>
+        {t("v11.askAiSignal")}
+      </Link>
 
       <ResearchFacts
         facts={[
-          { label: "Symbol", value: predictionSymbol(prediction) },
-          { label: "Action", value: actionLabel(prediction.action) },
-          { label: "Timeframe", value: prediction.timeframe ?? prediction.analysis_timeframe ?? "Not supplied" },
-          { label: "Source type", value: prediction.source_type ?? "Not supplied" },
-          { label: "Replay run", value: prediction.replay_run_id ?? "Not supplied" },
-          { label: "Raw confidence", value: exactNumberText(prediction.raw_confidence) },
-          { label: "Calibrated confidence", value: numberText(prediction.calibrated_confidence, 6) },
-          { label: "Generated at", value: timestampText(prediction.generated_at) },
-          { label: "Data as of", value: timestampText(prediction.data_as_of) },
-          { label: "Re-evaluate at", value: timestampText(prediction.reevaluate_at) },
-          { label: "Signal valid until", value: timestampText(prediction.signal_valid_until) },
-          { label: "Expected hold until", value: timestampText(prediction.expected_hold_until) },
-          { label: "Maximum hold until", value: timestampText(prediction.max_hold_until) },
-          { label: "Validity minutes", value: numberText(prediction.signal_validity_minutes) },
-          { label: "Expected hold minutes", value: numberText(prediction.expected_hold_minutes) },
-          { label: "Maximum hold minutes", value: numberText(prediction.max_hold_minutes) },
-          { label: "Model", value: prediction.model_id ?? "Not supplied" },
-          { label: "Model version", value: prediction.model_version ?? "Not supplied" },
-          { label: "Prompt version", value: prediction.prompt_version ?? "Not supplied" },
-          { label: "Parse status", value: prediction.parse_status ?? "Not supplied" },
-          { label: "Calibration version", value: prediction.calibration_version ?? "Not supplied" },
+          { label: t("common.symbol"), value: predictionSymbol(prediction, t("common.symbolNotSupplied")) },
+          { label: t("common.action"), value: actionLabel(prediction.action, t) },
+          { label: t("common.timeframe"), value: prediction.timeframe ?? prediction.analysis_timeframe ?? t("common.notSupplied") },
+          { label: t("common.sourceType"), value: sourceTypeLabel(prediction.source_type, t) },
+          { label: t("common.replayRun"), value: prediction.replay_run_id ?? t("common.notSupplied") },
+          { label: t("common.rawConfidence"), value: exactNumberText(prediction.raw_confidence) },
+          { label: t("common.calibratedConfidence"), value: numberText(prediction.calibrated_confidence, 6) },
+          { label: t("common.generated"), value: timestampText(prediction.generated_at) },
+          { label: t("common.dataAsOf"), value: timestampText(prediction.data_as_of) },
+          { label: t("common.reevaluate"), value: timestampText(prediction.reevaluate_at) },
+          { label: t("common.validUntil"), value: timestampText(prediction.signal_valid_until) },
+          { label: t("common.expectedHoldUntil"), value: timestampText(prediction.expected_hold_until) },
+          { label: t("common.maximumHoldUntil"), value: timestampText(prediction.max_hold_until) },
+          { label: t("common.validityMinutes"), value: numberText(prediction.signal_validity_minutes) },
+          { label: t("common.expectedHoldMinutes"), value: numberText(prediction.expected_hold_minutes) },
+          { label: t("common.maximumHoldMinutes"), value: numberText(prediction.max_hold_minutes) },
+          { label: t("common.model"), value: prediction.model_id ?? t("common.notSupplied") },
+          { label: t("common.modelVersion"), value: prediction.model_version ?? t("common.notSupplied") },
+          { label: t("common.promptVersion"), value: prediction.prompt_version ?? t("common.notSupplied") },
+          { label: t("common.parseStatus"), value: prediction.parse_status ?? t("common.notSupplied") },
+          { label: t("common.calibrationVersion"), value: prediction.calibration_version ?? t("common.notSupplied") },
         ]}
       />
 
       {prediction.summary ? (
         <div className="record-detail__section">
-          <p className="subsection-label">Summary</p>
+          <p className="subsection-label">{t("common.summary")}</p>
           <p className="panel-reading">{prediction.summary}</p>
         </div>
       ) : null}
 
       {levelFacts.length > 0 ? (
         <div className="record-detail__section">
-          <p className="subsection-label">Returned risk references</p>
+          <p className="subsection-label">{t("predictions.returnedRisk")}</p>
           <ResearchFacts
             compact
             facts={levelFacts}
@@ -190,7 +197,7 @@ function PredictionDetail({ prediction, followState, followMessage, onFollow }: 
 
       {prediction.reason_codes && prediction.reason_codes.length > 0 ? (
         <div className="record-detail__section">
-          <p className="subsection-label">Reason codes</p>
+          <p className="subsection-label">{t("asset.reasonCodes")}</p>
           <ul className="tag-list">
             {prediction.reason_codes.map((reason) => <li key={reason}>{reason}</li>)}
           </ul>
@@ -199,18 +206,18 @@ function PredictionDetail({ prediction, followState, followMessage, onFollow }: 
 
       {prediction.invalidation && prediction.invalidation.length > 0 ? (
         <div className="record-detail__section">
-          <p className="subsection-label">Invalidation conditions</p>
+          <p className="subsection-label">{t("asset.invalidation")}</p>
           <ul className="plain-list">
             {prediction.invalidation.map((condition) => <li key={condition}>{condition}</li>)}
           </ul>
         </div>
       ) : null}
 
-      <div className="record-detail__section follow-section" aria-label="PaperTrade follow status">
-        <p className="subsection-label">PaperTrade follow</p>
+      <div className="record-detail__section follow-section" aria-label={t("predictions.paperFollowStatus")}>
+        <p className="subsection-label">{t("predictions.paperFollow")}</p>
         {prediction.paper_trade ? (
           <p className="panel-reading">
-            Already followed as a local PaperTrade · status {prediction.paper_trade.status} · followed at {timestampText(prediction.paper_trade.followed_at)}.
+            {t("predictions.alreadyFollowed")} · {t("common.status")} {prediction.paper_trade.status} · {t("common.followedAt")} {timestampText(prediction.paper_trade.followed_at)}.
           </p>
         ) : (
           <>
@@ -223,27 +230,27 @@ function PredictionDetail({ prediction, followState, followMessage, onFollow }: 
               disabled={!decision.enabled || followState === "pending" || followState === "complete"}
               onClick={onFollow}
             >
-              {followState === "pending" ? "Saving PaperTrade…" : "Follow as PaperTrade"}
+              {followState === "pending" ? t("predictions.savingPaperTrade") : t("predictions.follow")}
             </button>
           </>
         )}
       </div>
 
       <div className="record-detail__section">
-        <p className="subsection-label">Outcome</p>
+        <p className="subsection-label">{t("common.outcome")}</p>
         {outcome ? (
           <ResearchFacts
             compact
             facts={[
-              { label: "Status", value: outcome.status },
-              { label: "Settled at", value: timestampText(outcome.settled_at) },
-              { label: "Realized R", value: numberText(typeof outcome.realized_r === "number" ? outcome.realized_r : undefined) },
-              { label: "MFE R", value: numberText(typeof outcome.mfe_r === "number" ? outcome.mfe_r : undefined) },
-              { label: "MAE R", value: numberText(typeof outcome.mae_r === "number" ? outcome.mae_r : undefined) },
+              { label: t("common.status"), value: outcome.status },
+              { label: t("common.settledAt"), value: timestampText(outcome.settled_at) },
+              { label: t("common.realizedR"), value: numberText(typeof outcome.realized_r === "number" ? outcome.realized_r : undefined) },
+              { label: t("common.mfeR"), value: numberText(typeof outcome.mfe_r === "number" ? outcome.mfe_r : undefined) },
+              { label: t("common.maeR"), value: numberText(typeof outcome.mae_r === "number" ? outcome.mae_r : undefined) },
             ]}
           />
         ) : (
-          <p className="panel-reading">No linked Outcome record was returned.</p>
+          <p className="panel-reading">{t("predictions.noOutcome")}</p>
         )}
       </div>
     </div>
@@ -251,6 +258,8 @@ function PredictionDetail({ prediction, followState, followMessage, onFollow }: 
 }
 
 export function PredictionsPage({ apiClient, onProvenanceChange }: PredictionsPageProps) {
+  const { t, text } = useI18n();
+  const { exactNumberText, numberText, timestampText } = useResearchFormatters();
   const [draft, setDraft] = useState<FilterDraft>(initialDraft);
   const [limit, setLimit] = useState(25);
   const [filters, setFilters] = useState<PredictionFilters>(initialFilters);
@@ -271,19 +280,19 @@ export function PredictionsPage({ apiClient, onProvenanceChange }: PredictionsPa
 
   useEffect(() => {
     if (!selectedId) {
-      onProvenanceChange(EMPTY_DASHBOARD_PROVENANCE);
+      onProvenanceChange(emptyDashboardProvenance(t));
       return;
     }
     if (detail.data) {
-      const provenance = predictionProvenance(detail.data);
+      const provenance = predictionProvenance(detail.data, t);
       onProvenanceChange({
         ...provenance,
-        footer: `Prediction ${detail.data.prediction_id} selected; timestamps are returned by the API.`,
+        footer: `${t("common.predictionPrefix")} ${detail.data.prediction_id} · ${t("predictions.provenanceFooter")}`,
       });
     } else {
-      onProvenanceChange(EMPTY_DASHBOARD_PROVENANCE);
+      onProvenanceChange(emptyDashboardProvenance(t));
     }
-  }, [detail.data, onProvenanceChange, selectedId]);
+  }, [detail.data, onProvenanceChange, selectedId, t]);
 
   useEffect(() => {
     followRequestVersion.current += 1;
@@ -340,7 +349,7 @@ export function PredictionsPage({ apiClient, onProvenanceChange }: PredictionsPa
       return;
     }
     const prediction = detail.data;
-    if (!prediction || followState === "pending" || !followDecision(prediction).enabled) {
+    if (!prediction || followState === "pending" || !followDecision(prediction, t).enabled) {
       return;
     }
     followInFlight.current = true;
@@ -360,12 +369,12 @@ export function PredictionsPage({ apiClient, onProvenanceChange }: PredictionsPa
       const result = await apiClient.followPrediction(prediction.prediction_id, {}, controller.signal);
       if (!isCurrentRequest()) return;
       setFollowState("complete");
-      setFollowMessage(`PaperTrade record saved with status ${result.status}; no order was sent.`);
+      setFollowMessage(`${t("common.paperTradeSavedPrefix")} ${result.status}; ${t("predictions.noOrderSent")}`);
       detail.retry();
       predictions.retry();
     } catch (error: unknown) {
       if (!isCurrentRequest()) return;
-      const message = error instanceof ApiError ? `${error.code}: ${error.message}` : "PaperTrade follow failed.";
+      const message = error instanceof ApiError ? `${error.code}: ${error.message}` : t("predictions.followFailed");
       setFollowState("failed");
       setFollowMessage(message);
     } finally {
@@ -379,74 +388,74 @@ export function PredictionsPage({ apiClient, onProvenanceChange }: PredictionsPa
   return (
     <section className="workflow-page predictions-page" aria-labelledby="predictions-title">
       <header className="page-intro">
-        <p className="eyebrow">Prediction ledger / returned records</p>
-        <h1 id="predictions-title">Predictions</h1>
+        <p className="eyebrow">{t("predictions.eyebrow")}</p>
+        <h1 id="predictions-title">{t("nav.predictions")}</h1>
         <p className="page-intro__description">
-          Browse stored prediction evidence and validity windows. WAIT records remain visible for coverage; only eligible LONG or SHORT records can be followed as local PaperTrades.
+          {t("predictions.description")}
         </p>
-        <p className="page-boundary">No raw model response or context payload is rendered. Follow never sends an order.</p>
+        <p className="page-boundary">{t("predictions.boundary")}</p>
       </header>
 
-      <form className="workflow-filters" aria-label="Prediction filters" onSubmit={applyFilters}>
+      <form className="workflow-filters" aria-label={t("predictions.filters")} onSubmit={applyFilters}>
         <div className="workflow-filters__grid">
-          <label>Symbol<input value={draft.symbol} onChange={(event) => setDraftValue("symbol", event.target.value)} placeholder="All symbols" /></label>
-          <label>Timeframe<select value={draft.timeframe} onChange={(event) => setDraftValue("timeframe", event.target.value)}><option value="">All timeframes</option>{timeframeOptions.map((value) => <option key={value}>{value}</option>)}</select></label>
-          <label>Action<select value={draft.action} onChange={(event) => setDraftValue("action", event.target.value)}><option value="">All actions</option>{actionOptions.map((value) => <option key={value}>{value}</option>)}</select></label>
-          <label>Source type<select value={draft.source_type} onChange={(event) => setDraftValue("source_type", event.target.value)}><option value="">All sources</option><option value="live">live</option><option value="replay">replay</option></select></label>
-          <label>Outcome status<select value={draft.outcome_status} onChange={(event) => setDraftValue("outcome_status", event.target.value)}><option value="">Any outcome</option>{outcomeOptions.map((value) => <option key={value}>{value}</option>)}</select></label>
-          <label>Outcome presence<select value={draft.outcome_presence} onChange={(event) => setDraftValue("outcome_presence", event.target.value)}><option value="">Any presence</option><option value="true">Has outcome</option><option value="false">No outcome</option></select></label>
-          <label>Rows<select value={limit} onChange={(event) => setLimit(Number(event.target.value))}>{pageLimits.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+          <label>{t("common.symbol")}<input value={draft.symbol} onChange={(event) => setDraftValue("symbol", event.target.value)} placeholder={t("predictions.allSymbols")} /></label>
+          <label>{t("common.timeframe")}<select value={draft.timeframe} onChange={(event) => setDraftValue("timeframe", event.target.value)}><option value="">{t("common.allTimeframes")}</option>{timeframeOptions.map((value) => <option key={value}>{value}</option>)}</select></label>
+          <label>{t("common.action")}<select value={draft.action} onChange={(event) => setDraftValue("action", event.target.value)}><option value="">{t("common.allActions")}</option>{actionOptions.map((value) => <option key={value} value={value}>{actionLabel(value, t)}</option>)}</select></label>
+          <label>{t("common.sourceType")}<select value={draft.source_type} onChange={(event) => setDraftValue("source_type", event.target.value)}><option value="">{t("common.allSources")}</option><option value="live">{t("common.sourceLive")}</option><option value="replay">{t("common.sourceReplay")}</option></select></label>
+          <label>{t("common.outcomeStatus")}<select value={draft.outcome_status} onChange={(event) => setDraftValue("outcome_status", event.target.value)}><option value="">{t("common.anyOutcome")}</option>{outcomeOptions.map((value) => <option key={value} value={value}>{text(value)}</option>)}</select></label>
+          <label>{t("common.outcomePresence")}<select value={draft.outcome_presence} onChange={(event) => setDraftValue("outcome_presence", event.target.value)}><option value="">{t("common.anyPresence")}</option><option value="true">{t("common.hasOutcome")}</option><option value="false">{t("common.noOutcome")}</option></select></label>
+          <label>{t("common.rows")}<select value={limit} onChange={(event) => setLimit(Number(event.target.value))}>{pageLimits.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
         </div>
-        <button className="primary-button" type="submit">Apply filters</button>
+        <button className="primary-button" type="submit">{t("common.applyFilters")}</button>
       </form>
 
       <div className="workflow-grid workflow-grid--records">
         <AsyncPanel
           className="workflow-panel workflow-panel--list"
-          title="Prediction records"
+          title={t("predictions.records")}
           source={requestLabel}
-          freshness="server response; generated_at shown per record"
+          freshness={t("common.serverGenerated")}
           state={resourceState(predictions, list.length === 0)}
           error={predictions.error}
           onRetry={predictions.retry}
-          emptyMessage="No Prediction records matched these filters."
+          emptyMessage={t("predictions.noMatch")}
         >
           {list.length > 0 ? (
             <div className="prediction-ledger-wrap">
-              <table className="prediction-ledger" aria-label="Prediction records">
-                <thead><tr><th scope="col">Record</th><th scope="col">Action</th><th scope="col">Confidence</th><th scope="col">Source / generated</th><th scope="col">Validity</th></tr></thead>
+              <table className="prediction-ledger" aria-label={t("predictions.records")}>
+                <thead><tr><th scope="col">{t("common.record")}</th><th scope="col">{t("common.action")}</th><th scope="col">{t("common.confidence")}</th><th scope="col">{t("common.sourceGenerated")}</th><th scope="col">{t("common.validity")}</th></tr></thead>
                 <tbody>
                   {list.map((prediction) => (
                     <tr key={prediction.prediction_id}>
                       <td>
                         <button className="record-link" type="button" onClick={() => setSelectedId(prediction.prediction_id)}>{prediction.prediction_id}</button>
-                        <span className="data-meta">{predictionSymbol(prediction)}</span>
+                        <span className="data-meta">{predictionSymbol(prediction, t("common.symbolNotSupplied"))}</span>
                       </td>
-                      <td><span className={`signal-text signal-text--${(prediction.action ?? "unknown").toLowerCase()}`}>{actionLabel(prediction.action)}</span><span className="data-meta">{prediction.timeframe ?? prediction.analysis_timeframe ?? "Timeframe not supplied"}</span></td>
-                      <td><span className="data-strong">{exactNumberText(prediction.raw_confidence)}</span><span className="data-meta">Calibrated: {numberText(prediction.calibrated_confidence, 6)}</span></td>
-                      <td><span className="data-strong">{prediction.source_type ?? "Source not supplied"}</span><span className="data-meta">{timestampText(prediction.generated_at)}</span></td>
-                      <td>{predictionStatus(prediction)}</td>
+                      <td><span className={`signal-text signal-text--${(prediction.action ?? "unknown").toLowerCase()}`}>{actionLabel(prediction.action, t)}</span><span className="data-meta">{prediction.timeframe ?? prediction.analysis_timeframe ?? t("common.timeframeNotSupplied")}</span></td>
+                      <td><span className="data-strong">{exactNumberText(prediction.raw_confidence)}</span><span className="data-meta">{t("common.calibrated")}: {numberText(prediction.calibrated_confidence, 6)}</span></td>
+                      <td><span className="data-strong">{sourceTypeLabel(prediction.source_type, t)}</span><span className="data-meta">{timestampText(prediction.generated_at)}</span></td>
+                      <td>{predictionStatus(prediction, t)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           ) : null}
-          <div className="pagination-controls" aria-label="Prediction pagination">
-            <span>Offset {filters.offset ?? 0} · maximum {filters.limit ?? limit} rows</span>
-            <div><button className="quiet-button" type="button" disabled={(filters.offset ?? 0) === 0} onClick={() => movePage(-1)}>Previous</button><button className="quiet-button" type="button" disabled={list.length < (filters.limit ?? limit)} onClick={() => movePage(1)}>Next</button></div>
+          <div className="pagination-controls" aria-label={t("predictions.pagination")}>
+            <span>{t("common.offset")} {filters.offset ?? 0} · {t("common.maximum")} {filters.limit ?? limit} {t("common.rowsValue")}</span>
+            <div><button className="quiet-button" type="button" disabled={(filters.offset ?? 0) === 0} onClick={() => movePage(-1)}>{t("common.previous")}</button><button className="quiet-button" type="button" disabled={list.length < (filters.limit ?? limit)} onClick={() => movePage(1)}>{t("common.next")}</button></div>
           </div>
         </AsyncPanel>
 
         <AsyncPanel
           className="workflow-panel workflow-panel--detail"
-          title="Prediction detail"
+          title={t("predictions.detail")}
           source={selectedId ? `GET /predictions/${selectedId}` : "GET /predictions/{id}"}
-          freshness="returned timestamps are shown in UTC"
+          freshness={t("common.returnedTimestampsUtc")}
           state={detailState}
           error={detail.error}
           onRetry={detail.retry}
-          emptyMessage="Select a Prediction record to inspect its allowlisted evidence."
+          emptyMessage={t("predictions.selectDetail")}
         >
           {detail.data ? <PredictionDetail prediction={detail.data} followState={followState} followMessage={followMessage} onFollow={() => void handleFollow()} /> : null}
         </AsyncPanel>

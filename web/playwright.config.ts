@@ -18,7 +18,7 @@ process.env.P4_E2E_RUN_DIR = runDirectory;
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: "**/phase4.spec.ts",
+  testMatch: process.env.P4_E2E_CAPTURE === "1" ? "**/capture-v11.spec.ts" : "**/phase4.spec.ts",
   globalTeardown: "./e2e/global-teardown.ts",
   fullyParallel: false,
   workers: 1,

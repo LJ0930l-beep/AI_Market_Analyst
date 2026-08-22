@@ -15,6 +15,7 @@ from uuid import uuid4
 from ..analysis_service import AnalysisService
 from ..ai import OllamaProvider
 from ..instruments import instrument_for
+from ..model_routing import DEFAULT_FAST_MODEL
 from ..outcomes import settle_prediction
 from ..performance.calibration import apply_calibration, fit_calibration
 from ..performance.metrics import aggregate_performance, build_performance_snapshot, is_actionable
@@ -28,7 +29,7 @@ class ReplayConfig:
     symbols: tuple[str, ...]
     timeframes: tuple[str, ...]
     samples: int = 300
-    model_id: str = "qwen3.5:4b"
+    model_id: str = DEFAULT_FAST_MODEL
     prompt_version: str = "phase2-json-v8"
     seed: int = 42
     db_path: str = "data/phase3-replay.sqlite3"

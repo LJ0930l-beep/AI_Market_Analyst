@@ -1,4 +1,5 @@
 import type { MarketBar } from "../api/types";
+import { useI18n } from "../i18n";
 
 interface OhlcvChartProps {
   symbol: string;
@@ -22,16 +23,13 @@ function isUsableBar(value: MarketBar): boolean {
   );
 }
 
-function formatNumber(value: number): string {
-  return value.toLocaleString(undefined, { maximumFractionDigits: 4 });
-}
-
 export function OhlcvChart({ symbol, timeframe, bars }: OhlcvChartProps) {
+  const { formatNumber, t } = useI18n();
   const usableBars = bars.filter(isUsableBar);
   if (usableBars.length === 0) {
     return (
       <div className="chart-empty" role="status">
-        No OHLCV bars were supplied for this symbol and timeframe.
+        {t("asset.chartEmpty")}
       </div>
     );
   }
@@ -57,7 +55,8 @@ export function OhlcvChart({ symbol, timeframe, bars }: OhlcvChartProps) {
   const yForPrice = (value: number) => top + ((high - value) / priceRange) * (priceBottom - top);
   const yForVolume = (value: number) => volumeBottom - (value / maxVolume) * (volumeBottom - volumeTop);
   const latest = usableBars[usableBars.length - 1];
-  const summary = `${symbol} ${timeframe} candlestick and volume chart with ${usableBars.length} returned bars, ordered from ${usableBars[0].timestamp} to ${latest.timestamp}. Latest close ${formatNumber(latest.close)}; supplied range ${formatNumber(low)} to ${formatNumber(high)}.`;
+  const number = (value: number) => formatNumber(value, { maximumFractionDigits: 4 });
+  const summary = `${symbol} ${timeframe} ${t("asset.chartSummaryType")} ${usableBars.length} ${t("asset.chartReturnedBars")}, ${t("asset.chartOrderedFrom")} ${usableBars[0].timestamp} ${t("asset.chartTo")} ${latest.timestamp}. ${t("asset.chartLatestClose")} ${number(latest.close)}; ${t("asset.chartSuppliedRange")} ${number(low)} ${t("asset.chartTo")} ${number(high)}.`;
 
   return (
     <div className="ohlcv-chart">
@@ -65,7 +64,7 @@ export function OhlcvChart({ symbol, timeframe, bars }: OhlcvChartProps) {
         {summary}
       </p>
       <div
-        aria-label={`${symbol} ${timeframe} OHLCV chart scroll region`}
+        aria-label={`${symbol} ${timeframe} ${t("asset.chartScrollRegion")}`}
         className="ohlcv-chart__viewport"
         tabIndex={0}
       >
@@ -75,17 +74,17 @@ export function OhlcvChart({ symbol, timeframe, bars }: OhlcvChartProps) {
           aria-labelledby="ohlcv-chart-title ohlcv-chart-summary"
           viewBox={`0 0 ${width} ${height}`}
         >
-          <title id="ohlcv-chart-title">{symbol} {timeframe} OHLCV chart</title>
+          <title id="ohlcv-chart-title">{symbol} {timeframe} {t("asset.chartTitle")}</title>
           <line className="chart-grid-line" x1={left} x2={width - right} y1={priceBottom} y2={priceBottom} />
           <line className="chart-grid-line" x1={left} x2={width - right} y1={volumeTop} y2={volumeTop} />
           <text className="chart-axis-label" x={left - 8} y={top + 5} textAnchor="end">
-            {formatNumber(high)}
+            {number(high)}
           </text>
           <text className="chart-axis-label" x={left - 8} y={priceBottom} textAnchor="end">
-            {formatNumber(low)}
+            {number(low)}
           </text>
           <text className="chart-axis-label" x={left - 8} y={volumeTop + 5} textAnchor="end">
-            Vol
+            {t("asset.volume")}
           </text>
           {usableBars.map((bar, index) => {
             const x = xFor(index);

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### V1.1 premium bilingual market-intelligence terminal — developer-complete, supervisor Gate pending
+
+- Upgraded the package/API to `1.1.0` and SQLite schema 11; added saved-evidence Market Pulse, Calendar/News, Watchlist monitoring, Heatmap, Signal research handoff and explicit audited Daily Brief without changing financial ledgers or read-side effects.
+- Added deterministic `qwen_route_v1` Fast (`qwen3.5:4b`) / Smart (`qwen3.5:9b`) routing, durable language/output/notification/model preferences and `qwen_consult_v2` route metadata while retaining serial local-only streaming and no fabricated fallback.
+- Reworked the frontend into an accessible responsive deep-navy terminal with eleven primary navigation entries, complete English/Chinese typed catalogs, locale formatting, nine reproducible screenshots and a Windows double-click start/stop/status/model-preparation experience that delegates to the accepted owned-process launcher.
+- Closed the supervisor internationalization Gate defect by moving fixed copy across all 14 route trees and nested Health/provider/count/scheduler/research/OHLCV components to explicit typed keys, with selected-locale formatting and bilingual real-browser leakage auditing.
+- Added backend/frontend/browser coverage for read-only intelligence, explicit brief generation, routing/settings/i18n, full route accessibility/390px overflow, accepted Phase 0-7 regressions and no Prediction/Outcome/Calibration/PaperTrade mutation. Supervisor acceptance is not claimed.
+- Developer Gate: 131 pytest passed, 1 skipped, 1 warning and 20 subtests; 132 unittest tests with 1 skipped; frontend 15 files / 72 tests; lint/typecheck/build/compileall/pip check PASS; both npm audits 0 vulnerabilities; standalone Chrome E2E 13/13 in 53.3s plus nine screenshot artifacts. Official `qwen3.5:4b` and `qwen3.5:9b` were installed and each passed a short real routed, read-only streaming smoke; that accepted model evidence was reused because the AI path was unchanged.
+
 ### Post-V1.0 Qwen Consult — developer-complete, supervisor Gate pending
 
 - Added the versioned `qwen_consult_v1` local NDJSON streaming contract with a fixed server-side Ollama/Qwen model, serial concurrency, bounded input/output/timeouts, sanitized errors, read-only saved-symbol evidence and no fabricated fallback.

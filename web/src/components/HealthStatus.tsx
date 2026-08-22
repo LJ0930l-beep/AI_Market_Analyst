@@ -1,4 +1,5 @@
 import type { HealthResponse } from "../api/types";
+import { useI18n, type TranslationKey } from "../i18n";
 
 export type BackendHealthState = "loading" | "connected" | "unavailable";
 
@@ -7,36 +8,37 @@ interface HealthStatusProps {
   health?: HealthResponse;
 }
 
-const stateCopy: Record<BackendHealthState, { label: string; description: string }> = {
+const stateCopy: Record<BackendHealthState, { label: TranslationKey; description: TranslationKey }> = {
   loading: {
-    label: "Checking backend",
-    description: "Requesting API health; model and provider status is separate.",
+    label: "common.checkingBackend",
+    description: "common.apiHealthRequest",
   },
   connected: {
-    label: "Backend connected",
-    description: "API health is available; model and provider status is separate.",
+    label: "common.backendConnected",
+    description: "common.apiHealthAvailable",
   },
   unavailable: {
-    label: "Backend unavailable",
-    description: "The API health request did not complete; model and provider status is unknown.",
+    label: "common.backendUnavailable",
+    description: "common.apiHealthUnknown",
   },
 };
 
 export function HealthStatus({ state, health }: HealthStatusProps) {
+  const { t } = useI18n();
   const copy = stateCopy[state];
   return (
     <section className={`health-status health-status--${state}`} aria-labelledby="backend-status-title">
       <div className="health-status__heading">
         <span className="health-status__dot" aria-hidden="true" />
-        <h2 id="backend-status-title">Backend status</h2>
+        <h2 id="backend-status-title">{t("common.backendStatus")}</h2>
       </div>
       <p className="health-status__label" role="status" aria-live="polite">
-        {copy.label}
+        {t(copy.label)}
       </p>
-      <p className="health-status__description">{copy.description}</p>
+      <p className="health-status__description">{t(copy.description)}</p>
       {state === "connected" && health ? (
         <p className="health-status__meta">
-          API v{health.api_version} · phase {health.phase}
+          API v{health.api_version} · {t("common.phase")} {health.phase}
         </p>
       ) : null}
     </section>

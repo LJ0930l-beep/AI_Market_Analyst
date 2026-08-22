@@ -34,14 +34,14 @@ class Phase5WatchlistTests(unittest.TestCase):
 
             store = SQLiteStore(path)
             store.initialize()
-            self.assertEqual(store.schema_version(), 10)
+            self.assertEqual(store.schema_version(), 11)
             self.assertEqual(store.counts()["predictions"], 1)
             self.assertEqual(store.list_watchlist_entries(), [])
             self.assertEqual(store.list_app_settings()[0]["source"], "default")
 
             reopened = SQLiteStore(path)
             reopened.initialize()
-            self.assertEqual(reopened.schema_version(), 10)
+            self.assertEqual(reopened.schema_version(), 11)
             self.assertEqual(reopened.counts()["predictions"], 1)
             self.assertEqual(reopened.counts()["watchlist_entries"], 0)
             self.assertEqual(reopened.counts()["app_settings"], 0)

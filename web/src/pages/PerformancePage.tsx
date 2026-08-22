@@ -12,10 +12,11 @@ import type {
   Timeframe,
 } from "../api/types";
 import { AsyncPanel, type PanelState } from "../components/AsyncPanel";
-import { ResearchFacts, exactNumberText, numberText, primitiveText, timestampText } from "../components/ResearchFacts";
+import { useI18n, type TranslationKey } from "../i18n";
+import { ResearchFacts, useResearchFormatters } from "../components/ResearchFacts";
 import type { AsyncResource } from "../hooks/useAsyncResource";
 import { useAsyncResource } from "../hooks/useAsyncResource";
-import { EMPTY_DASHBOARD_PROVENANCE, type DashboardProvenance } from "./DashboardPage";
+import { emptyDashboardProvenance, type DashboardProvenance } from "./DashboardPage";
 
 interface PerformancePageProps {
   apiClient: ApplicationShellApiClient;
@@ -59,101 +60,106 @@ function buildFilters(draft: FilterDraft): PerformanceFilters {
   };
 }
 
-function metricValue(metrics: PerformanceMetrics, key: keyof PerformanceMetrics): string {
+function metricValue(metrics: PerformanceMetrics, key: keyof PerformanceMetrics, primitiveText: (value: unknown) => string): string {
   const value = metrics[key];
   if (typeof value === "number") return String(value);
-  if (value === null) return "Not supplied";
+  if (value === null) return primitiveText(value);
   return primitiveText(value);
 }
 
-const metricDefinitions: Array<[keyof PerformanceMetrics, string]> = [
-  ["sample_count", "Samples"],
-  ["actionable_count", "Actionable"],
-  ["resolved_actionable", "Resolved actionable"],
-  ["pending_actionable", "Pending actionable"],
-  ["wait_count", "WAIT"],
-  ["invalid_count", "Invalid"],
-  ["wins", "Wins"],
-  ["losses", "Losses"],
-  ["flats", "Flats"],
-  ["win_rate", "Win rate"],
-  ["avg_r", "Average R"],
-  ["expectancy_r", "Expectancy R"],
-  ["profit_factor", "Profit factor"],
-  ["max_drawdown_r", "Max drawdown R"],
-  ["mfe_r_avg", "MFE R average"],
-  ["mfe_r_median", "MFE R median"],
-  ["mfe_r_p90", "MFE R p90"],
-  ["mae_r_avg", "MAE R average"],
-  ["mae_r_median", "MAE R median"],
-  ["mae_r_p90", "MAE R p90"],
-  ["timeout_count", "Timeouts"],
-  ["timeout_rate", "Timeout rate"],
-  ["coverage", "Coverage"],
-  ["action_rate", "Action rate"],
-  ["wait_rate", "WAIT rate"],
-  ["brier_raw", "Brier · raw"],
-  ["brier_calibrated", "Brier · calibrated"],
-  ["ece_raw", "ECE · raw"],
-  ["ece_calibrated", "ECE · calibrated"],
+const metricDefinitions: Array<[keyof PerformanceMetrics, TranslationKey]> = [
+  ["sample_count", "common.samples"],
+  ["actionable_count", "common.actionable"],
+  ["resolved_actionable", "replay.resolvedActionable"],
+  ["pending_actionable", "common.pendingActionable"],
+  ["wait_count", "common.actionWait"],
+  ["invalid_count", "common.invalid"],
+  ["wins", "common.wins"],
+  ["losses", "common.losses"],
+  ["flats", "common.flats"],
+  ["win_rate", "common.winRate"],
+  ["avg_r", "common.averageR"],
+  ["expectancy_r", "common.expectancyR"],
+  ["profit_factor", "common.profitFactor"],
+  ["max_drawdown_r", "common.maxDrawdownR"],
+  ["mfe_r_avg", "common.mfeR"],
+  ["mfe_r_median", "common.mfeR"],
+  ["mfe_r_p90", "common.mfeR"],
+  ["mae_r_avg", "common.maeR"],
+  ["mae_r_median", "common.maeR"],
+  ["mae_r_p90", "common.maeR"],
+  ["timeout_count", "common.timeouts"],
+  ["timeout_rate", "common.timeoutRate"],
+  ["coverage", "common.coverage"],
+  ["action_rate", "common.rate"],
+  ["wait_rate", "common.rate"],
+  ["brier_raw", "common.brier"],
+  ["brier_calibrated", "common.brier"],
+  ["ece_raw", "common.ece"],
+  ["ece_calibrated", "common.ece"],
 ];
 
-function summaryFacts(summary: PerformanceSummary, metrics: PerformanceMetrics) {
-  const facts = metricDefinitions.flatMap(([key, label]) => {
+function summaryFacts(summary: PerformanceSummary, metrics: PerformanceMetrics, t: ReturnType<typeof useI18n>["t"], formatters: ReturnType<typeof useResearchFormatters>) {
+  const facts = metricDefinitions.flatMap(([key, labelKey]) => {
     if (!(key in metrics)) return [];
     const value = metrics[key];
     if (typeof value === "number") {
       const keyName = String(key);
-      return [{ label, value: keyName.includes("rate") || keyName.includes("coverage") || keyName.includes("brier") || keyName.includes("ece") || keyName === "win_rate" ? numberText(value, 6) : metricValue(metrics, key) }];
+      const suffix = keyName.includes("median") ? ` · ${t("common.median")}` : keyName.includes("avg") ? ` · ${t("common.average")}` : keyName.includes("p90") ? " · p90" : keyName.endsWith("_raw") ? ` · ${t("common.rawLabel")}` : keyName.endsWith("_calibrated") ? ` · ${t("common.calibrated")}` : "";
+      return [{ label: `${t(labelKey)}${suffix}`, value: keyName.includes("rate") || keyName.includes("coverage") || keyName.includes("brier") || keyName.includes("ece") || keyName === "win_rate" ? formatters.numberText(value, 6) : metricValue(metrics, key, formatters.primitiveText) }];
     }
-    return [{ label, value: value === null ? "Not supplied" : primitiveText(value) }];
+    return [{ label: t(labelKey), value: formatters.primitiveText(value) }];
   });
   const topLevel = [
-    { label: "Window start", value: timestampText(summary.window_start) },
-    { label: "Window end", value: timestampText(summary.window_end) },
+    { label: t("performance.windowStart"), value: formatters.timestampText(summary.window_start) },
+    { label: t("performance.windowEnd"), value: formatters.timestampText(summary.window_end) },
   ];
   return [...topLevel, ...facts];
 }
 
 function SummaryPanel({ summary }: { summary: PerformanceSummary }) {
+  const { t } = useI18n();
+  const formatters = useResearchFormatters();
   const metrics = summary.metrics;
   if (!metrics) {
-    return <p className="panel-reading">The response did not supply metrics. No performance success state is inferred.</p>;
+    return <p className="panel-reading">{t("performance.noMetrics")}</p>;
   }
   const resolved = metrics.resolved_actionable;
   const hasResolved = typeof resolved === "number" && Number.isFinite(resolved);
   const evidenceText = resolved === 0
-    ? "No resolved actionable sample is available. Returned primitive metrics remain metadata, not a success claim."
+    ? t("performance.noResolvedEvidence")
     : !hasResolved
-      ? "Resolved sample size was not supplied; no performance success claim is made."
-      : "Resolved actionable evidence is available for the returned scope.";
+      ? t("performance.resolvedMissingEvidence")
+      : t("performance.resolvedEvidence");
   return (
     <div className="performance-summary-body">
-      <p className="preliminary-banner" role="status"><strong>{summary.status ?? metrics.status ?? "Status not supplied"}</strong> · {evidenceText}</p>
+      <p className="preliminary-banner" role="status"><strong>{summary.status ?? metrics.status ?? t("performance.statusMissing")}</strong> · {evidenceText}</p>
       <ResearchFacts facts={[
-        { label: "Scope source", value: summary.source_type ?? primitiveText(summary.scope?.source_type) },
-        { label: "Scope symbol", value: primitiveText(summary.scope?.symbol) },
-        { label: "Scope timeframe", value: primitiveText(summary.scope?.timeframe) },
-        { label: "Scope model", value: summary.model_id ?? primitiveText(summary.scope?.model_id) },
-        { label: "Scope prompt", value: summary.prompt_version ?? primitiveText(summary.scope?.prompt_version) },
-        { label: "Scope replay run", value: primitiveText(summary.scope?.replay_run_id) },
-        { label: "Total samples", value: summary.sample_count === undefined ? "Not supplied" : String(summary.sample_count) },
-        { label: "Actionable samples", value: summary.actionable_count === undefined ? "Not supplied" : String(summary.actionable_count) },
-        { label: "Resolved actionable", value: resolved === undefined ? "Not supplied" : String(resolved) },
+        { label: t("performance.scopeSource"), value: summary.source_type ?? formatters.primitiveText(summary.scope?.source_type) },
+        { label: t("performance.scopeSymbol"), value: formatters.primitiveText(summary.scope?.symbol) },
+        { label: t("performance.scopeTimeframe"), value: formatters.primitiveText(summary.scope?.timeframe) },
+        { label: t("performance.scopeModel"), value: summary.model_id ?? formatters.primitiveText(summary.scope?.model_id) },
+        { label: t("performance.scopePrompt"), value: summary.prompt_version ?? formatters.primitiveText(summary.scope?.prompt_version) },
+        { label: t("performance.scopeReplayRun"), value: formatters.primitiveText(summary.scope?.replay_run_id) },
+        { label: t("performance.totalSamples"), value: formatters.primitiveText(summary.sample_count) },
+        { label: t("performance.actionableSamples"), value: formatters.primitiveText(summary.actionable_count) },
+        { label: t("replay.resolvedActionable"), value: formatters.primitiveText(resolved) },
       ]} />
-      <div className="record-detail__section"><p className="subsection-label">Returned performance fields</p><ResearchFacts compact facts={summaryFacts(summary, metrics)} /></div>
+      <div className="record-detail__section"><p className="subsection-label">{t("performance.returnedFields")}</p><ResearchFacts compact facts={summaryFacts(summary, metrics, t, formatters)} /></div>
     </div>
   );
 }
 
 function BucketTable({ buckets }: { buckets: PerformanceBucket[] }) {
+  const { t } = useI18n();
+  const { exactNumberText, numberText, primitiveText } = useResearchFormatters();
   return (
-    <div aria-label="Scrollable performance confidence buckets" className="table-wrap" tabIndex={0}>
-      <table className="performance-table" aria-label="Performance confidence buckets">
-        <thead><tr><th scope="col">Bucket</th><th scope="col">Count</th><th scope="col">Raw average confidence</th><th scope="col">Calibrated confidence</th><th scope="col">Empirical win rate</th></tr></thead>
+    <div aria-label={t("performance.scrollBuckets")} className="table-wrap" tabIndex={0}>
+      <table className="performance-table" aria-label={t("performance.buckets")}>
+        <thead><tr><th scope="col">{t("performance.bucket")}</th><th scope="col">{t("common.count")}</th><th scope="col">{t("performance.rawAverageConfidence")}</th><th scope="col">{t("performance.calibratedConfidence")}</th><th scope="col">{t("performance.empiricalWinRate")}</th></tr></thead>
         <tbody>{buckets.map((bucket, index) => <tr key={`${bucket.bucket ?? "bucket"}-${index}`}>
-          <td>{bucket.bucket ?? "Not supplied"}</td>
-          <td>{bucket.count === undefined ? "Not supplied" : String(bucket.count)}</td>
+          <td>{primitiveText(bucket.bucket)}</td>
+          <td>{primitiveText(bucket.count)}</td>
           <td>{exactNumberText(bucket.raw_avg_confidence)}</td>
           <td>{exactNumberText(bucket.calibrated_confidence)}</td>
           <td>{numberText(bucket.empirical_win_rate, 6)}</td>
@@ -164,51 +170,55 @@ function BucketTable({ buckets }: { buckets: PerformanceBucket[] }) {
 }
 
 function BucketsPanel({ data }: { data: PerformanceBuckets }) {
+  const { t } = useI18n();
   const buckets = data.confidence_buckets ?? [];
   return (
     <>
-      <p className="panel-reading">Raw and calibrated confidence columns are returned bucket values; this endpoint scope does not include the selected symbol or timeframe.</p>
-      {buckets.length > 0 ? <BucketTable buckets={buckets} /> : <p className="panel-reading">No confidence buckets were returned for this scope.</p>}
+      <p className="panel-reading">{t("performance.bucketNote")}</p>
+      {buckets.length > 0 ? <BucketTable buckets={buckets} /> : <p className="panel-reading">{t("performance.noBuckets")}</p>}
     </>
   );
 }
 
-function calibrationFacts(calibration: CalibrationCurrent) {
+function calibrationFacts(calibration: CalibrationCurrent, t: ReturnType<typeof useI18n>["t"], formatters: ReturnType<typeof useResearchFormatters>) {
   return [
-    { label: "Status", value: calibration.status ?? "Not supplied" },
-    { label: "Calibration id", value: calibration.calibration_id ?? "Not supplied" },
-    { label: "Scope source", value: primitiveText(calibration.scope?.source_type) },
-    { label: "Scope symbol", value: primitiveText(calibration.scope?.symbol) },
-    { label: "Scope timeframe", value: primitiveText(calibration.scope?.timeframe) },
-    { label: "Scope model", value: primitiveText(calibration.scope?.model_id) },
-    { label: "Scope prompt", value: primitiveText(calibration.scope?.prompt_version) },
-    { label: "Scope replay run", value: primitiveText(calibration.scope?.replay_run_id) },
-    { label: "Method", value: calibration.method ?? "Not supplied" },
-    { label: "Version", value: calibration.version ?? "Not supplied" },
-    { label: "Sample", value: calibration.sample_count === undefined ? "Not supplied" : String(calibration.sample_count) },
-    { label: "Trained until", value: timestampText(calibration.trained_until) },
-    { label: "Fallback", value: calibration.fallback ?? "Not supplied" },
-    { label: "Brier · raw", value: numberText(calibration.brier_raw, 6) },
-    { label: "Brier · calibrated", value: numberText(calibration.brier_calibrated, 6) },
-    { label: "ECE · raw", value: numberText(calibration.ece_raw, 6) },
-    { label: "ECE · calibrated", value: numberText(calibration.ece_calibrated, 6) },
+    { label: t("common.status"), value: formatters.primitiveText(calibration.status) },
+    { label: t("performance.calibrationId"), value: formatters.primitiveText(calibration.calibration_id) },
+    { label: t("performance.scopeSource"), value: formatters.primitiveText(calibration.scope?.source_type) },
+    { label: t("performance.scopeSymbol"), value: formatters.primitiveText(calibration.scope?.symbol) },
+    { label: t("performance.scopeTimeframe"), value: formatters.primitiveText(calibration.scope?.timeframe) },
+    { label: t("performance.scopeModel"), value: formatters.primitiveText(calibration.scope?.model_id) },
+    { label: t("performance.scopePrompt"), value: formatters.primitiveText(calibration.scope?.prompt_version) },
+    { label: t("performance.scopeReplayRun"), value: formatters.primitiveText(calibration.scope?.replay_run_id) },
+    { label: t("performance.method"), value: formatters.primitiveText(calibration.method) },
+    { label: t("common.version"), value: formatters.primitiveText(calibration.version) },
+    { label: t("common.sample"), value: formatters.primitiveText(calibration.sample_count) },
+    { label: t("performance.trainedUntil"), value: formatters.timestampText(calibration.trained_until) },
+    { label: t("performance.fallback"), value: formatters.primitiveText(calibration.fallback) },
+    { label: `${t("common.brier")} · ${t("common.rawLabel")}`, value: formatters.numberText(calibration.brier_raw, 6) },
+    { label: `${t("common.brier")} · ${t("common.calibrated")}`, value: formatters.numberText(calibration.brier_calibrated, 6) },
+    { label: `${t("common.ece")} · ${t("common.rawLabel")}`, value: formatters.numberText(calibration.ece_raw, 6) },
+    { label: `${t("common.ece")} · ${t("common.calibrated")}`, value: formatters.numberText(calibration.ece_calibrated, 6) },
   ];
 }
 
 function CalibrationPanel({ data }: { data: CalibrationCurrent }) {
+  const { t } = useI18n();
+  const formatters = useResearchFormatters();
   const buckets = data.buckets ?? [];
   return (
     <>
-      <p className="panel-reading">Current calibration is a separate artifact and is not assumed to match arbitrary Performance filters.</p>
-      <ResearchFacts facts={calibrationFacts(data)} />
+      <p className="panel-reading">{t("performance.calibrationNote")}</p>
+      <ResearchFacts facts={calibrationFacts(data, t, formatters)} />
       {buckets.length > 0 ? (
-        <div aria-label="Scrollable current calibration buckets" className="table-wrap" tabIndex={0}><table className="performance-table" aria-label="Current calibration buckets"><thead><tr><th scope="col">Lower</th><th scope="col">Upper</th><th scope="col">Sample</th><th scope="col">Wins</th><th scope="col">Empirical rate</th><th scope="col">Shrunk rate</th></tr></thead><tbody>{buckets.map((bucket, index) => <tr key={`${bucket.lower ?? "lower"}-${index}`}><td>{numberText(bucket.lower, 6)}</td><td>{numberText(bucket.upper, 6)}</td><td>{bucket.n === undefined ? "Not supplied" : String(bucket.n)}</td><td>{bucket.wins === undefined ? "Not supplied" : String(bucket.wins)}</td><td>{numberText(bucket.empirical_rate, 6)}</td><td>{numberText(bucket.shrunk_rate, 6)}</td></tr>)}</tbody></table></div>
-      ) : <p className="panel-reading">No current calibration buckets were returned.</p>}
+        <div aria-label={t("performance.scrollCalibration")} className="table-wrap" tabIndex={0}><table className="performance-table" aria-label={t("performance.calibration")}><thead><tr><th scope="col">{t("performance.lower")}</th><th scope="col">{t("performance.upper")}</th><th scope="col">{t("common.sample")}</th><th scope="col">{t("common.wins")}</th><th scope="col">{t("performance.empiricalRate")}</th><th scope="col">{t("performance.shrunkRate")}</th></tr></thead><tbody>{buckets.map((bucket, index) => <tr key={`${bucket.lower ?? "lower"}-${index}`}><td>{formatters.numberText(bucket.lower, 6)}</td><td>{formatters.numberText(bucket.upper, 6)}</td><td>{formatters.primitiveText(bucket.n)}</td><td>{formatters.primitiveText(bucket.wins)}</td><td>{formatters.numberText(bucket.empirical_rate, 6)}</td><td>{formatters.numberText(bucket.shrunk_rate, 6)}</td></tr>)}</tbody></table></div>
+      ) : <p className="panel-reading">{t("performance.noCalibrationBuckets")}</p>}
     </>
   );
 }
 
 export function PerformancePage({ apiClient, onProvenanceChange }: PerformancePageProps) {
+  const { t } = useI18n();
   const [draft, setDraft] = useState<FilterDraft>(initialDraft);
   const [filters, setFilters] = useState<PerformanceFilters>(initialFilters);
 
@@ -226,8 +236,8 @@ export function PerformancePage({ apiClient, onProvenanceChange }: PerformancePa
   const calibration = useAsyncResource(calibrationLoader);
 
   useEffect(() => {
-    onProvenanceChange(EMPTY_DASHBOARD_PROVENANCE);
-  }, [onProvenanceChange]);
+    onProvenanceChange(emptyDashboardProvenance(t));
+  }, [onProvenanceChange, t]);
 
   const applyFilters = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -247,9 +257,9 @@ export function PerformancePage({ apiClient, onProvenanceChange }: PerformancePa
           : "ready";
   const calibrationDegraded = calibration.data?.status !== undefined && calibration.data.status !== "ACTIVE";
   const calibrationDegradedMessage = calibration.data?.status === "INSUFFICIENT_SAMPLE"
-    ? "Calibration status is INSUFFICIENT_SAMPLE; no fitted calibration is active. Returned fields remain visible for inspection."
+    ? t("performance.insufficientCalibrationMessage")
     : calibration.data?.status
-      ? `Calibration status is ${calibration.data.status}; only ACTIVE is treated as the fitted current calibration. Returned fields remain visible for inspection.`
+      ? `${t("performance.calibrationStatusPrefix")} ${calibration.data.status}; ${t("performance.inactiveCalibration")}`
       : undefined;
   const calibrationState: PanelState = calibration.status === "loading" ? "loading" : calibration.status === "unavailable" ? "unavailable" : !calibration.data ? "empty" : calibrationDegraded ? "degraded" : "ready";
   const summaryQuery = new URLSearchParams();
@@ -258,34 +268,34 @@ export function PerformancePage({ apiClient, onProvenanceChange }: PerformancePa
   return (
     <section className="workflow-page performance-page" aria-labelledby="performance-title">
       <header className="page-intro">
-        <p className="eyebrow">Outcome evidence / preliminary</p>
-        <h1 id="performance-title">Performance</h1>
-        <p className="page-intro__description">Inspect returned outcome metrics, confidence buckets and the separately scoped current calibration artifact.</p>
-        <p className="page-boundary">PRELIMINARY is shown as returned. A zero resolved actionable sample is insufficient evidence, not a successful zero-result performance view.</p>
+        <p className="eyebrow">{t("performance.eyebrow")}</p>
+        <h1 id="performance-title">{t("performance.title")}</h1>
+        <p className="page-intro__description">{t("performance.description")}</p>
+        <p className="page-boundary">{t("performance.boundary")}</p>
       </header>
 
-      <form className="workflow-filters" aria-label="Performance filters" onSubmit={applyFilters}>
+      <form className="workflow-filters" aria-label={t("performance.filters")} onSubmit={applyFilters}>
         <div className="workflow-filters__grid">
-          <label>Source type<select value={draft.source_type} onChange={(event) => setDraft((current) => ({ ...current, source_type: event.target.value === "replay" ? "replay" : "live" }))}><option value="live">live</option><option value="replay">replay</option></select></label>
-          <label>Symbol<input value={draft.symbol} onChange={(event) => setDraft((current) => ({ ...current, symbol: event.target.value }))} placeholder="All symbols" /></label>
-          <label>Timeframe<select value={draft.timeframe} onChange={(event) => setDraft((current) => ({ ...current, timeframe: timeframes.includes(event.target.value as Timeframe) ? event.target.value as Timeframe : "" }))}><option value="">All timeframes</option>{timeframes.map((value) => <option key={value}>{value}</option>)}</select></label>
-          <label>Model id<input value={draft.model_id} onChange={(event) => setDraft((current) => ({ ...current, model_id: event.target.value }))} placeholder="All models" /></label>
-          <label>Prompt version<input value={draft.prompt_version} onChange={(event) => setDraft((current) => ({ ...current, prompt_version: event.target.value }))} placeholder="All prompts" /></label>
-          <label>Replay run<input value={draft.replay_run_id} onChange={(event) => setDraft((current) => ({ ...current, replay_run_id: event.target.value }))} placeholder="All runs" /></label>
+          <label>{t("common.sourceType")}<select value={draft.source_type} onChange={(event) => setDraft((current) => ({ ...current, source_type: event.target.value === "replay" ? "replay" : "live" }))}><option value="live">{t("common.sourceLive")}</option><option value="replay">{t("common.sourceReplay")}</option></select></label>
+          <label>{t("common.symbol")}<input value={draft.symbol} onChange={(event) => setDraft((current) => ({ ...current, symbol: event.target.value }))} placeholder={t("predictions.allSymbols")} /></label>
+          <label>{t("common.timeframe")}<select value={draft.timeframe} onChange={(event) => setDraft((current) => ({ ...current, timeframe: timeframes.includes(event.target.value as Timeframe) ? event.target.value as Timeframe : "" }))}><option value="">{t("performance.allTimeframes")}</option>{timeframes.map((value) => <option key={value}>{value}</option>)}</select></label>
+          <label>{t("common.modelId")}<input value={draft.model_id} onChange={(event) => setDraft((current) => ({ ...current, model_id: event.target.value }))} placeholder={t("performance.allModels")} /></label>
+          <label>{t("common.promptVersion")}<input value={draft.prompt_version} onChange={(event) => setDraft((current) => ({ ...current, prompt_version: event.target.value }))} placeholder={t("performance.allPrompts")} /></label>
+          <label>{t("common.replayRun")}<input value={draft.replay_run_id} onChange={(event) => setDraft((current) => ({ ...current, replay_run_id: event.target.value }))} placeholder={t("performance.allRuns")} /></label>
         </div>
-        <button className="primary-button" type="submit">Apply filters</button>
+        <button className="primary-button" type="submit">{t("common.applyFilters")}</button>
       </form>
 
       <div className="performance-grid">
-        <AsyncPanel className="workflow-panel performance-panel performance-panel--summary" title="Performance summary" source={`GET /performance/summary${summaryQuery.toString() ? `?${summaryQuery.toString()}` : ""}`} freshness="window timestamps and scope returned by API" state={summaryPanelState} error={summary.error} onRetry={summary.retry} emptyMessage="No performance summary fields were returned." degradedMessage={typeof resolved === "number" && resolved === 0 ? "Resolved actionable is exactly zero; this is insufficient evidence for a success state." : "Resolved actionable was not supplied; no success state is inferred."}>
+        <AsyncPanel className="workflow-panel performance-panel performance-panel--summary" title={t("performance.summary")} source={`GET /performance/summary${summaryQuery.toString() ? `?${summaryQuery.toString()}` : ""}`} freshness={t("performance.summaryFreshness")} state={summaryPanelState} error={summary.error} onRetry={summary.retry} emptyMessage={t("performance.noSummary")} degradedMessage={typeof resolved === "number" && resolved === 0 ? t("performance.zeroResolved") : t("performance.noResolved")}>
           {summaryData ? <SummaryPanel summary={summaryData} /> : null}
         </AsyncPanel>
 
-        <AsyncPanel className="workflow-panel performance-panel" title="Confidence buckets" source="GET /performance/buckets (source/model/prompt/replay scope)" freshness="bucket values returned by API" state={resourceState(buckets, (buckets.data?.confidence_buckets?.length ?? 0) === 0)} error={buckets.error} onRetry={buckets.retry} emptyMessage="No confidence bucket rows were returned.">
+        <AsyncPanel className="workflow-panel performance-panel" title={t("performance.buckets")} source="GET /performance/buckets (source/model/prompt/replay scope)" freshness={t("performance.bucketFreshness")} state={resourceState(buckets, (buckets.data?.confidence_buckets?.length ?? 0) === 0)} error={buckets.error} onRetry={buckets.retry} emptyMessage={t("performance.noBuckets")}>
           {buckets.data ? <BucketsPanel data={buckets.data} /> : null}
         </AsyncPanel>
 
-        <AsyncPanel className="workflow-panel performance-panel" title="Current calibration" source="GET /calibration/current (independent artifact)" freshness="trained_until when supplied" state={calibrationState} error={calibration.error} onRetry={calibration.retry} emptyMessage="No current calibration artifact was returned." degradedMessage={calibrationDegradedMessage}>
+        <AsyncPanel className="workflow-panel performance-panel" title={t("performance.calibration")} source="GET /calibration/current (independent artifact)" freshness={t("performance.calibrationFreshness")} state={calibrationState} error={calibration.error} onRetry={calibration.retry} emptyMessage={t("performance.noCalibration")} degradedMessage={calibrationDegradedMessage}>
           {calibration.data ? <CalibrationPanel data={calibration.data} /> : null}
         </AsyncPanel>
       </div>

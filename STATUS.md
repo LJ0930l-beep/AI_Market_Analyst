@@ -1,14 +1,26 @@
 # AI Market Analyst Status
 
-Updated: 2026-08-21
+Updated: 2026-08-22
 
 ## Overall
 
-- Target: V1.0 Final Acceptance through Phase 7.
-- Active phase: Post-V1.0 Unreleased enhancements; Phase 7/V1.0 remains accepted.
-- Active task: versioned local Qwen streaming consultation — DEVELOPER_COMPLETE, supervisor review pending.
+- Target: V1.1 Unreleased local milestone; Phase 7/V1.0 remains accepted.
+- Active phase: V1.1 premium UI/UX, internationalization, Market Intelligence and dual-model Assistant.
+- Active task: V1.1 internationalization Gate repair developer-complete; supervisor rerun pending.
 - Blockers: none.
 - Sole developer: `luna-max` (one persistent thread, serial tasks).
+
+## V1.1 developer completion checkpoint — 2026-08-22
+
+- Status: DEVELOPER_COMPLETE after the consolidated internationalization repair; supervisor acceptance is not claimed. Package/API `1.1.0`, API Phase 7 and SQLite schema 11 are coherent; accepted V1.0 evidence remains historical.
+- Delivered the premium deep-navy terminal, eleven primary bilingual navigation entries, saved-evidence Market Intelligence, explicit Daily Brief, typed locale/preferences, `qwen_consult_v2`, deterministic `qwen_route_v1`, nine reproducible desktop screenshots and safe Windows double-click prepare/start/status/stop tools. All 14 product route trees and nested operational/research/chart components now use explicit typed fixed-copy keys rather than parent-surface heuristic translation.
+- Python Gate: final `python -m pytest -q` => 131 passed, 1 skipped, 1 warning and 20 subtests in 23.69s; final `python -B -m unittest discover -s tests -v` => 132 tests OK in 22.666s with 1 skipped; compileall PASS; `pip check` reports no broken requirements.
+- Frontend Gate: lint PASS; typecheck PASS; 15 files / 72 tests PASS in 6.75s; Vite 6.4.3 production build PASS (60 modules, CSS 54.63 kB / gzip 10.48 kB, JS 440.46 kB / gzip 125.97 kB); full and production npm audits both report 0 vulnerabilities.
+- Standalone browser Gate: Playwright 1.62.1 with Chrome 151.0.7922.170, 13/13 PASS in 53.3s against the real built React app and temporary FastAPI/SQLite harness. Every product route was audited in both languages; Chinese mode rejects the known fixed-English leakage set and persists after refresh. All 14 routes also passed desktop and 390x844 axe plus page-level horizontal-overflow checks. Screenshot capture passed 1/1 in 7.6s with nine artifacts.
+- Official Ollama models installed without substitution: `qwen3.5:4b` (3.4 GB, ID `2a654d98e6fb`) and `qwen3.5:9b` (6.6 GB, ID `6488c96fa5fa`). Real read-only API smoke passed: Fast/Chinese routed to 4B (first token 5.171s, total 5.444s) and Smart/English routed to 9B (first token 5.919s, total 6.618s); artifact `docs/v1.1-model-smoke.json`, `fixture=false`. The first cold 4B attempt exceeded the former 20-second first-token bound, so the still-bounded default is 60 seconds for local model swapping; no fabricated fallback was used.
+- Windows one-click smoke passed stopped -> start -> API/UI ready -> idempotent repeated start -> status -> stop -> restart. Ownership remained PID/executable/start-time fingerprinted, no process-name/port killing was used, scheduler stayed default-off and no unrelated process (including Ollama/ComfyUI) was stopped. Final launcher status is `running`, `ownership_errors=[]`, API/UI HTTP 200.
+- Safety invariants: Market Intelligence GETs and Assistant context remain read-only; Daily Brief is explicit; no startup model call; no broker/order/private key/cloud notifier; no implicit Prediction/Outcome/Calibration/PaperTrade/alert mutation. `git diff --check` is clean apart from Windows line-ending notices.
+- Honest limitations: market/event/heatmap completeness depends on saved point-in-time evidence; no complete exchange-holiday, always-on macro/on-chain/ETF/funding/OI or sector feed is claimed. Real model smoke measures two short local prompts on this RTX 4060 only, not answer quality, provider freshness or ComfyUI contention. V1.1 remains pending independent supervisor Gate.
 
 ## Post-V1.0 Qwen Consult developer checkpoint — 2026-08-21
 
@@ -116,7 +128,7 @@ V1.0 Final Acceptance is supervisor-accepted; do not begin post-V1.0 work.
 ## V1.0 interface language enhancement checkpoint — 2026-08-21
 
 - Milestone: add a complete local English/中文 presentation switch before V1.0 Final Acceptance; no Phase 8 or post-V1.0 work started.
-- Implementation: added `web/src/i18n.tsx` typed catalog/context with `en`/`zh-CN` parity, browser-language fallback, `localStorage` persistence, accessible header selector and presentation-only DOM localization. Added responsive selector styling, shell/page language tests and route-wide browser assertions.
+- Implementation: added `web/src/i18n.tsx` typed catalog/context with `en`/`zh-CN` parity, browser-language fallback, `localStorage` persistence and an accessible header selector. Current V1.1 route trees use explicit typed fixed-copy keys; focused nested-component and route-wide browser assertions prevent fixed-English leakage.
 - Boundaries: API/database contracts, symbols, URLs, numeric/time semantics and backend free-text evidence remain unchanged; no new dependency, cloud service, model, scheduler, alert or trading path.
 - Changed files: `web/src/i18n.tsx`, `web/src/i18n.test.tsx`, `web/src/App.tsx`, `web/src/App.test.tsx`, `web/src/styles.css`, `web/e2e/phase4.spec.ts`, `README.md`, `CHANGELOG.md`, `STATUS.md`.
 - Final verification: `python -m pytest -q` PASS, 117 passed / 1 skipped / 1 warning / 10 subtests; `python -B -m unittest discover -s tests -q` PASS, 118 tests / 1 skipped; compileall and pip check PASS. `npm run lint`, `npm run typecheck`, `npm test -- --run` PASS (13 files / 59 tests), `npm run build` PASS (Vite 6.4.3), and both npm audits PASS with 0 vulnerabilities. Standalone `npm run e2e` PASS, 11/11 in 43.9s on Chrome, including Chinese switching, all current routes, refresh persistence, accepted workflows, 18 desktop/mobile axe and 18 page-level overflow checks. Launcher was restored and verified running on 127.0.0.1:8000/4173 with no ownership errors.

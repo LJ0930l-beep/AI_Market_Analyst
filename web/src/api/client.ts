@@ -23,6 +23,8 @@ import type {
   InstrumentNews,
   MarketSnapshot,
   MarketContextResponse,
+  MarketIntelligenceResponse,
+  DailyBriefResponse,
   ModelHealthResponse,
   Outcome,
   OutcomeFilters,
@@ -106,6 +108,9 @@ export interface MarketApiClient {
   providerHealth(signal?: AbortSignal): Promise<ProviderHealthResponse>;
   contextHealth(signal?: AbortSignal): Promise<ContextHealthResponse>;
   modelHealth(signal?: AbortSignal): Promise<ModelHealthResponse>;
+  marketIntelligence(signal?: AbortSignal): Promise<MarketIntelligenceResponse>;
+  dailyBrief(language?: "en" | "zh-CN", signal?: AbortSignal): Promise<DailyBriefResponse>;
+  generateDailyBrief(language: "en" | "zh-CN", modelPreference: "auto" | "fast" | "smart", signal?: AbortSignal): Promise<DailyBriefResponse>;
   consultStream(request: ConsultRequest, onEvent: (event: ConsultStreamEvent) => void, signal?: AbortSignal): Promise<void>;
   stats(signal?: AbortSignal): Promise<StatsResponse>;
   schedulerStatus(signal?: AbortSignal): Promise<SchedulerStatus>;
@@ -155,6 +160,9 @@ export type ApplicationShellApiClient = Pick<
   | "providerHealth"
   | "contextHealth"
   | "modelHealth"
+  | "marketIntelligence"
+  | "dailyBrief"
+  | "generateDailyBrief"
   | "consultStream"
   | "stats"
   | "schedulerStatus"
@@ -331,6 +339,26 @@ export class ApiClient implements MarketApiClient {
 
   modelHealth(signal?: AbortSignal): Promise<ModelHealthResponse> {
     return this.request<ModelHealthResponse>("/health/model", { signal });
+  }
+
+  marketIntelligence(signal?: AbortSignal): Promise<MarketIntelligenceResponse> {
+    return this.request<MarketIntelligenceResponse>("/market-intelligence", { signal });
+  }
+
+  dailyBrief(language?: "en" | "zh-CN", signal?: AbortSignal): Promise<DailyBriefResponse> {
+    return this.request<DailyBriefResponse>("/daily-brief", { query: { language }, signal });
+  }
+
+  generateDailyBrief(
+    language: "en" | "zh-CN",
+    modelPreference: "auto" | "fast" | "smart",
+    signal?: AbortSignal,
+  ): Promise<DailyBriefResponse> {
+    return this.request<DailyBriefResponse>("/daily-brief/generate", {
+      method: "POST",
+      body: { language, model_preference: modelPreference },
+      signal,
+    });
   }
 
   async consultStream(

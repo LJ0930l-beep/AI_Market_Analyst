@@ -1,178 +1,70 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
-import { ApplicationShell } from "../App";
-import { createFakeClient, fakePrediction, fakeRadar } from "../test/fakeClient";
+import { I18nProvider } from "../i18n";
+import { createFakeClient, fakeMarketIntelligence } from "../test/fakeClient";
+import { DashboardPage } from "./DashboardPage";
 
-function renderDashboard(client = createFakeClient()) {
-  return render(
-    <MemoryRouter initialEntries={["/"]}>
-      <ApplicationShell apiClient={client} />
-    </MemoryRouter>,
-  );
+function renderPage(client = createFakeClient(), provenance = vi.fn()) {
+  render(<MemoryRouter><I18nProvider><DashboardPage apiClient={client} onProvenanceChange={provenance} /></I18nProvider></MemoryRouter>);
+  return provenance;
 }
 
-function panel(name: string): HTMLElement {
-  return screen.getByRole("region", { name });
-}
-
-describe("DashboardPage", () => {
-  it("renders versioned read-only Radar evidence and its Asset Detail link", async () => {
-    const view = renderDashboard();
-
-    const radar = panel("Market Radar");
-    expect(await within(radar).findByText(/opportunity_v1/)).toBeInTheDocument();
-    expect(within(within(radar).getByRole("listitem")).getByText("Strong Opportunity", { exact: true })).toBeInTheDocument();
-    expect(within(radar).getByRole("link", { name: /^NVDA$/ })).toHaveAttribute("href", "/assets/NVDA");
-    expect(within(radar).getByText(/No model, scan, scheduler, alert or trading action/)).toBeInTheDocument();
-
-    view.unmount();
-    const unrankedEntry = {
-      ...fakeRadar.entries[0],
-      category: "NOT_RANKED" as const,
-      status: "calibration_not_eligible",
-      ranking_eligible: false,
-      score: null,
-      rank: null,
-    };
-    const unrankedClient = createFakeClient({
-      radar: vi.fn().mockResolvedValue({ ...fakeRadar, status: "degraded", entries: [unrankedEntry] }),
-    });
-    const unrankedView = renderDashboard(unrankedClient);
-    const unrankedRadar = panel("Market Radar");
-    const unrankedItem = await within(unrankedRadar).findByRole("listitem");
-    expect(unrankedItem.querySelector(".radar-category")).toHaveTextContent("Not ranked");
-
-    unrankedView.unmount();
-    const client = createFakeClient({
-      radar: vi.fn().mockResolvedValue({ ...fakeRadar, entries: [], status: "empty" }),
-    });
-    renderDashboard(client);
-    expect(await within(panel("Market Radar")).findByText(/No durable Watchlist entries are available for Radar/)).toBeInTheDocument();
+describe("DashboardPage V1.1", () => {
+  it("renders the dense read-only evidence deck with honest unavailable pulse rows", async () => {
+    const client = createFakeClient();
+    const provenance = renderPage(client);
+    expect(await screen.findByRole("heading", { name: "Market intelligence, without the noise" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Market Pulse" })).toBeInTheDocument();
+    expect(screen.getByText("NASDAQ").closest("article")).toHaveTextContent("Unavailable");
+    expect(screen.getByRole("heading", { name: "Today's Events" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "AI Watchlist" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Latest AI Signal" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Market Heatmap" })).toBeInTheDocument();
+    expect(client.marketIntelligence).toHaveBeenCalledTimes(1);
+    expect(client.analysis).not.toHaveBeenCalled();
+    expect(client.followPrediction).not.toHaveBeenCalled();
+    await waitFor(() => expect(provenance).toHaveBeenCalledWith(expect.objectContaining({ model: "qwen3.5:4b", state: "active" })));
   });
 
-  it("renders actual health, routing, counts, instruments, predictions, performance and provenance", async () => {
-    const waitPrediction = {
-      ...fakePrediction,
-      prediction_id: "prediction-wait",
-      action: "WAIT" as const,
-      generated_at: "2030-01-02T11:00:00Z",
-      signal_valid_until: undefined,
-      raw_confidence: undefined,
-      calibrated_confidence: undefined,
-    };
-    renderDashboard(createFakeClient({ predictions: vi.fn().mockResolvedValue([fakePrediction, waitPrediction]) }));
-
-    expect(await within(panel("Recent predictions")).findByText("LONG · actionable")).toBeInTheDocument();
-    expect(within(panel("Recent predictions")).getByText("WAIT · coverage only")).toBeInTheDocument();
-    expect(within(panel("Recent predictions")).getByText("Raw 0.72 · Calibrated 0.64")).toBeInTheDocument();
-    expect(within(panel("Recent predictions")).getAllByText("live")).toHaveLength(2);
-    expect(within(panel("Recent predictions")).getAllByText("1h")).toHaveLength(2);
-    expect(within(panel("Recent predictions")).getByText(/Valid until 2030-01-02T13:00:00.000Z · Active/)).toBeInTheDocument();
-
-    expect(within(panel("Provider routing")).getByText("fixture_news")).toBeInTheDocument();
-    expect(within(panel("Provider routing")).getByText("deferred_until_symbol_request")).toBeInTheDocument();
-    expect(within(panel("Model health")).getByText("ollama")).toBeInTheDocument();
-    expect(within(panel("Stored counts")).getByText("unknown counter")).toBeInTheDocument();
-    expect(within(panel("Instrument roster")).getByRole("link", { name: /NVDA/ })).toHaveAttribute(
-      "href",
-      "/assets/NVDA",
-    );
-
-    const performance = panel("Live performance");
-    expect(within(performance).getByText("Returned scope: live")).toBeInTheDocument();
-    expect(within(performance).getByText("Resolved actionable sample: 2")).toBeInTheDocument();
-    expect(within(performance).getByText("hit rate")).toBeInTheDocument();
-    expect(within(performance).getByText("0.5")).toBeInTheDocument();
-    expect(within(performance).getByText("zero metric")).toBeInTheDocument();
-
-    const rail = screen.getByRole("heading", { name: "Signal validity rail" }).closest("section");
-    expect(rail).not.toBeNull();
-    expect(await within(rail as HTMLElement).findByRole("listitem", { name: /Generated: 2030-01-02T12:00:00.000Z/ })).toBeInTheDocument();
-    expect(within(rail as HTMLElement).getByRole("listitem", { name: "Re-evaluate: Not set" })).toBeInTheDocument();
-    expect(within(rail as HTMLElement).getByRole("listitem", { name: /Expiry: 2030-01-02T13:00:00.000Z/ })).toBeInTheDocument();
-    expect(within(rail as HTMLElement).getByText("Signal window supplied")).toBeInTheDocument();
-    expect(within(rail as HTMLElement).getByText("source_type: live")).toBeInTheDocument();
-    expect(within(rail as HTMLElement).getByText("model_id: qwen3.5:4b")).toBeInTheDocument();
+  it("generates Daily Brief only after the explicit action and displays its audited route", async () => {
+    const client = createFakeClient();
+    renderPage(client);
+    const brief = await screen.findByRole("heading", { name: "AI Daily Brief" });
+    const region = brief.closest("section");
+    if (!region) throw new Error("brief region missing");
+    expect(within(region).getByText(/Saved evidence is constructive/)).toBeInTheDocument();
+    fireEvent.click(within(region).getByRole("button", { name: "Generate brief" }));
+    await waitFor(() => expect(client.generateDailyBrief).toHaveBeenCalledWith("en", "auto"));
+    expect(client.predictions).not.toHaveBeenCalled();
+    expect(client.paperTrades).not.toHaveBeenCalled();
   });
 
-  it("keeps usable panels visible when provider routing fails", async () => {
-    const client = createFakeClient({ providerHealth: vi.fn().mockRejectedValue(new Error("sentinel provider failure")) });
-    renderDashboard(client);
-
-    const provider = panel("Provider routing");
-    expect(await within(provider).findByRole("alert")).toHaveTextContent("This panel is unavailable");
-    expect(within(provider).queryByText("sentinel provider failure")).not.toBeInTheDocument();
-    expect(within(panel("Stored counts")).getByText("unknown counter")).toBeInTheDocument();
-    expect(within(panel("Instrument roster")).getByRole("link", { name: /NVDA/ })).toBeInTheDocument();
-    expect(within(panel("Recent predictions")).getByText("LONG · actionable")).toBeInTheDocument();
+  it("renders the premium dashboard explicitly in Chinese", async () => {
+    window.localStorage.setItem("ai-market-analyst.language", "zh-CN");
+    renderPage();
+    expect(await screen.findByRole("heading", { name: "看清市场，不被噪音淹没" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "市场脉搏" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "今日事件" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "AI 每日简报" })).toBeInTheDocument();
+    window.localStorage.clear();
   });
 
-  it("shows empty prediction and degraded model states without inventing performance samples", async () => {
-    const client = createFakeClient({
-      modelHealth: vi.fn().mockResolvedValue({ provider: "ollama", available: false, error_code: "MODEL_NOT_CONFIGURED" }),
-      predictions: vi.fn().mockResolvedValue([]),
-      performanceSummary: vi.fn().mockResolvedValue({
-        scope: { source_type: "live" },
-        sample_count: 0,
-        actionable_count: 0,
-        metrics: { hit_rate: 0.42 },
-      }),
-    });
-    renderDashboard(client);
-
-    expect(await within(panel("Model health")).findByText(/model is unavailable or not configured/i)).toBeInTheDocument();
-    expect(within(panel("Model health")).getByText("MODEL_NOT_CONFIGURED")).toBeInTheDocument();
-    expect(await within(panel("Recent predictions")).findByText("No prediction records were returned for this recent ledger.")).toBeInTheDocument();
-
-    const performance = panel("Live performance");
-    expect(within(performance).getByText(/Resolved sample size was not supplied/)).toBeInTheDocument();
-    expect(within(performance).getByText("0.42")).toBeInTheDocument();
-    expect(within(performance).getByText("Degraded")).toBeInTheDocument();
-    expect(within(performance).queryByText("Resolved actionable sample: 0")).not.toBeInTheDocument();
-
-    const rail = screen.getByRole("heading", { name: "Signal validity rail" }).closest("section");
-    expect(within(rail as HTMLElement).getByText("Neutral placeholder")).toBeInTheDocument();
-    expect(within(rail as HTMLElement).getByText("No recent prediction with usable provenance was returned.")).toBeInTheDocument();
+  it("isolates intelligence failure without inventing fallback market data", async () => {
+    const client = createFakeClient({ marketIntelligence: vi.fn().mockRejectedValue(new Error("offline")) });
+    renderPage(client);
+    expect(await screen.findByRole("alert")).toHaveTextContent("offline");
+    expect(screen.queryByText("66842.1")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(client.marketIntelligence).toHaveBeenCalledTimes(2);
   });
 
-  it("selects the newest actual prediction and derives an expired rail state from its expiry", async () => {
-    const newerExpired = {
-      ...fakePrediction,
-      prediction_id: "prediction-expired",
-      generated_at: "2030-01-02T14:00:00Z",
-      signal_valid_until: "2020-01-02T13:00:00Z",
-      action: "SHORT" as const,
-    };
-    const client = createFakeClient({ predictions: vi.fn().mockResolvedValue([fakePrediction, newerExpired]) });
-    renderDashboard(client);
-
-    const predictions = panel("Recent predictions");
-    expect(await within(predictions).findByText("SHORT · actionable")).toBeInTheDocument();
-    const rail = screen.getByRole("heading", { name: "Signal validity rail" }).closest("section");
-    expect(within(rail as HTMLElement).getByText("Signal window expired")).toBeInTheDocument();
-    expect(await within(rail as HTMLElement).findByRole("listitem", { name: /Generated: 2030-01-02T14:00:00.000Z/ })).toBeInTheDocument();
-    expect(within(rail as HTMLElement).getByRole("listitem", { name: /Expiry: 2020-01-02T13:00:00.000Z/ })).toBeInTheDocument();
-    expect(within(rail as HTMLElement).getByText(/Prediction prediction-expired selected/)).toBeInTheDocument();
-  });
-
-  it("treats selected predictions without resolved actionable outcomes as degraded metadata", async () => {
-    const client = createFakeClient({
-      performanceSummary: vi.fn().mockResolvedValue({
-        scope: { source_type: "live" },
-        sample_count: 5,
-        actionable_count: 2,
-        metrics: { resolved_actionable: 0, hit_rate: 0, pending_count: 5 },
-      }),
-    });
-    renderDashboard(client);
-
-    const performance = panel("Live performance");
-    expect(await within(performance).findByText("Degraded")).toBeInTheDocument();
-    expect(within(performance).getByText("No resolved sample is reported. Returned metrics are shown as metadata only.")).toBeInTheDocument();
-    expect(within(performance).getByText("Resolved actionable sample: 0")).toBeInTheDocument();
-    expect(within(performance).getByText("pending count")).toBeInTheDocument();
-    expect(within(performance).queryByText("Resolved sample: 5")).not.toBeInTheDocument();
+  it("keeps an explicit empty capability state instead of populating fixture values", async () => {
+    const empty = { ...fakeMarketIntelligence, pulse: fakeMarketIntelligence.pulse.map((item) => ({ ...item, price: null, change_pct: null, status: "unavailable" })), calendar: { ...fakeMarketIntelligence.calendar, status: "unavailable", events: [] }, watchlist: [], latest_signal: null, news: { status: "unavailable", items: [], missing_reasons: ["none"] }, daily_brief: null };
+    renderPage(createFakeClient({ marketIntelligence: vi.fn().mockResolvedValue(empty) }));
+    expect(await screen.findByText("No point-in-time event evidence is stored.")).toBeInTheDocument();
+    expect(screen.getByText("No saved brief. Generate one explicitly when Qwen is available.")).toBeInTheDocument();
+    expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(1);
   });
 });

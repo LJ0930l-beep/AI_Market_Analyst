@@ -5,7 +5,7 @@ import { apiClient as defaultApiClient, type ApplicationShellApiClient } from ".
 import type { HealthResponse } from "./api/types";
 import { HealthStatus, type BackendHealthState } from "./components/HealthStatus";
 import { TimeProvenanceRail } from "./components/TimeProvenanceRail";
-import { DashboardPage, EMPTY_DASHBOARD_PROVENANCE, type DashboardProvenance } from "./pages/DashboardPage";
+import { DashboardPage, emptyDashboardProvenance, type DashboardProvenance } from "./pages/DashboardPage";
 import { AssetDetailPage } from "./pages/AssetDetailPage";
 import { AlertsPage } from "./pages/AlertsPage";
 import { PaperTradesPage } from "./pages/PaperTradesPage";
@@ -15,25 +15,28 @@ import { QwenConsultPage } from "./pages/QwenConsultPage";
 import { ReplayLabPage } from "./pages/ReplayLabPage";
 import { SettingsHealthPage } from "./pages/SettingsHealthPage";
 import { WatchlistPage } from "./pages/WatchlistPage";
-import { I18nProvider, useI18n } from "./i18n";
+import { MarketIntelligencePage } from "./pages/MarketIntelligencePage";
+import { I18nProvider, useI18n, type TranslationKey } from "./i18n";
 
 interface NavigationItem {
-  label: string;
+  label: TranslationKey;
   to: string;
+  icon: string;
   end?: boolean;
 }
 
 const navigationItems: NavigationItem[] = [
-  { label: "Dashboard", to: "/", end: true },
-  { label: "Watchlist", to: "/watchlist" },
-  { label: "Asset detail", to: "/assets/NVDA" },
-  { label: "Predictions", to: "/predictions" },
-  { label: "Paper trades", to: "/paper-trades" },
-  { label: "Performance", to: "/performance" },
-  { label: "Replay lab", to: "/replay" },
-  { label: "Alert Center", to: "/alerts" },
-  { label: "Qwen Consult", to: "/consult" },
-  { label: "Settings / health", to: "/settings" },
+  { label: "nav.dashboard", to: "/", icon: "⌂", end: true },
+  { label: "nav.signals", to: "/predictions", icon: "⌁" },
+  { label: "nav.watchlist", to: "/watchlist", icon: "◉" },
+  { label: "nav.markets", to: "/markets", icon: "▥" },
+  { label: "nav.calendar", to: "/calendar", icon: "□" },
+  { label: "nav.news", to: "/news", icon: "≡" },
+  { label: "nav.heatmap", to: "/heatmap", icon: "▦" },
+  { label: "nav.consult", to: "/consult", icon: "✦" },
+  { label: "nav.backtest", to: "/replay", icon: "↻" },
+  { label: "nav.performance", to: "/performance", icon: "⌁" },
+  { label: "nav.settings", to: "/settings", icon: "⚙" },
 ];
 
 export interface ApplicationShellProps {
@@ -41,23 +44,20 @@ export interface ApplicationShellProps {
 }
 
 function NavigationLinks() {
-  const location = useLocation();
+  const { t } = useI18n();
   return (
     <ul className="nav-list">
       {navigationItems.map((item) => (
         <li key={item.to}>
           <NavLink
-            aria-current={
-              item.to === "/assets/NVDA" && location.pathname.startsWith("/assets/") ? "page" : undefined
-            }
             className={({ isActive }) =>
-              `nav-entry${isActive || (item.to === "/assets/NVDA" && location.pathname.startsWith("/assets/")) ? " nav-entry--active" : ""}`
+              `nav-entry${isActive ? " nav-entry--active" : ""}`
             }
             end={item.end}
             to={item.to}
           >
-            <span className="nav-entry__mark" aria-hidden="true" />
-            <span>{item.label}</span>
+            <span className="nav-entry__icon" aria-hidden="true">{item.icon}</span>
+            <span className="nav-entry__label">{t(item.label)}<small aria-hidden="true">{item.to === "/" ? "Dashboard" : item.to.slice(1).replace("predictions", "Signals").replace("consult", "AI Assistant").replace("replay", "Replay / Backtest")}</small></span>
           </NavLink>
         </li>
       ))}
@@ -66,15 +66,15 @@ function NavigationLinks() {
 }
 
 function DesktopNavigation({ healthState, health }: { healthState: BackendHealthState; health?: HealthResponse }) {
+  const { t } = useI18n();
   return (
     <aside className="nav-ledger">
       <div className="brand-lockup">
-        <p className="brand-lockup__eyebrow">AI Market Analyst</p>
-        <p className="brand-lockup__title">Research desk</p>
-        <p className="brand-lockup__meta">Local-first · paper-only</p>
+        <span className="brand-lockup__sigil" aria-hidden="true">L</span>
+        <div><p className="brand-lockup__eyebrow">{t("shell.aiMarketAnalyst")}</p><p className="brand-lockup__title">LUNA TERMINAL</p><p className="brand-lockup__meta">{t("shell.localFirst")}</p></div>
       </div>
-      <nav aria-label="Primary navigation">
-        <p className="nav-heading">Workspace</p>
+      <nav aria-label={t("shell.primaryNavigation")}>
+        <p className="nav-heading">{t("shell.workspace")}</p>
         <NavigationLinks />
       </nav>
       <HealthStatus state={healthState} health={health} />
@@ -83,11 +83,12 @@ function DesktopNavigation({ healthState, health }: { healthState: BackendHealth
 }
 
 function MobileNavigation() {
+  const { t } = useI18n();
   return (
     <div className="mobile-nav-shell">
       <details>
-        <summary>Open workspace menu</summary>
-        <nav aria-label="Mobile navigation">
+        <summary>{t("shell.openWorkspaceMenu")}</summary>
+        <nav aria-label={t("shell.mobileNavigation")}>
           <NavigationLinks />
         </nav>
       </details>
@@ -112,22 +113,15 @@ function LanguageSelector() {
   );
 }
 
-function routeLabel(pathname: string): string {
+function routeKey(pathname: string): TranslationKey {
   if (pathname === "/") {
-    return "Dashboard";
+    return "nav.dashboard";
   }
   if (pathname.startsWith("/assets/")) {
-    const routeSymbol = pathname.slice("/assets/".length).split("/")[0];
-    let symbol = routeSymbol;
-    try {
-      symbol = decodeURIComponent(routeSymbol);
-    } catch {
-      symbol = routeSymbol;
-    }
-    return symbol ? `Asset detail / ${symbol.toUpperCase()}` : "Asset detail";
+    return "nav.assetDetail";
   }
   const matchingItem = navigationItems.find((item) => item.to !== "/" && pathname.startsWith(item.to));
-  return matchingItem?.label ?? "Workspace";
+  return matchingItem?.label ?? "shell.workspace";
 }
 
 interface PlaceholderPageProps {
@@ -177,6 +171,10 @@ function WorkspaceRoutes({
         path="watchlist"
         element={<WatchlistPage apiClient={apiClient} />}
       />
+      <Route path="markets" element={<MarketIntelligencePage apiClient={apiClient} surface="markets" />} />
+      <Route path="calendar" element={<MarketIntelligencePage apiClient={apiClient} surface="calendar" />} />
+      <Route path="news" element={<MarketIntelligencePage apiClient={apiClient} surface="news" />} />
+      <Route path="heatmap" element={<MarketIntelligencePage apiClient={apiClient} surface="heatmap" />} />
       <Route path="assets/:symbol" element={<AssetDetailPage apiClient={apiClient} onProvenanceChange={onProvenanceChange} />} />
       <Route
         path="predictions"
@@ -203,17 +201,18 @@ function WorkspaceRoutes({
 }
 
 function ApplicationShellContent({ apiClient = defaultApiClient }: ApplicationShellProps) {
+  const { t } = useI18n();
   const location = useLocation();
   const [healthState, setHealthState] = useState<BackendHealthState>("loading");
   const [health, setHealth] = useState<HealthResponse>();
-  const [provenance, setProvenance] = useState<DashboardProvenance>(EMPTY_DASHBOARD_PROVENANCE);
+  const [provenance, setProvenance] = useState<DashboardProvenance>(() => emptyDashboardProvenance(t));
   const handleProvenanceChange = useCallback((next: DashboardProvenance) => setProvenance(next), []);
 
   useEffect(() => {
     if (location.pathname !== "/") {
-      setProvenance(EMPTY_DASHBOARD_PROVENANCE);
+      setProvenance(emptyDashboardProvenance(t));
     }
-  }, [location.pathname]);
+  }, [location.pathname, t]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -240,18 +239,18 @@ function ApplicationShellContent({ apiClient = defaultApiClient }: ApplicationSh
   return (
     <div className="app-frame" data-i18n-root="true">
       <a className="skip-link" href="#main-content">
-        Skip to content
+        {t("shell.skipToContent")}
       </a>
       <DesktopNavigation health={health} healthState={healthState} />
       <div className="app-column">
         <MobileNavigation />
         <header className="workspace-header">
           <div>
-            <p className="eyebrow">Private local workstation</p>
-            <p className="workspace-header__route">Research desk / {routeLabel(location.pathname)}</p>
+            <p className="eyebrow">{t("shell.privateWorkstation")}</p>
+            <p className="workspace-header__route">{t("shell.researchDesk")} / {t(routeKey(location.pathname))}</p>
           </div>
           <div className="workspace-header__controls">
-            <p className="workspace-header__note">Orientation first · evidence follows</p>
+            <p className="workspace-header__note">{t("shell.orientation")}</p>
             <LanguageSelector />
           </div>
         </header>
@@ -259,7 +258,7 @@ function ApplicationShellContent({ apiClient = defaultApiClient }: ApplicationSh
           <div className="route-surface">
             <WorkspaceRoutes apiClient={apiClient} onProvenanceChange={handleProvenanceChange} />
           </div>
-          <aside className="provenance-column" aria-label="Time and provenance">
+          <aside className="provenance-column" aria-label={t("shell.timeProvenance")}>
             <TimeProvenanceRail
               generatedAt={provenance.generatedAt}
               reevaluateAt={provenance.reevaluateAt}

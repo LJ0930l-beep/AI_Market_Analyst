@@ -12,6 +12,8 @@ import type {
   ContextHealthResponse,
   ConsultStreamEvent,
   MarketContextResponse,
+  MarketIntelligenceResponse,
+  DailyBriefResponse,
   HealthResponse,
   Instrument,
   InstrumentRegistrationResponse,
@@ -35,7 +37,7 @@ import type {
 export const fakeHealth: HealthResponse = {
   status: "ok",
   phase: 7,
-  api_version: "1.0.0",
+  api_version: "1.1.0",
   product: "AI Market Analyst",
   real_orders: false,
   private_keys: false,
@@ -109,6 +111,10 @@ export const fakeAppSettings: AppSetting[] = [
     source: "default",
     description: "Local Watchlist scan session policy; market_hours is the conservative default.",
   },
+  { key: "ui.language", value: "en", default_value: "en", value_type: "string", updated_at: null, source: "default", description: "Preferred display language." },
+  { key: "ai.response_language", value: "follow_ui", default_value: "follow_ui", value_type: "string", updated_at: null, source: "default", description: "Preferred Qwen response language." },
+  { key: "notifications.language", value: "en", default_value: "en", value_type: "string", updated_at: null, source: "default", description: "Local alert display language." },
+  { key: "ai.model_preference", value: "auto", default_value: "auto", value_type: "string", updated_at: null, source: "default", description: "Deterministic Qwen tier preference." },
 ];
 
 export const fakePrediction: Prediction = {
@@ -262,7 +268,7 @@ export const fakeProviderHealth: ProviderHealthResponse = {
 export const fakeReleaseHealth: ReleaseHealthResponse = {
   status: "ok",
   phase: 7,
-  api_version: "1.0.0",
+  api_version: "1.1.0",
   database: { available: true, schema_version: 10, path: "market_analyst.sqlite3" },
   backup: { available: true, format_version: "phase7_backup_v1", restore_requires_explicit_command: true },
   capabilities: {
@@ -271,7 +277,7 @@ export const fakeReleaseHealth: ReleaseHealthResponse = {
     scheduler_default_enabled: false,
     external_notifications: false,
     qwen_consult: {
-      contract_version: "qwen_consult_v1",
+      contract_version: "qwen_consult_v2",
       configured: true,
       provider: "ollama",
       model_id: "qwen3.5:4b",
@@ -285,7 +291,7 @@ export const fakeReleaseHealth: ReleaseHealthResponse = {
 
 export const fakeContextHealth: ContextHealthResponse = {
   phase: 7,
-  api_version: "1.0.0",
+  api_version: "1.1.0",
   benchmark: { context_version: "benchmark_context_v1", mapping_version: "benchmark_mapping_v1" },
   events: { schema_version: "event_schema_v1", cluster_version: "event_cluster_v1" },
   memory: { version: "market_memory_v1", feature_version: "feature_representation_v1", retention_limit: 1000 },
@@ -492,6 +498,60 @@ export const fakeAnalysis: AnalysisResult = {
   },
 };
 
+export const fakeDailyBrief: DailyBriefResponse = {
+  contract_version: "daily_brief_v1",
+  status: "available",
+  brief: {
+    brief_id: "brief-fixture",
+    generated_at: "2030-01-02T12:10:00Z",
+    as_of: "2030-01-02T12:00:00Z",
+    language: "en",
+    model_id: "qwen3.5:9b",
+    model_tier: "smart",
+    route_reason: "auto_smart_for_deep_research_task",
+    sources: ["durable_watchlist", "latest_saved_live_predictions"],
+    missing: ["news_unavailable"],
+    content: "Saved evidence is constructive, while news coverage remains unavailable.",
+  },
+};
+
+export const fakeMarketIntelligence: MarketIntelligenceResponse = {
+  contract_version: "market_intelligence_v1",
+  as_of: "2030-01-02T12:00:00Z",
+  read_only: true,
+  provider_calls: false,
+  domain_writes: false,
+  pulse: [
+    { symbol: "BTCUSDT", status: "degraded", price: 66842.1, change_pct: 2.35, freshness: { status: "stale", data_as_of: "2030-01-02T10:00:00Z" }, missing_reasons: [] },
+    { symbol: "ETHUSDT", status: "degraded", price: 3245.6, change_pct: 1.68, freshness: { status: "stale", data_as_of: "2030-01-02T10:00:00Z" }, missing_reasons: [] },
+    { symbol: "NVDA", status: "available", price: 124.3, change_pct: 3.21, freshness: { status: "fresh", data_as_of: "2030-01-02T12:00:00Z" }, missing_reasons: [] },
+    { symbol: "NASDAQ", status: "unavailable", price: null, change_pct: null, freshness: { status: "unavailable" }, missing_reasons: ["unsupported_or_no_saved_prediction"] },
+    { symbol: "VIX", status: "unavailable", price: null, change_pct: null, freshness: { status: "unavailable" }, missing_reasons: ["unsupported_or_no_saved_prediction"] },
+    { symbol: "US10Y", status: "unavailable", price: null, change_pct: null, freshness: { status: "unavailable" }, missing_reasons: ["unsupported_or_no_saved_prediction"] },
+  ],
+  calendar: {
+    status: "available",
+    events: [{ event_id: "event-fixture", title: "Saved macro event", source: "fixture", category: "macro", event_at: "2030-01-02T14:00:00Z", known_at: "2030-01-02T11:00:00Z", importance: 80, affected_symbols: ["NVDA", "BTCUSDT"] }],
+    missing_reasons: [],
+    capabilities: { macro_fields: "only_when_stored_by_provider" },
+  },
+  watchlist: [{ symbol: "NVDA", asset_type: "equity", action: "LONG", prediction_id: fakePrediction.prediction_id, summary: fakePrediction.summary, raw_confidence: 0.72, calibrated_confidence: 0.64, market_regime: "bull_trend", freshness: { status: "fresh" }, status: "monitoring" }],
+  latest_signal: fakePrediction,
+  heatmap: {
+    status: "available",
+    cells: [
+      { symbol: "NVDA", asset_type: "equity", group: "semiconductors", change_pct: 3.21, price: 124.3, status: "available", missing_reasons: [] },
+      { symbol: "AAPL", asset_type: "equity", group: "ai_technology", change_pct: null, price: null, status: "unavailable", missing_reasons: ["price_missing"] },
+      { symbol: "BTCUSDT", asset_type: "crypto", group: "crypto_majors", change_pct: 2.35, price: 66842.1, status: "degraded", missing_reasons: [] },
+    ],
+    capability: "saved_prediction_context_only",
+    taxonomy_version: "market_taxonomy_v1",
+  },
+  news: { status: "unavailable", items: [], missing_reasons: ["no_stored_point_in_time_news"] },
+  daily_brief: fakeDailyBrief.brief,
+  capabilities: { live_fetch_on_get: false },
+};
+
 export function createFakeClient(overrides: Partial<ApplicationShellApiClient> = {}): ApplicationShellApiClient {
   const defaults: ApplicationShellApiClient = {
     health: vi.fn().mockResolvedValue(fakeHealth),
@@ -503,15 +563,20 @@ export function createFakeClient(overrides: Partial<ApplicationShellApiClient> =
       available: true,
       model_id: "qwen3.5:4b",
       model_available: true,
-      consult: { contract_version: "qwen_consult_v1", configured: true, available: true, model_id: "qwen3.5:4b" },
+      consult: { contract_version: "qwen_consult_v2", configured: true, available: true, model_id: "qwen3.5:9b", models: { fast: "qwen3.5:4b", smart: "qwen3.5:9b" } },
     }),
+    marketIntelligence: vi.fn().mockResolvedValue(fakeMarketIntelligence),
+    dailyBrief: vi.fn().mockResolvedValue(fakeDailyBrief),
+    generateDailyBrief: vi.fn().mockResolvedValue(fakeDailyBrief),
     consultStream: vi.fn(async (_request, onEvent: (event: ConsultStreamEvent) => void) => {
       onEvent({
         type: "meta",
-        contract_version: "qwen_consult_v1",
+        contract_version: "qwen_consult_v2",
         request_id: "fake-consult-request",
         provider: "fake_local_qwen",
-        model_id: "qwen3.5:4b",
+        model_id: "qwen3.5:9b",
+        model_tier: "smart",
+        model_route: { reason: "auto_smart_for_deep_research_task" },
         symbol: "NVDA",
         context: {
           status: "available",

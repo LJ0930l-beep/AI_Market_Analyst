@@ -46,6 +46,8 @@ from core.instruments import (
     phase1_universe,
 )
 from core.memory import MarketMemoryService, memory_capabilities
+from core.market_intelligence import MARKET_INTELLIGENCE_VERSION, brief_source_evidence, build_market_intelligence
+from core.model_routing import DEFAULT_FAST_MODEL, ModelRoutingConfig
 from core.news_engine import NewsEngine, RSSNewsProvider
 from core.outcomes import OutcomeStatus
 from core.performance.metrics import build_performance_snapshot
@@ -667,7 +669,15 @@ if FastAPI is not None:
             # Provider exception text can contain local paths or request data;
             # the health contract exposes only stable capability/error fields.
             safe_health.pop("detail", None)
-            consult["available"] = bool(safe_health.get("available")) and safe_health.get("model_available") is not False
+            installed = {str(name) for name in safe_health.get("models", []) if isinstance(name, str)} if isinstance(safe_health.get("models"), list) else set()
+            configured_models = consult.get("models") if isinstance(consult.get("models"), dict) else {}
+            fast_model = str(configured_models.get("fast", ""))
+            smart_model = str(configured_models.get("smart", ""))
+            consult["models_status"] = {
+                "fast": {"model_id": fast_model, "available": fast_model in installed},
+                "smart": {"model_id": smart_model, "available": smart_model in installed},
+            }
+            consult["available"] = bool(safe_health.get("available")) and bool(installed & {fast_model, smart_model})
             safe_health["consult"] = consult
             return safe_health
         except Exception:  # pragma: no cover - depends on the local model process
@@ -696,6 +706,13 @@ if FastAPI is not None:
             database = {"available": False, "error_code": "DATABASE_UNAVAILABLE"}
         capabilities = runtime_capabilities()
         capabilities["qwen_consult"] = consult_service.capability()
+        capabilities["model_routing"] = ModelRoutingConfig.from_env().capability()
+        capabilities["market_intelligence"] = {
+            "version": MARKET_INTELLIGENCE_VERSION,
+            "get_is_read_only": True,
+            "live_fetch_on_get": False,
+            "daily_brief_generation": "explicit_post_only",
+        }
         return {
             "status": "ok" if database.get("available") else "degraded",
             "phase": API_PHASE,
@@ -726,6 +743,106 @@ if FastAPI is not None:
             "read_only_get": True,
             "cloud_required": False,
         }
+
+    @router.get("/market-intelligence")
+    def market_intelligence(
+        as_of: str | None = None,
+        store: SQLiteStore = Depends(get_store),
+    ) -> dict[str, object]:
+        cutoff = _required_utc_timestamp(as_of) if as_of is not None else datetime.now(timezone.utc)
+        return build_market_intelligence(store, as_of=cutoff)
+
+    @router.get("/daily-brief")
+    def daily_brief(
+        language: str | None = None,
+        store: SQLiteStore = Depends(get_store),
+    ) -> dict[str, object]:
+        if language is not None and language not in {"en", "zh-CN"}:
+            raise APIError(400, "INVALID_BRIEF_LANGUAGE", "daily brief language must be en or zh-CN")
+        brief = store.latest_daily_brief(language=language)
+        return {
+            "contract_version": "daily_brief_v1",
+            "status": "available" if brief else "unavailable",
+            "brief": brief,
+            "generation": "explicit_post_only",
+            "read_only": True,
+        }
+
+    @router.post("/daily-brief/generate")
+    async def generate_daily_brief(
+        body: dict[str, Any] = Body(default_factory=dict),
+        store: SQLiteStore = Depends(get_store),
+        service: QwenConsultService = Depends(get_consult_service),
+    ) -> dict[str, object]:
+        if set(body) - {"language", "model_preference"}:
+            raise APIError(400, "INVALID_BRIEF_PAYLOAD", "daily brief accepts only language and model_preference")
+        language = body.get("language", "en")
+        preference = body.get("model_preference", "auto")
+        if language not in {"en", "zh-CN"}:
+            raise APIError(400, "INVALID_BRIEF_LANGUAGE", "daily brief language must be en or zh-CN")
+        view = build_market_intelligence(store)
+        source_hash, sources, missing = brief_source_evidence(view)
+        evidence = json.dumps(
+            {key: view[key] for key in ("as_of", "pulse", "calendar", "watchlist", "heatmap", "news")},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        instruction = (
+            "请仅依据以下本地已保存证据生成简洁的每日市场简报，分为隔夜变化、今日事件、热门领域、关注资产和风险；缺失项要明确说明。"
+            if language == "zh-CN"
+            else "Using only the following locally saved evidence, write a concise daily market brief covering overnight changes, today's events, hot areas, focus assets, and risks. State missing evidence explicitly."
+        )
+        evidence_budget = max(512, service.config.max_message_chars - len(instruction) - 96)
+        evidence = evidence[:evidence_budget]
+        try:
+            request = parse_consult_request(
+                {
+                    "language": language,
+                    "model_preference": preference,
+                    "task": "daily_brief",
+                    "messages": [{"role": "user", "content": f"{instruction}\nBEGIN_SAVED_EVIDENCE\n{evidence}\nEND_SAVED_EVIDENCE"}],
+                },
+                service.config,
+            )
+            session = await service.open(request, store=store)
+        except ConsultValidationError as exc:
+            raise APIError(exc.status_code, exc.code, exc.message) from exc
+        except ConsultServiceError as exc:
+            raise APIError(exc.status_code, exc.code, exc.message) from exc
+        content: list[str] = []
+        metadata: dict[str, object] = {}
+        stream_error: dict[str, object] | None = None
+        async for event in session.events():
+            if event.get("type") == "meta":
+                metadata = event
+            elif event.get("type") == "delta" and isinstance(event.get("content"), str):
+                content.append(str(event["content"]))
+            elif event.get("type") == "error":
+                stream_error = event.get("error") if isinstance(event.get("error"), dict) else {"code": "QWEN_STREAM_FAILED"}
+        if stream_error is not None:
+            raise APIError(503, str(stream_error.get("code", "QWEN_STREAM_FAILED")), str(stream_error.get("message", "Daily brief generation failed.")))
+        rendered = "".join(content).strip()
+        route = metadata.get("model_route") if isinstance(metadata.get("model_route"), dict) else {}
+        if not rendered:
+            raise APIError(503, "QWEN_EMPTY_RESPONSE", "Daily brief generation returned no content")
+        now = datetime.now(timezone.utc).isoformat()
+        payload = {
+            "brief_id": str(uuid4()),
+            "generated_at": now,
+            "as_of": view["as_of"],
+            "language": language,
+            "model_id": metadata.get("model_id", "unknown"),
+            "model_tier": metadata.get("model_tier", "unknown"),
+            "route_reason": route.get("reason", "unknown"),
+            "source_hash": source_hash,
+            "sources": sources,
+            "missing": missing,
+            "content": rendered,
+            "capability": {"provider": metadata.get("provider"), "contract_version": "daily_brief_v1", "explicit_generation": True},
+        }
+        store.save_daily_brief(payload)
+        return {"contract_version": "daily_brief_v1", "status": "available", "brief": payload}
 
     async def _consult_payload(request: Request, service: QwenConsultService) -> object:
         content_length = request.headers.get("content-length")
@@ -1512,7 +1629,7 @@ if FastAPI is not None:
             raise APIError(400, "INVALID_SAMPLES", "samples must be an integer", detail=str(body.get("samples"))) from exc
         store.create_replay_run(
             run_id=run_id,
-            model_id=str(body.get("model_id", os.environ.get("OLLAMA_MODEL", "qwen3.5:4b"))),
+            model_id=str(body.get("model_id", os.environ.get("OLLAMA_MODEL", DEFAULT_FAST_MODEL))),
             prompt_version=str(body.get("prompt_version", PROMPT_VERSION)),
             symbols=[item for item in symbols if item is not None],
             timeframes=timeframes,
@@ -1614,8 +1731,8 @@ def create_app(
     app = FastAPI(
         title="AI Market Analyst",
         version=API_VERSION,
-        description="Local-first V1.0 market research API with deterministic context, point-in-time evidence, explicit local scheduling, structured paper-only tracking and an Unreleased read-only local Qwen consultation surface.",
-        openapi_extra={"x-phase": API_PHASE, "x-product-baseline": "phase7"},
+        description="Local-first V1.1 market research API with deterministic point-in-time evidence, explicit local scheduling, paper-only tracking, read-only market intelligence and dual-tier local Qwen assistance.",
+        openapi_extra={"x-phase": API_PHASE, "x-product-baseline": "v1.1"},
     )
     app.state.api_phase = API_PHASE
     app.state.api_version = API_VERSION

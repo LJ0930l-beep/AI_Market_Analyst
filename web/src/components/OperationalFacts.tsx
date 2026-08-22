@@ -1,8 +1,8 @@
 import type { HealthResponse, Instrument, JsonRecord, ModelHealthResponse, ProviderHealthResponse, StatsResponse } from "../api/types";
 import { Link } from "react-router-dom";
-import { useI18n } from "../i18n";
+import { useI18n, type TranslationKey } from "../i18n";
 
-function textValue(value: unknown): string {
+function textValue(value: unknown, fallback: string): string {
   if (value === null) {
     return "null";
   }
@@ -10,9 +10,9 @@ function textValue(value: unknown): string {
     return String(value);
   }
   try {
-    return JSON.stringify(value) ?? "Value could not be displayed";
+    return JSON.stringify(value) ?? fallback;
   } catch {
-    return "Value could not be displayed";
+    return fallback;
   }
 }
 
@@ -26,9 +26,32 @@ function stringList(record: JsonRecord, key: string): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
-function labelForKey(key: string): string {
-  return key.replaceAll("_", " ");
-}
+const countLabels: Record<string, TranslationKey> = {
+  instruments: "common.instruments",
+  market_snapshots: "common.marketSnapshots",
+  predictions: "common.prediction",
+  paper_trades: "common.paperTrades",
+  outcomes: "common.outcomes",
+  news_events: "common.newsEvents",
+  provider_snapshots: "common.providerSnapshots",
+  model_runs: "common.modelRuns",
+  replay_runs: "common.replayRuns",
+  replay_samples: "common.replaySamples",
+  performance_snapshots: "common.performanceSnapshots",
+  calibration_results: "common.calibrationResults",
+  calibration_buckets: "common.calibrationBuckets",
+  watchlist_entries: "common.watchlistEntries",
+  app_settings: "common.appSettings",
+  scheduler_runs: "common.schedulerRuns",
+  scheduler_items: "common.schedulerItems",
+  scheduler_cache_entries: "common.schedulerCacheEntries",
+  benchmark_metadata: "common.benchmarkMetadata",
+  phase6_events: "common.phase6Events",
+  phase6_event_clusters: "common.phase6EventClusters",
+  market_memory_features: "common.marketMemoryFeatures",
+  alerts: "common.alerts",
+  daily_briefs: "common.dailyBriefs",
+};
 
 function Fact({ label, value }: { label: string; value: string }) {
   return (
@@ -40,13 +63,14 @@ function Fact({ label, value }: { label: string; value: string }) {
 }
 
 export function HealthFacts({ health }: { health: HealthResponse }) {
+  const { t, text } = useI18n();
   return (
     <dl className="fact-list">
-      <Fact label="Status" value={health.status} />
-      <Fact label="API version" value={health.api_version} />
-      <Fact label="Phase" value={String(health.phase)} />
-      <Fact label="Real orders" value={String(health.real_orders)} />
-      <Fact label="Private keys" value={String(health.private_keys)} />
+      <Fact label={t("common.status")} value={text(health.status)} />
+      <Fact label={t("common.apiVersion")} value={health.api_version} />
+      <Fact label={t("common.phase")} value={String(health.phase)} />
+      <Fact label={t("common.realOrders")} value={t(health.real_orders ? "common.yes" : "common.no")} />
+      <Fact label={t("common.privateKeys")} value={t(health.private_keys ? "common.yes" : "common.no")} />
     </dl>
   );
 }
@@ -73,41 +97,42 @@ export function ModelFacts({ model }: { model: ModelHealthResponse }) {
 }
 
 export function ProviderRouting({ provider }: { provider: ProviderHealthResponse }) {
+  const { t, text } = useI18n();
   const routes = provider.routes ?? [];
   const news = provider.news;
   return (
     <div className="provider-routing">
       <p className="panel-reading">
         {provider.available === true
-          ? "Provider routing reports available."
+          ? t("common.providerRoutingAvailable")
           : provider.available === false
-            ? "Provider routing reports unavailable."
-            : "Provider routing availability was not supplied."}
+            ? t("common.providerRoutingUnavailable")
+            : t("common.providerRoutingUnknown")}
       </p>
       <div className="provider-routing__section">
-        <p className="subsection-label">Market routes</p>
+        <p className="subsection-label">{t("common.marketRoutes")}</p>
         <ul className="route-list">
           {routes.map((route, index) => {
-            const symbol = stringValue(route, "symbol") ?? `Route ${index + 1}`;
+            const symbol = stringValue(route, "symbol") ?? `${t("common.route")} ${index + 1}`;
             const providers = stringList(route, "providers");
             return (
               <li className="route-list__item" key={`${symbol}-${index}`}>
                 <strong>{symbol}</strong>
                 <span>
-                  {stringValue(route, "asset_type") ?? "Asset type not supplied"} · {providers.length > 0 ? providers.join(", ") : "Provider names not supplied"}
+                  {text(stringValue(route, "asset_type") ?? t("common.assetTypeNotSupplied"))} · {providers.length > 0 ? providers.join(", ") : t("common.providerNamesNotSupplied")}
                 </span>
-                <span>Mode: {stringValue(route, "mode") ?? "not supplied"}</span>
+                <span>{t("common.mode")} {text(stringValue(route, "mode") ?? t("common.notSuppliedValue"))}</span>
               </li>
             );
           })}
         </ul>
       </div>
       <div className="provider-routing__section provider-routing__news">
-        <p className="subsection-label">News route</p>
+        <p className="subsection-label">{t("common.newsRoute")}</p>
         <dl className="fact-list fact-list--compact">
-          <Fact label="Provider" value={news ? stringValue(news, "provider") ?? "Not supplied" : "Not supplied"} />
-          <Fact label="Configured" value={news ? textValue(news.configured) : "Not supplied"} />
-          <Fact label="Probe" value={news ? stringValue(news, "probe") ?? "Not supplied" : "Not supplied"} />
+          <Fact label={t("common.provider")} value={news ? stringValue(news, "provider") ?? t("common.notSupplied") : t("common.notSupplied")} />
+          <Fact label={t("common.configured")} value={news ? typeof news.configured === "boolean" ? t(news.configured ? "common.yes" : "common.no") : textValue(news.configured, t("common.notDisplayable")) : t("common.notSupplied")} />
+          <Fact label={t("common.probe")} value={news ? stringValue(news, "probe") ?? t("common.notSupplied") : t("common.notSupplied")} />
         </dl>
       </div>
     </div>
@@ -115,13 +140,14 @@ export function ProviderRouting({ provider }: { provider: ProviderHealthResponse
 }
 
 export function CountLedger({ stats }: { stats: StatsResponse }) {
+  const { t } = useI18n();
   const entries = Object.entries(stats);
   return (
     <dl className="count-ledger">
       {entries.map(([key, value]) => (
         <div className="count-ledger__row" key={key}>
-          <dt>{labelForKey(key)}</dt>
-          <dd>{textValue(value)}</dd>
+          <dt>{countLabels[key] ? t(countLabels[key]) : key}</dt>
+          <dd>{textValue(value, t("common.notDisplayable"))}</dd>
         </div>
       ))}
     </dl>
@@ -129,6 +155,7 @@ export function CountLedger({ stats }: { stats: StatsResponse }) {
 }
 
 export function InstrumentRoster({ instruments }: { instruments: Instrument[] }) {
+  const { t } = useI18n();
   return (
     <ul className="instrument-roster">
       {instruments.map((instrument) => (
@@ -136,7 +163,7 @@ export function InstrumentRoster({ instruments }: { instruments: Instrument[] })
           <Link to={`/assets/${encodeURIComponent(instrument.symbol)}`}>
             <span className="instrument-roster__symbol">{instrument.symbol}</span>
             <span className="instrument-roster__meta">
-              {instrument.asset_type} · {instrument.exchange} · {instrument.sector || "Sector not supplied"}
+              {instrument.asset_type === "equity" ? t("common.assetEquity") : instrument.asset_type === "crypto" ? t("common.assetCrypto") : instrument.asset_type} · {instrument.exchange} · {instrument.sector || t("asset.sectorMissing")}
             </span>
           </Link>
         </li>

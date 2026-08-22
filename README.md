@@ -1,8 +1,18 @@
-# AI Market Analyst V1.0
+# AI Market Analyst V1.1
 
-AI Market Analyst is a local-first research ledger for market context, deterministic signals, paper tracking and auditable operations. The released package/API contract is `1.0.0` / Phase 7. It does not place orders, connect to a broker, hold private keys, send external notifications, require a cloud service, or start background work implicitly.
+AI Market Analyst is a local-first bilingual financial research terminal for market context, deterministic signals, paper tracking and auditable operations. The local V1.1 package/API contract is `1.1.0` / Phase 7 and is pending supervisor Gate; the V1.0 Final Acceptance remains historical and accepted. It does not place orders, connect to a broker, hold private keys, send external notifications, require a cloud service, or start background work implicitly.
 
 ## Quick start (Windows)
+
+Daily use is one double-click from the repository root:
+
+- First time only: double-click `Prepare_AI_Models.cmd` to download the exact official `qwen3.5:4b` and `qwen3.5:9b` tags.
+- Start: double-click `Start_AI_Market_Analyst.cmd`. Repeating it is idempotent and only opens the application.
+- Stop or inspect: double-click `Stop_AI_Market_Analyst.cmd` or `Status_AI_Market_Analyst.cmd`.
+
+The Start command delegates to the accepted fingerprinted launcher, waits for API/UI health and opens `http://127.0.0.1:4173`. It owns only its recorded children and never stops Ollama, ComfyUI or unrelated processes.
+
+Developer setup remains available from PowerShell:
 
 From the repository root:
 
@@ -39,7 +49,8 @@ All runtime configuration is local and bounded. Defaults are safe for a single-u
 | `NEWS_MODE` | `real` | RSS/public evidence or the explicit fixture test adapter. |
 | `LLM_MODE` | `ollama` | Local Ollama only; `disabled` preserves a saved `WAIT`. |
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Local Ollama endpoint; no cloud fallback. |
-| `OLLAMA_MODEL` | `qwen3.5:4b` | Local model identifier; Phase 2-6 bounded timeout/output/retry policy remains active. |
+| `OLLAMA_MODEL` | `qwen3.5:4b` | Financial-analysis/scheduler model; retained as the Fast default. |
+| `FAST_MODEL` / `SMART_MODEL` | `qwen3.5:4b` / `qwen3.5:9b` | Central V1.1 model tiers; the browser cannot provide a model name or base URL. |
 | `OLLAMA_TIMEOUT_SEC` / `OLLAMA_RETRIES` | `45` / `1` | Finite model request timeout and at most two attempts. |
 | `QWEN_CONSULT_CONNECT_TIMEOUT_SEC` | `3` | Consultation connection timeout; bounded to 0.5-10 seconds. |
 | `QWEN_CONSULT_FIRST_TOKEN_TIMEOUT_SEC` / `QWEN_CONSULT_STREAM_IDLE_TIMEOUT_SEC` | `20` / `20` | First-token and between-token limits; each bounded to 1-60 seconds. |
@@ -52,7 +63,9 @@ All runtime configuration is local and bounded. Defaults are safe for a single-u
 | `API_CORS_ORIGINS` | local dev origins | Comma-separated bounded allowlist; wildcard credentials are rejected. |
 | `API_DEBUG_ERRORS` | `false` | Production-safe API errors omit unexpected exception text. |
 
-`GET /health/release` reports the API/package contract, schema, backup format and local-only capabilities without exposing the absolute database path. `/health/providers` and `/health/model` distinguish routing/model degradation from backend health. Model health includes the redacted `qwen_consult_v1` capability, configured model identifier, limits and availability; it never returns the configured base URL. Startup does not probe or invoke Qwen.
+`GET /health/release` reports the API/package contract, schema, backup format and local-only capabilities without exposing the absolute database path. `/health/providers` and `/health/model` distinguish routing/model degradation from backend health. Model health includes the redacted `qwen_consult_v2` capability, Fast/Smart model IDs, installed availability and deterministic route policy; it never returns the configured base URL. Startup does not invoke Qwen.
+
+V1.1 adds Market Pulse, stored point-in-time Calendar/News, deterministic Watchlist monitoring, evidence-only Heatmap, Signal research handoff and an explicitly generated Daily Brief. These surfaces reuse saved evidence. `unavailable` and `stale` are deliberate evidence states, not placeholder live data. Daily Brief generation is a POST-only user action and records its as-of, sources, missing evidence, model tier and route reason.
 
 ## Backup, restore and recovery
 
@@ -87,6 +100,7 @@ npm run audit
 npm run audit:production
 npm run e2e:preflight
 npm run e2e
+npm run screenshots:v11
 
 cd ..
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\phase7-launcher-ownership-smoke.ps1
@@ -109,15 +123,18 @@ The local scheduler is explicit and default-off, serial for model work, bounded 
 ## Release artifacts and historical records
 
 - [Phase 7 completion report](docs/phase7-completion-report.md)
-- [V1.0 Final Acceptance evidence inventory](docs/final-acceptance-evidence.json) — developer-ready and pending supervisor final Gate
+- [V1.0 Final Acceptance evidence inventory](docs/final-acceptance-evidence.json) — supervisor-accepted historical evidence
 - [Phase 7 operations runbook](docs/phase7-operations-runbook.md)
 - [Post-V1.0 Qwen Consult report](docs/post-v1-qwen-consult.md)
+- [V1.1 completion report](docs/v1.1-completion-report.md)
+- [V1.1 user guide](docs/v1.1-user-guide.md)
+- [V1.1 screenshot inventory](docs/v1.1-screenshot-inventory.md)
 - [Phase 7 security audit artifact](docs/phase7-security-audit.json)
 - [Phase 7 license inventory artifact](docs/phase7-license-audit.json)
 - [Phase 6 historical completion report](docs/phase6-completion-report.md)
 - [Phase 4 historical completion report](docs/phase4-completion-report.md)
 
-Migration history is additive and idempotent through schema 10; Phase 0-6 data is preserved. The formal Phase 3 record remains `COMPLETED_WITH_ERRORS` where documented, and no zero-error or production-provider claim is inferred from fixture E2E evidence.
+Migration history is additive and idempotent through schema 11; Phase 0-7 data is preserved. The formal Phase 3 record remains `COMPLETED_WITH_ERRORS` where documented, and no zero-error or production-provider claim is inferred from fixture E2E evidence.
 
 ## Known limitations
 

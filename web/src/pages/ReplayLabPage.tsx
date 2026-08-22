@@ -9,9 +9,10 @@ import type {
   ReplayStatus,
 } from "../api/types";
 import { AsyncPanel, type PanelState } from "../components/AsyncPanel";
-import { ResearchFacts, primitiveText, timestampText, type ResearchFact } from "../components/ResearchFacts";
+import { ResearchFacts, useResearchFormatters, type ResearchFact } from "../components/ResearchFacts";
 import type { AsyncResource } from "../hooks/useAsyncResource";
 import { useAsyncResource } from "../hooks/useAsyncResource";
+import { useI18n, type TranslationKey } from "../i18n";
 
 interface ReplayLabPageProps {
   apiClient: ApplicationShellApiClient;
@@ -21,34 +22,34 @@ const replayStatuses: ReplayStatus[] = ["PENDING", "RUNNING", "COMPLETED", "COMP
 const pageLimits = [25, 50, 100];
 const initialFilters: ReplayRunFilters = { limit: 25, offset: 0 };
 
-const countFields: Array<[string, string]> = [
-  ["planned", "Planned samples"],
-  ["sample_rows", "Sample rows"],
-  ["completed", "Completed samples"],
-  ["wait", "WAIT samples"],
-  ["errors", "Errors"],
-  ["actionable", "Actionable"],
-  ["resolved_actionable", "Resolved actionable"],
-  ["outcomes", "Outcomes"],
+const countFields: Array<[string, TranslationKey]> = [
+  ["planned", "replay.plannedSamples"],
+  ["sample_rows", "replay.sampleRows"],
+  ["completed", "replay.completedSamples"],
+  ["wait", "replay.waitSamples"],
+  ["errors", "replay.errors"],
+  ["actionable", "replay.actionable"],
+  ["resolved_actionable", "replay.resolvedActionable"],
+  ["outcomes", "replay.outcomes"],
 ];
 
-const samplingFields: Array<[string, string]> = [
-  ["samples", "Requested samples"],
-  ["resume", "Resume enabled"],
-  ["execution", "Execution mode"],
-  ["min_history_bars", "Minimum history bars"],
-  ["deterministic_seed", "Deterministic seed"],
-  ["order", "Sampling order"],
-  ["news_history_available", "Historical news available"],
+const samplingFields: Array<[string, TranslationKey]> = [
+  ["samples", "replay.requestedSamples"],
+  ["resume", "replay.resumeEnabled"],
+  ["execution", "replay.executionMode"],
+  ["min_history_bars", "replay.minimumHistoryBars"],
+  ["deterministic_seed", "replay.deterministicSeed"],
+  ["order", "replay.samplingOrder"],
+  ["news_history_available", "replay.historicalNewsAvailable"],
 ];
 
-const configFields: Array<[string, string]> = [
-  ["samples", "Configured samples"],
-  ["seed", "Seed"],
-  ["db_path", "Database path"],
-  ["manifest_path", "Manifest path"],
-  ["requested_via", "Requested via"],
-  ["execution", "CLI workflow"],
+const configFields: Array<[string, TranslationKey]> = [
+  ["samples", "replay.configuredSamples"],
+  ["seed", "replay.seed"],
+  ["db_path", "replay.databasePath"],
+  ["manifest_path", "replay.manifestPath"],
+  ["requested_via", "replay.requestedVia"],
+  ["execution", "replay.cliWorkflow"],
 ];
 
 function resourceState<T>(resource: AsyncResource<T>, empty: boolean): PanelState {
@@ -57,50 +58,50 @@ function resourceState<T>(resource: AsyncResource<T>, empty: boolean): PanelStat
   return empty ? "empty" : "ready";
 }
 
-function factsFrom(record: JsonRecord | undefined, fields: Array<[string, string]>): ResearchFact[] {
+function factsFrom(record: JsonRecord | undefined, fields: Array<[string, TranslationKey]>, t: ReturnType<typeof useI18n>["t"], primitiveText: (value: unknown) => string): ResearchFact[] {
   if (!record) return [];
-  return fields.flatMap(([key, label]) => Object.prototype.hasOwnProperty.call(record, key)
-    ? [{ label, value: primitiveText(record[key]) }]
+  return fields.flatMap(([key, labelKey]) => Object.prototype.hasOwnProperty.call(record, key)
+    ? [{ label: t(labelKey), value: primitiveText(record[key]) }]
     : []);
 }
 
-function joined(values: unknown): string {
+function joined(values: unknown, fallback: string): string {
   return Array.isArray(values) && values.every((value) => typeof value === "string") && values.length > 0
     ? values.join(", ")
-    : "Not supplied";
+    : fallback;
 }
 
 function replayStatusClass(status: ReplayStatus): string {
   return `replay-status replay-status--${status.toLowerCase().replaceAll("_", "-")}`;
 }
 
-function statusNote(run: ReplayRun): string {
+function statusNote(run: ReplayRun, t: ReturnType<typeof useI18n>["t"]): string {
   if (run.status === "PENDING") {
-    return "PENDING is stored metadata only. API-created requests do not self-execute and no worker start is implied.";
+    return t("replay.pendingNote");
   }
   if (run.status === "RUNNING") {
-    return "RUNNING is the returned stored status. This read-only page does not manage or schedule replay execution.";
+    return t("replay.runningNote");
   }
   if (run.status === "COMPLETED_WITH_ERRORS") {
-    return "The run completed with one or more sample errors; inspect returned error fields and sample coverage below.";
+    return t("replay.completedErrorsNote");
   }
   if (run.status === "FAILED") {
-    return "The run is recorded as failed. Replay Lab exposes the returned error provenance but cannot restart it.";
+    return t("replay.failedNote");
   }
-  return "The run is recorded as completed. Counts and sample rows below are the returned evidence.";
+  return t("replay.completedNote");
 }
 
-function sampleCapabilities(sample: ReplaySample): string {
+function sampleCapabilities(sample: ReplaySample, t: ReturnType<typeof useI18n>["t"]): string {
   const flags = sample.capability_flags;
-  if (!flags) return "Not supplied";
+  if (!flags) return t("common.notSupplied");
   const values: string[] = [];
   if (typeof flags.news_history_available === "boolean") {
-    values.push(`Historical news: ${flags.news_history_available ? "available" : "not available"}`);
+    values.push(`${t("replay.historicalNews")}: ${flags.news_history_available ? t("replay.available") : t("replay.notAvailable")}`);
   }
   if (typeof flags.technical_only === "boolean") {
-    values.push(`Technical-only: ${flags.technical_only ? "yes" : "no"}`);
+    values.push(`${t("replay.technicalOnly")}: ${flags.technical_only ? t("replay.yes") : t("replay.no")}`);
   }
-  return values.length > 0 ? values.join(" · ") : "Not supplied";
+  return values.length > 0 ? values.join(" · ") : t("common.notSupplied");
 }
 
 function detailState(run: ReplayRun | undefined, resource: AsyncResource<ReplayRun | undefined>, selected: boolean): PanelState {
@@ -113,88 +114,92 @@ function detailState(run: ReplayRun | undefined, resource: AsyncResource<ReplayR
 }
 
 function ReplayRunDetail({ run }: { run: ReplayRun }) {
-  const countFacts = factsFrom(run.counts, countFields);
-  const samplingFacts = factsFrom(run.sampling_policy, samplingFields);
-  const configFacts = factsFrom(run.config, configFields);
+  const { t, text } = useI18n();
+  const { primitiveText, timestampText } = useResearchFormatters();
+  const countFacts = factsFrom(run.counts, countFields, t, primitiveText);
+  const samplingFacts = factsFrom(run.sampling_policy, samplingFields, t, primitiveText);
+  const configFacts = factsFrom(run.config, configFields, t, primitiveText);
   const samples = run.samples ?? [];
 
   return (
     <div className="record-detail replay-detail">
       <div className="record-detail__heading">
         <div>
-          <p className="eyebrow">Replay run provenance</p>
+          <p className="eyebrow">{t("replay.provenance")}</p>
           <h3>{run.run_id}</h3>
         </div>
-        <span className={replayStatusClass(run.status)}>{run.status}</span>
+        <span className={replayStatusClass(run.status)}>{text(run.status)}</span>
       </div>
 
-      <p className="replay-status-note" role="status">{statusNote(run)}</p>
+      <p className="replay-status-note" role="status">{statusNote(run, t)}</p>
 
       <ResearchFacts
         facts={[
-          { label: "Run id", value: run.run_id },
-          { label: "Status", value: run.status },
-          { label: "Created at", value: timestampText(run.created_at) },
-          { label: "Completed at", value: timestampText(run.completed_at) },
-          { label: "Model", value: primitiveText(run.model_id) },
-          { label: "Prompt version", value: primitiveText(run.prompt_version) },
-          { label: "Symbols", value: joined(run.symbols) },
-          { label: "Timeframes", value: joined(run.timeframes) },
-          { label: "Manifest hash", value: primitiveText(run.manifest_hash) },
-          { label: "Error code", value: primitiveText(run.error_code) },
+          { label: t("replay.runId"), value: run.run_id },
+          { label: t("common.status"), value: text(run.status) },
+          { label: t("replay.createdAt"), value: timestampText(run.created_at) },
+          { label: t("replay.completedAt"), value: timestampText(run.completed_at) },
+          { label: t("common.model"), value: primitiveText(run.model_id) },
+          { label: t("replay.promptVersion"), value: primitiveText(run.prompt_version) },
+          { label: t("replay.symbols"), value: joined(run.symbols, t("common.notSupplied")) },
+          { label: t("replay.timeframes"), value: joined(run.timeframes, t("common.notSupplied")) },
+          { label: t("replay.manifestHash"), value: primitiveText(run.manifest_hash) },
+          { label: t("replay.errorCode"), value: primitiveText(run.error_code) },
         ]}
       />
 
       <section className="record-detail__section" aria-labelledby="replay-counts-title">
-        <p className="subsection-label" id="replay-counts-title">Returned counts</p>
+        <p className="subsection-label" id="replay-counts-title">{t("replay.returnedCounts")}</p>
         {countFacts.length > 0
           ? <ResearchFacts compact facts={countFacts} />
-          : <p className="panel-reading">No count fields were supplied.</p>}
+          : <p className="panel-reading">{t("replay.noCountFields")}</p>}
       </section>
 
-      <section className="record-detail__section replay-detail__split" aria-label="Replay configuration provenance">
+      <section className="record-detail__section replay-detail__split" aria-label={t("replay.configurationProvenance")}>
         <div>
-          <p className="subsection-label">Sampling policy</p>
+          <p className="subsection-label">{t("replay.samplingPolicy")}</p>
           {samplingFacts.length > 0
             ? <ResearchFacts compact facts={samplingFacts} />
-            : <p className="panel-reading">No allowlisted sampling policy fields were supplied.</p>}
+            : <p className="panel-reading">{t("replay.noSamplingFields")}</p>}
         </div>
         <div>
-          <p className="subsection-label">Run configuration</p>
+          <p className="subsection-label">{t("replay.runConfiguration")}</p>
           {configFacts.length > 0
             ? <ResearchFacts compact facts={configFacts} />
-            : <p className="panel-reading">No allowlisted configuration fields were supplied.</p>}
+            : <p className="panel-reading">{t("replay.noConfigFields")}</p>}
         </div>
       </section>
 
       <section className="record-detail__section" aria-labelledby="sample-coverage-title">
-        <p className="subsection-label" id="sample-coverage-title">Sample coverage and status</p>
+        <p className="subsection-label" id="sample-coverage-title">{t("replay.sampleCoverage")}</p>
         {samples.length > 0 ? (
-          <div className="table-wrap" tabIndex={0} aria-label="Scrollable replay sample coverage">
+          <div className="table-wrap" tabIndex={0} aria-label={t("replay.scrollSamples")}>
             <table className="replay-sample-table">
               <thead>
-                <tr><th scope="col">Route / as of</th><th scope="col">Status</th><th scope="col">Prediction</th><th scope="col">Capabilities</th><th scope="col">Timing</th></tr>
+                <tr><th scope="col">{t("replay.routeAsOf")}</th><th scope="col">{t("common.status")}</th><th scope="col">{t("common.prediction")}</th><th scope="col">{t("replay.capabilities")}</th><th scope="col">{t("replay.timing")}</th></tr>
               </thead>
               <tbody>
                 {samples.map((sample, index) => (
                   <tr key={`${sample.symbol ?? "unknown"}-${sample.timeframe ?? "unknown"}-${sample.as_of ?? index}`}>
-                    <td><span className="data-strong">{primitiveText(sample.symbol)} · {primitiveText(sample.timeframe)}</span><span className="data-meta">As of {timestampText(sample.as_of)}</span></td>
-                    <td><span className="data-strong">{primitiveText(sample.status)}</span><span className="data-meta">Error: {primitiveText(sample.error_code)}</span></td>
+                    <td><span className="data-strong">{primitiveText(sample.symbol)} · {primitiveText(sample.timeframe)}</span><span className="data-meta">{t("replay.asOf")} {timestampText(sample.as_of)}</span></td>
+                    <td><span className="data-strong">{text(primitiveText(sample.status))}</span><span className="data-meta">{t("common.error")}: {primitiveText(sample.error_code)}</span></td>
                     <td>{primitiveText(sample.prediction_id)}</td>
-                    <td>{sampleCapabilities(sample)}</td>
-                    <td><span className="data-meta">Started {timestampText(sample.started_at)}</span><span className="data-meta">Completed {timestampText(sample.completed_at)}</span></td>
+                    <td>{sampleCapabilities(sample, t)}</td>
+                    <td><span className="data-meta">{t("replay.started")} {timestampText(sample.started_at)}</span><span className="data-meta">{t("replay.completed")} {timestampText(sample.completed_at)}</span></td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        ) : <p className="panel-reading">No replay sample rows were returned for this run.</p>}
+        ) : <p className="panel-reading">{t("replay.noSampleRows")}</p>}
       </section>
     </div>
   );
 }
 
 export function ReplayLabPage({ apiClient }: ReplayLabPageProps) {
+  const { t, text } = useI18n();
+  const { primitiveText, timestampText } = useResearchFormatters();
   const [statusDraft, setStatusDraft] = useState<ReplayStatus | "">("");
   const [limit, setLimit] = useState(25);
   const [filters, setFilters] = useState<ReplayRunFilters>(initialFilters);
@@ -232,84 +237,84 @@ export function ReplayLabPage({ apiClient }: ReplayLabPageProps) {
   return (
     <section className="workflow-page replay-page" aria-labelledby="replay-title">
       <header className="page-intro">
-        <p className="eyebrow">Replay provenance / advanced read-only</p>
-        <h1 id="replay-title">Replay lab</h1>
-        <p className="page-intro__description">Inspect recorded replay runs, configuration provenance and sample coverage without mutating replay state.</p>
-        <p className="page-boundary">Replay Lab is read-only. API-created requests do not self-execute; actual replay execution remains an explicit CLI workflow.</p>
+        <p className="eyebrow">{t("replay.eyebrow")}</p>
+        <h1 id="replay-title">{t("replay.title")}</h1>
+        <p className="page-intro__description">{t("replay.description")}</p>
+        <p className="page-boundary">{t("replay.boundary")}</p>
       </header>
 
-      <div className="capability-ledger capability-ledger--warning" role="note" aria-label="Replay execution boundary">
-        <span className="capability-ledger__label">Execution boundary</span>
-        <p>No scheduler or background worker is controlled here. There is no create, start, resume or retry-run action on this page.</p>
+      <div className="capability-ledger capability-ledger--warning" role="note" aria-label={t("replay.executionBoundary")}>
+        <span className="capability-ledger__label">{t("replay.executionBoundary")}</span>
+        <p>{t("replay.executionNote")}</p>
       </div>
 
-      <form className="workflow-filters" aria-label="Replay run filters" onSubmit={applyFilters}>
+      <form className="workflow-filters" aria-label={t("replay.filters")} onSubmit={applyFilters}>
         <div className="workflow-filters__grid replay-filters__grid">
           <label>
-            Run status
+            {t("replay.runStatus")}
             <select value={statusDraft} onChange={(event) => setStatusDraft(replayStatuses.includes(event.target.value as ReplayStatus) ? event.target.value as ReplayStatus : "")}>
-              <option value="">All statuses</option>
-              {replayStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
+              <option value="">{t("replay.allStatuses")}</option>
+              {replayStatuses.map((status) => <option key={status} value={status}>{text(status)}</option>)}
             </select>
           </label>
           <label>
-            Rows
+            {t("replay.rows")}
             <select value={limit} onChange={(event) => setLimit(Number(event.target.value))}>
               {pageLimits.map((value) => <option key={value} value={value}>{value}</option>)}
             </select>
           </label>
         </div>
-        <button className="primary-button" type="submit">Apply filters</button>
+        <button className="primary-button" type="submit">{t("common.applyFilters")}</button>
       </form>
 
       <div className="workflow-grid workflow-grid--records">
         <AsyncPanel
           className="workflow-panel workflow-panel--list"
-          title="Replay runs"
+          title={t("replay.runs")}
           source={requestLabel}
-          freshness="current stored run metadata"
+          freshness={t("replay.currentFreshness")}
           state={resourceState(runs, runList.length === 0)}
           error={runs.error}
           onRetry={runs.retry}
-          emptyMessage="No replay runs matched the current status filter."
+          emptyMessage={t("replay.noRuns")}
         >
           {runList.length > 0 ? (
-            <div className="table-wrap" tabIndex={0} aria-label="Scrollable replay run list">
-              <table className="replay-run-table" aria-label="Replay runs">
-                <thead><tr><th scope="col">Run</th><th scope="col">Status</th><th scope="col">Scope</th><th scope="col">Model / prompt</th><th scope="col">Timing</th></tr></thead>
+            <div className="table-wrap" tabIndex={0} aria-label={t("replay.scrollRuns")}>
+              <table className="replay-run-table" aria-label={t("replay.runs")}>
+                <thead><tr><th scope="col">{t("common.run")}</th><th scope="col">{t("common.status")}</th><th scope="col">{t("replay.scope")}</th><th scope="col">{t("replay.modelPrompt")}</th><th scope="col">{t("replay.timing")}</th></tr></thead>
                 <tbody>
                   {runList.map((run) => (
                     <tr key={run.run_id}>
                       <td><button className="record-link" type="button" onClick={() => setSelectedId(run.run_id)}>{run.run_id}</button></td>
-                      <td><span className={replayStatusClass(run.status)}>{run.status}</span>{run.error_code ? <span className="data-meta">Error: {run.error_code}</span> : null}</td>
-                      <td><span className="data-strong">{joined(run.symbols)}</span><span className="data-meta">{joined(run.timeframes)}</span></td>
+                      <td><span className={replayStatusClass(run.status)}>{text(run.status)}</span>{run.error_code ? <span className="data-meta">{t("common.error")}: {run.error_code}</span> : null}</td>
+                      <td><span className="data-strong">{joined(run.symbols, t("common.notSupplied"))}</span><span className="data-meta">{joined(run.timeframes, t("common.notSupplied"))}</span></td>
                       <td><span className="data-strong">{primitiveText(run.model_id)}</span><span className="data-meta">{primitiveText(run.prompt_version)}</span></td>
-                      <td><span className="data-meta">Created {timestampText(run.created_at)}</span><span className="data-meta">Completed {timestampText(run.completed_at)}</span></td>
+                      <td><span className="data-meta">{t("replay.created")} {timestampText(run.created_at)}</span><span className="data-meta">{t("replay.completed")} {timestampText(run.completed_at)}</span></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           ) : null}
-          <div className="pagination-controls" aria-label="Replay run pagination">
-            <span>Offset {filters.offset ?? 0} · maximum {filters.limit ?? limit} rows</span>
+          <div className="pagination-controls" aria-label={t("replay.pagination")}>
+            <span>{t("common.offset")} {filters.offset ?? 0} · {t("common.maximum")} {filters.limit ?? limit} {t("common.rowsValue")}</span>
             <div>
-              <button className="quiet-button" type="button" disabled={(filters.offset ?? 0) === 0} onClick={() => movePage(-1)}>Previous</button>
-              <button className="quiet-button" type="button" disabled={runList.length < (filters.limit ?? limit)} onClick={() => movePage(1)}>Next</button>
+              <button className="quiet-button" type="button" disabled={(filters.offset ?? 0) === 0} onClick={() => movePage(-1)}>{t("common.previous")}</button>
+              <button className="quiet-button" type="button" disabled={runList.length < (filters.limit ?? limit)} onClick={() => movePage(1)}>{t("common.next")}</button>
             </div>
           </div>
         </AsyncPanel>
 
         <AsyncPanel
           className="workflow-panel workflow-panel--detail"
-          title="Replay run detail"
+          title={t("replay.detail")}
           source={selectedId ? `GET /replay/runs/${selectedId}` : "GET /replay/runs/{run_id}"}
-          freshness="returned run and sample timestamps"
+          freshness={t("replay.detailFreshness")}
           state={detailState(detail.data, detail, Boolean(selectedId))}
           error={detail.error}
           onRetry={detail.retry}
-          emptyMessage="Select a replay run to inspect its allowlisted provenance and sample coverage."
-          degradedMessage="This run returned an error-bearing status. Other replay records remain available."
+          emptyMessage={t("replay.selectDetail")}
+          degradedMessage={t("replay.degraded")}
         >
           {detail.data ? <ReplayRunDetail run={detail.data} /> : null}
         </AsyncPanel>

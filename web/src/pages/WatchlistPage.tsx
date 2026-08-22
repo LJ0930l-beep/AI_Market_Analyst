@@ -4,8 +4,9 @@ import { Link } from "react-router-dom";
 import { ApiError, type ApplicationShellApiClient } from "../api/client";
 import type { AssetType, Instrument } from "../api/types";
 import { AsyncPanel, type PanelState } from "../components/AsyncPanel";
-import { ResearchFacts, primitiveText } from "../components/ResearchFacts";
+import { ResearchFacts, useResearchFormatters } from "../components/ResearchFacts";
 import { useAsyncResource } from "../hooks/useAsyncResource";
+import { useI18n } from "../i18n";
 
 interface WatchlistPageProps {
   apiClient: ApplicationShellApiClient;
@@ -49,11 +50,11 @@ function resourceState(
   return degraded ? "degraded" : "ready";
 }
 
-function errorMessage(error: unknown): string {
+function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiError) {
     return `${error.code}: ${error.message}`;
   }
-  return "The watchlist request did not return a usable response.";
+  return fallback;
 }
 
 function InstrumentCard({
@@ -67,39 +68,41 @@ function InstrumentCard({
   busy: boolean;
   onToggle: (symbol: string, saved: boolean) => void;
 }) {
+  const { t } = useI18n();
+  const { primitiveText } = useResearchFormatters();
   return (
     <li className="watchlist-roster__item">
       <article>
         <header className="watchlist-roster__heading">
           <div>
             <p className="eyebrow">
-              {instrument.registry_source === "registered" ? "registered" : "canonical"} · {primitiveText(instrument.asset_type)}
+              {instrument.registry_source === "registered" ? t("watchlist.registered") : t("watchlist.canonical")} · {instrument.asset_type === "equity" ? t("common.assetEquity") : instrument.asset_type === "crypto" ? t("common.assetCrypto") : primitiveText(instrument.asset_type)}
             </p>
             <h3>{instrument.symbol}</h3>
           </div>
           <div className="watchlist-roster__actions">
-            <Link to={`/assets/${encodeURIComponent(instrument.symbol)}`}>Open asset detail</Link>
+            <Link to={`/assets/${encodeURIComponent(instrument.symbol)}`}>{t("watchlist.openAsset")}</Link>
             <button
               className="quiet-button"
               type="button"
               disabled={busy}
-              aria-label={`${saved ? "Remove" : "Add"} ${instrument.symbol} ${saved ? "from" : "to"} saved watchlist`}
+              aria-label={`${saved ? t("watchlist.remove") : t("common.add")} ${instrument.symbol} ${saved ? t("common.fromSavedWatchlist") : t("common.toSavedWatchlist")}`}
               onClick={() => onToggle(instrument.symbol, saved)}
             >
-              {busy ? "Saving…" : saved ? "Remove" : "Add to saved"}
+              {busy ? t("watchlist.saving") : saved ? t("watchlist.remove") : t("watchlist.addToSaved")}
             </button>
           </div>
         </header>
         <ResearchFacts
           compact
           facts={[
-            { label: "Exchange", value: primitiveText(instrument.exchange) },
-            { label: "Currency", value: primitiveText(instrument.currency || instrument.quote_currency) },
-            { label: "Timezone", value: primitiveText(instrument.timezone) },
-            { label: "Trading hours", value: primitiveText(instrument.trading_hours) },
-            { label: "Sector", value: primitiveText(instrument.sector) },
-            { label: "Metadata", value: primitiveText(instrument.metadata_status) },
-            { label: "Validation", value: primitiveText(instrument.validation_provider) },
+            { label: t("watchlist.exchange"), value: primitiveText(instrument.exchange) },
+            { label: t("watchlist.currency"), value: primitiveText(instrument.currency || instrument.quote_currency) },
+            { label: t("watchlist.timezone"), value: primitiveText(instrument.timezone) },
+            { label: t("watchlist.tradingHours"), value: primitiveText(instrument.trading_hours) },
+            { label: t("watchlist.sector"), value: primitiveText(instrument.sector) },
+            { label: t("watchlist.metadata"), value: primitiveText(instrument.metadata_status) },
+            { label: t("watchlist.validation"), value: primitiveText(instrument.validation_provider) },
           ]}
         />
       </article>
@@ -108,6 +111,7 @@ function InstrumentCard({
 }
 
 export function WatchlistPage({ apiClient }: WatchlistPageProps) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [assetType, setAssetType] = useState("");
   const [registrationSymbol, setRegistrationSymbol] = useState("");
@@ -143,8 +147,8 @@ export function WatchlistPage({ apiClient }: WatchlistPageProps) {
   const rosterState = resourceState(roster.status, instruments.length, visibleInstruments.length, isDegraded);
   const savedState = resourceState(saved.status, savedEntries.length);
   const emptyMessage = instruments.length === 0
-    ? "The instrument registry returned no instruments."
-    : "No instruments match the current search and asset-type filter.";
+    ? t("watchlist.noRegistry")
+    : t("watchlist.noMatch");
 
   const handleToggle = useCallback(async (symbol: string, isSaved: boolean) => {
     setMutationSymbol(symbol);
@@ -173,7 +177,7 @@ export function WatchlistPage({ apiClient }: WatchlistPageProps) {
       await apiClient.addWatchlist(result.instrument.symbol);
       setRegistrationStatus("success");
       setRegistrationMessage(
-        `${result.instrument.symbol} passed provider validation and was saved to the watchlist.`,
+        `${result.instrument.symbol} ${t("watchlist.registrationSuccess")}`,
       );
       setRegistrationSymbol("");
       roster.retry();
@@ -187,32 +191,32 @@ export function WatchlistPage({ apiClient }: WatchlistPageProps) {
   return (
     <section className="workflow-page watchlist-page" aria-labelledby="watchlist-title">
       <header className="page-intro">
-        <p className="eyebrow">Saved membership / canonical Phase 5 foundation</p>
-        <h1 id="watchlist-title">Watchlist</h1>
+        <p className="eyebrow">{t("watchlist.eyebrow")}</p>
+        <h1 id="watchlist-title">{t("nav.watchlist")}</h1>
         <p className="page-intro__description">
-          Keep durable local membership over the canonical universe and explicitly register additional public symbols for Asset Detail evidence.
+          {t("watchlist.description")}
         </p>
         <p className="page-boundary">
-          Registration performs bounded network validation for public US equities or Binance-compatible USDT spot symbols. Ranking, scans, scheduling and alerts are not active.
+          {t("watchlist.boundary")}
         </p>
       </header>
 
-      <div className="capability-ledger" role="note" aria-label="Watchlist capability boundary">
-        <span className="capability-ledger__label">Phase 5 foundation boundary</span>
-        <p>GET /watchlist and POST/PUT/DELETE /watchlist provide saved membership. POST /instruments/register validates equity or USDT crypto symbols before saving metadata; Radar, scanning, scheduling and alerts remain inactive.</p>
+      <div className="capability-ledger" role="note" aria-label={t("watchlist.capabilityLabel")}>
+        <span className="capability-ledger__label">{t("watchlist.capabilityLabel")}</span>
+        <p>{t("watchlist.capability")}</p>
       </div>
 
-      {mutationError ? <p className="watchlist-mutation-error" role="alert">{errorMessage(mutationError)}</p> : null}
+      {mutationError ? <p className="watchlist-mutation-error" role="alert">{errorMessage(mutationError, t("watchlist.requestFailed"))}</p> : null}
 
       <section className="watchlist-registration" aria-labelledby="watchlist-registration-title">
         <header>
-          <p className="eyebrow">Explicit network validation</p>
-          <h2 id="watchlist-registration-title">Register an instrument</h2>
-          <p>Current scope: public US equity tickers and Binance-compatible USDT spot symbols. Metadata is labeled inferred or unknown; no fixture data, model, news or account access is used for compatibility validation.</p>
+          <p className="eyebrow">{t("watchlist.registrationEyebrow")}</p>
+          <h2 id="watchlist-registration-title">{t("watchlist.register")}</h2>
+          <p>{t("watchlist.registrationScope")}</p>
         </header>
-        <form className="watchlist-registration__form" aria-label="Register instrument" onSubmit={handleRegister}>
+        <form className="watchlist-registration__form" aria-label={t("watchlist.registrationForm")} onSubmit={handleRegister}>
           <label>
-            Instrument symbol
+            {t("watchlist.instrumentSymbol")}
             <input
               value={registrationSymbol}
               onChange={(event) => setRegistrationSymbol(event.target.value)}
@@ -222,36 +226,36 @@ export function WatchlistPage({ apiClient }: WatchlistPageProps) {
             />
           </label>
           <label>
-            Instrument asset type
+            {t("watchlist.instrumentType")}
             <select value={registrationAssetType} onChange={(event) => setRegistrationAssetType(event.target.value as AssetType)}>
-              <option value="equity">equity</option>
-              <option value="crypto">crypto</option>
+              <option value="equity">{t("common.assetEquity")}</option>
+              <option value="crypto">{t("common.assetCrypto")}</option>
             </select>
           </label>
           <button className="quiet-button" type="submit" disabled={registrationStatus === "loading"}>
-            {registrationStatus === "loading" ? "Validating…" : "Validate and add"}
+            {registrationStatus === "loading" ? t("watchlist.validating") : t("watchlist.validateAdd")}
           </button>
         </form>
-        {registrationError ? <p className="watchlist-mutation-error" role="alert">{errorMessage(registrationError)}</p> : null}
+        {registrationError ? <p className="watchlist-mutation-error" role="alert">{errorMessage(registrationError, t("watchlist.requestFailed"))}</p> : null}
         {registrationStatus === "success" ? <p className="watchlist-registration__success" role="status">{registrationMessage}</p> : null}
       </section>
 
-      <form className="workflow-filters" aria-label="Available instrument filters" onSubmit={(event) => event.preventDefault()}>
+      <form className="workflow-filters" aria-label={t("watchlist.availableFilters")} onSubmit={(event) => event.preventDefault()}>
         <div className="workflow-filters__grid watchlist-filters__grid">
           <label>
-            Search available instruments
+            {t("watchlist.search")}
             <input
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Symbol, exchange, sector…"
+              placeholder={t("watchlist.searchPlaceholder")}
             />
           </label>
           <label>
-            Asset type
+            {t("common.assetType")}
             <select value={assetType} onChange={(event) => setAssetType(event.target.value)}>
-              <option value="">All asset types</option>
-              {assetTypes.map((value) => <option key={value} value={value}>{value}</option>)}
+              <option value="">{t("common.allAssetTypes")}</option>
+              {assetTypes.map((value) => <option key={value} value={value}>{value === "equity" ? t("common.assetEquity") : value === "crypto" ? t("common.assetCrypto") : value}</option>)}
             </select>
           </label>
         </div>
@@ -260,17 +264,17 @@ export function WatchlistPage({ apiClient }: WatchlistPageProps) {
       <div className="workflow-grid">
         <AsyncPanel
           className="watchlist-panel"
-          title="Saved watchlist"
+          title={t("watchlist.saved")}
           source="GET /watchlist"
-          freshness="durable local membership; timestamps returned by SQLite"
+          freshness={t("common.durableMembership")}
           state={savedState}
           error={saved.error}
           onRetry={saved.retry}
-          emptyMessage="No instruments are saved yet. Add one from the available canonical universe."
-          degradedMessage="Saved membership loaded, but one or more instrument records is incomplete."
+          emptyMessage={t("watchlist.noSaved")}
+          degradedMessage={t("watchlist.savedDegraded")}
         >
           {savedEntries.length > 0 ? (
-            <ul className="watchlist-roster" aria-label="Saved watchlist entries">
+            <ul className="watchlist-roster" aria-label={t("watchlist.savedEntries")}>
               {savedEntries.map((entry) => (
                 <InstrumentCard
                   key={entry.symbol}
@@ -286,21 +290,21 @@ export function WatchlistPage({ apiClient }: WatchlistPageProps) {
 
         <AsyncPanel
           className="workflow-panel--list"
-          title="Available instruments"
+          title={t("watchlist.available")}
           source="GET /instruments"
-          freshness="canonical plus validated registry response; no ranking"
+          freshness={t("common.validatedRegistry")}
           state={rosterState}
           error={roster.error}
           onRetry={roster.retry}
           emptyMessage={emptyMessage}
-          degradedMessage="The canonical universe is usable, but one or more returned instruments is missing descriptive metadata."
+          degradedMessage={t("watchlist.rosterDegraded")}
         >
           {visibleInstruments.length > 0 ? (
             <>
               <p className="roster-count" role="status">
-                Showing {visibleInstruments.length} of {instruments.length} available instruments.
+                {t("watchlist.showing")} {visibleInstruments.length} {t("watchlist.of")} {instruments.length} {t("watchlist.availableCount")}
               </p>
-              <ul className="watchlist-roster" aria-label="Available instrument roster">
+              <ul className="watchlist-roster" aria-label={t("watchlist.availableRoster")}>
                 {visibleInstruments.map((instrument) => (
                   <InstrumentCard
                     key={instrument.symbol}

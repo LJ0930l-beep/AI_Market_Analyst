@@ -55,6 +55,30 @@ APP_SETTING_DEFINITIONS: dict[str, dict[str, object]] = {
         "allowed_values": ("market_hours", "always"),
         "description": "Local Watchlist scan session policy; market_hours is the conservative default.",
     },
+    "ui.language": {
+        "default": "en",
+        "value_type": "string",
+        "allowed_values": ("en", "zh-CN"),
+        "description": "Preferred display language for this local workstation.",
+    },
+    "ai.response_language": {
+        "default": "follow_ui",
+        "value_type": "string",
+        "allowed_values": ("follow_ui", "en", "zh-CN"),
+        "description": "Preferred language for explicit local Qwen responses.",
+    },
+    "notifications.language": {
+        "default": "en",
+        "value_type": "string",
+        "allowed_values": ("en", "zh-CN"),
+        "description": "Display language reserved for local alerts; no external notifier is enabled.",
+    },
+    "ai.model_preference": {
+        "default": "auto",
+        "value_type": "string",
+        "allowed_values": ("auto", "fast", "smart"),
+        "description": "Deterministic server-side Qwen tier preference for explicit AI requests.",
+    },
 }
 
 APP_SETTING_DEFAULTS: dict[str, object] = {
@@ -224,6 +248,34 @@ class SQLiteStore:
                 "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                 (10, datetime.now(timezone.utc).isoformat()),
             )
+            self._ensure_v11_tables(db)
+            db.execute(
+                "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                (11, datetime.now(timezone.utc).isoformat()),
+            )
+
+    @staticmethod
+    def _ensure_v11_tables(db: sqlite3.Connection) -> None:
+        db.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS daily_briefs (
+                brief_id TEXT PRIMARY KEY,
+                generated_at TEXT NOT NULL,
+                as_of TEXT NOT NULL,
+                language TEXT NOT NULL,
+                model_id TEXT NOT NULL,
+                model_tier TEXT NOT NULL,
+                route_reason TEXT NOT NULL,
+                source_hash TEXT NOT NULL,
+                sources_json TEXT NOT NULL,
+                missing_json TEXT NOT NULL,
+                content TEXT NOT NULL,
+                capability_json TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_daily_briefs_generated
+                ON daily_briefs(generated_at DESC, brief_id DESC);
+            """
+        )
 
     @staticmethod
     def _ensure_prediction_columns(db: sqlite3.Connection) -> None:
@@ -2557,6 +2609,67 @@ class SQLiteStore:
             )
         return result.rowcount > 0
 
+    def save_daily_brief(self, payload: dict[str, Any]) -> dict[str, Any]:
+        required = (
+            "brief_id", "generated_at", "as_of", "language", "model_id",
+            "model_tier", "route_reason", "source_hash", "sources", "missing",
+            "content", "capability",
+        )
+        if any(key not in payload for key in required):
+            raise ValueError("daily brief is missing required audit fields")
+        for key in ("generated_at", "as_of"):
+            if _parse_utc_timestamp(payload[key]) is None:
+                raise ValueError("daily brief timestamps must be timezone-aware")
+        if payload["language"] not in {"en", "zh-CN"}:
+            raise ValueError("daily brief language is unsupported")
+        if not isinstance(payload["content"], str) or not payload["content"].strip():
+            raise ValueError("daily brief content must be non-empty")
+        with self._connect() as db:
+            db.execute(
+                """INSERT INTO daily_briefs(
+                       brief_id, generated_at, as_of, language, model_id,
+                       model_tier, route_reason, source_hash, sources_json,
+                       missing_json, content, capability_json
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    payload["brief_id"], payload["generated_at"], payload["as_of"],
+                    payload["language"], payload["model_id"], payload["model_tier"],
+                    payload["route_reason"], payload["source_hash"],
+                    json.dumps(payload["sources"], sort_keys=True),
+                    json.dumps(payload["missing"], sort_keys=True), payload["content"],
+                    json.dumps(payload["capability"], sort_keys=True),
+                ),
+            )
+        return dict(payload)
+
+    def latest_daily_brief(self, *, language: str | None = None) -> dict[str, Any] | None:
+        query = "SELECT * FROM daily_briefs"
+        params: tuple[object, ...] = ()
+        if language is not None:
+            if language not in {"en", "zh-CN"}:
+                raise ValueError("daily brief language is unsupported")
+            query += " WHERE language = ?"
+            params = (language,)
+        query += " ORDER BY generated_at DESC, brief_id DESC LIMIT 1"
+        with self._connect() as db:
+            row = db.execute(query, params).fetchone()
+        if row is None:
+            return None
+        return {
+            "brief_id": row["brief_id"],
+            "generated_at": row["generated_at"],
+            "as_of": row["as_of"],
+            "language": row["language"],
+            "model_id": row["model_id"],
+            "model_tier": row["model_tier"],
+            "route_reason": row["route_reason"],
+            "source_hash": row["source_hash"],
+            "sources": json.loads(row["sources_json"]),
+            "missing": json.loads(row["missing_json"]),
+            "content": row["content"],
+            "capability": json.loads(row["capability_json"]),
+        }
+
     def counts(self) -> dict[str, int]:
         with self._connect() as db:
             return {
@@ -2585,6 +2698,7 @@ class SQLiteStore:
                 "phase6_events",
                 "phase6_event_clusters",
                 "market_memory_features",
+                "daily_briefs",
             )
         }
 

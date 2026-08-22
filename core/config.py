@@ -10,9 +10,9 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 API_PHASE = 7
-CURRENT_SCHEMA_VERSION = 10
+CURRENT_SCHEMA_VERSION = 11
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_API_PORT = 8000
 DEFAULT_WEB_PORT = 4173

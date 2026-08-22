@@ -1,10 +1,20 @@
-# AI Market Analyst V1.0 Execution Plan
+# AI Market Analyst V1.1 Execution Plan
 
 ## Current phase
 
 Phase 7 - Security/release hardening, backup/restore, one-command startup and V1.0 Final Acceptance — SUPERVISOR_ACCEPTED.
 
-Current task: Post-V1.0 `Qwen Consult` streaming consultation milestone — DEVELOPER_COMPLETE / supervisor Gate pending; V1.0 Final Acceptance remains SUPERVISOR_ACCEPTED / PASS and historical.
+Current task: V1.1 premium UI/UX, internationalization, Market Intelligence and dual-model Assistant — DEVELOPER_COMPLETE, pending supervisor review; V1.0 Final Acceptance remains SUPERVISOR_ACCEPTED / PASS and historical.
+
+## V1.1 task graph
+
+1. Premium terminal design system, eleven-route information architecture and responsive accessibility — IMPLEMENTED.
+2. Saved-evidence Dashboard, Markets, Calendar, News, Heatmap, Watchlist monitoring and Signal research handoff — IMPLEMENTED.
+3. `qwen_consult_v2` Assistant plus deterministic Fast/Smart/Auto `qwen_route_v1` and explicit Daily Brief — IMPLEMENTED.
+4. Complete typed English/Chinese presentation catalog, Intl formatting and durable language/model preferences — IMPLEMENTED.
+5. Windows double-click model preparation/start/status/stop, real-model smoke, screenshots, reports and consolidated V1.1 Gate — COMPLETE (developer-verified).
+
+V1.1 remains an Unreleased developer milestone pending supervisor review. Its consolidated developer Gate passed, and it does not modify the accepted V1.0 evidence or begin a Phase 8/real-trading scope.
 
 P4-T04 execution split:
 

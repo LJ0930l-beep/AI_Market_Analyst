@@ -1,13 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 
 import type { ApplicationShellApiClient } from "../api/client";
-import type { PerformanceSummary, Prediction, RadarCategory, RadarEntry, RadarResponse, JsonRecord } from "../api/types";
+import type { DailyBrief, HeatmapCell, IntelligenceEvent, MarketIntelligenceResponse, MonitoringItem } from "../api/types";
 import type { ProvenanceRailState } from "../components/TimeProvenanceRail";
-import type { AsyncResource } from "../hooks/useAsyncResource";
 import { useAsyncResource } from "../hooks/useAsyncResource";
-import { AsyncPanel, type PanelState } from "../components/AsyncPanel";
-import { CountLedger, HealthFacts, InstrumentRoster, ModelFacts, ProviderRouting } from "../components/OperationalFacts";
+import { useI18n } from "../i18n";
 
 export interface DashboardProvenance {
   generatedAt?: string;
@@ -19,504 +17,103 @@ export interface DashboardProvenance {
   footer: string;
 }
 
-export const EMPTY_DASHBOARD_PROVENANCE: DashboardProvenance = {
-  dataSource: "No prediction record supplied",
-  model: "No prediction record supplied",
-  state: "neutral",
-  footer: "No recent prediction with usable provenance was returned.",
-};
+export function emptyDashboardProvenance(t: ReturnType<typeof useI18n>["t"]): DashboardProvenance {
+  return {
+    dataSource: t("v11.noPredictionRecord"),
+    model: t("v11.noPredictionRecord"),
+    state: "neutral",
+    footer: t("v11.noRecentPrediction"),
+  };
+}
 
 interface DashboardPageProps {
   apiClient: ApplicationShellApiClient;
   onProvenanceChange: (provenance: DashboardProvenance) => void;
 }
 
-function panelState<T>(resource: AsyncResource<T>, empty: boolean): PanelState {
-  if (resource.status === "loading") {
-    return "loading";
-  }
-  if (resource.status === "unavailable") {
-    return "unavailable";
-  }
-  return empty ? "empty" : "ready";
+function evidenceTone(value: number | null): string {
+  if (value === null) return "neutral";
+  return value > 0 ? "positive" : value < 0 ? "negative" : "neutral";
 }
 
-function parseTimestamp(value: unknown): Date | undefined {
-  if (typeof value !== "string" || value.length === 0) {
-    return undefined;
-  }
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
-}
-
-function timestampText(value: unknown): string {
-  if (typeof value !== "string" || value.length === 0) {
-    return "Not supplied";
-  }
-  const parsed = parseTimestamp(value);
-  return parsed ? parsed.toISOString() : "Not parseable";
-}
-
-function stringField(record: JsonRecord, key: string): string | undefined {
-  const value = record[key];
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function numericField(record: JsonRecord, key: string): number | undefined {
-  const value = record[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function valueText(value: unknown): string {
-  if (value === null) {
-    return "null";
-  }
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  try {
-    return JSON.stringify(value) ?? "Not displayable";
-  } catch {
-    return "Not displayable";
-  }
-}
-
-function actionText(action: Prediction["action"]): string {
-  if (action === "LONG" || action === "SHORT") {
-    return `${action} · actionable`;
-  }
-  if (action === "WAIT") {
-    return "WAIT · coverage only";
-  }
-  return "Action not supplied";
-}
-
-function confidenceText(prediction: Prediction): string {
-  const values: string[] = [];
-  if (typeof prediction.raw_confidence === "number") {
-    values.push(`Raw ${prediction.raw_confidence}`);
-  }
-  if (typeof prediction.calibrated_confidence === "number") {
-    values.push(`Calibrated ${prediction.calibrated_confidence}`);
-  }
-  return values.length > 0 ? values.join(" · ") : "Confidence not supplied";
-}
-
-function validityText(prediction: Prediction): string {
-  const rawExpiry = prediction.signal_valid_until;
-  const expiry = parseTimestamp(rawExpiry);
-  if (!expiry) {
-    return typeof rawExpiry === "string" && rawExpiry.length > 0 ? "Validity not parseable" : "Validity not supplied";
-  }
-  const status = expiry.getTime() <= Date.now() ? "Expired" : "Active";
-  return `Valid until ${expiry.toISOString()} · ${status}`;
-}
-
-function latestPrediction(predictions: Prediction[]): Prediction | undefined {
-  return predictions
-    .map((prediction, index) => ({ prediction, index, generated: parseTimestamp(prediction.generated_at) }))
-    .sort((left, right) => {
-      if (left.generated && right.generated) {
-        return right.generated.getTime() - left.generated.getTime();
-      }
-      if (left.generated) {
-        return -1;
-      }
-      if (right.generated) {
-        return 1;
-      }
-      return left.index - right.index;
-    })[0]?.prediction;
-}
-
-function provenanceFor(predictions: Prediction[]): DashboardProvenance {
-  const prediction = latestPrediction(predictions);
-  if (!prediction) {
-    return EMPTY_DASHBOARD_PROVENANCE;
-  }
-
-  const expiry = parseTimestamp(prediction.signal_valid_until);
-  const modelId = stringField(prediction, "model_id");
-  const sourceType = prediction.source_type;
-  return {
-    generatedAt: typeof prediction.generated_at === "string" ? prediction.generated_at : undefined,
-    expiresAt: typeof prediction.signal_valid_until === "string" ? prediction.signal_valid_until : undefined,
-    dataSource: sourceType ? `source_type: ${sourceType}` : "Source type not supplied by prediction record",
-    model: modelId ? `model_id: ${modelId}` : "Model not supplied by prediction record",
-    state: expiry ? (expiry.getTime() <= Date.now() ? "expired" : "active") : "neutral",
-    footer: `Prediction ${prediction.prediction_id} selected from the recent ledger. Re-evaluation time was not supplied.`,
-  };
-}
-
-function primitiveEntries(record: JsonRecord): Array<[string, unknown]> {
-  return Object.entries(record).filter(([, value]) => value === null || ["string", "number", "boolean"].includes(typeof value));
-}
-
-function performanceMetrics(summary: PerformanceSummary): JsonRecord {
-  return summary.metrics ?? {};
-}
-
-function resolvedActionableCount(summary: PerformanceSummary): number | undefined {
-  return numericField(performanceMetrics(summary), "resolved_actionable");
-}
-
-function performanceState(resource: AsyncResource<PerformanceSummary>): PanelState {
-  if (resource.status === "loading") {
-    return "loading";
-  }
-  if (resource.status === "unavailable") {
-    return "unavailable";
-  }
-  const metrics = performanceMetrics(resource.data ?? {});
-  if (Object.keys(metrics).length === 0) {
-    return "empty";
-  }
-  const resolvedActionable = resolvedActionableCount(resource.data ?? {});
-  return resolvedActionable === undefined || resolvedActionable === 0 ? "degraded" : "ready";
-}
-
-function radarState(resource: AsyncResource<RadarResponse>): PanelState {
-  if (resource.status === "loading") {
-    return "loading";
-  }
-  if (resource.status === "unavailable") {
-    return "unavailable";
-  }
-  if ((resource.data?.entries.length ?? 0) === 0 || resource.data?.status === "empty") {
-    return "empty";
-  }
-  return resource.data?.status === "degraded" ? "degraded" : "ready";
-}
-
-function radarCategoryText(category: RadarCategory): string {
-  return category === "STRONG_OPPORTUNITY"
-    ? "Strong Opportunity"
-    : category === "WAIT"
-      ? "WAIT"
-    : category === "NOT_RANKED"
-      ? "Not ranked"
-      : category.charAt(0) + category.slice(1).toLowerCase().replaceAll("_", " ");
-}
-
-function radarValueText(value: unknown): string {
-  if (value === null || value === undefined || value === "") {
-    return "Not supplied";
-  }
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? value.toFixed(4) : "Not finite";
-  }
-  if (typeof value === "string" || typeof value === "boolean") {
-    return String(value);
-  }
-  try {
-    return JSON.stringify(value) ?? "Not displayable";
-  } catch {
-    return "Not displayable";
-  }
-}
-
-function RadarComponentAudit({ entry }: { entry: RadarEntry }) {
+function Pulse({ data }: { data: MarketIntelligenceResponse }) {
+  const { formatNumber, t, text } = useI18n();
   return (
-    <details className="radar-entry__audit">
-      <summary>Component audit</summary>
-      <dl className="fact-list fact-list--compact">
-        {Object.entries(entry.components).map(([name, component]) => (
-          <div className="fact-list__row" key={name}>
-            <dt>{name.replaceAll("_", " ")}</dt>
-            <dd>
-              input {radarValueText(component.input)} · score {radarValueText(component.score)} · weight {radarValueText(component.weight)} · contribution {radarValueText(component.contribution)} · {component.status ?? "status not supplied"}
-              {component.reason ? ` · ${component.reason}` : ""}
-            </dd>
-          </div>
+    <section className="terminal-panel pulse-strip" aria-labelledby="pulse-title">
+      <div className="terminal-panel__head"><h2 id="pulse-title">{t("v11.marketPulse")}</h2><span>{t("v11.savedEvidence")} · {data.as_of}</span></div>
+      <div className="pulse-grid">
+        {data.pulse.map((item) => (
+          <article className={`pulse-card pulse-card--${evidenceTone(item.change_pct)}`} key={item.symbol}>
+            <div className="pulse-card__symbol"><strong>{item.symbol}</strong><span>{text(String(item.freshness.status ?? item.status))}</span></div>
+            {item.price === null ? <p className="pulse-card__missing">{t("v11.unavailable")}</p> : <><p className="pulse-card__price">{formatNumber(item.price, { maximumFractionDigits: 2 })}</p><p className="pulse-card__change">{item.change_pct === null ? t("v11.unavailable") : `${item.change_pct > 0 ? "+" : ""}${formatNumber(item.change_pct, { maximumFractionDigits: 2 })}%`}</p></>}
+            <span className="pulse-card__trace" aria-hidden="true" />
+          </article>
         ))}
-      </dl>
-    </details>
-  );
-}
-
-function RadarView({ radar }: { radar: RadarResponse }) {
-  return (
-    <div className="radar-view">
-      <p className="panel-reading">
-        Version {radar.scoring_version} · read-only deterministic evidence. Ranking eligible: {radarValueText(radar.counts?.ranking_eligible ?? 0)}.
-      </p>
-      <p className="panel-reading">
-        No model, scan, scheduler, alert or trading action is invoked. Unranked entries explain missing calibration or capability evidence.
-      </p>
-      <ul className="radar-list" aria-label="Market Radar entries">
-        {radar.entries.map((entry) => (
-          <li className="radar-list__item" key={entry.symbol}>
-            <article className="radar-entry">
-              <header className="radar-entry__header">
-                <div>
-                  <p className="eyebrow">{entry.action ?? "No prediction"} · {entry.status}</p>
-                  <h3><Link to={`/assets/${encodeURIComponent(entry.symbol)}`}>{entry.symbol}</Link></h3>
-                </div>
-                <div className="radar-entry__score">
-                  <span className="radar-category">{radarCategoryText(entry.category)}</span>
-                  <strong>{entry.score === null || entry.score === undefined ? "Not ranked" : entry.score.toFixed(3)}</strong>
-                </div>
-              </header>
-              <dl className="fact-list fact-list--compact">
-                <div className="fact-list__row"><dt>Rank</dt><dd>{entry.rank ?? "Not ranked"}</dd></div>
-                <div className="fact-list__row"><dt>Raw confidence</dt><dd>{radarValueText(entry.inputs?.raw_confidence)}</dd></div>
-                <div className="fact-list__row"><dt>Calibrated confidence</dt><dd>{radarValueText(entry.inputs?.calibrated_confidence)}</dd></div>
-                <div className="fact-list__row"><dt>Freshness</dt><dd>{radarValueText(entry.freshness?.status)} · {radarValueText(entry.data_as_of)}</dd></div>
-                <div className="fact-list__row"><dt>Reasons</dt><dd>{[...(entry.missing_reasons ?? []), ...(entry.degraded_reasons ?? [])].join(", ") || "None"}</dd></div>
-              </dl>
-              <RadarComponentAudit entry={entry} />
-            </article>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function PerformanceView({ summary }: { summary: PerformanceSummary }) {
-  const metrics = performanceMetrics(summary);
-  const resolvedActionable = resolvedActionableCount(summary);
-  const scope = summary.scope ?? {};
-  const scopeSource = stringField(scope, "source_type") ?? "not supplied by response";
-  return (
-    <div className="performance-view">
-      <p className="panel-reading">Returned scope: {scopeSource}</p>
-      {resolvedActionable === undefined ? (
-        <p className="panel-degraded-note">Resolved sample size was not supplied; no performance success claim is made.</p>
-      ) : (
-        <p className="panel-reading">Resolved actionable sample: {resolvedActionable}</p>
-      )}
-      <dl className="metric-ledger">
-        {primitiveEntries(metrics).map(([key, value]) => (
-          <div className="metric-ledger__row" key={key}>
-            <dt>{key.replaceAll("_", " ")}</dt>
-            <dd>{valueText(value)}</dd>
-          </div>
-        ))}
-      </dl>
-    </div>
-  );
-}
-
-function PredictionLedger({ predictions }: { predictions: Prediction[] }) {
-  return (
-    <div className="prediction-ledger-wrap">
-      <table className="prediction-ledger">
-        <caption className="visually-hidden">Recent prediction records</caption>
-        <thead>
-          <tr>
-            <th scope="col">Record</th>
-            <th scope="col">Action</th>
-            <th scope="col">Source / frame</th>
-            <th scope="col">Confidence</th>
-            <th scope="col">Validity</th>
-          </tr>
-        </thead>
-        <tbody>
-          {predictions.map((prediction) => (
-            <tr key={prediction.prediction_id}>
-              <td data-label="Record">
-                <span className="data-strong">{prediction.symbol ?? "Symbol not supplied"}</span>
-                <span className="data-meta">{prediction.prediction_id}</span>
-                <span className="data-meta">Generated {timestampText(prediction.generated_at)}</span>
-              </td>
-              <td data-label="Action">
-                <span className={`signal-text signal-text--${prediction.action?.toLowerCase() ?? "unknown"}`}>
-                  {actionText(prediction.action)}
-                </span>
-              </td>
-              <td data-label="Source / frame">
-                <span>{prediction.source_type ?? "Source type not supplied"}</span>
-                <span className="data-meta">{prediction.timeframe ?? "Timeframe not supplied"}</span>
-              </td>
-              <td data-label="Confidence">{confidenceText(prediction)}</td>
-              <td data-label="Validity">{validityText(prediction)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-export function DashboardPage({ apiClient, onProvenanceChange }: DashboardPageProps) {
-  const [radarAssetType, setRadarAssetType] = useState<"" | "equity" | "crypto">("");
-  const [radarCategory, setRadarCategory] = useState<"" | RadarCategory>("");
-  const healthLoader = useCallback((signal: AbortSignal) => apiClient.health(signal), [apiClient]);
-  const providerLoader = useCallback((signal: AbortSignal) => apiClient.providerHealth(signal), [apiClient]);
-  const modelLoader = useCallback((signal: AbortSignal) => apiClient.modelHealth(signal), [apiClient]);
-  const statsLoader = useCallback((signal: AbortSignal) => apiClient.stats(signal), [apiClient]);
-  const instrumentsLoader = useCallback((signal: AbortSignal) => apiClient.instruments(signal), [apiClient]);
-  const predictionsLoader = useCallback((signal: AbortSignal) => apiClient.predictions({ limit: 8 }, signal), [apiClient]);
-  const performanceLoader = useCallback(
-    (signal: AbortSignal) => apiClient.performanceSummary({ source_type: "live" }, signal),
-    [apiClient],
-  );
-  const radarLoader = useCallback(
-    (signal: AbortSignal) => apiClient.radar({ asset_type: radarAssetType || undefined, category: radarCategory || undefined }, signal),
-    [apiClient, radarAssetType, radarCategory],
-  );
-
-  const health = useAsyncResource(healthLoader);
-  const provider = useAsyncResource(providerLoader);
-  const model = useAsyncResource(modelLoader);
-  const stats = useAsyncResource(statsLoader);
-  const instruments = useAsyncResource(instrumentsLoader);
-  const predictions = useAsyncResource(predictionsLoader);
-  const performance = useAsyncResource(performanceLoader);
-  const radar = useAsyncResource(radarLoader);
-
-  const provenance = useMemo(() => provenanceFor(predictions.data ?? []), [predictions.data]);
-  useEffect(() => onProvenanceChange(provenance), [onProvenanceChange, provenance]);
-
-  const providerHasContent = Boolean(provider.data && ((provider.data.routes?.length ?? 0) > 0 || provider.data.news));
-  const modelHasContent = Boolean(model.data && Object.keys(model.data).length > 0);
-  const statsHasContent = Boolean(stats.data && Object.keys(stats.data).length > 0);
-  const healthDegraded = health.status === "ready" && health.data?.status !== "ok";
-  const providerDegraded = provider.status === "ready" && provider.data?.available === false;
-  const modelDegraded = model.status === "ready" && model.data?.available === false;
-
-  return (
-    <section className="dashboard-page" aria-labelledby="dashboard-title">
-      <header className="page-intro">
-        <p className="eyebrow">Current evidence / local API</p>
-        <h1 id="dashboard-title">Dashboard</h1>
-        <p className="page-intro__description">
-          A read-only desk for orientation, provenance and the records returned by the local research backend.
-        </p>
-      <p className="page-boundary">Market Radar is a read-only opportunity view; no watchlist scan, scheduler, alert or trading action is performed here.</p>
-    </header>
-
-      <AsyncPanel
-        title="Market Radar"
-        source="GET /radar"
-        freshness="as_of and per-entry data_as_of returned by the deterministic scorer"
-        state={radarState(radar)}
-        error={radar.error}
-        onRetry={radar.retry}
-        emptyMessage="No durable Watchlist entries are available for Radar. Save membership first; no analysis is started here."
-        degradedMessage="Radar evidence is present but no entry is currently eligible for a trustworthy opportunity rank."
-        className="dashboard-panel dashboard-panel--wide dashboard-panel--radar"
-      >
-        <div className="radar-filters" aria-label="Market Radar filters">
-          <label>
-            Asset type
-            <select value={radarAssetType} onChange={(event) => setRadarAssetType(event.target.value as "" | "equity" | "crypto")}>
-              <option value="">All asset types</option>
-              <option value="equity">equity</option>
-              <option value="crypto">crypto</option>
-            </select>
-          </label>
-          <label>
-            Category
-            <select value={radarCategory} onChange={(event) => setRadarCategory(event.target.value as "" | RadarCategory)}>
-              <option value="">All categories</option>
-              <option value="STRONG_OPPORTUNITY">Strong Opportunity</option>
-              <option value="WATCH">Watch</option>
-              <option value="AVOID">Avoid</option>
-              <option value="WAIT">WAIT</option>
-              <option value="NOT_RANKED">Not ranked</option>
-            </select>
-          </label>
-        </div>
-        {radar.data ? <RadarView radar={radar.data} /> : null}
-      </AsyncPanel>
-
-      <div className="dashboard-grid">
-        <AsyncPanel
-          title="Backend API"
-          source="GET /health"
-          freshness="endpoint timestamp not supplied"
-          state={healthDegraded ? "degraded" : panelState(health, false)}
-          error={health.error}
-          onRetry={health.retry}
-          degradedMessage="The backend answered with a non-ok status; this does not describe model or provider health."
-          className="dashboard-panel dashboard-panel--health"
-        >
-          {health.data ? <HealthFacts health={health.data} /> : null}
-        </AsyncPanel>
-
-        <AsyncPanel
-          title="Provider routing"
-          source="GET /health/providers"
-          freshness="probe response; timestamp not supplied"
-          state={providerDegraded ? "degraded" : panelState(provider, !providerHasContent)}
-          error={provider.error}
-          onRetry={provider.retry}
-          emptyMessage="No provider routes or news routing details were returned."
-          degradedMessage="Provider routing is reporting unavailable. Backend health is tracked separately."
-          className="dashboard-panel"
-        >
-          {provider.data ? <ProviderRouting provider={provider.data} /> : null}
-        </AsyncPanel>
-
-        <AsyncPanel
-          title="Model health"
-          source="GET /health/model"
-          freshness="health probe response; timestamp not supplied"
-          state={modelDegraded ? "degraded" : panelState(model, !modelHasContent)}
-          error={model.error}
-          onRetry={model.retry}
-          emptyMessage="The model endpoint returned no health fields."
-          degradedMessage="The model is unavailable or not configured; the backend may still be connected."
-          className="dashboard-panel"
-        >
-          {model.data ? <ModelFacts model={model.data} /> : null}
-        </AsyncPanel>
-
-        <AsyncPanel
-          title="Stored counts"
-          source="GET /stats"
-          freshness="count response; timestamp not supplied"
-          state={panelState(stats, !statsHasContent)}
-          error={stats.error}
-          onRetry={stats.retry}
-          emptyMessage="No count keys were returned by the stats endpoint."
-          className="dashboard-panel"
-        >
-          {stats.data ? <CountLedger stats={stats.data} /> : null}
-        </AsyncPanel>
-
-        <AsyncPanel
-          title="Instrument roster"
-          source="GET /instruments"
-          freshness="roster response; quote freshness not supplied"
-          state={panelState(instruments, (instruments.data?.length ?? 0) === 0)}
-          error={instruments.error}
-          onRetry={instruments.retry}
-          emptyMessage="No instruments were returned by the backend universe."
-          className="dashboard-panel"
-        >
-          {instruments.data ? <InstrumentRoster instruments={instruments.data} /> : null}
-        </AsyncPanel>
-
-        <AsyncPanel
-          title="Recent predictions"
-          source="GET /predictions?limit=8"
-          freshness="generated_at and signal_valid_until shown per record when supplied"
-          state={panelState(predictions, (predictions.data?.length ?? 0) === 0)}
-          error={predictions.error}
-          onRetry={predictions.retry}
-          emptyMessage="No prediction records were returned for this recent ledger."
-          className="dashboard-panel dashboard-panel--wide"
-        >
-          {predictions.data ? <PredictionLedger predictions={predictions.data} /> : null}
-        </AsyncPanel>
-
-        <AsyncPanel
-          title="Live performance"
-          source="GET /performance/summary?source_type=live"
-          freshness="summary response; no as-of timestamp supplied"
-          state={performanceState(performance)}
-          error={performance.error}
-          onRetry={performance.retry}
-          emptyMessage="No performance metrics were returned; there is no resolved sample to summarize."
-          degradedMessage="No resolved sample is reported. Returned metrics are shown as metadata only."
-          className="dashboard-panel dashboard-panel--wide"
-        >
-          {performance.data ? <PerformanceView summary={performance.data} /> : null}
-        </AsyncPanel>
       </div>
     </section>
   );
+}
+
+function EventList({ events }: { events: IntelligenceEvent[] }) {
+  const { formatDateTime, t, text } = useI18n();
+  if (events.length === 0) return <p className="terminal-empty">{t("v11.noEvents")}</p>;
+  return <ol className="event-stack">{events.slice(0, 5).map((event, index) => <li key={event.event_id ?? `${event.title}-${index}`}><time>{event.event_at ? formatDateTime(event.event_at, { dateStyle: undefined, timeStyle: "short" }) : "—"}</time><div><strong>{event.title ?? t("v11.unavailable")}</strong><span>{event.source ?? "unknown"} · {text(event.category ?? "other")}</span></div><span className={`impact-pill impact-pill--${Number(event.importance ?? 0) >= 70 ? "high" : "normal"}`}>{event.importance ?? 0}</span></li>)}</ol>;
+}
+
+function WatchCards({ items }: { items: MonitoringItem[] }) {
+  const { formatPercent, t, text } = useI18n();
+  if (items.length === 0) return <p className="terminal-empty">{t("common.noRecords")}</p>;
+  return <div className="watch-stack">{items.slice(0, 4).map((item) => <article className="watch-card" key={item.symbol}><div className="watch-card__top"><strong>{item.symbol}</strong><span className={`signal-chip signal-chip--${(item.action ?? "wait").toLowerCase()}`}>{item.action ? text(item.action) : t("v11.awaitingAnalysis")}</span></div><p>{item.summary ?? t("v11.awaitingAnalysis")}</p><div className="watch-card__meta"><span>{text(String(item.market_regime ?? "unknown"))}</span><span>{item.calibrated_confidence == null ? `${t("v11.calibrated")}: —` : `${t("v11.calibrated")}: ${formatPercent(item.calibrated_confidence)}`}</span></div><div className="watch-card__actions"><Link to={`/assets/${encodeURIComponent(item.symbol)}`}>{t("v11.openAsset")}</Link><Link className="ai-link" to={`/consult?symbol=${encodeURIComponent(item.symbol)}`}>{t("v11.askAi")}</Link></div></article>)}</div>;
+}
+
+function Heatmap({ cells }: { cells: HeatmapCell[] }) {
+  const { formatNumber, t, text } = useI18n();
+  if (cells.length === 0) return <p className="terminal-empty">{t("v11.unavailable")}</p>;
+  return <div className="terminal-heatmap" role="list" aria-label={t("v11.heatmap")}>{cells.map((cell) => { const magnitude = cell.change_pct === null ? 1 : Math.max(1, Math.min(4, Math.ceil(Math.abs(cell.change_pct)))); return <div className={`heat-cell heat-cell--${evidenceTone(cell.change_pct)} heat-cell--size-${magnitude}`} key={`${cell.group}-${cell.symbol}`} role="listitem"><strong>{cell.symbol}</strong><span>{text(cell.group.replaceAll("_", " "))}</span><b>{cell.change_pct === null ? t("v11.unavailable") : `${cell.change_pct > 0 ? "+" : ""}${formatNumber(cell.change_pct, { maximumFractionDigits: 2 })}%`}</b></div>; })}</div>;
+}
+
+function SignalMemo({ signal }: { signal: MarketIntelligenceResponse["latest_signal"] }) {
+  const { formatPercent, t, text } = useI18n();
+  if (!signal) return <p className="terminal-empty">{t("v11.awaitingAnalysis")}</p>;
+  const symbol = signal.symbol ?? "UNKNOWN";
+  const action = signal.action ?? "WAIT";
+  const confidence = signal.calibrated_confidence ?? signal.raw_confidence ?? 0;
+  return <article className="signal-memo"><div className="signal-memo__identity"><span className="asset-orb" aria-hidden="true">{symbol.slice(0, 1)}</span><div><strong>{symbol}</strong><span>{signal.generated_at ?? "—"}</span></div><span className={`signal-chip signal-chip--${action.toLowerCase()}`}>{text(action)}</span></div><div className="signal-memo__body"><div className="confidence-ring" style={{ "--confidence": `${Math.round(confidence * 360)}deg` } as CSSProperties} aria-label={`${t("common.confidence")} ${formatPercent(confidence)}`}><strong>{formatPercent(confidence)}</strong><span>{t("common.confidence")}</span></div><div><p>{signal.summary ?? t("v11.unavailable")}</p><dl className="memo-levels"><div><dt>{t("v11.rawConfidence")}</dt><dd>{signal.raw_confidence == null ? "—" : formatPercent(signal.raw_confidence)}</dd></div><div><dt>{t("v11.calibrated")}</dt><dd>{signal.calibrated_confidence == null ? "—" : formatPercent(signal.calibrated_confidence)}</dd></div><div><dt>{t("common.timeframe")}</dt><dd>{signal.timeframe ?? "—"}</dd></div></dl></div></div><div className="watch-card__actions"><Link to="/predictions">{t("v11.viewSignals")}</Link><Link className="ai-link" to={`/consult?symbol=${encodeURIComponent(symbol)}&prediction_id=${encodeURIComponent(signal.prediction_id ?? "")}`}>{t("v11.askAi")}</Link></div></article>;
+}
+
+function DailyBriefCard({ brief, busy, error, onGenerate }: { brief?: DailyBrief | null; busy: boolean; error: string | null; onGenerate: () => void }) {
+  const { formatDateTime, t } = useI18n();
+  return <section className="terminal-panel terminal-panel--brief" aria-labelledby="brief-title"><div className="terminal-panel__head"><div><span className="ai-kicker">QWEN · SMART</span><h2 id="brief-title">{t("v11.dailyBrief")}</h2></div><button className="primary-button" type="button" onClick={onGenerate} disabled={busy}>{busy ? t("v11.generatingBrief") : t("v11.generateBrief")}</button></div>{brief ? <><p className="brief-copy">{brief.content}</p><p className="evidence-caption">{t("v11.asOf")} {formatDateTime(brief.as_of)} · {brief.model_id} · {brief.route_reason}</p>{brief.missing.length > 0 ? <p className="capability-note">{brief.missing.join(" · ")}</p> : null}</> : <p className="terminal-empty">{t("v11.noBrief")}</p>}{error ? <p className="panel-message panel-message--unavailable" role="alert">{error}</p> : null}<p className="panel-boundary">{t("v11.briefBoundary")}</p></section>;
+}
+
+export function DashboardPage({ apiClient, onProvenanceChange }: DashboardPageProps) {
+  const { language, t, text } = useI18n();
+  const loader = useCallback((signal: AbortSignal) => apiClient.marketIntelligence(signal), [apiClient]);
+  const intelligence = useAsyncResource(loader);
+  const [brief, setBrief] = useState<DailyBrief | null | undefined>();
+  const [briefBusy, setBriefBusy] = useState(false);
+  const [briefError, setBriefError] = useState<string | null>(null);
+  const data = intelligence.data;
+  useEffect(() => setBrief(data?.daily_brief), [data?.daily_brief]);
+  useEffect(() => { const signal = data?.latest_signal; onProvenanceChange(signal ? { generatedAt: signal.generated_at ?? undefined, expiresAt: signal.signal_valid_until ?? undefined, dataSource: t("v11.dashboardProvenanceSource"), model: signal.model_id ?? t("common.notSupplied"), state: signal.action === "WAIT" ? "neutral" : "active", footer: t("v11.dashboardReadOnlyFooter") } : { dataSource: t("v11.noPredictionRecord"), model: t("v11.noPredictionRecord"), state: "neutral", footer: t("v11.noRecentPrediction") }); }, [data?.latest_signal, onProvenanceChange, t]);
+  const hotCells = useMemo(() => [...(data?.heatmap.cells ?? [])].filter((cell) => cell.change_pct !== null).sort((a, b) => (b.change_pct ?? 0) - (a.change_pct ?? 0)).slice(0, 5), [data]);
+
+  async function generateBrief() {
+    setBriefBusy(true); setBriefError(null);
+    try {
+      const settings = await apiClient.appSettings();
+      const configuredLanguage = settings.find((setting) => setting.key === "ai.response_language")?.value;
+      const configuredPreference = settings.find((setting) => setting.key === "ai.model_preference")?.value;
+      const responseLanguage = configuredLanguage === "en" || configuredLanguage === "zh-CN" ? configuredLanguage : language;
+      const preference = configuredPreference === "fast" || configuredPreference === "smart" ? configuredPreference : "auto";
+      const response = await apiClient.generateDailyBrief(responseLanguage, preference);
+      setBrief(response.brief);
+    }
+    catch (error: unknown) { setBriefError(error instanceof Error ? error.message : t("consult.errorFallback")); }
+    finally { setBriefBusy(false); }
+  }
+
+  if (intelligence.status === "loading") return <section className="terminal-loading" aria-live="polite"><span className="loading-orbit" />{t("common.loading")}</section>;
+  if (intelligence.status === "unavailable" || !data) return <section className="terminal-error" role="alert"><h1>{t("v11.dashboardTitle")}</h1><p>{intelligence.error ? String(intelligence.error) : t("common.panelUnavailable")}</p><button type="button" onClick={intelligence.retry}>{t("common.retry")}</button></section>;
+  return <section className="v11-dashboard" aria-labelledby="dashboard-title"><header className="dashboard-hero"><div><p className="eyebrow">{t("v11.dashboardEyebrow")}</p><h1 id="dashboard-title">{t("v11.dashboardTitle")}</h1><p>{t("v11.dashboardDescription")}</p></div><div className="asof-seal"><span>{t("v11.asOf")}</span><strong>{data.as_of}</strong><small>{t("v11.readOnlyNoProvider")}</small></div></header><Pulse data={data} /><div className="terminal-grid"><section className="terminal-panel terminal-panel--events"><div className="terminal-panel__head"><h2>{t("v11.todayEvents")}</h2><Link to="/calendar">{t("nav.calendar")}</Link></div><EventList events={data.calendar.events} /></section><section className="terminal-panel terminal-panel--watch"><div className="terminal-panel__head"><h2>{t("v11.aiWatchlist")}</h2><Link to="/watchlist">{t("nav.watchlist")}</Link></div><WatchCards items={data.watchlist} /></section><section className="terminal-panel terminal-panel--signal"><div className="terminal-panel__head"><h2>{t("v11.latestSignal")}</h2><Link to="/predictions">{t("nav.signals")}</Link></div><SignalMemo signal={data.latest_signal} /></section><section className="terminal-panel terminal-panel--sectors"><div className="terminal-panel__head"><h2>{t("v11.hotSectors")}</h2><Link to="/heatmap">{t("nav.heatmap")}</Link></div><Heatmap cells={hotCells} /></section><section className="terminal-panel terminal-panel--heatmap"><div className="terminal-panel__head"><h2>{t("v11.heatmap")}</h2><span>{data.heatmap.capability}</span></div><Heatmap cells={data.heatmap.cells} /></section><section className="terminal-panel terminal-panel--news"><div className="terminal-panel__head"><h2>{t("v11.newsFeed")}</h2><Link to="/news">{t("nav.news")}</Link></div>{data.news.items.length > 0 ? <EventList events={data.news.items} /> : <p className="terminal-empty">{t("v11.noNews")}</p>}</section></div><DailyBriefCard brief={brief} busy={briefBusy} error={briefError} onGenerate={() => void generateBrief()} /><section className="regime-ribbon" aria-label={t("v11.regimeAria")}><div><span>{t("v11.marketRegime")}</span><strong>{text(String(data.watchlist[0]?.market_regime ?? t("v11.unavailable")))}</strong></div><div><span>{t("v11.riskPosture")}</span><strong>{text(data.calendar.events.some((event) => Number(event.importance ?? 0) >= 70) ? "ELEVATED" : "UNKNOWN")}</strong></div><div><span>{t("v11.opportunity")}</span><strong>{text(data.latest_signal?.action ?? "NOT_RANKED")}</strong></div></section></section>;
 }

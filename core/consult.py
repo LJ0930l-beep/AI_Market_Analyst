@@ -14,7 +14,7 @@ import json
 import os
 import time
 from collections.abc import AsyncIterator, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any, Protocol
 from urllib.parse import urlparse
@@ -24,9 +24,10 @@ import httpx
 
 from .ai import OllamaProvider
 from .instruments import Instrument
+from .model_routing import ModelPreference, ModelRoutingConfig, ModelTask, route_model
 from .storage import SQLiteStore
 
-CONSULT_CONTRACT_VERSION = "qwen_consult_v1"
+CONSULT_CONTRACT_VERSION = "qwen_consult_v2"
 CONSULT_STREAM_MEDIA_TYPE = "application/x-ndjson"
 CONSULT_ROLES = frozenset({"user", "assistant"})
 CONSULT_LANGUAGES = frozenset({"en", "zh-CN"})
@@ -114,7 +115,7 @@ class ConsultConfig:
     base_url: str
     model_name: str
     connect_timeout_seconds: float = 3.0
-    first_token_timeout_seconds: float = 20.0
+    first_token_timeout_seconds: float = 60.0
     stream_idle_timeout_seconds: float = 20.0
     total_timeout_seconds: float = 90.0
     max_body_bytes: int = 32_768
@@ -127,12 +128,15 @@ class ConsultConfig:
     retries: int = 0
     concurrency: int = 1
     freshness_seconds: int = 3_600
+    fast_model_name: str | None = None
+    smart_model_name: str | None = None
 
     @classmethod
     def from_env(cls) -> "ConsultConfig":
         provider = OllamaProvider()
+        routing = ModelRoutingConfig.from_env()
         enabled = os.environ.get("LLM_MODE", "ollama").strip().lower() not in {"disabled", "off", "none"}
-        model_name = str(provider.model_name).strip()
+        model_name = routing.smart_model
         if not model_name or len(model_name) > 128 or any(ord(char) < 32 for char in model_name):
             raise ConsultServiceError("QWEN_CONFIG_INVALID", "Qwen consultation configuration is invalid.", status_code=503)
         return cls(
@@ -140,7 +144,7 @@ class ConsultConfig:
             base_url=_validate_loopback_url(provider.base_url),
             model_name=model_name,
             connect_timeout_seconds=_bounded_float("QWEN_CONSULT_CONNECT_TIMEOUT_SEC", 3.0, 0.5, 10.0),
-            first_token_timeout_seconds=_bounded_float("QWEN_CONSULT_FIRST_TOKEN_TIMEOUT_SEC", 20.0, 1.0, 60.0),
+            first_token_timeout_seconds=_bounded_float("QWEN_CONSULT_FIRST_TOKEN_TIMEOUT_SEC", 60.0, 1.0, 60.0),
             stream_idle_timeout_seconds=_bounded_float("QWEN_CONSULT_STREAM_IDLE_TIMEOUT_SEC", 20.0, 1.0, 60.0),
             total_timeout_seconds=_bounded_float("QWEN_CONSULT_TOTAL_TIMEOUT_SEC", 90.0, 5.0, 180.0),
             max_body_bytes=_bounded_int("QWEN_CONSULT_MAX_BODY_BYTES", 32_768, 4_096, 65_536),
@@ -153,6 +157,8 @@ class ConsultConfig:
             retries=_bounded_int("QWEN_CONSULT_RETRIES", 0, 0, 1),
             concurrency=_bounded_int("QWEN_CONSULT_CONCURRENCY", 1, 1, 1),
             freshness_seconds=_bounded_int("QWEN_CONSULT_FRESHNESS_SEC", 3_600, 60, 86_400),
+            fast_model_name=routing.fast_model,
+            smart_model_name=routing.smart_model,
         )
 
     def capability(self) -> dict[str, object]:
@@ -161,6 +167,15 @@ class ConsultConfig:
             "configured": self.enabled,
             "provider": "ollama" if self.enabled else "none",
             "model_id": self.model_name,
+            "models": {
+                "fast": self.fast_model_name or self.model_name,
+                "smart": self.smart_model_name or self.model_name,
+            },
+            "preference_values": ["auto", "fast", "smart"],
+            "routing": ModelRoutingConfig(
+                self.fast_model_name or self.model_name,
+                self.smart_model_name or self.model_name,
+            ).capability(),
             "endpoint_scope": "loopback_only",
             "streaming": "ndjson",
             "availability": "deferred_to_health_model_or_consult_request",
@@ -197,15 +212,18 @@ class ConsultRequest:
     language: str
     messages: tuple[ConsultMessage, ...]
     symbol: str | None
+    model_preference: str = "auto"
+    task: str = "assistant"
+    prediction_id: str | None = None
 
 
 def parse_consult_request(payload: object, config: ConsultConfig) -> ConsultRequest:
     if not isinstance(payload, Mapping):
         raise ConsultValidationError("INVALID_CONSULT_PAYLOAD", "Consultation payload must be a JSON object.")
-    if set(payload) - {"language", "messages", "symbol"} or not {"language", "messages"}.issubset(payload):
+    if set(payload) - {"language", "messages", "symbol", "model_preference", "task", "prediction_id"} or not {"language", "messages"}.issubset(payload):
         raise ConsultValidationError(
             "INVALID_CONSULT_PAYLOAD",
-            "Consultation payload accepts only language, messages, and optional symbol.",
+            "Consultation payload accepts only language, messages, optional symbol, preference, task, and prediction id.",
         )
     language = payload.get("language")
     if language not in CONSULT_LANGUAGES:
@@ -238,7 +256,21 @@ def parse_consult_request(payload: object, config: ConsultConfig) -> ConsultRequ
             raise ConsultValidationError("INVALID_CONSULT_SYMBOL", "Consultation symbol is invalid.")
         if any(ord(char) < 33 or char in "/\\" for char in symbol):
             raise ConsultValidationError("INVALID_CONSULT_SYMBOL", "Consultation symbol is invalid.")
-    return ConsultRequest(str(language), tuple(messages), symbol)
+    preference = payload.get("model_preference", "auto")
+    try:
+        ModelPreference(str(preference))
+    except ValueError as exc:
+        raise ConsultValidationError("INVALID_MODEL_PREFERENCE", "Model preference must be auto, fast, or smart.") from exc
+    task = payload.get("task", "assistant")
+    try:
+        ModelTask(str(task))
+    except ValueError as exc:
+        raise ConsultValidationError("INVALID_MODEL_TASK", "Consultation task is unsupported.") from exc
+    prediction_id = payload.get("prediction_id")
+    if prediction_id is not None:
+        if not isinstance(prediction_id, str) or not prediction_id.strip() or len(prediction_id) > 128 or any(ord(char) < 33 for char in prediction_id):
+            raise ConsultValidationError("INVALID_PREDICTION_ID", "Consultation prediction id is invalid.")
+    return ConsultRequest(str(language), tuple(messages), symbol, str(preference), str(task), prediction_id)
 
 
 def _iso_datetime(value: object) -> datetime | None:
@@ -331,6 +363,7 @@ def build_consult_context(
     *,
     now: datetime,
     freshness_seconds: int,
+    prediction_id: str | None = None,
 ) -> dict[str, object]:
     requested_at = now.astimezone(timezone.utc)
     if instrument is None:
@@ -344,7 +377,16 @@ def build_consult_context(
             "evidence": {},
             "read_only": True,
         }
-    predictions = store.list_prediction_payloads(limit=1, symbol=instrument.symbol, source_type="live")
+    if prediction_id is not None:
+        exact = store.load_prediction_payload(prediction_id)
+        predictions = [exact] if isinstance(exact, dict) else []
+        if predictions:
+            nested = predictions[0].get("instrument")
+            saved_symbol = predictions[0].get("symbol") or (nested.get("symbol") if isinstance(nested, dict) else None)
+            if str(saved_symbol or "").upper() != instrument.symbol:
+                predictions = []
+    else:
+        predictions = store.list_prediction_payloads(limit=1, symbol=instrument.symbol, source_type="live")
     if not predictions:
         return {
             "status": "unavailable",
@@ -352,7 +394,7 @@ def build_consult_context(
             "as_of": None,
             "freshness": {"status": "unavailable", "threshold_seconds": freshness_seconds},
             "sources": ["durable_latest_live_prediction"],
-            "missing_reasons": ["no_saved_live_prediction"],
+            "missing_reasons": ["prediction_not_found_for_symbol" if prediction_id else "no_saved_live_prediction"],
             "evidence": {},
             "read_only": True,
         }
@@ -364,7 +406,7 @@ def build_consult_context(
             "symbol": instrument.symbol,
             "as_of": None,
             "freshness": {"status": "invalid_future", "threshold_seconds": freshness_seconds, "age_seconds": None},
-            "sources": ["durable_latest_live_prediction"],
+            "sources": ["durable_exact_prediction" if prediction_id else "durable_latest_live_prediction"],
             "missing_reasons": ["future_prediction_rejected"],
             "evidence": {},
             "read_only": True,
@@ -389,7 +431,7 @@ def build_consult_context(
             "symbol": instrument.symbol,
             "as_of": as_of.isoformat(),
             "freshness": {"status": "invalid_future", "threshold_seconds": freshness_seconds, "age_seconds": None},
-            "sources": ["durable_latest_live_prediction"],
+            "sources": ["durable_exact_prediction" if prediction_id else "durable_latest_live_prediction"],
             "missing_reasons": ["future_as_of_rejected"],
             "evidence": {},
             "read_only": True,
@@ -411,7 +453,7 @@ def build_consult_context(
         "symbol": instrument.symbol,
         "as_of": as_of.isoformat() if as_of is not None else None,
         "freshness": freshness,
-        "sources": ["durable_latest_live_prediction", "saved_prediction_context_json"],
+        "sources": ["durable_exact_prediction" if prediction_id else "durable_latest_live_prediction", "saved_prediction_context_json"],
         "missing_reasons": missing,
         "evidence_hash": hashlib.sha256(serialized.encode("utf-8")).hexdigest(),
         "evidence": evidence,
@@ -450,9 +492,9 @@ class ConsultTransport(Protocol):
 class OllamaConsultTransport:
     provider_name = "ollama"
 
-    def __init__(self, config: ConsultConfig) -> None:
+    def __init__(self, config: ConsultConfig, *, model_name: str | None = None) -> None:
         self.config = config
-        self.model_name = config.model_name
+        self.model_name = model_name or config.model_name
 
     async def _stream_once(self, messages: tuple[dict[str, str], ...]) -> AsyncIterator[str]:
         timeout = httpx.Timeout(
@@ -537,11 +579,15 @@ class ConsultSession:
         request: ConsultRequest,
         context: dict[str, object],
         prompt_messages: tuple[dict[str, str], ...],
+        transport: ConsultTransport,
+        route: object,
     ) -> None:
         self.service = service
         self.request = request
         self.context = context
         self.prompt_messages = prompt_messages
+        self.transport = transport
+        self.route = route
         self.request_id = str(uuid4())
         self._closed = False
 
@@ -555,13 +601,14 @@ class ConsultSession:
                 "type": "meta",
                 "contract_version": CONSULT_CONTRACT_VERSION,
                 "request_id": self.request_id,
-                "provider": self.service.transport.provider_name if self.service.transport is not None else "none",
-                "model_id": self.service.config.model_name,
+                "provider": self.transport.provider_name,
+                "model_id": getattr(self.route, "model_id"),
+                "model_tier": getattr(self.route, "tier").value,
+                "model_route": getattr(self.route, "to_dict")(),
                 "symbol": self.request.symbol,
                 "context": self.context,
             }
-            assert self.service.transport is not None
-            iterator = self.service.transport.stream(self.prompt_messages).__aiter__()
+            iterator = self.transport.stream(self.prompt_messages).__aiter__()
             while True:
                 elapsed = time.monotonic() - started
                 remaining = self.service.config.total_timeout_seconds - elapsed
@@ -620,12 +667,12 @@ class QwenConsultService:
 
     def __init__(self, config: ConsultConfig | None = None, transport: ConsultTransport | None = None) -> None:
         self.config = config or ConsultConfig.from_env()
-        self.transport = transport if transport is not None else (OllamaConsultTransport(self.config) if self.config.enabled else None)
+        self.transport = transport
         self._lock = asyncio.Lock()
 
     def capability(self) -> dict[str, object]:
         capability = self.config.capability()
-        if self.transport is None:
+        if not self.config.enabled:
             capability["configured"] = False
             capability["availability"] = "unavailable"
             capability["error_code"] = "QWEN_NOT_CONFIGURED"
@@ -638,7 +685,7 @@ class QwenConsultService:
         store: SQLiteStore,
         now: datetime | None = None,
     ) -> ConsultSession:
-        if not self.config.enabled or self.transport is None:
+        if not self.config.enabled:
             raise ConsultServiceError("QWEN_NOT_CONFIGURED", "Local Qwen consultation is not configured.", status_code=503)
         if self._lock.locked():
             raise ConsultServiceError("QWEN_CONCURRENCY_LIMIT", "Another Qwen consultation is already generating.", status_code=429)
@@ -652,16 +699,44 @@ class QwenConsultService:
                 except (TypeError, ValueError) as exc:
                     raise ConsultValidationError("INVALID_CONSULT_SYMBOL", "Consultation symbol is not in the supported instrument registry.") from exc
                 normalized_symbol = instrument.symbol
-            normalized_request = ConsultRequest(request.language, request.messages, normalized_symbol)
+            normalized_request = ConsultRequest(
+                request.language,
+                request.messages,
+                normalized_symbol,
+                request.model_preference,
+                request.task,
+                request.prediction_id,
+            )
+            routing_config = ModelRoutingConfig(
+                self.config.fast_model_name or self.config.model_name,
+                self.config.smart_model_name or self.config.model_name,
+            )
+            route = route_model(
+                routing_config,
+                preference=normalized_request.model_preference,
+                task=normalized_request.task,
+            )
+            transport = self.transport or OllamaConsultTransport(
+                replace(self.config, model_name=route.model_id),
+                model_name=route.model_id,
+            )
             context = build_consult_context(
                 store,
                 instrument,
                 now=(now or datetime.now(timezone.utc)),
                 freshness_seconds=self.config.freshness_seconds,
+                prediction_id=normalized_request.prediction_id,
             )
             system = build_system_message(normalized_request.language, context)
             prompt_messages = (ConsultMessage("system", system).to_dict(),) + tuple(message.to_dict() for message in normalized_request.messages)
-            return ConsultSession(service=self, request=normalized_request, context=context, prompt_messages=prompt_messages)
+            return ConsultSession(
+                service=self,
+                request=normalized_request,
+                context=context,
+                prompt_messages=prompt_messages,
+                transport=transport,
+                route=route,
+            )
         except Exception:
             self._release()
             raise

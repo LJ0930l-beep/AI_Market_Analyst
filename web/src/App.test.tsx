@@ -29,7 +29,7 @@ describe("application shell", () => {
     renderShell("/predictions", client);
 
     const navigation = screen.getByRole("navigation", { name: "Primary navigation" });
-    expect(within(navigation).getByRole("link", { name: "Predictions" })).toHaveAttribute("aria-current", "page");
+    expect(within(navigation).getByRole("link", { name: "Signals" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("main")).toHaveAttribute("id", "main-content");
     expect(screen.getByRole("link", { name: "Skip to content" })).toHaveAttribute("href", "#main-content");
     expect(screen.getByRole("heading", { name: "Predictions" })).toBeInTheDocument();

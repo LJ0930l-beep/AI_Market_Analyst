@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { ApplicationShellApiClient } from "../api/client";
 import { AsyncPanel, type PanelState } from "../components/AsyncPanel";
@@ -6,6 +6,7 @@ import { CountLedger, HealthFacts, ModelFacts, ProviderRouting } from "../compon
 import type { AlertStatusResponse, ContextHealthResponse, ReleaseHealthResponse, SchedulerHistory, SchedulerStatus } from "../api/types";
 import type { AsyncResource } from "../hooks/useAsyncResource";
 import { useAsyncResource } from "../hooks/useAsyncResource";
+import { useI18n } from "../i18n";
 
 interface SettingsHealthPageProps {
   apiClient: ApplicationShellApiClient;
@@ -57,48 +58,55 @@ function releaseState(resource: AsyncResource<ReleaseHealthResponse>): PanelStat
   return resource.data.status === "ok" ? "ready" : "degraded";
 }
 
-function schedulerText(value: unknown): string {
+function schedulerText(value: unknown, fallback: string): string {
   if (value === null || value === undefined || value === "") {
-    return "Not supplied";
+    return fallback;
   }
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return String(value);
   }
-  return JSON.stringify(value) ?? "Not displayable";
+  return JSON.stringify(value) ?? fallback;
 }
 
 function SchedulerFacts({ status, history }: { status: SchedulerStatus; history?: SchedulerHistory }) {
+  const { formatDateTime, t, text } = useI18n();
   const lastRun = status.last_run;
   const counts = lastRun?.counts;
+  const timestamp = (value: string | null | undefined) => {
+    if (!value) return t("common.notSupplied");
+    return Number.isNaN(new Date(value).getTime()) ? value : formatDateTime(value, { dateStyle: "medium", timeStyle: "medium", timeZone: "UTC" });
+  };
+  const value = (input: unknown) => schedulerText(input, t("common.notDisplayable"));
   return (
     <div className="scheduler-facts">
       <dl className="fact-list fact-list--compact">
-        <div className="fact-list__row"><dt>Lifecycle</dt><dd>{status.state} · enabled {String(status.enabled)} · running {String(status.running)}</dd></div>
-        <div className="fact-list__row"><dt>Interval / session</dt><dd>{status.interval_seconds}s · {status.session_policy}</dd></div>
-        <div className="fact-list__row"><dt>Concurrency</dt><dd>configured {status.configured_concurrency} · effective model limit {status.effective_concurrency}</dd></div>
-        <div className="fact-list__row"><dt>Last run</dt><dd>{lastRun ? `${lastRun.status} · ${lastRun.started_at}` : "No scan run recorded"}</dd></div>
-        <div className="fact-list__row"><dt>Next run</dt><dd>{schedulerText(status.next_run_at)}</dd></div>
-        <div className="fact-list__row"><dt>Last counts</dt><dd>{counts ? schedulerText(counts) : "No item counts recorded"}</dd></div>
-        <div className="fact-list__row"><dt>Resource</dt><dd>{schedulerText(status.resource)}</dd></div>
-        <div className="fact-list__row"><dt>Backoff</dt><dd>{schedulerText(status.backoff)}</dd></div>
-        <div className="fact-list__row"><dt>Cache</dt><dd>{schedulerText(status.cache)}</dd></div>
-        <div className="fact-list__row"><dt>Settlement</dt><dd>{status.settlement ? schedulerText(status.settlement) : "No settlement run recorded"}</dd></div>
-        <div className="fact-list__row"><dt>Performance refresh</dt><dd>{status.performance_refresh ? schedulerText(status.performance_refresh) : "No live refresh recorded"}</dd></div>
+        <div className="fact-list__row"><dt>{t("settings.lifecycle")}</dt><dd>{text(status.state)} · {t("settings.enabled")} {t(status.enabled ? "common.yes" : "common.no")} · {t("settings.running")} {t(status.running ? "common.yes" : "common.no")}</dd></div>
+        <div className="fact-list__row"><dt>{t("settings.intervalSession")}</dt><dd>{status.interval_seconds}s · {text(status.session_policy)}</dd></div>
+        <div className="fact-list__row"><dt>{t("settings.concurrency")}</dt><dd>{t("settings.configuredValue")} {status.configured_concurrency} · {t("settings.effectiveModelLimit")} {status.effective_concurrency}</dd></div>
+        <div className="fact-list__row"><dt>{t("settings.lastRun")}</dt><dd>{lastRun ? `${text(lastRun.status)} · ${timestamp(lastRun.started_at)}` : t("settings.noScanRun")}</dd></div>
+        <div className="fact-list__row"><dt>{t("settings.nextRun")}</dt><dd>{status.next_run_at ? timestamp(status.next_run_at) : t("common.notSupplied")}</dd></div>
+        <div className="fact-list__row"><dt>{t("settings.lastCounts")}</dt><dd>{counts ? value(counts) : t("settings.noItemCounts")}</dd></div>
+        <div className="fact-list__row"><dt>{t("settings.resource")}</dt><dd>{value(status.resource)}</dd></div>
+        <div className="fact-list__row"><dt>{t("settings.backoff")}</dt><dd>{value(status.backoff)}</dd></div>
+        <div className="fact-list__row"><dt>{t("settings.cache")}</dt><dd>{value(status.cache)}</dd></div>
+        <div className="fact-list__row"><dt>{t("settings.settlement")}</dt><dd>{status.settlement ? value(status.settlement) : t("settings.noSettlement")}</dd></div>
+        <div className="fact-list__row"><dt>{t("settings.performanceRefresh")}</dt><dd>{status.performance_refresh ? value(status.performance_refresh) : t("settings.noRefresh")}</dd></div>
       </dl>
-      <p className="panel-reading">Model analysis is serial (effective concurrency 1). Scheduler cache metadata survives restart, while cached context is intentionally cold after restart.</p>
-      <p className="panel-reading">Outcome settlement is deterministic, point-in-time and read-only for live records; it never creates PaperTrades or real orders. Alerts are local SQLite observability only; no broker connectivity or outbound notifier is activated. Regular-equity session checks omit exchange holiday calendars; `always` is an explicit user override.</p>
+      <p className="panel-reading">{t("settings.schedulerFacts")}</p>
+      <p className="panel-reading">{t("settings.settlementFacts")}</p>
       {history && history.runs.length > 0 ? (
-        <ul className="scheduler-history" aria-label="Recent scheduler runs">
+        <ul className="scheduler-history" aria-label={t("settings.recentRuns")}>
           {history.runs.slice(0, 3).map((run) => (
-            <li key={run.run_id}><strong>{run.status}</strong> · {run.trigger} · {run.started_at}</li>
+            <li key={run.run_id}><strong>{text(run.status)}</strong> · {text(run.trigger)} · {timestamp(run.started_at)}</li>
           ))}
         </ul>
-      ) : <p className="panel-reading">No scheduler history is available.</p>}
+      ) : <p className="panel-reading">{t("settings.noHistory")}</p>}
     </div>
   );
 }
 
 export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
+  const { language, setLanguage, t } = useI18n();
   const healthLoader = useCallback((signal: AbortSignal) => apiClient.health(signal), [apiClient]);
   const providerLoader = useCallback((signal: AbortSignal) => apiClient.providerHealth(signal), [apiClient]);
   const releaseLoader = useCallback((signal: AbortSignal) => apiClient.releaseHealth(signal), [apiClient]);
@@ -108,6 +116,7 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
   const schedulerHistoryLoader = useCallback((signal: AbortSignal) => apiClient.schedulerHistory(5, signal), [apiClient]);
   const alertLoader = useCallback((signal: AbortSignal) => apiClient.alertStatus(signal), [apiClient]);
   const contextLoader = useCallback((signal: AbortSignal) => apiClient.contextHealth(signal), [apiClient]);
+  const appSettingsLoader = useCallback((signal: AbortSignal) => apiClient.appSettings(signal), [apiClient]);
 
   const health = useAsyncResource(healthLoader);
   const provider = useAsyncResource(providerLoader);
@@ -118,8 +127,45 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
   const schedulerHistory = useAsyncResource(schedulerHistoryLoader);
   const alerts = useAsyncResource(alertLoader);
   const context = useAsyncResource(contextLoader);
+  const appSettings = useAsyncResource(appSettingsLoader);
   const [action, setAction] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [preferenceLanguage, setPreferenceLanguage] = useState<"en" | "zh-CN">(language);
+  const [aiLanguage, setAiLanguage] = useState<"follow_ui" | "en" | "zh-CN">("follow_ui");
+  const [notificationLanguage, setNotificationLanguage] = useState<"en" | "zh-CN">("en");
+  const [modelPreference, setModelPreference] = useState<"auto" | "fast" | "smart">("auto");
+  const [preferencesStatus, setPreferencesStatus] = useState<string | null>(null);
+  const preferencesDirty = useRef(false);
+
+  useEffect(() => {
+    if (!appSettings.data || preferencesDirty.current) return;
+    const valueFor = (key: string) => appSettings.data?.find((setting) => setting.key === key)?.value;
+    const ui = valueFor("ui.language");
+    const ai = valueFor("ai.response_language");
+    const notification = valueFor("notifications.language");
+    const model = valueFor("ai.model_preference");
+    if (ui === "en" || ui === "zh-CN") setPreferenceLanguage(ui);
+    if (ai === "follow_ui" || ai === "en" || ai === "zh-CN") setAiLanguage(ai);
+    if (notification === "en" || notification === "zh-CN") setNotificationLanguage(notification);
+    if (model === "auto" || model === "fast" || model === "smart") setModelPreference(model);
+  }, [appSettings.data]);
+
+  async function savePreferences() {
+    setPreferencesStatus(null);
+    try {
+      await Promise.all([
+        apiClient.updateAppSetting("ui.language", preferenceLanguage),
+        apiClient.updateAppSetting("ai.response_language", aiLanguage),
+        apiClient.updateAppSetting("notifications.language", notificationLanguage),
+        apiClient.updateAppSetting("ai.model_preference", modelPreference),
+      ]);
+      setLanguage(preferenceLanguage);
+      setPreferencesStatus(t("v11.preferencesSaved"));
+      appSettings.retry();
+    } catch (error: unknown) {
+      setPreferencesStatus(error instanceof Error ? error.message : t("common.panelUnavailable"));
+    }
+  }
 
   const healthDegraded = health.status === "ready" && health.data?.status !== "ok";
   const providerDegraded = provider.status === "ready" && provider.data?.available === false;
@@ -146,7 +192,7 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
       scheduler.retry();
       schedulerHistory.retry();
     } catch (error: unknown) {
-      setActionError(error instanceof Error ? error.message : "Scheduler action failed.");
+      setActionError(error instanceof Error ? error.message : t("settings.actionFailed"));
     } finally {
       setAction(null);
     }
@@ -155,95 +201,107 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
   return (
     <section className="settings-page" aria-labelledby="settings-health-title">
       <header className="page-intro">
-        <p className="eyebrow">Local operations / explicit lifecycle</p>
-        <h1 id="settings-health-title">Settings / health</h1>
+        <p className="eyebrow">{t("settings.eyebrow")}</p>
+        <h1 id="settings-health-title">{t("settings.title")}</h1>
         <p className="page-intro__description">
-          Separate backend, market/news routing, model, scheduler and stored-count signals. Scheduler controls are explicit and local.
+          {t("settings.description")}
         </p>
-        <p className="page-boundary">No secrets, broker connections, real orders or external notifiers are exposed here; alerts are local observability evidence only, while outcome settlement and performance refresh remain read-only.</p>
+        <p className="page-boundary">{t("settings.boundary")}</p>
       </header>
 
       <div className="settings-grid">
+        <section className="async-panel settings-preferences" aria-labelledby="preferences-title">
+          <div className="async-panel__header"><div><p className="eyebrow">{t("settings.preferencesEyebrow")}</p><h2 id="preferences-title">{t("settings.preferencesTitle")}</h2></div></div>
+          <div className="preference-grid">
+            <label>{t("language.label")}<select value={preferenceLanguage} onChange={(event) => { preferencesDirty.current = true; setPreferenceLanguage(event.target.value as "en" | "zh-CN"); }}><option value="zh-CN">{t("language.chinese")}</option><option value="en">{t("language.english")}</option></select></label>
+            <label>{t("v11.aiLanguage")}<select value={aiLanguage} onChange={(event) => { preferencesDirty.current = true; setAiLanguage(event.target.value as "follow_ui" | "en" | "zh-CN"); }}><option value="follow_ui">{t("v11.followUi")}</option><option value="zh-CN">{t("language.chinese")}</option><option value="en">{t("language.english")}</option></select></label>
+            <label>{t("v11.notificationLanguage")}<select value={notificationLanguage} onChange={(event) => { preferencesDirty.current = true; setNotificationLanguage(event.target.value as "en" | "zh-CN"); }}><option value="zh-CN">{t("language.chinese")}</option><option value="en">{t("language.english")}</option></select></label>
+            <label>{t("v11.modelPreference")}<select value={modelPreference} onChange={(event) => { preferencesDirty.current = true; setModelPreference(event.target.value as "auto" | "fast" | "smart"); }}><option value="auto">{t("v11.auto")}</option><option value="fast">{t("v11.fast")}</option><option value="smart">{t("v11.smart")}</option></select></label>
+          </div>
+          <button className="primary-button" type="button" onClick={() => void savePreferences()}>{t("v11.savePreferences")}</button>
+          {preferencesStatus ? <p role="status">{preferencesStatus}</p> : null}
+          <p className="panel-reading">{t("v11.localAlertsOnly")}</p>
+        </section>
         <AsyncPanel
-          title="Backend service"
+          title={t("settings.backend")}
           source="GET /health"
-          freshness="endpoint timestamp not supplied"
+          freshness={t("settings.endpointTimestampMissing")}
           state={healthDegraded ? "degraded" : resourceState(health, false)}
           error={health.error}
           onRetry={health.retry}
-          degradedMessage="The backend answered with a non-ok status; provider and model probes remain separate."
+          degradedMessage={t("settings.backendDegraded")}
         >
           {health.data ? <HealthFacts health={health.data} /> : null}
         </AsyncPanel>
 
         <AsyncPanel
-          title="Market and news routing"
+          title={t("settings.routing")}
           source="GET /health/providers"
-          freshness="probe response; timestamp not supplied"
+          freshness={t("settings.probeTimestampMissing")}
           state={providerDegraded ? "degraded" : resourceState(provider, !providerHasContent)}
           error={provider.error}
           onRetry={provider.retry}
-          emptyMessage="No routing rows or news probe details were returned."
-          degradedMessage="Provider routing is degraded. This does not mean the backend itself is unavailable."
+          emptyMessage={t("settings.noRouting")}
+          degradedMessage={t("settings.routingDegraded")}
         >
           {provider.data ? <ProviderRouting provider={provider.data} /> : null}
         </AsyncPanel>
 
         <AsyncPanel
-          title="Release / local capability"
+          title={t("settings.release")}
           source="GET /health/release"
-          freshness="versioned capability response"
+          freshness={t("settings.versionedCapability")}
           state={releaseState(release)}
           error={release.error}
           onRetry={release.retry}
-          emptyMessage="No release capability evidence was returned."
-          degradedMessage="Database or local release capability is degraded; no readiness claim is inferred."
+          emptyMessage={t("settings.noRelease")}
+          degradedMessage={t("settings.releaseDegraded")}
         >
           {release.data ? (
             <div className="scheduler-facts">
               <dl className="fact-list fact-list--compact">
-                <div className="fact-list__row"><dt>Contract</dt><dd>phase {release.data.phase} · API {release.data.api_version}</dd></div>
-                <div className="fact-list__row"><dt>Database</dt><dd>{schedulerText(release.data.database)}</dd></div>
-                <div className="fact-list__row"><dt>Backup</dt><dd>{schedulerText(release.data.backup)}</dd></div>
-                <div className="fact-list__row"><dt>Boundaries</dt><dd>{schedulerText(release.data.capabilities)}</dd></div>
+                <div className="fact-list__row"><dt>{t("settings.contract")}</dt><dd>{t("common.phase")} {release.data.phase} · API {release.data.api_version}</dd></div>
+                <div className="fact-list__row"><dt>{t("settings.database")}</dt><dd>{schedulerText(release.data.database, t("common.notDisplayable"))}</dd></div>
+                <div className="fact-list__row"><dt>{t("settings.backup")}</dt><dd>{schedulerText(release.data.backup, t("common.notDisplayable"))}</dd></div>
+                <div className="fact-list__row"><dt>{t("settings.boundaries")}</dt><dd>{schedulerText(release.data.capabilities, t("common.notDisplayable"))}</dd></div>
               </dl>
-              <p className="panel-reading">Startup binds to loopback, scheduler remains explicitly off by default, and backup/restore is an operator command. No telemetry, cloud notifier, broker or real-order path is enabled.</p>
+              <p className="panel-reading">{t("settings.loopback")}</p>
             </div>
           ) : null}
         </AsyncPanel>
 
         <AsyncPanel
-          title="Local model"
+          title={t("settings.localModel")}
           source="GET /health/model"
-          freshness="health probe response; timestamp not supplied"
+          freshness={t("settings.healthProbeTimestampMissing")}
           state={modelDegraded ? "degraded" : resourceState(model, !modelHasContent)}
           error={model.error}
           onRetry={model.retry}
-          emptyMessage="The model endpoint returned no health fields."
-          degradedMessage="Model health is degraded or unavailable while backend health is tracked separately."
+          emptyMessage={t("settings.noModel")}
+          degradedMessage={t("settings.modelDegraded")}
         >
           {model.data ? <ModelFacts model={model.data} /> : null}
         </AsyncPanel>
 
         <AsyncPanel
-          title="Local Watchlist scheduler"
+          title={t("settings.scheduler")}
           source="GET /scheduler/status"
-          freshness="runtime status response"
+          freshness={t("settings.runtimeStatus")}
           state={schedulerState(scheduler)}
           error={scheduler.error}
           onRetry={scheduler.retry}
-          degradedMessage="The local scheduler is blocked or backing off. It never kills competing processes or retries without a bounded cap."
+          degradedMessage={t("settings.schedulerDegraded")}
           className="settings-panel--scheduler"
         >
           {scheduler.data ? (
             <>
               <SchedulerFacts status={scheduler.data} history={schedulerHistory.data} />
-              <div className="scheduler-actions" aria-label="Scheduler lifecycle controls">
-                {!scheduler.data.enabled ? <button className="primary-button" type="button" onClick={() => void runSchedulerAction("enable")} disabled={action !== null}>{action === "enable" ? "Enabling…" : "Enable scheduler"}</button> : null}
-                {scheduler.data.enabled && !scheduler.data.running ? <button className="primary-button" type="button" onClick={() => void runSchedulerAction("start")} disabled={action !== null}>{action === "start" ? "Starting…" : "Start scheduler"}</button> : null}
-                {scheduler.data.running ? <button className="quiet-button" type="button" onClick={() => void runSchedulerAction("stop")} disabled={action !== null}>{action === "stop" ? "Stopping…" : "Stop scheduler"}</button> : null}
-                {scheduler.data.enabled && !scheduler.data.running ? <button className="quiet-button" type="button" onClick={() => void runSchedulerAction("run")} disabled={action !== null}>{action === "run" ? "Scanning…" : "Run one Watchlist scan"}</button> : null}
-                {scheduler.data.enabled ? <button className="quiet-button" type="button" onClick={() => void runSchedulerAction("disable")} disabled={action !== null}>{action === "disable" ? "Disabling…" : "Disable scheduler"}</button> : null}
+              <div className="scheduler-actions" aria-label={t("settings.lifecycleControls")}>
+                {!scheduler.data.enabled ? <button className="primary-button" type="button" onClick={() => void runSchedulerAction("enable")} disabled={action !== null}>{action === "enable" ? t("settings.enabling") : t("settings.enable")}</button> : null}
+                {scheduler.data.enabled && !scheduler.data.running ? <button className="primary-button" type="button" onClick={() => void runSchedulerAction("start")} disabled={action !== null}>{action === "start" ? t("settings.starting") : t("settings.start")}</button> : null}
+                {scheduler.data.running ? <button className="quiet-button" type="button" onClick={() => void runSchedulerAction("stop")} disabled={action !== null}>{action === "stop" ? t("settings.stopping") : t("settings.stop")}</button> : null}
+                {scheduler.data.enabled && !scheduler.data.running ? <button className="quiet-button" type="button" onClick={() => void runSchedulerAction("run")} disabled={action !== null}>{action === "run" ? t("settings.scanning") : t("settings.runOnce")}</button> : null}
+                {scheduler.data.enabled ? <button className="quiet-button" type="button" onClick={() => void runSchedulerAction("disable")} disabled={action !== null}>{action === "disable" ? t("settings.disabling") : t("settings.disable")}</button> : null}
               </div>
               {actionError ? <p className="panel-message panel-message--unavailable" role="alert">{actionError}</p> : null}
             </>
@@ -251,62 +309,62 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
         </AsyncPanel>
 
         <AsyncPanel
-          title="Database counts"
+          title={t("settings.databaseCounts")}
           source="GET /stats"
-          freshness="count response; timestamp not supplied"
+          freshness={t("settings.countTimestampMissing")}
           state={resourceState(stats, !statsHasContent)}
           error={stats.error}
           onRetry={stats.retry}
-          emptyMessage="No stored-count keys were returned. Database condition is not inferred beyond this response."
+          emptyMessage={t("settings.noCounts")}
         >
           {stats.data ? <CountLedger stats={stats.data} /> : null}
         </AsyncPanel>
 
         <AsyncPanel
-          title="Alert reconciliation"
+          title={t("settings.alertReconciliation")}
           source="GET /alerts/status"
-          freshness="durable local policy and last reconciliation"
+          freshness={t("settings.alertFreshness")}
           state={alertState(alerts)}
           error={alerts.error}
           onRetry={alerts.retry}
-          degradedMessage="Alert reconciliation reported an isolated evidence error; scheduler and stored financial records remain separate."
+          degradedMessage={t("settings.alertDegraded")}
           className="settings-panel--alerts"
         >
           {alerts.data ? (
             <div className="scheduler-facts">
               <dl className="fact-list fact-list--compact">
-                <div className="fact-list__row"><dt>Policy</dt><dd>{alerts.data.policy.version} · retention {alerts.data.policy.retention_limit ?? "not supplied"}</dd></div>
-                <div className="fact-list__row"><dt>Counts</dt><dd>{schedulerText(alerts.data.counts)}</dd></div>
-                <div className="fact-list__row"><dt>Last refresh</dt><dd>{alerts.data.last_reconciliation ? schedulerText(alerts.data.last_reconciliation) : "No reconciliation recorded"}</dd></div>
-                <div className="fact-list__row"><dt>Capabilities</dt><dd>{schedulerText(alerts.data.capabilities)}</dd></div>
+                <div className="fact-list__row"><dt>{t("alerts.policyLabel")}</dt><dd>{alerts.data.policy.version} · {t("alerts.retention")} {alerts.data.policy.retention_limit ?? t("common.notSuppliedValue")}</dd></div>
+                <div className="fact-list__row"><dt>{t("settings.counts")}</dt><dd>{schedulerText(alerts.data.counts, t("common.notDisplayable"))}</dd></div>
+                <div className="fact-list__row"><dt>{t("settings.lastRefresh")}</dt><dd>{alerts.data.last_reconciliation ? schedulerText(alerts.data.last_reconciliation, t("common.notDisplayable")) : t("settings.noReconciliation")}</dd></div>
+                <div className="fact-list__row"><dt>{t("settings.capabilities")}</dt><dd>{schedulerText(alerts.data.capabilities, t("common.notDisplayable"))}</dd></div>
               </dl>
-              <p className="panel-reading">Alert evidence is deduped in SQLite and acknowledgement is idempotent. No cloud notification, broker, order, PaperTrade, calibration or confidence mutation is connected.</p>
+              <p className="panel-reading">{t("settings.alertFacts")}</p>
             </div>
           ) : null}
         </AsyncPanel>
 
         <AsyncPanel
-          title="Phase 6 context capabilities"
+          title={t("settings.contextCapabilities")}
           source="GET /health/context"
-          freshness="versioned local capability contract"
+          freshness={t("settings.contextFreshness")}
           state={contextState(context)}
           error={context.error}
           onRetry={context.retry}
-          emptyMessage="No Phase 6 context capability evidence was returned."
-          degradedMessage="One or more deterministic context providers are unavailable; no fallback is presented as verified data."
+          emptyMessage={t("settings.noContext")}
+          degradedMessage={t("settings.contextDegraded")}
           className="settings-panel--context"
         >
           {context.data ? (
             <div className="scheduler-facts">
               <dl className="fact-list fact-list--compact">
-                <div className="fact-list__row"><dt>Contract</dt><dd>phase {context.data.phase ?? "not supplied"} · API {context.data.api_version ?? "not supplied"}</dd></div>
-                <div className="fact-list__row"><dt>Benchmark</dt><dd>{schedulerText(context.data.benchmark)}</dd></div>
-                <div className="fact-list__row"><dt>Events</dt><dd>{schedulerText(context.data.events)}</dd></div>
-                <div className="fact-list__row"><dt>Memory</dt><dd>{schedulerText(context.data.memory)}</dd></div>
-                <div className="fact-list__row"><dt>TimePolicy owner</dt><dd>{schedulerText(context.data.time_policy)}</dd></div>
-                <div className="fact-list__row"><dt>GET boundary</dt><dd>read-only {String(context.data.read_only_get)} · cloud required {String(context.data.cloud_required)}</dd></div>
+                <div className="fact-list__row"><dt>{t("settings.contract")}</dt><dd>{t("common.phase")} {context.data.phase ?? t("common.notSuppliedValue")} · API {context.data.api_version ?? t("common.notSuppliedValue")}</dd></div>
+                <div className="fact-list__row"><dt>{t("settings.benchmark")}</dt><dd>{schedulerText(context.data.benchmark, t("common.notDisplayable"))}</dd></div>
+                <div className="fact-list__row"><dt>{t("settings.events")}</dt><dd>{schedulerText(context.data.events, t("common.notDisplayable"))}</dd></div>
+                <div className="fact-list__row"><dt>{t("settings.memory")}</dt><dd>{schedulerText(context.data.memory, t("common.notDisplayable"))}</dd></div>
+                <div className="fact-list__row"><dt>{t("settings.timePolicyOwner")}</dt><dd>{schedulerText(context.data.time_policy, t("common.notDisplayable"))}</dd></div>
+                <div className="fact-list__row"><dt>{t("settings.getBoundary")}</dt><dd>{t("common.readOnly")} {t(context.data.read_only_get ? "common.yes" : "common.no")} · {t("settings.cloudRequired")} {t(context.data.cloud_required ? "common.yes" : "common.no")}</dd></div>
               </dl>
-              <p className="panel-reading">Benchmark, event and memory context are deterministic Python evidence. GET reads do not create Predictions, Outcomes, PaperTrades, alerts or memory materializations.</p>
+              <p className="panel-reading">{t("settings.contextFacts")}</p>
             </div>
           ) : null}
         </AsyncPanel>

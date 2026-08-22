@@ -5,6 +5,7 @@ import type { AlertFilters, AlertRecord, AlertSeverity, AlertSource, AlertStatus
 import { AsyncPanel, type PanelState } from "../components/AsyncPanel";
 import type { AsyncResource } from "../hooks/useAsyncResource";
 import { useAsyncResource } from "../hooks/useAsyncResource";
+import { useI18n, type TranslationKey } from "../i18n";
 
 interface AlertsPageProps {
   apiClient: ApplicationShellApiClient;
@@ -20,49 +21,53 @@ function resourceState<T>(resource: AsyncResource<T>, empty: boolean): PanelStat
   return empty ? "empty" : "ready";
 }
 
-function timestamp(value: string | null | undefined): string {
-  if (!value) return "Not supplied";
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
-}
-
-function sourceLabel(source: string): string {
-  return source.replaceAll("_", " ");
-}
+const sourceKeys: Record<AlertSource, TranslationKey> = {
+  prediction: "common.prediction",
+  outcome: "common.outcome",
+  radar: "common.radar",
+  news_event: "common.newsEvent",
+  operational: "common.operational",
+};
 
 function evidenceText(alert: AlertRecord): string {
   return JSON.stringify(alert.evidence, null, 2) ?? "{}";
 }
 
 function AlertCard({ alert, onAcknowledge, busy }: { alert: AlertRecord; onAcknowledge: (alertId: string) => void; busy: boolean }) {
+  const { formatDateTime, t, text } = useI18n();
   const acknowledged = alert.status === "ACKNOWLEDGED";
+  const timestamp = (value: string | null | undefined) => {
+    if (!value) return t("common.notSupplied");
+    return Number.isNaN(new Date(value).getTime()) ? value : formatDateTime(value, { dateStyle: "medium", timeStyle: "medium", timeZone: "UTC" });
+  };
+  const source = sourceKeys[alert.source as AlertSource] ? t(sourceKeys[alert.source as AlertSource]) : alert.source;
   return (
     <li className={`alert-card alert-card--${String(alert.severity).toLowerCase()}`}>
       <div className="alert-card__header">
         <div>
-          <p className="eyebrow">{sourceLabel(String(alert.source))} · {alert.symbol ?? "workspace"}</p>
+          <p className="eyebrow">{source} · {alert.symbol ?? t("alerts.workspace")}</p>
           <h3>{alert.title}</h3>
         </div>
-        <div className="alert-card__badges" aria-label={`Alert ${alert.severity} ${alert.status}`}>
-          <span className="status-chip status-chip--neutral">{alert.severity}</span>
-          <span className="status-chip status-chip--neutral">{alert.status}</span>
+        <div className="alert-card__badges" aria-label={`${t("common.alert")} ${text(alert.severity)} ${text(alert.status)}`}>
+          <span className="status-chip status-chip--neutral">{text(alert.severity)}</span>
+          <span className="status-chip status-chip--neutral">{text(alert.status)}</span>
         </div>
       </div>
       <p className="alert-card__message">{alert.message}</p>
       <dl className="fact-list fact-list--compact alert-card__facts">
-        <div className="fact-list__row"><dt>Last seen</dt><dd>{timestamp(alert.last_seen_at)}</dd></div>
-        <div className="fact-list__row"><dt>Occurrences</dt><dd>{alert.occurrence_count}</dd></div>
-        <div className="fact-list__row"><dt>Event identity</dt><dd>{alert.event_identity}</dd></div>
-        <div className="fact-list__row"><dt>Policy</dt><dd>{alert.policy_version}</dd></div>
+        <div className="fact-list__row"><dt>{t("alerts.lastSeen")}</dt><dd>{timestamp(alert.last_seen_at)}</dd></div>
+        <div className="fact-list__row"><dt>{t("alerts.occurrences")}</dt><dd>{alert.occurrence_count}</dd></div>
+        <div className="fact-list__row"><dt>{t("alerts.eventIdentity")}</dt><dd>{alert.event_identity}</dd></div>
+        <div className="fact-list__row"><dt>{t("alerts.policyLabel")}</dt><dd>{alert.policy_version}</dd></div>
       </dl>
       <details className="alert-card__evidence">
-        <summary>Show evidence</summary>
+        <summary>{t("alerts.showEvidence")}</summary>
         <pre>{evidenceText(alert)}</pre>
       </details>
       <div className="alert-card__actions">
-        {acknowledged ? <span className="panel-reading">Acknowledged {timestamp(alert.acknowledged_at)}</span> : (
+        {acknowledged ? <span className="panel-reading">{t("alerts.acknowledgedAt")} {timestamp(alert.acknowledged_at)}</span> : (
           <button className="quiet-button" type="button" onClick={() => onAcknowledge(alert.alert_id)} disabled={busy}>
-            {busy ? "Acknowledging…" : "Acknowledge alert"}
+            {busy ? t("alerts.acknowledging") : t("alerts.acknowledge")}
           </button>
         )}
       </div>
@@ -71,6 +76,7 @@ function AlertCard({ alert, onAcknowledge, busy }: { alert: AlertRecord; onAckno
 }
 
 export function AlertsPage({ apiClient }: AlertsPageProps) {
+  const { t, text } = useI18n();
   const [draftSource, setDraftSource] = useState<AlertSource | "">("");
   const [draftStatus, setDraftStatus] = useState<AlertStatus | "">("");
   const [draftSeverity, setDraftSeverity] = useState<AlertSeverity | "">("");
@@ -104,7 +110,7 @@ export function AlertsPage({ apiClient }: AlertsPageProps) {
       alerts.retry();
       alertStatus.retry();
     } catch (error: unknown) {
-      setActionError(error instanceof Error ? error.message : "Alert acknowledgement failed.");
+      setActionError(error instanceof Error ? error.message : t("alerts.acknowledgeFailed"));
     } finally {
       setBusyAlertId(null);
     }
@@ -113,63 +119,63 @@ export function AlertsPage({ apiClient }: AlertsPageProps) {
   return (
     <section className="workflow-page alerts-page" aria-labelledby="alerts-title">
       <header className="page-intro">
-        <p className="eyebrow">Local observability / durable ledger</p>
-        <h1 id="alerts-title">Alert Center</h1>
-        <p className="page-intro__description">Review deterministic local evidence from predictions, outcomes, Radar transitions and operational failures.</p>
-        <p className="page-boundary">Alerts stay in SQLite. No Telegram, Discord, email, cloud notifier, broker, real order or PaperTrade action is connected.</p>
+        <p className="eyebrow">{t("alerts.eyebrow")}</p>
+        <h1 id="alerts-title">{t("alerts.title")}</h1>
+        <p className="page-intro__description">{t("alerts.description")}</p>
+        <p className="page-boundary">{t("alerts.boundary")}</p>
       </header>
 
-      <div className="capability-ledger capability-ledger--warning" role="note" aria-label="Alert boundary">
-        <span className="capability-ledger__label">alert_policy_v1</span>
-        <p>Repeated evidence is deduplicated across restarts. Operational failures coalesce in bounded cooldown windows; acknowledgement changes only alert status.</p>
+      <div className="capability-ledger capability-ledger--warning" role="note" aria-label={t("alerts.boundaryLabel")}>
+        <span className="capability-ledger__label">{t("alerts.policy")}</span>
+        <p>{t("alerts.capability")}</p>
       </div>
 
-      <section className="alert-summary" aria-label="Alert counts">
-        <div><span className="alert-summary__label">Open</span><strong>{counts?.open ?? "—"}</strong></div>
-        <div><span className="alert-summary__label">Unread</span><strong>{counts?.unread ?? "—"}</strong></div>
-        <div><span className="alert-summary__label">Acknowledged</span><strong>{counts?.acknowledged ?? "—"}</strong></div>
-        <div><span className="alert-summary__label">Retention</span><strong>{alertStatus.data?.policy.retention_limit ?? 500}</strong></div>
+      <section className="alert-summary" aria-label={t("alerts.counts")}>
+        <div><span className="alert-summary__label">{t("alerts.open")}</span><strong>{counts?.open ?? "—"}</strong></div>
+        <div><span className="alert-summary__label">{t("alerts.unread")}</span><strong>{counts?.unread ?? "—"}</strong></div>
+        <div><span className="alert-summary__label">{t("alerts.acknowledged")}</span><strong>{counts?.acknowledged ?? "—"}</strong></div>
+        <div><span className="alert-summary__label">{t("alerts.retention")}</span><strong>{alertStatus.data?.policy.retention_limit ?? 500}</strong></div>
       </section>
 
-      <form className="workflow-filters alerts-filters" aria-label="Alert filters" onSubmit={applyFilters}>
+      <form className="workflow-filters alerts-filters" aria-label={t("alerts.filters")} onSubmit={applyFilters}>
         <div className="workflow-filters__grid">
           <label>
-            Source
+            {t("common.source")}
             <select value={draftSource} onChange={(event) => setDraftSource(event.target.value as AlertSource | "")}>
-              <option value="">All sources</option>
-              {alertSources.map((source) => <option key={source} value={source}>{sourceLabel(source)}</option>)}
+              <option value="">{t("common.allSources")}</option>
+              {alertSources.map((source) => <option key={source} value={source}>{t(sourceKeys[source])}</option>)}
             </select>
           </label>
           <label>
-            Status
+            {t("common.status")}
             <select value={draftStatus} onChange={(event) => setDraftStatus(event.target.value as AlertStatus | "")}>
-              <option value="">All statuses</option>
-              {alertStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
+              <option value="">{t("common.allStatuses")}</option>
+              {alertStatuses.map((status) => <option key={status} value={status}>{text(status)}</option>)}
             </select>
           </label>
           <label>
-            Severity
-            <select aria-label="Severity filter" value={draftSeverity} onChange={(event) => setDraftSeverity(event.target.value as AlertSeverity | "")}>
-              <option value="">All severities</option>
-              {alertSeverities.map((severity) => <option key={severity} value={severity}>{severity}</option>)}
+            {t("common.severity")}
+            <select aria-label={t("alerts.severityFilter")} value={draftSeverity} onChange={(event) => setDraftSeverity(event.target.value as AlertSeverity | "")}>
+              <option value="">{t("common.allSeverities")}</option>
+              {alertSeverities.map((severity) => <option key={severity} value={severity}>{text(severity)}</option>)}
             </select>
           </label>
-          <button className="primary-button" type="submit">Apply filters</button>
+          <button className="primary-button" type="submit">{t("common.applyFilters")}</button>
         </div>
       </form>
 
       {actionError ? <p className="panel-message panel-message--unavailable" role="alert">{actionError}</p> : null}
 
       <AsyncPanel
-        title="Alert ledger"
+        title={t("alerts.ledger")}
         source="GET /alerts"
-        freshness="last_seen_at from durable SQLite evidence"
+        freshness={t("common.lastSeenEvidence")}
         state={resourceState(alerts, records.length === 0)}
         error={alerts.error}
         onRetry={alerts.retry}
-        emptyMessage="No alerts match the current filters. A scheduler reconciliation creates rows only from stored deterministic evidence."
+        emptyMessage={t("alerts.noMatch")}
       >
-        <ul className="alert-list" aria-label="Stored alerts">
+        <ul className="alert-list" aria-label={t("alerts.stored")}>
           {records.map((alert) => <AlertCard key={alert.alert_id} alert={alert} busy={busyAlertId === alert.alert_id} onAcknowledge={(id) => void acknowledge(id)} />)}
         </ul>
       </AsyncPanel>

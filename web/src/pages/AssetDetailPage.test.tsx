@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApplicationShell } from "../App";
 import { ApiError } from "../api/client";
@@ -39,6 +39,7 @@ const newsWithEvent: InstrumentNews = {
 };
 
 describe("AssetDetailPage", () => {
+  afterEach(() => window.localStorage.clear());
   it("loads roster, snapshot and news without running analysis on mount", async () => {
     const snapshot = vi.fn().mockResolvedValue(fakeSnapshot);
     const news = vi.fn().mockResolvedValue(newsWithEvent);
@@ -223,5 +224,23 @@ describe("AssetDetailPage", () => {
     expect(screen.queryByText("Asset detail / NVDA")).not.toBeInTheDocument();
     expect(snapshot).not.toHaveBeenCalled();
     expect(news).not.toHaveBeenCalled();
+  });
+
+  it("renders ResearchFacts and OHLCV fixed copy with the selected zh-CN locale", async () => {
+    window.localStorage.setItem("ai-market-analyst.language", "zh-CN");
+    const client = createFakeClient({
+      instrumentSnapshot: vi.fn().mockResolvedValue({ ...fakeSnapshot, response_time: "not-a-date", bars: [] }),
+      instrumentNews: vi.fn().mockResolvedValue({ ...fakeNews, fetched_at: null }),
+    });
+    renderAsset(client);
+
+    const snapshotPanel = await screen.findByRole("region", { name: "市场快照" });
+    expect(within(snapshotPanel).getByText("OHLCV 证据")).toBeInTheDocument();
+    expect(within(snapshotPanel).getByText("此标的和时间周期未提供 OHLCV K 线。")).toBeInTheDocument();
+    expect(within(snapshotPanel).getByText("无法解析")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "咨询 Qwen 此标的" })).toBeInTheDocument();
+    expect(screen.queryByText("Not supplied", { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText("Not parseable", { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText("OHLCV evidence", { exact: true })).not.toBeInTheDocument();
   });
 });

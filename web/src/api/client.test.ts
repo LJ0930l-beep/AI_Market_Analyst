@@ -87,7 +87,7 @@ describe("ApiClient", () => {
     const encoder = new TextEncoder();
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
-        controller.enqueue(encoder.encode(`{"type":"meta","contract_version":"qwen_consult_v1","request_id":"r1","provider":"ollama","model_id":"qwen3.5:4b","context":{"status":"unavailable","sources":[],"missing_reasons":[],"read_only":true}}\n{"type":"delta","content":"first `));
+        controller.enqueue(encoder.encode(`{"type":"meta","contract_version":"qwen_consult_v2","request_id":"r1","provider":"ollama","model_id":"qwen3.5:9b","model_tier":"smart","model_route":{"version":"qwen_route_v1","reason":"auto_smart_task"},"context":{"status":"unavailable","sources":[],"missing_reasons":[],"read_only":true}}\n{"type":"delta","content":"first `));
         controller.enqueue(encoder.encode(`chunk"}\n{"type":"delta","content":"second"}\n{"type":"done","finish_reason":"stop","output_chars":18}\n`));
         controller.close();
       },

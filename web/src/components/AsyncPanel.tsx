@@ -1,6 +1,7 @@
 import { useId, type ReactNode } from "react";
 
 import { ApiError } from "../api/client";
+import { useI18n, type TranslationKey } from "../i18n";
 
 export type PanelState = "loading" | "ready" | "empty" | "unavailable" | "degraded";
 
@@ -17,38 +18,39 @@ interface AsyncPanelProps {
   className?: string;
 }
 
-const stateLabels: Record<PanelState, string> = {
-  loading: "Loading",
-  ready: "Loaded",
-  empty: "No records",
-  unavailable: "Unavailable",
-  degraded: "Degraded",
+const stateLabels: Record<PanelState, TranslationKey> = {
+  loading: "common.loading",
+  ready: "common.loaded",
+  empty: "common.noRecords",
+  unavailable: "common.unavailable",
+  degraded: "common.degraded",
 };
 
-const requestLabels: Record<PanelState, string> = {
-  loading: "pending",
-  ready: "complete",
-  empty: "complete",
-  unavailable: "failed",
-  degraded: "complete",
+const requestLabels: Record<PanelState, TranslationKey> = {
+  loading: "common.pending",
+  ready: "common.complete",
+  empty: "common.complete",
+  unavailable: "common.failed",
+  degraded: "common.complete",
 };
 
-function errorMessage(error: unknown): string {
+function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiError) {
     return `${error.code}: ${error.message}`;
   }
-  return "The endpoint did not return a usable response.";
+  return fallback;
 }
 
 function PanelMessage({ state, message, onRetry, title, error }: Pick<AsyncPanelProps, "state" | "onRetry" | "title" | "error"> & { message: string }) {
+  const { t } = useI18n();
   const role = state === "unavailable" ? "alert" : "status";
   return (
     <div className={`panel-message panel-message--${state}`} role={role}>
       <p>{message}</p>
-      {state === "unavailable" && error ? <p className="panel-message__error">{errorMessage(error)}</p> : null}
+      {state === "unavailable" && error ? <p className="panel-message__error">{errorMessage(error, t("common.endpointUnusable"))}</p> : null}
       {onRetry ? (
         <button className="quiet-button" type="button" onClick={onRetry}>
-          Retry {title}
+          {t("common.retry")} {title}
         </button>
       ) : null}
     </div>
@@ -62,35 +64,37 @@ export function AsyncPanel({
   state,
   onRetry,
   error,
-  emptyMessage = "The endpoint returned no records.",
+  emptyMessage,
   degradedMessage,
   children,
   className = "",
 }: AsyncPanelProps) {
+  const { t } = useI18n();
   const titleId = useId();
+  const resolvedEmptyMessage = emptyMessage ?? t("common.endpointNoRecords");
   return (
     <section className={`async-panel async-panel--${state} ${className}`.trim()} aria-labelledby={titleId}>
       <header className="async-panel__header">
         <div className="async-panel__heading">
           <h2 id={titleId}>{title}</h2>
           <p className="async-panel__source">
-            Source <code>{source}</code> · Request: {requestLabels[state]} · Freshness: {freshness}
+            {t("common.source")} <code>{source}</code> · {t("common.request")} {t(requestLabels[state])} · {t("common.freshness")} {freshness}
           </p>
         </div>
-        <span className={`panel-state panel-state--${state}`}>{stateLabels[state]}</span>
+        <span className={`panel-state panel-state--${state}`}>{t(stateLabels[state])}</span>
       </header>
       <div className="async-panel__body">
-        {state === "loading" ? <PanelMessage state={state} message="Request in progress." title={title} /> : null}
+        {state === "loading" ? <PanelMessage state={state} message={t("common.requestInProgress")} title={title} /> : null}
         {state === "empty" ? (
           <>
-            <PanelMessage state={state} message={emptyMessage} onRetry={onRetry} title={title} />
+            <PanelMessage state={state} message={resolvedEmptyMessage} onRetry={onRetry} title={title} />
             {children}
           </>
         ) : null}
         {state === "unavailable" ? (
           <PanelMessage
             error={error}
-            message="This panel is unavailable. Other workstation panels can remain usable."
+            message={t("common.panelUnavailable")}
             onRetry={onRetry}
             state={state}
             title={title}

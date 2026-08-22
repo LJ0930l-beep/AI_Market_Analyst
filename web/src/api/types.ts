@@ -61,6 +61,9 @@ export interface ConsultRequest {
   language: ConsultLanguage;
   messages: ConsultMessage[];
   symbol?: string;
+  prediction_id?: string;
+  model_preference?: "auto" | "fast" | "smart";
+  task?: "assistant" | "signal_explanation" | "simple_summary" | "daily_brief" | "event_analysis" | "deep_research";
 }
 
 export interface ConsultCapability extends JsonRecord {
@@ -69,6 +72,7 @@ export interface ConsultCapability extends JsonRecord {
   available?: boolean;
   provider?: string;
   model_id?: string;
+  models?: { fast?: string; smart?: string };
   endpoint_scope?: string;
   streaming?: string;
   availability?: string;
@@ -97,6 +101,8 @@ export type ConsultStreamEvent =
       request_id: string;
       provider: string;
       model_id: string;
+      model_tier?: "fast" | "smart";
+      model_route?: JsonRecord;
       symbol?: string | null;
       context: ConsultContextEvidence;
     })
@@ -151,7 +157,94 @@ export type AppSettingKey =
   | "scheduler.enabled"
   | "scheduler.interval_seconds"
   | "scheduler.concurrency"
-  | "scheduler.session_policy";
+  | "scheduler.session_policy"
+  | "ui.language"
+  | "ai.response_language"
+  | "notifications.language"
+  | "ai.model_preference";
+
+export interface MarketPulseItem extends JsonRecord {
+  symbol: string;
+  status: string;
+  price: number | null;
+  change_pct: number | null;
+  freshness: JsonRecord;
+  missing_reasons: string[];
+}
+
+export interface IntelligenceEvent extends JsonRecord {
+  event_id?: string;
+  title?: string;
+  source?: string;
+  category?: string;
+  event_at?: string;
+  known_at?: string;
+  importance?: number;
+  affected_symbols?: string[];
+  forecast?: unknown;
+  previous?: unknown;
+  actual?: unknown;
+  ai_view?: string | null;
+  review?: string | null;
+}
+
+export interface HeatmapCell extends JsonRecord {
+  symbol: string;
+  asset_type: string;
+  group: string;
+  change_pct: number | null;
+  price: number | null;
+  status: string;
+  missing_reasons: string[];
+}
+
+export interface MonitoringItem extends JsonRecord {
+  symbol: string;
+  asset_type?: string | null;
+  action?: Action | null;
+  prediction_id?: string | null;
+  summary?: string | null;
+  raw_confidence?: number | null;
+  calibrated_confidence?: number | null;
+  market_regime?: string | null;
+  freshness: JsonRecord;
+  status: string;
+}
+
+export interface DailyBrief extends JsonRecord {
+  brief_id: string;
+  generated_at: string;
+  as_of: string;
+  language: ConsultLanguage;
+  model_id: string;
+  model_tier: string;
+  route_reason: string;
+  sources: string[];
+  missing: string[];
+  content: string;
+}
+
+export interface MarketIntelligenceResponse extends JsonRecord {
+  contract_version: string;
+  as_of: string;
+  read_only: boolean;
+  provider_calls: boolean;
+  domain_writes: boolean;
+  pulse: MarketPulseItem[];
+  calendar: { status: string; events: IntelligenceEvent[]; missing_reasons: string[]; capabilities: JsonRecord };
+  watchlist: MonitoringItem[];
+  latest_signal?: Prediction | null;
+  heatmap: { status: string; cells: HeatmapCell[]; capability: string; taxonomy_version: string };
+  news: { status: string; items: IntelligenceEvent[]; missing_reasons: string[] };
+  daily_brief?: DailyBrief | null;
+  capabilities: JsonRecord;
+}
+
+export interface DailyBriefResponse extends JsonRecord {
+  contract_version: string;
+  status: string;
+  brief: DailyBrief | null;
+}
 
 export type AppSettingValue = boolean | number | string;
 export type AppSettingValueType = "boolean" | "integer" | "string";

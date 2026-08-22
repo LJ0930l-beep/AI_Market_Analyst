@@ -1,37 +1,40 @@
 import type { ReactNode } from "react";
+import { useI18n } from "../i18n";
 
 export interface ResearchFact {
   label: string;
   value: ReactNode;
 }
 
-export function exactNumberText(value: number | null | undefined): string {
-  return typeof value === "number" && Number.isFinite(value) ? String(value) : "Not supplied";
-}
-
-export function numberText(value: number | null | undefined, maximumFractionDigits = 4): string {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return "Not supplied";
-  }
-  return new Intl.NumberFormat(undefined, { maximumFractionDigits }).format(value);
-}
-
-export function timestampText(value: string | null | undefined): string {
-  if (!value) {
-    return "Not supplied";
-  }
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? "Not parseable" : parsed.toISOString();
-}
-
-export function primitiveText(value: unknown): string {
-  if (value === null || value === undefined || value === "") {
-    return "Not supplied";
-  }
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  return "Not supplied";
+export function useResearchFormatters() {
+  const { formatDateTime, formatNumber, t } = useI18n();
+  return {
+    exactNumberText(value: unknown): string {
+      return typeof value === "number" && Number.isFinite(value)
+        ? formatNumber(value, { maximumFractionDigits: 20, useGrouping: false })
+        : t("common.notSupplied");
+    },
+    numberText(value: unknown, maximumFractionDigits = 4): string {
+      return typeof value === "number" && Number.isFinite(value)
+        ? formatNumber(value, { maximumFractionDigits })
+        : t("common.notSupplied");
+    },
+    timestampText(value: unknown): string {
+      if (typeof value !== "string" || !value) return t("common.notSupplied");
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime())
+        ? t("common.notParseable")
+        : formatDateTime(parsed, { dateStyle: "medium", timeStyle: "medium", timeZone: "UTC" });
+    },
+    primitiveText(value: unknown): string {
+      if (value === null || value === undefined || value === "") return t("common.notSupplied");
+      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+      return t("common.notSupplied");
+    },
+    booleanText(value: unknown): string {
+      return typeof value === "boolean" ? t(value ? "common.yes" : "common.no") : t("common.notSupplied");
+    },
+  };
 }
 
 export function ResearchFacts({ facts, compact = false }: { facts: ResearchFact[]; compact?: boolean }) {

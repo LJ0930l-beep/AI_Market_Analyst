@@ -1,0 +1,51 @@
+{
+  "contract": "v11_live_model_smoke_v1",
+  "generated_at": "2026-08-22T02:18:10.544050+00:00",
+  "fixture": false,
+  "gpu": {
+    "status": "available",
+    "read_only": true,
+    "summary": "NVIDIA GeForce RTX 4060, 8188, 78"
+  },
+  "runs": [
+    {
+      "preference": "fast",
+      "language": "zh-CN",
+      "model_id": "qwen3.5:4b",
+      "model_tier": "fast",
+      "route": {
+        "version": "qwen_route_v1",
+        "model_id": "qwen3.5:4b",
+        "tier": "fast",
+        "preference": "fast",
+        "task": "assistant",
+        "reason": "explicit_fast_preference"
+      },
+      "first_token_seconds": 5.171,
+      "total_seconds": 5.444,
+      "output_chars": 34,
+      "output_sample": "当前没有请求任何具体股票或资产，因此无法提供相关信息，我确实不知道。",
+      "read_only": true
+    },
+    {
+      "preference": "smart",
+      "language": "en",
+      "model_id": "qwen3.5:9b",
+      "model_tier": "smart",
+      "route": {
+        "version": "qwen_route_v1",
+        "model_id": "qwen3.5:9b",
+        "tier": "smart",
+        "preference": "smart",
+        "task": "assistant",
+        "reason": "explicit_smart_preference"
+      },
+      "first_token_seconds": 5.919,
+      "total_seconds": 6.618,
+      "output_chars": 175,
+      "output_sample": "Missing evidence must be stated to prevent the fabrication of data and to ensure that users understand when information is unavailable or stale rather than assu",
+      "read_only": true
+    }
+  ],
+  "boundary": "No symbol context, database write, analysis, scan, settlement, Follow, PaperTrade, broker or order action."
+}

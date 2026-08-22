@@ -1,4 +1,7 @@
 import type { Prediction } from "../api/types";
+import type { TranslationKey } from "../i18n";
+
+type Translator = (key: TranslationKey) => string;
 
 export function parseTimestamp(value: string | null | undefined): Date | undefined {
   if (!value) {
@@ -16,29 +19,35 @@ export function predictionValidity(prediction: Prediction): "active" | "expired"
   return expiry.getTime() <= Date.now() ? "expired" : "active";
 }
 
-export function predictionProvenance(prediction: Prediction) {
+export function predictionProvenance(prediction: Prediction, t: Translator) {
   const validity = predictionValidity(prediction);
   return {
     generatedAt: prediction.generated_at ?? undefined,
     reevaluateAt: prediction.reevaluate_at ?? undefined,
     expiresAt: prediction.signal_valid_until ?? undefined,
-    dataSource: prediction.source_type ? `Prediction source: ${prediction.source_type}` : "Prediction source not supplied",
-    model: prediction.model_id ?? "Model not supplied",
+    dataSource: prediction.source_type ? `${t("common.predictionSource")}: ${sourceTypeLabel(prediction.source_type, t)}` : t("common.predictionSourceMissing"),
+    model: prediction.model_id ?? t("common.modelMissing"),
     state: validity === "active" || validity === "expired" ? validity : "neutral",
   } as const;
 }
 
-export function actionLabel(action: Prediction["action"]): string {
+export function sourceTypeLabel(sourceType: string | null | undefined, t: Translator): string {
+  if (sourceType === "live") return t("common.sourceLive");
+  if (sourceType === "replay") return t("common.sourceReplay");
+  return sourceType ?? t("common.sourceNotSupplied");
+}
+
+export function actionLabel(action: Prediction["action"], t: Translator): string {
   if (action === "LONG") {
-    return "LONG · actionable direction";
+    return t("predictions.longDirection");
   }
   if (action === "SHORT") {
-    return "SHORT · actionable direction";
+    return t("predictions.shortDirection");
   }
   if (action === "WAIT") {
-    return "WAIT · retained for coverage only";
+    return t("predictions.waitCoverage");
   }
-  return "Action not supplied";
+  return t("common.actionNotSupplied");
 }
 
 export function hasReturnedNumber(value: number | null | undefined): value is number {

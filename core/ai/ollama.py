@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from urllib.request import Request, urlopen
 
 from ..context import MarketContext
+from ..model_routing import DEFAULT_FAST_MODEL
 from .contracts import LLMCallMetadata, LLMError, ModelSignalResponse, SignalPolicy
 from .prompts import PROMPT_VERSION, build_prompt_messages, build_repair_messages
 
@@ -31,7 +32,7 @@ class OllamaProvider:
         prompt_version: str = PROMPT_VERSION,
     ) -> None:
         self.base_url = (base_url or os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434")).rstrip("/")
-        self.model_name = model_name or os.environ.get("OLLAMA_MODEL", "qwen3.5:4b")
+        self.model_name = model_name or os.environ.get("OLLAMA_MODEL", DEFAULT_FAST_MODEL)
         self.timeout = timeout if timeout is not None else float(os.environ.get("OLLAMA_TIMEOUT_SEC", "45"))
         self.context_length = context_length or int(os.environ.get("OLLAMA_CONTEXT_LENGTH", "8192"))
         self.temperature = temperature if temperature is not None else float(os.environ.get("OLLAMA_TEMPERATURE", "0.2"))

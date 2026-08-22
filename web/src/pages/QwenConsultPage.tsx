@@ -110,6 +110,7 @@ export function QwenConsultPage({ apiClient }: { apiClient: ApplicationShellApiC
   const [searchParams, setSearchParams] = useSearchParams();
   const restored = useMemo(loadSession, []);
   const routeSymbol = (searchParams.get("symbol") ?? "").trim().toUpperCase();
+  const predictionId = (searchParams.get("prediction_id") ?? "").trim();
   const [messages, setMessages] = useState<DisplayMessage[]>(
     restored.messages.map((message) => ({ ...message, id: messageId() })),
   );
@@ -123,6 +124,9 @@ export function QwenConsultPage({ apiClient }: { apiClient: ApplicationShellApiC
   const [error, setError] = useState<string>();
   const [draft, setDraft] = useState("");
   const [confirmClear, setConfirmClear] = useState(false);
+  const [modelPreference, setModelPreference] = useState<"auto" | "fast" | "smart">("auto");
+  const [responseLanguage, setResponseLanguage] = useState<"follow_ui" | "en" | "zh-CN">("follow_ui");
+  const [actualRoute, setActualRoute] = useState<{ model?: string; tier?: string; reason?: string }>();
   const abortRef = useRef<AbortController | null>(null);
   const logEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -175,6 +179,18 @@ export function QwenConsultPage({ apiClient }: { apiClient: ApplicationShellApiC
   }, [apiClient, setSearchParams]);
 
   useEffect(() => {
+    const controller = new AbortController();
+    void apiClient.appSettings(controller.signal).then((settings) => {
+      if (controller.signal.aborted) return;
+      const preference = settings.find((setting) => setting.key === "ai.model_preference")?.value;
+      const answerLanguage = settings.find((setting) => setting.key === "ai.response_language")?.value;
+      if (preference === "auto" || preference === "fast" || preference === "smart") setModelPreference(preference);
+      if (answerLanguage === "follow_ui" || answerLanguage === "en" || answerLanguage === "zh-CN") setResponseLanguage(answerLanguage);
+    }).catch(() => undefined);
+    return () => controller.abort();
+  }, [apiClient]);
+
+  useEffect(() => {
     persistSession(messages, symbol);
   }, [messages, symbol]);
 
@@ -187,7 +203,7 @@ export function QwenConsultPage({ apiClient }: { apiClient: ApplicationShellApiC
   const setSymbol = (next: string) => {
     setSymbolState(next);
     setContext(undefined);
-    setSearchParams(next ? { symbol: next } : {}, { replace: true });
+    setSearchParams(next ? { symbol: next, ...(predictionId ? { prediction_id: predictionId } : {}) } : {}, { replace: true });
   };
 
   const stop = () => {
@@ -222,6 +238,7 @@ export function QwenConsultPage({ apiClient }: { apiClient: ApplicationShellApiC
     const onEvent = (event: ConsultStreamEvent) => {
       if (event.type === "meta") {
         setContext(event.context);
+        setActualRoute({ model: event.model_id, tier: event.model_tier, reason: typeof event.model_route?.reason === "string" ? event.model_route.reason : undefined });
         setStatus("generating");
       } else if (event.type === "delta") {
         setStatus("generating");
@@ -238,7 +255,14 @@ export function QwenConsultPage({ apiClient }: { apiClient: ApplicationShellApiC
     };
     try {
       await apiClient.consultStream(
-        { language, messages: history, ...(symbol ? { symbol } : {}) },
+        {
+          language: responseLanguage === "follow_ui" ? language : responseLanguage,
+          messages: history,
+          model_preference: modelPreference,
+          task: predictionId ? "signal_explanation" : "assistant",
+          ...(symbol ? { symbol } : {}),
+          ...(predictionId ? { prediction_id: predictionId } : {}),
+        },
         onEvent,
         controller.signal,
       );
@@ -309,8 +333,9 @@ export function QwenConsultPage({ apiClient }: { apiClient: ApplicationShellApiC
         </div>
         <dl className="fact-list consult-capability__facts">
           <div className="fact-list__row"><dt>{t("common.provider")}</dt><dd data-i18n-skip>{modelHealth?.provider ?? "—"}</dd></div>
-          <div className="fact-list__row"><dt>{t("common.model")}</dt><dd data-i18n-skip>{capability?.model_id ?? (typeof modelHealth?.model_id === "string" ? modelHealth.model_id : "—")}</dd></div>
-          <div className="fact-list__row"><dt>{t("consult.contract")}</dt><dd data-i18n-skip>{capability?.contract_version ?? "qwen_consult_v1"}</dd></div>
+          <div className="fact-list__row"><dt>{t("common.model")}</dt><dd data-i18n-skip>{actualRoute?.model ?? capability?.model_id ?? (typeof modelHealth?.model_id === "string" ? modelHealth.model_id : "—")}</dd></div>
+          <div className="fact-list__row"><dt>{t("consult.contract")}</dt><dd data-i18n-skip>{capability?.contract_version ?? "qwen_consult_v2"}</dd></div>
+          <div className="fact-list__row"><dt>{t("v11.modelPreference")}</dt><dd data-i18n-skip>{modelPreference} · {actualRoute?.tier ?? "pending"} · {actualRoute?.reason ?? "server task policy"}</dd></div>
           <div className="fact-list__row"><dt>{t("consult.sessionStorage")}</dt><dd>{t("consult.sessionOnly")}</dd></div>
         </dl>
         {modelState === "unavailable" || modelState === "failed" ? (
@@ -343,6 +368,10 @@ export function QwenConsultPage({ apiClient }: { apiClient: ApplicationShellApiC
             </select>
             <p className="data-meta">{t("consult.symbolHelp")}</p>
             {instrumentState === "failed" ? <p className="panel-degraded-note" role="alert">{t("common.panelUnavailable")}</p> : null}
+            <label htmlFor="consult-model-preference">{t("v11.modelPreference")}</label>
+            <select id="consult-model-preference" value={modelPreference} onChange={(event) => setModelPreference(event.target.value as "auto" | "fast" | "smart")} disabled={busy}>
+              <option value="auto">{t("v11.auto")}</option><option value="fast">{t("v11.fast")}</option><option value="smart">{t("v11.smart")}</option>
+            </select>
           </div>
 
           <div className="consult-messages" role="log" aria-live="polite" aria-relevant="additions text">
@@ -400,7 +429,7 @@ export function QwenConsultPage({ apiClient }: { apiClient: ApplicationShellApiC
           {!context ? <p className="panel-reading">{t("consult.noContextYet")}</p> : (
             <dl className="fact-list" data-i18n-skip>
               <div className="fact-list__row"><dt>{t("consult.contextStatus")}</dt><dd>{context.status ?? "—"}</dd></div>
-              <div className="fact-list__row"><dt>Symbol</dt><dd>{context.symbol ?? "—"}</dd></div>
+              <div className="fact-list__row"><dt>{t("common.symbol")}</dt><dd>{context.symbol ?? "—"}</dd></div>
               <div className="fact-list__row"><dt>{t("consult.asOf")}</dt><dd>{context.as_of ?? "—"}</dd></div>
               <div className="fact-list__row"><dt>{t("common.freshness")}</dt><dd>{String(context.freshness?.status ?? "—")}</dd></div>
               <div className="fact-list__row"><dt>{t("consult.sources")}</dt><dd>{context.sources?.join(", ") || "—"}</dd></div>

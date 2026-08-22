@@ -55,6 +55,7 @@ class E2EInjectedModelHealth:
             "available": True,
             "model_id": "qwen-e2e-fixture",
             "model_available": True,
+            "models": ["qwen-e2e-fixture"],
             "capability": "injected_test_not_live_model_proof",
         }
 

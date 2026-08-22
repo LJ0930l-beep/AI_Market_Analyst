@@ -6,11 +6,15 @@ import path from "node:path";
 import { validateRunDirectory } from "./global-teardown";
 import { resolveStaticCandidate } from "./preview-server.mjs";
 
-const phase4Routes = [
+const productRoutes = [
   "/",
   "/watchlist",
   "/assets/NVDA",
   "/predictions",
+  "/markets",
+  "/calendar",
+  "/news",
+  "/heatmap",
   "/paper-trades",
   "/performance",
   "/replay",
@@ -35,17 +39,17 @@ test("test infrastructure rejects unsafe cleanup and static-root paths", () => {
 
 test("health, durable Watchlist, and read-only Asset Detail analysis", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Market intelligence, without the noise" })).toBeVisible();
   await expect(page.getByText("Backend connected")).toBeVisible();
   const before = await (await page.request.get("/api/stats")).json();
   const contextHealth = await page.request.get("/api/health/context");
   expect(contextHealth.status()).toBe(200);
-  expect(await contextHealth.json()).toMatchObject({ phase: 7, api_version: "1.0.0", read_only_get: true, cloud_required: false });
+  expect(await contextHealth.json()).toMatchObject({ phase: 7, api_version: "1.1.0", read_only_get: true, cloud_required: false });
   const releaseHealth = await page.request.get("/api/health/release");
   expect(releaseHealth.status()).toBe(200);
-  expect(await releaseHealth.json()).toMatchObject({ phase: 7, api_version: "1.0.0", backup: { format_version: "phase7_backup_v1" }, capabilities: { local_only: true, scheduler_default_enabled: false } });
+  expect(await releaseHealth.json()).toMatchObject({ phase: 7, api_version: "1.1.0", backup: { format_version: "phase7_backup_v1" }, capabilities: { local_only: true, scheduler_default_enabled: false } });
 
-  await page.getByRole("link", { name: "Watchlist" }).press("Enter");
+  await page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", { name: "Watchlist" }).press("Enter");
   await expect(page.getByRole("heading", { name: "Watchlist", exact: true })).toBeVisible();
   const savedWatchlist = page.getByRole("region", { name: "Saved watchlist" });
   const availableInstruments = page.getByRole("region", { name: "Available instruments" });
@@ -126,14 +130,18 @@ test("language selector switches to Chinese and persists across route navigation
   await page.goto("/");
   const language = page.getByLabel("Language");
   await language.selectOption("zh-CN");
-  await expect(page.getByRole("heading", { name: "仪表盘", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "看清市场，不被噪音淹没", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "关注列表", exact: true }).first()).toBeVisible();
 
   const chineseRouteTitles: Record<string, string> = {
-    "/": "仪表盘",
+    "/": "看清市场，不被噪音淹没",
     "/watchlist": "关注列表",
     "/assets/NVDA": "资产详情 / NVDA",
     "/predictions": "预测",
+    "/markets": "市场",
+    "/calendar": "财经日历",
+    "/news": "新闻情报",
+    "/heatmap": "市场热力图",
     "/paper-trades": "纸面交易",
     "/performance": "表现",
     "/replay": "回放实验室",
@@ -141,9 +149,40 @@ test("language selector switches to Chinese and persists across route navigation
     "/consult": "Qwen 咨询",
     "/settings": "设置 / 健康",
   };
+  const prohibitedChineseFixedCopy = [
+    "Status",
+    "API Version",
+    "Phase",
+    "Real Orders",
+    "Private Keys",
+    "Provider routing reports available.",
+    "MARKET ROUTES",
+    "NEWS ROUTE",
+    "Mode",
+    "Configured",
+    "Probe",
+    "Lifecycle",
+    "Interval / session",
+    "Concurrency",
+    "Last Run",
+    "Next Run",
+    "Resource",
+    "Backoff",
+    "Cache",
+    "Settlement",
+    "Performance Refresh",
+    "Not supplied",
+    "Not parseable",
+    "OHLCV evidence",
+    "Benchmark Context",
+    "Market Memory",
+  ];
   for (const [route, title] of Object.entries(chineseRouteTitles)) {
     await page.goto(route);
     await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
+    for (const phrase of prohibitedChineseFixedCopy) {
+      await expect(page.getByText(phrase, { exact: true }), `${route} leaked fixed English: ${phrase}`).toHaveCount(0);
+    }
   }
 
   await page.getByRole("link", { name: "表现", exact: true }).first().click();
@@ -154,28 +193,68 @@ test("language selector switches to Chinese and persists across route navigation
 
   await page.getByLabel("语言").selectOption("en");
   await expect(page.getByRole("heading", { name: "Performance", exact: true })).toBeVisible();
+  const englishRouteTitles: Record<string, string> = {
+    "/": "Market intelligence, without the noise",
+    "/watchlist": "Watchlist",
+    "/assets/NVDA": "Asset detail / NVDA",
+    "/predictions": "Predictions",
+    "/markets": "Markets",
+    "/calendar": "Economic Calendar",
+    "/news": "News intelligence",
+    "/heatmap": "Market Heatmap",
+    "/paper-trades": "Paper trades",
+    "/performance": "Performance",
+    "/replay": "Replay lab",
+    "/alerts": "Alert Center",
+    "/consult": "Qwen Consult",
+    "/settings": "Settings / health",
+  };
+  for (const [route, title] of Object.entries(englishRouteTitles)) {
+    await page.goto(route);
+    await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
+  }
 });
 
-test("Dashboard Market Radar reads existing evidence without creating analysis or trades", async ({ page }) => {
+test("Dashboard Market Intelligence reads saved evidence without provider, analysis, or trade side effects", async ({ page }) => {
   const before = await (await page.request.get("/api/stats")).json();
   await page.goto("/");
-
-  const radar = page.getByRole("region", { name: "Market Radar" });
-  await expect(radar.getByText(/opportunity_v1/)).toBeVisible();
-  await expect(radar.getByRole("link", { name: "TSLA", exact: true })).toHaveAttribute("href", "/assets/TSLA");
-  const radarEntry = radar.getByRole("listitem").filter({ hasText: "TSLA" });
-  await expect(radarEntry.locator(".radar-category")).toHaveText("Not ranked");
-  await expect(radarEntry.locator("strong").filter({ hasText: "Not ranked" })).toBeVisible();
-  await expect(radarEntry.getByText(/data_quality_unknown|regime_unavailable|stale_data/).first()).toBeVisible();
-  await radarEntry.getByText("Component audit", { exact: true }).click();
-  await expect(radarEntry.getByText("risk reward", { exact: true })).toBeVisible();
-
-  await radar.getByLabel("Asset type").selectOption("crypto");
-  await expect(radar.getByText(/No durable Watchlist entries are available for Radar/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Market Pulse" })).toBeVisible();
+  await expect(page.getByText("NASDAQ").locator("..")).toContainText(/unavailable/i);
+  await expect(page.getByRole("heading", { name: "Today's Events" })).toBeVisible();
+  const intelligence = await page.request.get("/api/market-intelligence");
+  expect(intelligence.status()).toBe(200);
+  expect(await intelligence.json()).toMatchObject({ contract_version: "market_intelligence_v1", read_only: true, provider_calls: false, domain_writes: false });
 
   const after = await (await page.request.get("/api/stats")).json();
   expect(after.predictions).toBe(before.predictions);
   expect(after.paper_trades).toBe(before.paper_trades);
+});
+
+test("V1.1 market surfaces, durable preferences, and explicit Smart Daily Brief remain bounded", async ({ page }) => {
+  const before = await (await page.request.get("/api/stats")).json();
+  for (const [route, heading] of [["/markets", "Markets"], ["/calendar", "Economic Calendar"], ["/news", "News intelligence"], ["/heatmap", "Market Heatmap"]] as const) {
+    await page.goto(route);
+    await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+    await expect(page.getByText(/GET read-only/)).toBeVisible();
+  }
+  await page.goto("/settings");
+  await page.getByLabel("Model preference").selectOption("smart");
+  await page.getByLabel("AI response language").selectOption("zh-CN");
+  await page.getByRole("button", { name: "Save preferences" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Preferences saved" })).toBeVisible();
+  const settings = await (await page.request.get("/api/settings")).json();
+  expect(settings.find((item: { key: string }) => item.key === "ai.model_preference").value).toBe("smart");
+
+  await page.goto("/");
+  const response = page.waitForResponse((item) => item.url().endsWith("/api/daily-brief/generate") && item.request().method() === "POST");
+  await page.getByRole("button", { name: "Generate brief" }).click();
+  const brief = await (await response).json();
+  expect(brief.brief.model_tier).toBe("smart");
+  expect(brief.brief.model_id).toBe("qwen-e2e-fixture");
+  await expect(page.getByText("确定性 Qwen 测试回答。", { exact: true })).toBeVisible();
+  const after = await (await page.request.get("/api/stats")).json();
+  expect(after.daily_briefs).toBe(before.daily_briefs + 1);
+  for (const key of ["predictions", "outcomes", "paper_trades", "calibration_results"]) expect(after[key]).toBe(before[key]);
 });
 
 test("Qwen Consult streams local fixture output, restores the browser session, and remains domain read-only", async ({ page }) => {
@@ -192,14 +271,14 @@ test("Qwen Consult streams local fixture output, restores the browser session, a
   await composer.press("Shift+Enter");
   await expect(composer).toHaveValue(/\n$/);
   await composer.press("Enter");
-  await expect(page.getByText("Deterministic Qwen test answer.", { exact: true })).toBeVisible();
+  await expect(page.getByText("确定性 Qwen 测试回答。", { exact: true })).toBeVisible();
   await expect(page.getByText("Response complete", { exact: true })).toBeVisible();
   const context = page.getByRole("region", { name: "Read-only context evidence" });
   await expect(context.getByText("NVDA", { exact: true })).toBeVisible();
   await expect(context.getByText(/durable_latest_live_prediction/)).toBeVisible();
 
   await page.reload();
-  await expect(page.getByText("Deterministic Qwen test answer.", { exact: true })).toBeVisible();
+  await expect(page.getByText("确定性 Qwen 测试回答。", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Optional instrument context")).toHaveValue("NVDA");
   await page.getByRole("button", { name: "Clear conversation" }).click();
   await page.getByRole("button", { name: "Clear now" }).click();
@@ -345,7 +424,7 @@ test("fresh LONG double-click Follow creates exactly one PaperTrade and linked d
   const after = await (await page.request.get("/api/stats")).json();
   expect(after.paper_trades).toBe(before.paper_trades + 1);
 
-  await page.getByRole("link", { name: "Paper trades" }).click();
+  await page.goto("/paper-trades");
   await expect(page.getByRole("heading", { name: "Paper trades" })).toBeVisible();
   await page.getByRole("button", { name: "p4-fresh-long" }).click();
   await expect(page.getByText("Linked Prediction", { exact: true })).toBeVisible();
@@ -404,12 +483,12 @@ test("SPA deep links return HTML while /api/health remains JSON", async ({ page 
   const health = await page.request.get("/api/health");
   expect(health.status()).toBe(200);
   expect(health.headers()["content-type"]).toContain("application/json");
-  expect(await health.json()).toMatchObject({ status: "ok", phase: 7, api_version: "1.0.0", real_orders: false });
+  expect(await health.json()).toMatchObject({ status: "ok", phase: 7, api_version: "1.1.0", real_orders: false });
 });
 
-test("all product routes pass axe and page-level overflow checks at desktop and 390x844", async ({ page }) => {
+test("all V1.1 product routes pass axe and page-level overflow checks at desktop and 390x844", async ({ page }) => {
   test.setTimeout(120_000);
-  for (const route of phase4Routes) {
+  for (const route of productRoutes) {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(route);
     await expect(page.locator("main h1")).toBeVisible();
