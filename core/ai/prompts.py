@@ -8,7 +8,7 @@ from ..context import MarketContext
 from .contracts import SignalPolicy
 
 
-PROMPT_VERSION = "phase2-json-v8"
+PROMPT_VERSION = "phase2-json-v9"
 
 
 def _schema_text(policy: SignalPolicy) -> str:
@@ -61,6 +61,15 @@ def build_system_prompt(policy: SignalPolicy, *, repair: bool = False) -> str:
         "Use exactly one of the allowed time values supplied by python_policy; do not invent a time value. "
         "Directional gate: if time_policy.event_risk is true or quant.market_regime is range, choose WAIT. "
         "If python_policy.news_available is false, choose WAIT in live mode; if python_policy.technical_only is true, historical news is unavailable by design, use only supplied technical context, and follow the Python decision gate without inventing news. "
+        "Analysis method, using only the supplied numbers: "
+        "(1) Trend comes from ema20 versus ema50 stacking plus trend_score; macd versus macd_signal and momentum_score confirm or weaken it. "
+        "(2) Use quant.support and quant.resistance as reference levels: for LONG prefer pullback entries near support or confirmed breakouts above resistance; for SHORT prefer pullback near resistance or breakdown below support. "
+        "(3) volume_ratio above 1 confirms breakout participation, below 1 warns of weak follow-through; rsi14 above 70 warns against chasing a LONG and below 30 against chasing a SHORT. "
+        "(4) Anchor the stop with atr14, about 1 to 1.5 ATR beyond the invalidating level, always within python_policy.stop_distance_max; place tp1/tp2 toward the next opposing level. "
+        "(5) Weigh market_context.benchmark_context relative strength, market_context.market_memory similar outcomes, event_intelligence and the supplied news; reference them by name when they drive the call. "
+        "Every thesis item MUST cite at least one concrete supplied value or named evidence. "
+        "Every invalidation item MUST be an observable condition such as a close beyond a named level or a listed risk event. "
+        "risk_factors MUST include at least one genuine supplied risk such as event_risk, weak volume_ratio, benchmark divergence, crypto weekend liquidity or stale data. "
         "Otherwise, when quant.market_regime is bull_trend with trend_score >= 0.10, action MUST be LONG; "
         "when it is bear_trend with trend_score <= -0.10, action MUST be SHORT; use WAIT only when the trend is weaker or mixed. "
         "For LONG/SHORT, anchor the entry zone near price.last, keep the stop within python_policy.stop_distance_max, "

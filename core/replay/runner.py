@@ -13,7 +13,7 @@ from typing import Any, Callable
 from uuid import uuid4
 
 from ..analysis_service import AnalysisService
-from ..ai import OllamaProvider
+from ..ai import OllamaProvider, PROMPT_VERSION
 from ..instruments import instrument_for
 from ..model_routing import DEFAULT_FAST_MODEL
 from ..outcomes import settle_prediction
@@ -30,7 +30,7 @@ class ReplayConfig:
     timeframes: tuple[str, ...]
     samples: int = 300
     model_id: str = DEFAULT_FAST_MODEL
-    prompt_version: str = "phase2-json-v8"
+    prompt_version: str = PROMPT_VERSION
     seed: int = 42
     db_path: str = "data/phase3-replay.sqlite3"
     output_path: str | None = None
