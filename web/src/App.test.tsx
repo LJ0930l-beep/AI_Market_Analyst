@@ -24,7 +24,7 @@ function backendStatusRegion(): HTMLElement {
 }
 
 describe("application shell", () => {
-  it("renders semantic navigation, skip navigation and current route state", () => {
+  it("renders semantic navigation, skip navigation and current route state", async () => {
     const client = createFakeClient();
     renderShell("/predictions", client);
 
@@ -32,7 +32,7 @@ describe("application shell", () => {
     expect(within(navigation).getByRole("link", { name: "Signals" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("main")).toHaveAttribute("id", "main-content");
     expect(screen.getByRole("link", { name: "Skip to content" })).toHaveAttribute("href", "#main-content");
-    expect(screen.getByRole("heading", { name: "Predictions" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Predictions" })).toBeInTheDocument();
   });
 
   it("shows a distinct loading health state", () => {

@@ -39,7 +39,7 @@ describe("SettingsHealthPage", () => {
   it("separates backend, routing and model states and retries routing without write controls", async () => {
     const { providerHealth } = renderSettings();
 
-    const backend = screen.getByRole("region", { name: "Backend service" });
+    const backend = await screen.findByRole("region", { name: "Backend service" });
     expect(await within(backend).findByText("1.1.0")).toBeInTheDocument();
     expect(within(backend).getAllByText("No")).toHaveLength(2);
     expect(screen.getByRole("region", { name: "Release / local capability" })).toHaveTextContent("Phase 7 · API 1.1.0");

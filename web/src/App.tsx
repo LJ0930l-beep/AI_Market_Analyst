@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { NavLink, Route, Routes, useLocation } from "react-router-dom";
 
 import { apiClient as defaultApiClient, type ApplicationShellApiClient } from "./api/client";
@@ -6,17 +6,18 @@ import type { HealthResponse } from "./api/types";
 import { HealthStatus, type BackendHealthState } from "./components/HealthStatus";
 import { TimeProvenanceRail } from "./components/TimeProvenanceRail";
 import { DashboardPage, emptyDashboardProvenance, type DashboardProvenance } from "./pages/DashboardPage";
-import { AssetDetailPage } from "./pages/AssetDetailPage";
-import { AlertsPage } from "./pages/AlertsPage";
-import { PaperTradesPage } from "./pages/PaperTradesPage";
-import { PerformancePage } from "./pages/PerformancePage";
-import { PredictionsPage } from "./pages/PredictionsPage";
-import { QwenConsultPage } from "./pages/QwenConsultPage";
-import { ReplayLabPage } from "./pages/ReplayLabPage";
-import { SettingsHealthPage } from "./pages/SettingsHealthPage";
-import { WatchlistPage } from "./pages/WatchlistPage";
-import { MarketIntelligencePage } from "./pages/MarketIntelligencePage";
 import { I18nProvider, useI18n, type TranslationKey } from "./i18n";
+
+const AssetDetailPage = lazy(() => import("./pages/AssetDetailPage").then((m) => ({ default: m.AssetDetailPage })));
+const AlertsPage = lazy(() => import("./pages/AlertsPage").then((m) => ({ default: m.AlertsPage })));
+const PaperTradesPage = lazy(() => import("./pages/PaperTradesPage").then((m) => ({ default: m.PaperTradesPage })));
+const PerformancePage = lazy(() => import("./pages/PerformancePage").then((m) => ({ default: m.PerformancePage })));
+const PredictionsPage = lazy(() => import("./pages/PredictionsPage").then((m) => ({ default: m.PredictionsPage })));
+const QwenConsultPage = lazy(() => import("./pages/QwenConsultPage").then((m) => ({ default: m.QwenConsultPage })));
+const ReplayLabPage = lazy(() => import("./pages/ReplayLabPage").then((m) => ({ default: m.ReplayLabPage })));
+const SettingsHealthPage = lazy(() => import("./pages/SettingsHealthPage").then((m) => ({ default: m.SettingsHealthPage })));
+const WatchlistPage = lazy(() => import("./pages/WatchlistPage").then((m) => ({ default: m.WatchlistPage })));
+const MarketIntelligencePage = lazy(() => import("./pages/MarketIntelligencePage").then((m) => ({ default: m.MarketIntelligencePage })));
 
 interface NavigationItem {
   label: TranslationKey;
@@ -157,6 +158,16 @@ function NotFoundPage() {
   );
 }
 
+function RouteFallback() {
+  const { t } = useI18n();
+  return (
+    <section className="terminal-loading" aria-live="polite">
+      <span className="loading-orbit" />
+      {t("common.loading")}
+    </section>
+  );
+}
+
 function WorkspaceRoutes({
   apiClient,
   onProvenanceChange,
@@ -165,7 +176,8 @@ function WorkspaceRoutes({
   onProvenanceChange: (provenance: DashboardProvenance) => void;
 }) {
   return (
-    <Routes>
+    <Suspense fallback={<RouteFallback />}>
+      <Routes>
       <Route index element={<DashboardPage apiClient={apiClient} onProvenanceChange={onProvenanceChange} />} />
       <Route
         path="watchlist"
@@ -196,7 +208,8 @@ function WorkspaceRoutes({
       <Route path="consult" element={<QwenConsultPage apiClient={apiClient} />} />
       <Route path="settings" element={<SettingsHealthPage apiClient={apiClient} />} />
       <Route path="*" element={<NotFoundPage />} />
-    </Routes>
+      </Routes>
+    </Suspense>
   );
 }
 

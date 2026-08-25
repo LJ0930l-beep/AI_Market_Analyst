@@ -19,7 +19,7 @@ describe("AlertsPage", () => {
     expect(await screen.findByRole("heading", { name: "Alert Center" })).toBeInTheDocument();
     expect(screen.getAllByText("alert_policy_v1").length).toBeGreaterThan(0);
     const ledger = screen.getByRole("region", { name: "Alert ledger" });
-    expect(within(ledger).getByText(fakeAlert.title)).toBeInTheDocument();
+    expect(await within(ledger).findByText(fakeAlert.title)).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Source"), { target: { value: "prediction" } });
     fireEvent.change(screen.getByLabelText("Status"), { target: { value: "OPEN" } });
