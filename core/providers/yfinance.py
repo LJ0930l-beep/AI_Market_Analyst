@@ -62,7 +62,13 @@ class YFinanceProvider:
         last_error: Exception | None = None
         for attempt in range(self.retries + 1):
             try:
-                request = Request(url, headers={"Accept": "application/json", "User-Agent": "ai-market-analyst/0.2"})
+                request = Request(
+                    url,
+                    headers={
+                        "Accept": "application/json",
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
+                    },
+                )
                 with urlopen(request, timeout=self.timeout) as response:
                     if response.status != 200:
                         raise ProviderError(f"Yahoo returned HTTP {response.status}", code="http_error", provider=self.provider_name)
