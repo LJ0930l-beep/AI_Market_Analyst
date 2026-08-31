@@ -1,14 +1,61 @@
 # AI Market Analyst Status
 
-Updated: 2026-08-22
+Updated: 2026-08-31
+
+## V1.2 Sol REPAIR REQUIRED closure — 2026-08-31
+
+- Milestone: repair the single V1.2 Windows desktop delivery on `main`, preserving the V1.1 history and amending the existing `678eb96` commit only. Status: `DEVELOPER_COMPLETE`; Sol alone performs independent acceptance.
+- Implementation summary: fixed the `src-tauri` production-build path; added the FastAPI-sidecar `monitoring_runtime_v1` resident worker with explicit start/resume/pause/stop, durable resume authorization, enabled-policy-only REST/WS/backfill/freshness, 15m closed-bar wake and bounded resource/backoff behavior; added dynamic tray lifecycle/backend actions; integrated official Tauri Windows autostart with independent resume preference; enforced active-close-to-tray safety; added owned-sidecar watchdog/degraded/restart and safe port-conflict handling; removed WebView shell spawn permission; mounted the SSE alert/notification bridge at the desktop shell; refreshed bilingual/docs/screenshots/evidence.
+- Changed repair files: `apps/api/main.py`, `core/ai/ollama.py`, `core/monitoring.py`, `core/monitoring_runtime.py`, `scripts/build-sidecar.ps1`, `scripts/build-tauri-frontend.ps1`, `scripts/build-tauri.ps1`, `scripts/installer-hooks.nsh`, `scripts/v12-live-smoke.py`, `src-tauri/Cargo.lock`, `src-tauri/Cargo.toml`, `src-tauri/capabilities/default.json`, `src-tauri/src/main.rs`, `src-tauri/tauri.conf.json`, `web/package.json`, `web/package-lock.json`, `web/src/App.tsx`, `web/src/api/client.ts`, `web/src/api/types.ts`, `web/src/desktopNotifications.ts`, `web/src/desktopNotifications.test.ts`, `web/src/desktopRuntime.ts`, `web/src/i18n.tsx`, `web/src/pages/DashboardPage.tsx`, `web/src/pages/MonitoringPage.tsx`, `web/src/pages/SettingsHealthPage.tsx`, `web/src/styles.css`, `web/src/test/fakeClient.ts`, `tests/test_v12_desktop_security.py`, `tests/test_v12_monitoring_runtime.py`, `docs/v1.2-completion-report.md`, `docs/v1.2-installer-smoke.md`, `docs/v1.2-live-smoke.json`, `docs/v1.2-test-evidence.json`, `docs/v1.2-user-guide.md`, `docs/THIRD-PARTY-NOTICES.md`, `PLAN.md`, `README.md`, `STATUS.md`, phase-7 audit JSON and V1.2 screenshots.
+- Required command order: `cd web; npm run build` PASS (Vite 6.4.3); `npm run lint` PASS; `npm run typecheck` PASS; `npm test -- --run` PASS, 17 files/76 tests. Full Python `python -m pytest -q` PASS, 153 passed/1 skipped/1 known warning; `python -B -m unittest discover -s tests -v` PASS, 132/1 skipped; V1.2 focus including desktop security/runtime PASS, 23/1 warning; compileall and pip check PASS.
+- Browser/security: `npm run e2e:preflight` PASS; `npm run e2e` PASS, 13/13 product tests, 15 routes, 30 axe scans and 30 overflow checks; `npm run audit` and `npm run audit:production` PASS with 0 vulnerabilities; `python scripts/phase7_audit.py --output-dir docs` PASS with tracked secret findings 0. `cargo +stable-x86_64-pc-windows-gnu check --target x86_64-pc-windows-gnu` PASS.
+- Release: from `D:\RJ\codex\ai-market-analyst\src-tauri`, the exact command `cargo +stable-x86_64-pc-windows-gnu tauri build --target x86_64-pc-windows-gnu` PASS end-to-end. Final NSIS installer is `D:\RJ\codex\ai-market-analyst\src-tauri\target\x86_64-pc-windows-gnu\release\bundle\nsis\AI Market Analyst_1.2.0_x64-setup.exe`, 42,531,412 bytes, SHA-256 `97FA0CF1778F423AEE12E486C818BB7FB38730A9E300A796591DC5A8BFD698D4`; final packaged sidecar SHA-256 `64D416AFCFBBC21B91490B7A94B84660218AE06777038F2536BBC5F8682FD84B`.
+- Live and installed evidence: packaged sidecar smoke PASS with fallback `0`; `docs/v1.2-live-smoke.json` PASS with real Binance REST/WS BTCUSDT/ETHUSDT/SOLUSDT, 240 REST bars/symbol, 15m/1h chart data, resident runtime lifecycle, 15m exactly-once repeat statuses, real qwen3.5:9b analysis and qwen3.5:4b translation/numeric guard. Final installed package install/reinstall/uninstall/reinstall returned 0; AppData DB survived uninstall, exact Run/StartupApproved autostart values were removed, final relaunch health was `ok`, runtime `stopped`/inactive/run_count `0`, defaults enabled/auto-start/resume all `false`.
+- Blockers: no implementation blocker. The normal Windows toast is requested and PushNotification event-log delivery was observed, but this automation surface cannot retain a durable toast or directly observe the ordinary Windows toast-click callback; the safe Tauri action route, strict SSE bridge, in-app Alert Center fallback and browser tests are present, and the limitation is explicitly recorded rather than claimed as a passed direct-click observation. `pip-audit` is not installed; dependency/license reports remain `review_required`.
+- Residual risks: public Binance/RSS availability, rate limits, local Ollama latency/model quality and Windows notification policy can affect freshness; the release is Windows x64/loopback-only, uses no cloud/account/secret/broker/order path, and no distributed scheduler is claimed. The installed final app is left healthy with Monitoring stopped; Ollama PID `8320` and the unrelated Codex sidecar were not stopped.
 
 ## Overall
 
-- Target: V1.1 Unreleased local milestone; Phase 7/V1.0 remains accepted.
-- Active phase: V1.1 premium UI/UX, internationalization, Market Intelligence and dual-model Assistant.
-- Active task: V1.1 internationalization Gate repair developer-complete; supervisor rerun pending.
-- Blockers: none.
+- Target: V1.2 complete local Windows desktop milestone; V1.0/V1.1 records remain historical.
+- Active phase: V1.2 Crypto Smart Monitoring, Tauri desktop packaging and live evidence.
+- Active task: V1.2 developer-complete; final single-commit handoff is pending Sol's independent review/acceptance.
+- Blockers: no functional blocker. MSVC Build Tools bootstrapper download succeeded, but silent installation ended with UAC error `0x80070642`; the passing x64 build uses the installed GNU Rust toolchain and LLVM-MinGW linker.
 - Sole developer: `luna-max` (one persistent thread, serial tasks).
+
+## V1.2 developer Gate checkpoint — 2026-08-31
+
+- Milestone: complete `AI Market Analyst V1.2 Crypto Smart Monitoring / TradingView / Windows App` delivery from the supplied DOCX specification. Status is `DEVELOPER_COMPLETE`; Sol alone performs final review and acceptance. No V1.3, real-trading or unrelated refactor was started.
+- Implementation summary: Tauri 2 Windows x64 shell with current-user NSIS packaging; packaged PyInstaller FastAPI sidecar; loopback/AppData data, logs, backups, runtime manifest and exact process ownership; explicit legacy SQLite importer and additive/idempotent schema 12; tray, native notification/action routing and single-instance behavior; public Binance REST/combined WS BTC/ETH/SOL with bounded 15m/1h cache, freshness, reconnect/backfill and 15m close exactly-once; explicit-off MonitoringPolicy, `trigger_policy_v2`, audit/ledger/fingerprint/dedupe/cooldown and 20/50 symbol bounds; real 9B-only Smart OpportunityAnalysis plus Python validator/quarantine; explicit 4B news translation cache/evidence/numeric guard; Lightweight Charts app-supplied bars and overlays; Alert Center, typed bilingual routes, screenshots and release evidence.
+- Safety boundary: monitoring, auto-start and resume are false by default and startup performs no scan; `qwen3.5:9b` is never relabeled as 4B; no account, secret, private key, broker, cloud notifier, real order or funds code exists; Ollama, ComfyUI and unrelated processes remain outside product ownership.
+
+### Changed files
+
+- Runtime/config/governance: `.env.example`, `.gitignore`, `CHANGELOG.md`, `DECISIONS.md`, `PLAN.md`, `README.md`, `pyproject.toml`.
+- Python/API: `apps/api/main.py`, `apps/sidecar.py`, `core/ai/ollama.py`, `core/config.py`, `core/desktop_runtime.py`, `core/instruments.py`, `core/monitoring.py`, `core/news_translation.py`, `core/providers/base.py`, `core/providers/coingecko.py`, `core/providers/news.py`, `core/providers/runtime.py`, `core/realtime.py`, `core/storage/sqlite.py`.
+- Packaging/scripts: `.cargo/config.toml`, `scripts/build-sidecar.ps1`, `scripts/build-tauri-frontend.ps1`, `scripts/build-tauri.ps1`, `scripts/import_legacy_database.py`, `scripts/installer-hooks.nsh`, `scripts/v12-live-smoke.py`, `scripts/v12-sidecar-smoke.ps1`, `src-tauri/build.rs`, `src-tauri/capabilities/default.json`, `src-tauri/Cargo.lock`, `src-tauri/Cargo.toml`, `src-tauri/src/main.rs`, `src-tauri/tauri.conf.json`, `src-tauri/icons/**`.
+- Tests: `tests/test_api_phase4.py`, `tests/test_migration.py`, `tests/test_phase5_alerts.py`, `tests/test_phase5_scheduler.py`, `tests/test_phase5_watchlist.py`, `tests/test_phase6_context.py`, `tests/test_phase7_hardening.py`, `tests/test_storage.py`, `tests/test_v11_market_intelligence.py`, `tests/test_v12_api.py`, `tests/test_v12_monitoring.py`, `tests/test_v12_news_desktop.py`, `tests/test_v12_realtime.py`, `web/e2e/capture-v11.spec.ts`, `web/e2e/phase4.spec.ts`, `web/src/api/client.test.ts`, `web/src/api/client.ts`, `web/src/api/types.ts`, `web/src/App.tsx`, `web/src/components/OhlcvChart.tsx`, `web/src/desktopNotifications.ts`, `web/src/i18n.tsx`, `web/src/pages/AlertsPage.tsx`, `web/src/pages/AssetDetailPage.test.tsx`, `web/src/pages/AssetDetailPage.tsx`, `web/src/pages/MonitoringPage.test.tsx`, `web/src/pages/MonitoringPage.tsx`, `web/src/pages/PerformancePage.test.tsx`, `web/src/pages/SettingsHealthPage.test.tsx`, `web/src/pages/SettingsHealthPage.tsx`, `web/src/styles.css`, `web/src/test/fakeClient.ts`, `web/vite.config.ts`, `web/package.json`, `web/package-lock.json`.
+- Evidence/docs: `docs/THIRD-PARTY-NOTICES.md`, `docs/v1.2-completion-report.md`, `docs/v1.2-installer-smoke.md`, `docs/v1.2-live-smoke.json`, `docs/v1.2-test-evidence.json`, `docs/v1.2-user-guide.md`, `docs/screenshots/v1.2/**`.
+
+### Exact verification commands and results
+
+- `python -m pytest -q` — PASS: `143 passed, 1 skipped, 1 warning in 34.75s`.
+- `python -B -m unittest discover -s tests -v` — PASS: `Ran 132 tests; OK (skipped=1)`; same known TestClient deprecation warning.
+- `python -B -m compileall -q apps core tests scripts` — PASS.
+- `python -m pip check` — PASS: no broken requirements.
+- `python -m pytest -q tests/test_v12_api.py tests/test_v12_monitoring.py tests/test_v12_news_desktop.py tests/test_v12_realtime.py tests/test_migration.py` — PASS: `13 passed`, one known warning.
+- `cd web; npm run lint` — PASS. `npm run typecheck` — PASS. `npm test -- --run` — PASS: 16 files / 74 tests. `npm run build` — PASS: Vite 6.4.3.
+- `cd web; npm run audit` and `npm run audit:production` — PASS: 0 high-or-higher vulnerabilities in both reports.
+- `cd web; npm run e2e:preflight` — PASS: Playwright 1.62.1. `npm run e2e` — PASS: 13/13 tests; 15 product routes, 30 axe scans and 30 overflow checks across desktop/mobile and bilingual UI. The browser harness uses deterministic injected data and is not live proof.
+- `cargo +stable-x86_64-pc-windows-gnu check --target x86_64-pc-windows-gnu` — PASS. `cargo +stable-x86_64-pc-windows-gnu tauri build --target x86_64-pc-windows-gnu` — PASS: GNU x64 NSIS installer.
+- `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\v12-sidecar-smoke.ps1 18767` — PASS: health `ok`, phase 7, API `1.2.0`, schema 12, fixture fallback `0`, real orders/private keys false.
+- `python scripts\v12-live-smoke.py --binary src-tauri\target\x86_64-pc-windows-gnu\release\ai-market-analyst-backend.exe --port 18766 --output docs\v1.2-live-smoke.json` — PASS: required failures empty; real `binance_public` BTC/ETH/SOL REST+WS, 15m/1h charts, `google_news_rss`, qwen3.5:4b translation with numeric guard and qwen3.5:9b structured JSON; fixture fallback false; repeat run `NO_NEW_CLOSED_BAR` for all three.
+- Final installed lifecycle — PASS with documented observation limit: install/reinstall/uninstall exit `0`; default program directory correct; health/backend ready; window `AI Market Analyst · V1.2`; second launch exit `0`/single instance; verified close released test port; relaunch restored health; AppData database hash preserved across reinstall/uninstall; native notification reached Windows PushNotification event log. Tray Show/Exit is wired and observed in desktop smoke. Direct visual OS-toast click was not observed in this automation surface and is not claimed.
+- `git diff --check` — PASS after documentation updates (expected line-ending notices only where applicable).
+
+### Blockers and residual risks
+
+- Blockers: none for the required V1.2 implementation/tests. The MSVC installer attempt is recorded above; GNU Rust/LLVM-MinGW is the tested Windows x64 build path.
+- Residual risks: public provider/RSS rate limits and disconnects can produce stale/unavailable evidence; local Ollama latency, capacity and output quality are not SLAs; invalid 9B output is intentionally quarantined. Windows toast display/click depends on OS settings and direct OS click was not observed. Default sidecar port is 18765 (explicit `AIMA_SIDECAR_PORT` is available for isolated local runs). `pip-audit` is unavailable and some transitive license metadata requires review. No real orders or external notification path is present by design.
 
 ## V1.1 developer completion checkpoint — 2026-08-22
 

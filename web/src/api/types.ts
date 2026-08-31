@@ -161,7 +161,10 @@ export type AppSettingKey =
   | "ui.language"
   | "ai.response_language"
   | "notifications.language"
-  | "ai.model_preference";
+  | "ai.model_preference"
+  | "desktop.close_to_tray"
+  | "desktop.auto_start"
+  | "monitoring.resume";
 
 export interface MarketPulseItem extends JsonRecord {
   symbol: string;
@@ -283,6 +286,9 @@ export interface MarketQuote extends JsonRecord {
 
 export interface MarketBar extends JsonRecord {
   timestamp: string;
+  bar_start?: string;
+  bar_end?: string;
+  is_closed?: boolean;
   open: number;
   high: number;
   low: number;
@@ -340,6 +346,29 @@ export interface NewsEvent extends JsonRecord {
   credibility?: number;
   impact_horizon?: string;
   dedupe_hash?: string | null;
+  actual?: string | number | null;
+  forecast?: string | number | null;
+  previous?: string | number | null;
+  unit?: string | null;
+  localized?: LocalizedNewsArtifact;
+}
+
+export interface LocalizedNewsArtifact extends JsonRecord {
+  contract_version?: string;
+  news_id: string;
+  locale: "zh-CN" | string;
+  source_language: string;
+  original_title: string;
+  original_summary?: string | null;
+  translated_title_zh?: string | null;
+  translated_summary_zh?: string | null;
+  evidence?: JsonRecord;
+  source_hash: string;
+  model_id: string;
+  prompt_version: string;
+  translated_at: string;
+  numeric_guard_passed: boolean;
+  status: string;
 }
 
 export interface NewsCluster extends JsonRecord {
@@ -358,6 +387,162 @@ export interface InstrumentNews extends JsonRecord {
   error_code?: string | null;
   events?: NewsEvent[];
   clusters?: NewsCluster[];
+}
+
+export type OpportunityBias = "LONG_WATCH" | "SHORT_WATCH" | "WAIT";
+export type CanonicalTriggerType = "REGIME_CHANGE" | "BREAKOUT" | "BREAKDOWN" | "VOLUME_EXPANSION" | "VOLATILITY_EXPANSION" | "LEVEL_PROXIMITY" | "SIGNAL_INVALIDATION" | "EVENT_RISK" | "NEWS_SHOCK";
+/** Legacy aliases remain readable so old local ledgers render during upgrade. */
+export type TriggerType = CanonicalTriggerType | "regime" | "breakout" | "breakdown" | "volume" | "volatility" | "level_proximity" | "invalidation" | "event_risk" | "news_shock";
+
+export interface MonitoringPolicy extends JsonRecord {
+  contract_version?: string;
+  instrument_id: string;
+  enabled: boolean;
+  primary_timeframe: "15m";
+  context_timeframe: "1h" | "15m";
+  trigger_types: TriggerType[];
+  min_trigger_score: number;
+  ai_min_confidence: number;
+  cooldown_minutes: number;
+  quiet_hours: JsonRecord;
+  notify: JsonRecord;
+  notify_in_app?: boolean;
+  notify_native_notification?: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface RealtimeState extends JsonRecord {
+  symbol: string;
+  provider?: string;
+  price?: number | null;
+  change_pct?: number | null;
+  volume?: number | null;
+  last_trade_at?: string | null;
+  data_as_of?: string | null;
+  freshness_status: "fresh" | "stale" | "degraded" | "unavailable" | string;
+  stale_after_seconds?: number;
+  reconnect_count?: number;
+  last_error?: string | null;
+  age_seconds?: number;
+}
+
+export interface MonitoringResponse extends JsonRecord {
+  contract_version: string;
+  policy_version: string;
+  policies: MonitoringPolicy[];
+  realtime: RealtimeState[];
+  runtime: MonitoringRuntimeStatus;
+  defaults: JsonRecord;
+  capabilities: JsonRecord;
+}
+
+export interface MonitoringRuntimeStatus extends JsonRecord {
+  contract_version: string;
+  state: "stopped" | "starting" | "running" | "paused" | "degraded" | "backoff" | string;
+  active: boolean;
+  worker_alive: boolean;
+  active_symbols: string[];
+  max_symbols: number;
+  resource: JsonRecord;
+  stream: JsonRecord;
+  run_count: number;
+  last_cycle_at: string | null;
+  last_cycle_status: string | null;
+  last_error: string | null;
+  consecutive_failures: number;
+  retry_after_at: string | null;
+  started_at: string | null;
+  transition_at: string;
+  resume_eligible: boolean;
+  last_reason: string;
+}
+
+export interface OpportunityAnalysesResponse extends JsonRecord {
+  contract_version: string;
+  validator: string;
+  model_tier: string;
+  analyses: OpportunityAnalysis[];
+}
+
+export interface TriggerEvent extends JsonRecord {
+  trigger_event_id: string;
+  instrument_id: string;
+  timeframe: string;
+  bar_start: string;
+  bar_end: string;
+  trigger_type: TriggerType | string;
+  trigger_score: number;
+  fingerprint: string;
+  policy_version: string;
+  status: string;
+  analysis_status: string;
+  payload?: JsonRecord;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface OpportunityAnalysis extends JsonRecord {
+  contract_version?: string;
+  analysis_id?: string;
+  symbol: string;
+  timeframe: string;
+  bias: OpportunityBias;
+  confidence: number;
+  regime?: string;
+  trigger_event_id: string;
+  evidence: unknown[];
+  news_context: unknown[];
+  event_risk: boolean;
+  watch_zone?: { low: number; high: number } | null;
+  invalidation: string[];
+  invalidation_price?: number | null;
+  targets: number[];
+  holding_horizon: string;
+  re_evaluate_at: string;
+  model_id: string;
+  prompt_version: string;
+  data_as_of: string;
+  missing_evidence: string[];
+}
+
+export interface ChartAnnotation extends JsonRecord {
+  annotation_id: string;
+  symbol: string;
+  timeframe: string;
+  annotation_type: string;
+  bar_start?: string | null;
+  price?: number | null;
+  label?: string | null;
+  source: string;
+  payload?: JsonRecord;
+}
+
+export interface ChartBarsResponse extends JsonRecord {
+  contract_version: string;
+  symbol: string;
+  timeframe: "15m" | "1h";
+  bars: MarketBar[];
+  data_as_of?: string;
+  provider?: ProviderSnapshot;
+  fetched_at?: string;
+  tradingview?: JsonRecord;
+}
+
+export interface ChartAnnotationsResponse extends JsonRecord {
+  contract_version: string;
+  symbol: string;
+  timeframe: "15m" | "1h";
+  annotations: ChartAnnotation[];
+}
+
+export interface RealtimeMarketResponse extends JsonRecord {
+  contract_version: string;
+  symbol: string;
+  provider: ProviderSnapshot;
+  quote: MarketQuote & { volume?: number | null };
+  bars: MarketBar[];
+  freshness: RealtimeState;
 }
 
 export interface BenchmarkMetadata extends JsonRecord {

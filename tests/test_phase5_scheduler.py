@@ -250,13 +250,13 @@ class SchedulerCoreTests(unittest.TestCase):
             connection.close()
             upgraded = SQLiteStore(pre_migration)
             upgraded.initialize()
-            self.assertEqual(upgraded.schema_version(), 11)
+            self.assertEqual(upgraded.schema_version(), 12)
             self.assertEqual(upgraded.counts()["scheduler_runs"], 0)
 
             path = Path(temp) / "scheduler.sqlite3"
             store = SQLiteStore(path)
             store.initialize()
-            self.assertEqual(store.schema_version(), 11)
+            self.assertEqual(store.schema_version(), 12)
             self.assertEqual(store.counts()["scheduler_runs"], 0)
             store.create_scheduler_run(
                 run_id="crashed-run",
@@ -272,7 +272,7 @@ class SchedulerCoreTests(unittest.TestCase):
             self.assertEqual(store.list_scheduler_items("crashed-run")[0]["status"], "INTERRUPTED")
             reopened = SQLiteStore(path)
             reopened.initialize()
-            self.assertEqual(reopened.schema_version(), 11)
+            self.assertEqual(reopened.schema_version(), 12)
             self.assertEqual(reopened.counts()["scheduler_items"], 1)
             runtime.close()
 

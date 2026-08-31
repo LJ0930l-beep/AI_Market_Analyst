@@ -16,7 +16,7 @@ from .base import Bar, ProviderError, Quote
 class CoinGeckoPublicProvider:
     provider_name = "coingecko_public"
     stale = False
-    _IDS = {"BTCUSDT": "bitcoin", "ETHUSDT": "ethereum"}
+    _IDS = {"BTCUSDT": "bitcoin", "ETHUSDT": "ethereum", "SOLUSDT": "solana"}
 
     def __init__(self, base_url: str | None = None, timeout: float | None = None, retries: int = 1) -> None:
         self.base_url = (base_url or os.environ.get("COINGECKO_BASE_URL", "https://api.coingecko.com/api/v3")).rstrip("/")
@@ -76,4 +76,3 @@ class CoinGeckoPublicProvider:
             bars.append(Bar(timestamp, previous, high, low, price, 0.0))
             previous = price
         return bars
-

@@ -9,9 +9,15 @@ import type {
   AssetType,
   AppSetting,
   CalibrationCurrent,
+  ChartAnnotationsResponse,
+  ChartBarsResponse,
   ContextHealthResponse,
   ConsultStreamEvent,
   MarketContextResponse,
+  MonitoringPolicy,
+  MonitoringResponse,
+  MonitoringRuntimeStatus,
+  OpportunityAnalysesResponse,
   MarketIntelligenceResponse,
   DailyBriefResponse,
   HealthResponse,
@@ -25,10 +31,12 @@ import type {
   PerformanceSummary,
   Prediction,
   ProviderHealthResponse,
+  RealtimeMarketResponse,
   ReleaseHealthResponse,
   RadarResponse,
   ReplayRun,
   StatsResponse,
+  TriggerEvent,
   SchedulerHistory,
   SchedulerStatus,
   WatchlistEntry,
@@ -37,7 +45,7 @@ import type {
 export const fakeHealth: HealthResponse = {
   status: "ok",
   phase: 7,
-  api_version: "1.1.0",
+  api_version: "1.2.0",
   product: "AI Market Analyst",
   real_orders: false,
   private_keys: false,
@@ -115,6 +123,9 @@ export const fakeAppSettings: AppSetting[] = [
   { key: "ai.response_language", value: "follow_ui", default_value: "follow_ui", value_type: "string", updated_at: null, source: "default", description: "Preferred Qwen response language." },
   { key: "notifications.language", value: "en", default_value: "en", value_type: "string", updated_at: null, source: "default", description: "Local alert display language." },
   { key: "ai.model_preference", value: "auto", default_value: "auto", value_type: "string", updated_at: null, source: "default", description: "Deterministic Qwen tier preference." },
+  { key: "desktop.close_to_tray", value: false, default_value: false, value_type: "boolean", updated_at: null, source: "default", description: "Keep the desktop window hidden in the system tray when its close action is used." },
+  { key: "desktop.auto_start", value: false, default_value: false, value_type: "boolean", updated_at: null, source: "default", description: "Start the desktop application with Windows only after explicit user opt-in." },
+  { key: "monitoring.resume", value: false, default_value: false, value_type: "boolean", updated_at: null, source: "default", description: "Resume explicitly enabled monitoring policies after a user-started application session." },
 ];
 
 export const fakePrediction: Prediction = {
@@ -268,8 +279,8 @@ export const fakeProviderHealth: ProviderHealthResponse = {
 export const fakeReleaseHealth: ReleaseHealthResponse = {
   status: "ok",
   phase: 7,
-  api_version: "1.1.0",
-  database: { available: true, schema_version: 10, path: "market_analyst.sqlite3" },
+  api_version: "1.2.0",
+  database: { available: true, schema_version: 12, path: "market_analyst.sqlite3" },
   backup: { available: true, format_version: "phase7_backup_v1", restore_requires_explicit_command: true },
   capabilities: {
     local_only: true,
@@ -291,7 +302,7 @@ export const fakeReleaseHealth: ReleaseHealthResponse = {
 
 export const fakeContextHealth: ContextHealthResponse = {
   phase: 7,
-  api_version: "1.1.0",
+  api_version: "1.2.0",
   benchmark: { context_version: "benchmark_context_v1", mapping_version: "benchmark_mapping_v1" },
   events: { schema_version: "event_schema_v1", cluster_version: "event_cluster_v1" },
   memory: { version: "market_memory_v1", feature_version: "feature_representation_v1", retention_limit: 1000 },
@@ -433,6 +444,107 @@ export const fakeNews: InstrumentNews = {
   error_code: null,
   events: [],
   clusters: [],
+};
+
+export const fakeMonitoringPolicy: MonitoringPolicy = {
+  contract_version: "monitoring_policy_v1",
+  instrument_id: "BTCUSDT",
+  enabled: false,
+  primary_timeframe: "15m",
+  context_timeframe: "1h",
+  trigger_types: ["regime", "breakout", "breakdown", "volume", "volatility", "level_proximity", "invalidation", "event_risk", "news_shock"],
+  min_trigger_score: 0.65,
+  ai_min_confidence: 0.6,
+  cooldown_minutes: 60,
+  quiet_hours: {},
+  notify: { desktop: true, sound: false },
+  created_at: null,
+  updated_at: null,
+};
+
+export const fakeMonitoring: MonitoringResponse = {
+  contract_version: "monitoring_policy_v1",
+  policy_version: "trigger_policy_v2",
+  policies: [fakeMonitoringPolicy],
+  realtime: [],
+  runtime: {
+    contract_version: "monitoring_runtime_v1",
+    state: "stopped",
+    active: false,
+    worker_alive: false,
+    active_symbols: [],
+    max_symbols: 50,
+    resource: { max_symbols: 50, active_symbols: 0, bounded: true },
+    stream: { status: "stopped", provider: "binance_public_ws", symbols: [], timeframe: "15m" },
+    run_count: 0,
+    last_cycle_at: null,
+    last_cycle_status: null,
+    last_error: null,
+    consecutive_failures: 0,
+    retry_after_at: null,
+    started_at: null,
+    transition_at: "2030-01-02T12:00:00Z",
+    resume_eligible: false,
+    last_reason: "startup_no_scan",
+  },
+  defaults: { enabled: false, auto_start: false, resume: false },
+  capabilities: { explicit_opt_in: true, startup_side_effect: false },
+};
+
+export const fakeMonitoringRuntime: MonitoringRuntimeStatus = fakeMonitoring.runtime;
+
+export const fakeTriggerEvent: TriggerEvent = {
+  trigger_event_id: "trigger-fixture",
+  instrument_id: "BTCUSDT",
+  timeframe: "15m",
+  bar_start: "2030-01-02T12:00:00Z",
+  bar_end: "2030-01-02T12:15:00Z",
+  trigger_type: "breakout",
+  trigger_score: 0.81,
+  fingerprint: "fixture-trigger-fingerprint",
+  policy_version: "trigger_policy_v2",
+  status: "ANALYZED",
+  analysis_status: "PREDICTION_SAVED",
+  payload: { reason: "fixture" },
+  created_at: "2030-01-02T12:15:00Z",
+  updated_at: "2030-01-02T12:15:00Z",
+};
+
+export const fakeOpportunityAnalyses: OpportunityAnalysesResponse = {
+  contract_version: "opportunity_analysis_v1",
+  validator: "python",
+  model_tier: "smart_9b_only",
+  analyses: [],
+};
+
+export const fakeChartBars: ChartBarsResponse = {
+  contract_version: "chart_data_v1",
+  symbol: "BTCUSDT",
+  timeframe: "15m",
+  bars: [
+    { timestamp: "2030-01-02T12:00:00Z", bar_start: "2030-01-02T12:00:00Z", bar_end: "2030-01-02T12:15:00Z", is_closed: true, open: 100, high: 102, low: 99, close: 101, volume: 1200 },
+    { timestamp: "2030-01-02T12:15:00Z", bar_start: "2030-01-02T12:15:00Z", bar_end: "2030-01-02T12:30:00Z", is_closed: true, open: 101, high: 103, low: 100, close: 102, volume: 1400 },
+  ],
+  data_as_of: "2030-01-02T12:30:00Z",
+  provider: { provider: "fixture_market", fetched_at: "2030-01-02T12:30:00Z", data_as_of: "2030-01-02T12:30:00Z", stale: false, error_code: null },
+  fetched_at: "2030-01-02T12:30:00Z",
+  tradingview: { library: "lightweight-charts", backend_api: false },
+};
+
+export const fakeChartAnnotations: ChartAnnotationsResponse = {
+  contract_version: "chart_annotations_v1",
+  symbol: "BTCUSDT",
+  timeframe: "15m",
+  annotations: [],
+};
+
+export const fakeRealtimeMarket: RealtimeMarketResponse = {
+  contract_version: "crypto_realtime_v1",
+  symbol: "BTCUSDT",
+  provider: { provider: "fixture_market", fetched_at: "2030-01-02T12:30:00Z", data_as_of: "2030-01-02T12:30:00Z", stale: false, error_code: null },
+  quote: { timestamp: "2030-01-02T12:30:00Z", price: 102, change_pct: 1.5, volume: 10000 },
+  bars: fakeChartBars.bars,
+  freshness: { symbol: "BTCUSDT", freshness_status: "fresh", data_as_of: "2030-01-02T12:30:00Z", age_seconds: 0 },
 };
 
 export const fakeMarketContext: MarketContextResponse = {
@@ -611,6 +723,21 @@ export function createFakeClient(overrides: Partial<ApplicationShellApiClient> =
     appSetting: vi.fn().mockResolvedValue(fakeAppSettings[0]),
     updateAppSetting: vi.fn().mockResolvedValue(fakeAppSettings[0]),
     resetAppSetting: vi.fn().mockResolvedValue({ key: fakeAppSettings[0].key, deleted: true, setting: fakeAppSettings[0] }),
+    realtimeMarket: vi.fn().mockResolvedValue(fakeRealtimeMarket),
+    monitoring: vi.fn().mockResolvedValue(fakeMonitoring),
+    monitoringStatus: vi.fn().mockResolvedValue(fakeMonitoringRuntime),
+    startMonitoring: vi.fn().mockResolvedValue({ ...fakeMonitoringRuntime, state: "running", active: true, worker_alive: true }),
+    resumeMonitoring: vi.fn().mockResolvedValue({ ...fakeMonitoringRuntime, state: "running", active: true, worker_alive: true }),
+    pauseMonitoring: vi.fn().mockResolvedValue({ ...fakeMonitoringRuntime, state: "paused", active: false, worker_alive: false }),
+    stopMonitoring: vi.fn().mockResolvedValue(fakeMonitoringRuntime),
+    monitoringOpportunities: vi.fn().mockResolvedValue(fakeOpportunityAnalyses),
+    updateMonitoringPolicy: vi.fn().mockResolvedValue(fakeMonitoringPolicy),
+    runMonitoring: vi.fn().mockResolvedValue({ contract_version: "monitoring_policy_v1", status: "DISABLED", items: [] }),
+    triggerEvents: vi.fn().mockResolvedValue({ policy_version: "trigger_policy_v2", events: [fakeTriggerEvent] }),
+    chartBars: vi.fn().mockResolvedValue(fakeChartBars),
+    chartAnnotations: vi.fn().mockResolvedValue(fakeChartAnnotations),
+    localizedNews: vi.fn().mockResolvedValue(fakeNews),
+    translateNews: vi.fn().mockResolvedValue({ status: "translated", numeric_guard_passed: true }),
     instrumentSnapshot: vi.fn().mockResolvedValue(fakeSnapshot),
     instrumentNews: vi.fn().mockResolvedValue(fakeNews),
     instrumentContext: vi.fn().mockResolvedValue(fakeMarketContext),

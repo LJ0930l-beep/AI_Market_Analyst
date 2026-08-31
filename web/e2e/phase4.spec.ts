@@ -9,6 +9,7 @@ import { resolveStaticCandidate } from "./preview-server.mjs";
 const productRoutes = [
   "/",
   "/watchlist",
+  "/monitoring",
   "/assets/NVDA",
   "/predictions",
   "/markets",
@@ -44,10 +45,10 @@ test("health, durable Watchlist, and read-only Asset Detail analysis", async ({ 
   const before = await (await page.request.get("/api/stats")).json();
   const contextHealth = await page.request.get("/api/health/context");
   expect(contextHealth.status()).toBe(200);
-  expect(await contextHealth.json()).toMatchObject({ phase: 7, api_version: "1.1.0", read_only_get: true, cloud_required: false });
+  expect(await contextHealth.json()).toMatchObject({ phase: 7, api_version: "1.2.0", read_only_get: true, cloud_required: false });
   const releaseHealth = await page.request.get("/api/health/release");
   expect(releaseHealth.status()).toBe(200);
-  expect(await releaseHealth.json()).toMatchObject({ phase: 7, api_version: "1.1.0", backup: { format_version: "phase7_backup_v1" }, capabilities: { local_only: true, scheduler_default_enabled: false } });
+  expect(await releaseHealth.json()).toMatchObject({ phase: 7, api_version: "1.2.0", backup: { format_version: "phase7_backup_v1" }, capabilities: { local_only: true, scheduler_default_enabled: false } });
 
   await page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", { name: "Watchlist" }).press("Enter");
   await expect(page.getByRole("heading", { name: "Watchlist", exact: true })).toBeVisible();
@@ -136,6 +137,7 @@ test("language selector switches to Chinese and persists across route navigation
   const chineseRouteTitles: Record<string, string> = {
     "/": "看清市场，不被噪音淹没",
     "/watchlist": "关注列表",
+    "/monitoring": "智能盯盘",
     "/assets/NVDA": "资产详情 / NVDA",
     "/predictions": "预测",
     "/markets": "市场",
@@ -196,6 +198,7 @@ test("language selector switches to Chinese and persists across route navigation
   const englishRouteTitles: Record<string, string> = {
     "/": "Market intelligence, without the noise",
     "/watchlist": "Watchlist",
+    "/monitoring": "Smart monitoring",
     "/assets/NVDA": "Asset detail / NVDA",
     "/predictions": "Predictions",
     "/markets": "Markets",
@@ -397,7 +400,7 @@ test("Alert Center reads deduped local evidence and acknowledges without financi
 
   await page.goto("/settings");
   await expect(page.getByRole("region", { name: "Alert reconciliation" })).toBeVisible();
-  await expect(page.getByText(/Alerts are local SQLite observability only/i)).toBeVisible();
+  await expect(page.getByText(/Alerts originate in local SQLite/i)).toBeVisible();
 });
 
 test("fresh LONG double-click Follow creates exactly one PaperTrade and linked detail", async ({ page }) => {
@@ -483,7 +486,7 @@ test("SPA deep links return HTML while /api/health remains JSON", async ({ page 
   const health = await page.request.get("/api/health");
   expect(health.status()).toBe(200);
   expect(health.headers()["content-type"]).toContain("application/json");
-  expect(await health.json()).toMatchObject({ status: "ok", phase: 7, api_version: "1.1.0", real_orders: false });
+  expect(await health.json()).toMatchObject({ status: "ok", phase: 7, api_version: "1.2.0", real_orders: false });
 });
 
 test("all V1.1 product routes pass axe and page-level overflow checks at desktop and 390x844", async ({ page }) => {

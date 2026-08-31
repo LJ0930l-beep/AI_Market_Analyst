@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { ApiError, type ApplicationShellApiClient } from "../api/client";
+import { ApiError, getRealtimeStreamUrl, type ApplicationShellApiClient } from "../api/client";
 import { useI18n } from "../i18n";
 import type {
   Action,
   AnalysisResult,
+  ChartAnnotation,
+  ChartBarsResponse,
   Instrument,
   MarketContextResponse,
   InstrumentNews,
@@ -14,6 +16,7 @@ import type {
   ModelStatus,
   NewsCluster,
   ProviderSnapshot,
+  RealtimeMarketResponse,
   SignalProposal,
   TimePolicy,
 } from "../api/types";
@@ -122,13 +125,20 @@ function returnedBars(snapshot: MarketSnapshot | undefined): MarketBar[] {
   return Array.isArray(snapshot?.bars) ? snapshot.bars.filter(isMarketBar) : [];
 }
 
-function SnapshotEvidence({ snapshot }: { snapshot: MarketSnapshot }) {
+function mergeRealtimeBar(bars: MarketBar[], realtimeBar?: MarketBar): MarketBar[] {
+  if (!realtimeBar) return bars;
+  const merged = new Map(bars.map((bar) => [bar.timestamp, bar]));
+  merged.set(realtimeBar.timestamp, realtimeBar);
+  return [...merged.values()].sort((left, right) => left.timestamp.localeCompare(right.timestamp)).slice(-240);
+}
+
+function SnapshotEvidence({ snapshot, chartBars, annotations, realtime, realtimeBar }: { snapshot: MarketSnapshot; chartBars?: ChartBarsResponse; annotations: ChartAnnotation[]; realtime?: RealtimeMarketResponse; realtimeBar?: MarketBar }) {
   const { t, text } = useI18n();
   const { booleanText, numberText, primitiveText: stringText, timestampText } = useResearchFormatters();
   const quote = snapshot.quote;
   const quant = snapshot.quant;
   const provider = snapshot.provider_snapshot;
-  const bars = returnedBars(snapshot);
+  const bars = mergeRealtimeBar(chartBars?.bars?.filter(isMarketBar) ?? returnedBars(snapshot), realtimeBar);
   const quoteEntries = quote
     ? fieldEntries(quote, [
         [t("asset.price"), "price"],
@@ -205,14 +215,26 @@ function SnapshotEvidence({ snapshot }: { snapshot: MarketSnapshot }) {
         <h3 id="ohlcv-title" className="subsection-label">
           {t("asset.ohlcv")}
         </h3>
-        <OhlcvChart bars={bars} symbol={snapshot.symbol} timeframe={snapshot.timeframe} />
+        <OhlcvChart bars={bars} annotations={annotations} symbol={snapshot.symbol} timeframe={snapshot.timeframe} />
       </section>
+      {realtime ? (
+        <section className="asset-provenance-facts" aria-labelledby="realtime-title">
+          <h3 id="realtime-title" className="subsection-label">{t("asset.realtimeStatus")}</h3>
+          <DataFacts entries={[
+            [t("asset.freshnessStatus"), text(realtime.freshness.freshness_status)],
+            [t("asset.realtimePrice"), numberText(realtime.quote.price)],
+            [t("asset.lastTradeAt"), timestampText(realtime.quote.timestamp)],
+            [t("asset.realtimeProvider"), stringText(realtime.provider.provider)],
+            [t("asset.reconnects"), numberText(realtime.freshness.reconnect_count)],
+          ]} />
+        </section>
+      ) : null}
     </div>
   );
 }
 
-function NewsEvidence({ news }: { news: InstrumentNews }) {
-  const { t, text } = useI18n();
+function NewsEvidence({ news, onTranslate, translatingId, translationMessage }: { news: InstrumentNews; onTranslate?: (newsId: string) => void; translatingId?: string | null; translationMessage?: string | null }) {
+  const { language, t, text } = useI18n();
   const { booleanText, numberText, primitiveText: stringText, timestampText } = useResearchFormatters();
   const events = Array.isArray(news.events) ? news.events : [];
   const clusters = Array.isArray(news.clusters) ? news.clusters : [];
@@ -239,13 +261,17 @@ function NewsEvidence({ news }: { news: InstrumentNews }) {
           {events.map((event, index) => (
             <li className="news-event" key={event.id ?? `${event.title ?? "event"}-${index}`}>
               <div className="news-event__heading">
-                <h3>{stringText(event.title)}</h3>
+                <div>
+                  <h3>{language === "zh-CN" && event.localized?.translated_title_zh ? event.localized.translated_title_zh : stringText(event.title)}</h3>
+                  {language === "zh-CN" && event.localized?.translated_title_zh ? <p className="data-meta">{t("asset.originalEvidence")}: {stringText(event.localized.original_title || event.title)}</p> : null}
+                </div>
                 {safeExternalUrl(event.url) ? (
                   <a href={safeExternalUrl(event.url)} target="_blank" rel="noreferrer">
                     {t("asset.openSource")}
                   </a>
                 ) : null}
               </div>
+              {onTranslate && event.id ? <button className="quiet-button news-event__translate" type="button" disabled={translatingId === event.id} onClick={() => onTranslate(event.id!)}>{translatingId === event.id ? t("asset.translatingNews") : t("asset.translateNews")}</button> : null}
               <DataFacts
                 entries={[
                   [t("common.source"), stringText(event.source)],
@@ -257,11 +283,21 @@ function NewsEvidence({ news }: { news: InstrumentNews }) {
                   [t("asset.impactHorizon"), stringText(event.impact_horizon)],
                 ]}
               />
-              {event.summary_raw ? <p className="news-event__summary">{event.summary_raw}</p> : null}
+              {language === "zh-CN" && event.localized?.translated_summary_zh ? <p className="news-event__summary">{event.localized.translated_summary_zh}</p> : event.summary_raw ? <p className="news-event__summary">{event.summary_raw}</p> : null}
+              {event.localized ? <section className="news-event__translation" aria-label={t("asset.translationStatus")}>
+                <DataFacts entries={[
+                  [t("asset.translationStatus"), text(event.localized.status)],
+                  [t("asset.numericGuard"), event.localized.numeric_guard_passed ? t("asset.numericGuardPassed") : booleanText(false)],
+                  [t("common.model"), stringText(event.localized.model_id)],
+                  [t("common.promptVersion"), stringText(event.localized.prompt_version)],
+                ]} />
+                {event.localized.original_summary && language === "zh-CN" ? <p className="data-meta">{t("asset.originalEvidence")}: {event.localized.original_summary}</p> : null}
+              </section> : null}
             </li>
           ))}
         </ol>
       )}
+      {translationMessage ? <p className="panel-message panel-message--unavailable" role="alert">{translationMessage}</p> : null}
       {clusters.length > 0 ? <NewsClusters clusters={clusters} /> : null}
     </div>
   );
@@ -624,7 +660,7 @@ function InstrumentSelector({
 }
 
 export function AssetDetailPage({ apiClient, onProvenanceChange }: AssetDetailPageProps) {
-  const { t } = useI18n();
+  const { language, t } = useI18n();
   const { symbol: routeParam } = useParams<{ symbol: string }>();
   const navigate = useNavigate();
   const requestedSymbol = decodeRouteSymbol(routeParam);
@@ -639,6 +675,7 @@ export function AssetDetailPage({ apiClient, onProvenanceChange }: AssetDetailPa
     [instruments.data, requestedSymbol],
   );
   const canonicalSymbol = selectedInstrument?.symbol ?? requestedSymbol;
+  const cryptoSelected = selectedInstrument?.asset_type === "crypto";
 
   const snapshotLoader = useCallback(
     (signal: AbortSignal) =>
@@ -646,16 +683,49 @@ export function AssetDetailPage({ apiClient, onProvenanceChange }: AssetDetailPa
     [apiClient, canonicalSymbol, timeframe],
   );
   const newsLoader = useCallback(
-    (signal: AbortSignal) => apiClient.instrumentNews(canonicalSymbol, signal),
-    [apiClient, canonicalSymbol],
+    (signal: AbortSignal) => cryptoSelected ? apiClient.localizedNews(canonicalSymbol, language, signal) : apiClient.instrumentNews(canonicalSymbol, signal),
+    [apiClient, canonicalSymbol, cryptoSelected, language],
   );
   const contextLoader = useCallback(
     (signal: AbortSignal) => apiClient.instrumentContext(canonicalSymbol, { timeframe, limit: SNAPSHOT_LIMIT }, signal),
     [apiClient, canonicalSymbol, timeframe],
   );
+  const chartTimeframe = timeframe === "15m" || timeframe === "1h" ? timeframe : "1h";
+  const chartBarsLoader = useCallback(
+    (signal: AbortSignal) => apiClient.chartBars(canonicalSymbol, chartTimeframe, 240, signal),
+    [apiClient, canonicalSymbol, chartTimeframe],
+  );
+  const chartAnnotationsLoader = useCallback(
+    (signal: AbortSignal) => apiClient.chartAnnotations(canonicalSymbol, chartTimeframe, signal),
+    [apiClient, canonicalSymbol, chartTimeframe],
+  );
+  const realtimeLoader = useCallback(
+    (signal: AbortSignal) => apiClient.realtimeMarket(canonicalSymbol, signal),
+    [apiClient, canonicalSymbol],
+  );
   const snapshot = useAsyncResource(snapshotLoader, Boolean(selectedInstrument));
   const news = useAsyncResource(newsLoader, Boolean(selectedInstrument));
   const context = useAsyncResource(contextLoader, Boolean(selectedInstrument));
+  const chartBars = useAsyncResource(chartBarsLoader, Boolean(selectedInstrument && cryptoSelected));
+  const chartAnnotations = useAsyncResource(chartAnnotationsLoader, Boolean(selectedInstrument && cryptoSelected));
+  const realtime = useAsyncResource(realtimeLoader, Boolean(selectedInstrument && cryptoSelected));
+  const [translationBusyId, setTranslationBusyId] = useState<string | null>(null);
+  const [translationMessage, setTranslationMessage] = useState<string | null>(null);
+  const [realtimeBar, setRealtimeBar] = useState<MarketBar | undefined>();
+
+  async function translateNewsEvent(newsId: string) {
+    setTranslationBusyId(newsId);
+    setTranslationMessage(null);
+    try {
+      await apiClient.translateNews(newsId);
+      setTranslationMessage(t("asset.translationComplete"));
+      news.retry();
+    } catch (error: unknown) {
+      setTranslationMessage(error instanceof Error ? error.message : t("asset.analysisFailed"));
+    } finally {
+      setTranslationBusyId(null);
+    }
+  }
 
   useEffect(() => {
     if (selectedInstrument && selectedInstrument.symbol !== requestedSymbol) {
@@ -676,6 +746,35 @@ export function AssetDetailPage({ apiClient, onProvenanceChange }: AssetDetailPa
   }, [onProvenanceChange, requestedSymbol, t, timeframe]);
 
   useEffect(() => () => analysisController.current?.abort(), []);
+
+  useEffect(() => {
+    setRealtimeBar(undefined);
+    if (!selectedInstrument || !cryptoSelected || typeof WebSocket === "undefined") {
+      return undefined;
+    }
+    let active = true;
+    let socket: WebSocket | undefined;
+    try {
+      socket = new WebSocket(getRealtimeStreamUrl(canonicalSymbol, chartTimeframe));
+      socket.onmessage = (event) => {
+        if (!active) return;
+        try {
+          const payload: unknown = JSON.parse(String(event.data));
+          if (typeof payload !== "object" || payload === null) return;
+          const candidate = (payload as Record<string, unknown>).bar;
+          if (isMarketBar(candidate)) setRealtimeBar(candidate);
+        } catch {
+          // A malformed socket frame cannot replace the last REST/chart evidence.
+        }
+      };
+    } catch {
+      socket = undefined;
+    }
+    return () => {
+      active = false;
+      socket?.close();
+    };
+  }, [canonicalSymbol, chartTimeframe, cryptoSelected, selectedInstrument]);
 
   const runAnalysis = useCallback(() => {
     if (!selectedInstrument || analysisState.status === "pending") {
@@ -768,7 +867,7 @@ export function AssetDetailPage({ apiClient, onProvenanceChange }: AssetDetailPa
             <div className="timeframe-control">
               <span className="subsection-label" id="timeframe-label">{t("asset.snapshotTimeframe")}</span>
               <div className="timeframe-options" role="group" aria-labelledby="timeframe-label">
-                {TIMEFRAMES.map((value) => (
+                {TIMEFRAMES.filter((value) => !cryptoSelected || value === "15m" || value === "1h").map((value) => (
                   <button
                     className={`timeframe-button${value === timeframe ? " timeframe-button--active" : ""}`}
                     type="button"
@@ -795,7 +894,7 @@ export function AssetDetailPage({ apiClient, onProvenanceChange }: AssetDetailPa
               degradedMessage={t("asset.snapshotDegraded")}
               className="asset-panel asset-panel--wide"
             >
-              {snapshotData ? <SnapshotEvidence snapshot={snapshotData} /> : null}
+              {snapshotData ? <SnapshotEvidence snapshot={snapshotData} chartBars={chartBars.data} annotations={chartAnnotations.data?.annotations ?? []} realtime={realtime.data} realtimeBar={realtimeBar} /> : null}
             </AsyncPanel>
 
             <AsyncPanel
@@ -809,7 +908,7 @@ export function AssetDetailPage({ apiClient, onProvenanceChange }: AssetDetailPa
               degradedMessage={t("asset.newsDegraded")}
               className="asset-panel"
             >
-              {newsData ? <NewsEvidence news={newsData} /> : null}
+              {newsData ? <NewsEvidence news={newsData} onTranslate={cryptoSelected ? (newsId) => void translateNewsEvent(newsId) : undefined} translatingId={translationBusyId} translationMessage={translationMessage} /> : null}
             </AsyncPanel>
 
             <AsyncPanel

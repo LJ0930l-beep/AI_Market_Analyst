@@ -50,10 +50,11 @@ describe("AssetDetailPage", () => {
     renderAsset(client);
 
     expect(await screen.findByRole("heading", { name: "Asset detail / NVDA" })).toBeInTheDocument();
-    expect(await within(panel("Market snapshot")).findByText("OHLCV evidence")).toBeInTheDocument();
-    expect(within(panel("Market snapshot")).getByText(/Latest close 101/)).toBeInTheDocument();
-    expect(within(panel("Market snapshot")).getAllByText("100").length).toBeGreaterThan(0);
-    expect(within(panel("Market snapshot")).getByText("96")).toBeInTheDocument();
+    const snapshotPanel = await screen.findByRole("region", { name: "Market snapshot" });
+    expect(await within(snapshotPanel).findByText("OHLCV evidence")).toBeInTheDocument();
+    expect(within(snapshotPanel).getByText(/Latest close 101/)).toBeInTheDocument();
+    expect(within(snapshotPanel).getAllByText("100").length).toBeGreaterThan(0);
+    expect(within(snapshotPanel).getByText("96")).toBeInTheDocument();
     expect(within(panel("News evidence")).getByText("GPU supply update")).toBeInTheDocument();
     expect(within(panel("News evidence")).getByText("Fixture Journal")).toBeInTheDocument();
     expect(await within(panel("Benchmark, events and Market Memory")).findByText("benchmark_mapping_v1")).toBeInTheDocument();

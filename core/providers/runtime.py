@@ -119,7 +119,10 @@ def build_default_provider(instrument: Instrument) -> MarketProvider | ProviderC
         return FixtureProvider()
     if mode not in {"real", "auto"}:
         raise ValueError("MARKET_DATA_MODE must be real, auto, or fixture")
-    allow_fixture_fallback = os.environ.get("DISABLE_FIXTURE_FALLBACK", "0") != "1"
+    # A fixture is a deterministic test dependency, never an implicit live
+    # fallback.  Release/live smoke must fail visibly when public data is
+    # unavailable; tests can opt in with ALLOW_FIXTURE_FALLBACK=1.
+    allow_fixture_fallback = os.environ.get("ALLOW_FIXTURE_FALLBACK", "0").strip() == "1" and os.environ.get("DISABLE_FIXTURE_FALLBACK", "0") != "1"
     if instrument.asset_type is AssetType.EQUITY:
         providers: list[MarketProvider] = [YFinanceProvider()]
         if allow_fixture_fallback:

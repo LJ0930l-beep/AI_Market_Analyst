@@ -10,6 +10,8 @@ import type {
   AppSettingResetResponse,
   AppSettingValue,
   CalibrationCurrent,
+  ChartAnnotationsResponse,
+  ChartBarsResponse,
   ContextHealthResponse,
   ContextFilters,
   ConsultRequest,
@@ -21,7 +23,12 @@ import type {
   Instrument,
   InstrumentRegistrationResponse,
   InstrumentNews,
+  JsonRecord,
   MarketSnapshot,
+  MonitoringPolicy,
+  MonitoringResponse,
+  MonitoringRuntimeStatus,
+  OpportunityAnalysesResponse,
   MarketContextResponse,
   MarketIntelligenceResponse,
   DailyBriefResponse,
@@ -37,6 +44,7 @@ import type {
   PredictionCalibration,
   PredictionFilters,
   ProviderHealthResponse,
+  RealtimeMarketResponse,
   ReplayRun,
   ReleaseHealthResponse,
   ReplayRunFilters,
@@ -46,6 +54,7 @@ import type {
   SchedulerHistory,
   SchedulerStatus,
   StatsResponse,
+  TriggerEvent,
   WatchlistDeleteResponse,
   WatchlistEntry,
 } from "./types";
@@ -53,6 +62,12 @@ import type {
 type QueryValue = string | number | boolean | null | undefined;
 type QueryParams = object;
 type FetchImplementation = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
+declare global {
+  interface Window {
+    __AIMA_API_BASE_URL__?: string;
+  }
+}
 
 export interface ApiErrorPayload {
   code: string;
@@ -128,6 +143,21 @@ export interface MarketApiClient {
   appSetting(key: AppSettingKey, signal?: AbortSignal): Promise<AppSetting>;
   updateAppSetting(key: AppSettingKey, value: AppSettingValue, signal?: AbortSignal): Promise<AppSetting>;
   resetAppSetting(key: AppSettingKey, signal?: AbortSignal): Promise<AppSettingResetResponse>;
+  realtimeMarket(symbol: string, signal?: AbortSignal): Promise<RealtimeMarketResponse>;
+  monitoring(signal?: AbortSignal): Promise<MonitoringResponse>;
+  monitoringStatus(signal?: AbortSignal): Promise<MonitoringRuntimeStatus>;
+  startMonitoring(signal?: AbortSignal): Promise<MonitoringRuntimeStatus>;
+  resumeMonitoring(signal?: AbortSignal): Promise<MonitoringRuntimeStatus>;
+  pauseMonitoring(signal?: AbortSignal): Promise<MonitoringRuntimeStatus>;
+  stopMonitoring(signal?: AbortSignal): Promise<MonitoringRuntimeStatus>;
+  monitoringOpportunities(symbol?: string, limit?: number, signal?: AbortSignal): Promise<OpportunityAnalysesResponse>;
+  updateMonitoringPolicy(policy: MonitoringPolicy, signal?: AbortSignal): Promise<MonitoringPolicy>;
+  runMonitoring(symbols?: string[], signal?: AbortSignal): Promise<JsonRecord>;
+  triggerEvents(symbol?: string, limit?: number, signal?: AbortSignal): Promise<{ policy_version: string; events: TriggerEvent[]; [key: string]: unknown }>;
+  chartBars(symbol: string, timeframe?: "15m" | "1h", limit?: number, signal?: AbortSignal): Promise<ChartBarsResponse>;
+  chartAnnotations(symbol: string, timeframe?: "15m" | "1h", signal?: AbortSignal): Promise<ChartAnnotationsResponse>;
+  localizedNews(symbol: string, locale?: "en" | "zh-CN", signal?: AbortSignal): Promise<InstrumentNews>;
+  translateNews(newsId: string, signal?: AbortSignal): Promise<JsonRecord>;
   instrumentSnapshot(symbol: string, signal?: AbortSignal): Promise<MarketSnapshot>;
   instrumentSnapshot(symbol: string, filters?: SnapshotFilters, signal?: AbortSignal): Promise<MarketSnapshot>;
   instrumentNews(symbol: string, signal?: AbortSignal): Promise<InstrumentNews>;
@@ -180,6 +210,21 @@ export type ApplicationShellApiClient = Pick<
   | "appSetting"
   | "updateAppSetting"
   | "resetAppSetting"
+  | "realtimeMarket"
+  | "monitoring"
+  | "monitoringStatus"
+  | "startMonitoring"
+  | "resumeMonitoring"
+  | "pauseMonitoring"
+  | "stopMonitoring"
+  | "monitoringOpportunities"
+  | "updateMonitoringPolicy"
+  | "runMonitoring"
+  | "triggerEvents"
+  | "chartBars"
+  | "chartAnnotations"
+  | "localizedNews"
+  | "translateNews"
   | "instrumentSnapshot"
   | "instrumentNews"
   | "instrumentContext"
@@ -214,14 +259,41 @@ export function serializeQuery(params: QueryParams): string {
 }
 
 export function getApiBaseUrl(
-  configured = import.meta.env.VITE_API_BASE_URL,
+  configured?: string,
   isDevelopment = import.meta.env.DEV,
 ): string {
-  const explicitBaseUrl = (configured ?? "").trim().replace(/\/+$/, "");
+  const runtimeBaseUrl = typeof window !== "undefined" ? window.__AIMA_API_BASE_URL__ : undefined;
+  const explicitBaseUrl = (configured ?? runtimeBaseUrl ?? import.meta.env.VITE_API_BASE_URL ?? "").trim().replace(/\/+$/, "");
   if (explicitBaseUrl) {
     return explicitBaseUrl;
   }
   return isDevelopment ? "/api" : "";
+}
+
+export function getRealtimeStreamUrl(
+  symbol: string,
+  timeframe: "15m" | "1h" = "15m",
+  configured?: string,
+  isDevelopment = import.meta.env.DEV,
+): string {
+  const base = getApiBaseUrl(configured, isDevelopment);
+  const origin = typeof window === "undefined" ? "http://127.0.0.1" : window.location.origin;
+  const url = new URL(base ? (base.startsWith("http://") || base.startsWith("https://") ? base : `${origin}${base}`) : origin);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.pathname = `${url.pathname.replace(/\/$/, "")}/market/realtime/${encodePathSegment(symbol)}/stream`;
+  url.search = serializeQuery({ timeframe }).slice(1);
+  return url.toString();
+}
+
+export function getMonitoringEventsUrl(
+  configured?: string,
+  isDevelopment = import.meta.env.DEV,
+): string {
+  const base = getApiBaseUrl(configured, isDevelopment);
+  const origin = typeof window === "undefined" ? "http://127.0.0.1" : window.location.origin;
+  const url = new URL(base ? (base.startsWith("http://") || base.startsWith("https://") ? base : `${origin}${base}`) : origin);
+  url.pathname = `${url.pathname.replace(/\/$/, "")}/monitoring/events`;
+  return url.toString();
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -268,12 +340,16 @@ function parseConsultStreamEvent(payload: unknown): ConsultStreamEvent {
 }
 
 export class ApiClient implements MarketApiClient {
-  private readonly baseUrl: string;
+  private readonly configuredBaseUrl?: string;
   private readonly fetchImpl: FetchImplementation;
 
   constructor(options: ApiClientOptions = {}) {
-    this.baseUrl = getApiBaseUrl(options.baseUrl ?? import.meta.env.VITE_API_BASE_URL);
+    this.configuredBaseUrl = options.baseUrl;
     this.fetchImpl = options.fetchImpl ?? fetch;
+  }
+
+  private get baseUrl(): string {
+    return getApiBaseUrl(this.configuredBaseUrl);
   }
 
   private async request<T>(
@@ -518,6 +594,82 @@ export class ApiClient implements MarketApiClient {
       method: "DELETE",
       signal,
     });
+  }
+
+  realtimeMarket(symbol: string, signal?: AbortSignal): Promise<RealtimeMarketResponse> {
+    return this.request<RealtimeMarketResponse>(`/market/realtime/${encodePathSegment(symbol)}`, { signal });
+  }
+
+  monitoring(signal?: AbortSignal): Promise<MonitoringResponse> {
+    return this.request<MonitoringResponse>("/monitoring", { signal });
+  }
+
+  monitoringStatus(signal?: AbortSignal): Promise<MonitoringRuntimeStatus> {
+    return this.request<MonitoringRuntimeStatus>("/monitoring/status", { signal });
+  }
+
+  startMonitoring(signal?: AbortSignal): Promise<MonitoringRuntimeStatus> {
+    return this.request<MonitoringRuntimeStatus>("/monitoring/start", { method: "POST", signal });
+  }
+
+  resumeMonitoring(signal?: AbortSignal): Promise<MonitoringRuntimeStatus> {
+    return this.request<MonitoringRuntimeStatus>("/monitoring/resume", { method: "POST", signal });
+  }
+
+  pauseMonitoring(signal?: AbortSignal): Promise<MonitoringRuntimeStatus> {
+    return this.request<MonitoringRuntimeStatus>("/monitoring/pause", { method: "POST", signal });
+  }
+
+  stopMonitoring(signal?: AbortSignal): Promise<MonitoringRuntimeStatus> {
+    return this.request<MonitoringRuntimeStatus>("/monitoring/stop", { method: "POST", signal });
+  }
+
+  monitoringOpportunities(symbol?: string, limit = 100, signal?: AbortSignal): Promise<OpportunityAnalysesResponse> {
+    return this.request<OpportunityAnalysesResponse>("/monitoring/opportunities", {
+      query: { symbol, limit },
+      signal,
+    });
+  }
+
+  updateMonitoringPolicy(policy: MonitoringPolicy, signal?: AbortSignal): Promise<MonitoringPolicy> {
+    return this.request<MonitoringPolicy>("/monitoring", { method: "PUT", body: policy, signal });
+  }
+
+  runMonitoring(symbols?: string[], signal?: AbortSignal): Promise<JsonRecord> {
+    return this.request<JsonRecord>("/monitoring/run", {
+      method: "POST",
+      body: symbols === undefined ? {} : { symbols },
+      signal,
+    });
+  }
+
+  triggerEvents(symbol?: string, limit = 100, signal?: AbortSignal): Promise<{ policy_version: string; events: TriggerEvent[]; [key: string]: unknown }> {
+    return this.request<{ policy_version: string; events: TriggerEvent[]; [key: string]: unknown }>("/triggers", {
+      query: { symbol, limit },
+      signal,
+    });
+  }
+
+  chartBars(symbol: string, timeframe: "15m" | "1h" = "15m", limit = 240, signal?: AbortSignal): Promise<ChartBarsResponse> {
+    return this.request<ChartBarsResponse>(`/chart/${encodePathSegment(symbol)}/bars`, {
+      query: { timeframe, limit },
+      signal,
+    });
+  }
+
+  chartAnnotations(symbol: string, timeframe: "15m" | "1h" = "15m", signal?: AbortSignal): Promise<ChartAnnotationsResponse> {
+    return this.request<ChartAnnotationsResponse>(`/chart/${encodePathSegment(symbol)}/annotations`, {
+      query: { timeframe },
+      signal,
+    });
+  }
+
+  localizedNews(symbol: string, locale: "en" | "zh-CN" = "zh-CN", signal?: AbortSignal): Promise<InstrumentNews> {
+    return this.request<InstrumentNews>(`/news/${encodePathSegment(symbol)}`, { query: { locale }, signal });
+  }
+
+  translateNews(newsId: string, signal?: AbortSignal): Promise<JsonRecord> {
+    return this.request<JsonRecord>(`/news/translate/${encodePathSegment(newsId)}`, { method: "POST", body: {}, signal });
   }
 
   instrumentSnapshot(

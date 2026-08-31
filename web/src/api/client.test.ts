@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { ApiClient, ApiError, getApiBaseUrl, type ApiErrorPayload, serializeQuery } from "./client";
+import { ApiClient, ApiError, getApiBaseUrl, getRealtimeStreamUrl, type ApiErrorPayload, serializeQuery } from "./client";
 
 type FetchMock = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -16,6 +16,25 @@ describe("ApiClient", () => {
     expect(getApiBaseUrl(undefined, true)).toBe("/api");
     expect(getApiBaseUrl(undefined, false)).toBe("");
     expect(getApiBaseUrl("http://127.0.0.1:8000///", true)).toBe("http://127.0.0.1:8000");
+    expect(getRealtimeStreamUrl("BTCUSDT", "15m", "http://127.0.0.1:18765", false)).toBe("ws://127.0.0.1:18765/market/realtime/BTCUSDT/stream?timeframe=15m");
+    expect(getRealtimeStreamUrl("BTCUSDT", "1h", "/api", true)).toContain("/api/market/realtime/BTCUSDT/stream?timeframe=1h");
+  });
+
+  it("honors the Tauri-injected loopback port at request time", async () => {
+    const fetchImpl = vi.fn<FetchMock>().mockImplementation(async () => response({ status: "ok" }));
+    const client = new ApiClient({ fetchImpl });
+    const previous = window.__AIMA_API_BASE_URL__;
+    try {
+      window.__AIMA_API_BASE_URL__ = "http://127.0.0.1:18769";
+      await client.health();
+      expect(fetchImpl).toHaveBeenLastCalledWith("http://127.0.0.1:18769/health", expect.anything());
+
+      window.__AIMA_API_BASE_URL__ = "http://127.0.0.1:18770";
+      await client.health();
+      expect(fetchImpl).toHaveBeenLastCalledWith("http://127.0.0.1:18770/health", expect.anything());
+    } finally {
+      window.__AIMA_API_BASE_URL__ = previous;
+    }
   });
 
   it("serializes typed filters and forwards an AbortSignal", async () => {

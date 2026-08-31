@@ -9,6 +9,10 @@ from __future__ import annotations
 
 import json
 import os
+import asyncio
+import math
+import threading
+from queue import Empty as QueueEmpty
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 from uuid import uuid4
@@ -48,7 +52,10 @@ from core.instruments import (
 from core.memory import MarketMemoryService, memory_capabilities
 from core.market_intelligence import MARKET_INTELLIGENCE_VERSION, brief_source_evidence, build_market_intelligence
 from core.model_routing import DEFAULT_FAST_MODEL, ModelRoutingConfig
+from core.monitoring import MonitoringPolicy, MonitoringService, SUPPORTED_TRIGGER_TYPES
+from core.monitoring_runtime import MonitoringRuntime
 from core.news_engine import NewsEngine, RSSNewsProvider
+from core.news_translation import NewsTranslationService
 from core.outcomes import OutcomeStatus
 from core.performance.metrics import build_performance_snapshot
 from core.radar import RADAR_CATEGORIES, build_radar
@@ -62,13 +69,20 @@ from core.scheduler import (
 )
 from core.settlement import SettlementService
 from core.providers import (
+    Bar,
     FixtureNewsProvider,
     InstrumentValidationError,
     InstrumentValidator,
+    MarketDataBundle,
+    ProviderError,
+    ProviderSnapshot,
     ProviderChain,
+    Quote,
     PublicInstrumentValidator,
     build_default_provider,
+    fetch_market_data,
 )
+from core.realtime import BinanceRealtimeStream
 from core.signals import Action
 from core.storage import APP_SETTING_DEFINITIONS, SQLiteStore, validate_app_setting_value
 
@@ -115,7 +129,7 @@ class APIError(Exception):
 
 
 try:  # FastAPI is optional; the stdlib core must remain importable without it.
-    from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Request
+    from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
     from fastapi.exceptions import RequestValidationError
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import JSONResponse, StreamingResponse
@@ -126,6 +140,8 @@ except ImportError:  # pragma: no cover - exercised only without the optional AP
     FastAPI = None  # type: ignore[assignment,misc]
     HTTPException = RuntimeError  # type: ignore[assignment,misc]
     Request = object  # type: ignore[assignment,misc]
+    WebSocket = object  # type: ignore[assignment,misc]
+    WebSocketDisconnect = RuntimeError  # type: ignore[assignment,misc]
     RequestValidationError = RuntimeError  # type: ignore[assignment,misc]
     CORSMiddleware = None  # type: ignore[assignment,misc]
     JSONResponse = None  # type: ignore[assignment,misc]
@@ -245,6 +261,71 @@ def get_instrument_validator() -> InstrumentValidator:
     """FastAPI dependency boundary for explicit public instrument validation."""
 
     return PublicInstrumentValidator()
+
+
+if FastAPI is not None:
+
+    def get_monitoring_service(
+        request: Request,
+        store: SQLiteStore = Depends(get_store),
+        llm_provider: object | None = Depends(get_llm_provider),
+    ) -> MonitoringService:
+        """Return the app-scoped single-cycle engine without starting it."""
+
+        existing = getattr(request.app.state, "monitoring_service", None)
+        if isinstance(existing, MonitoringService):
+            return existing
+
+        provider_factory = getattr(request.app.state, "monitoring_provider_factory", None)
+        if not callable(provider_factory):
+            provider_factory = build_default_provider
+        clock = getattr(request.app.state, "monitoring_clock", None)
+        service = MonitoringService(store=store, provider_factory=provider_factory, llm_provider=llm_provider, clock=clock)
+        request.app.state.monitoring_service = service
+        return service
+
+
+    def get_monitoring_runtime(
+        request: Request,
+        service: MonitoringService = Depends(get_monitoring_service),
+    ) -> MonitoringRuntime:
+        """Return the sidecar-owned lifecycle runtime without starting it."""
+
+        existing = getattr(request.app.state, "monitoring_runtime", None)
+        if isinstance(existing, MonitoringRuntime):
+            return existing
+        stream_factory = getattr(request.app.state, "monitoring_stream_factory", None)
+        runtime = MonitoringRuntime(
+            store=service.store,
+            service=service,
+            stream_factory=stream_factory if callable(stream_factory) else None,
+            clock=getattr(request.app.state, "monitoring_clock", None),
+            max_symbols=getattr(request.app.state, "monitoring_max_symbols", None),
+            poll_interval_seconds=getattr(request.app.state, "monitoring_poll_interval_seconds", 30.0),
+        )
+        request.app.state.monitoring_runtime = runtime
+        return runtime
+
+
+    def get_news_translation_service(
+        store: SQLiteStore = Depends(get_store),
+        llm_provider: object | None = Depends(get_llm_provider),
+    ) -> NewsTranslationService:
+        return NewsTranslationService(store=store, llm_provider=llm_provider)
+
+else:
+
+    def get_monitoring_service() -> MonitoringService:  # pragma: no cover - FastAPI is absent
+        return MonitoringService(store=_store(), llm_provider=_llm_provider())
+
+
+    def get_monitoring_runtime() -> MonitoringRuntime:  # pragma: no cover - FastAPI is absent
+        service = get_monitoring_service()
+        return MonitoringRuntime(store=service.store, service=service)
+
+
+    def get_news_translation_service() -> NewsTranslationService:  # pragma: no cover - FastAPI is absent
+        return NewsTranslationService(store=_store(), llm_provider=_llm_provider())
 
 
 def _read_only_snapshot_service() -> AnalysisService:
@@ -1680,6 +1761,474 @@ if FastAPI is not None:
             "source_type": prediction.get("source_type", "live"),
         }
 
+    def _v12_crypto_instrument(symbol: str, store: SQLiteStore) -> Instrument:
+        try:
+            instrument = _resolve_instrument(store, symbol)
+        except (APIError, ValueError) as exc:
+            if isinstance(exc, APIError):
+                raise
+            raise APIError(400, "INVALID_SYMBOL", "unsupported crypto instrument", detail=str(exc)) from exc
+        if instrument is None or instrument.asset_type.value != "crypto":
+            raise APIError(400, "CRYPTO_SYMBOL_REQUIRED", "V1.2 market monitoring accepts crypto instruments only")
+        return instrument
+
+    def _v12_bar_payload(bar: object, *, timeframe: str, now: datetime) -> dict[str, object]:
+        timestamp = getattr(bar, "timestamp", None)
+        if not isinstance(timestamp, datetime):
+            raise APIError(502, "INVALID_BAR", "provider returned an invalid bar timestamp")
+        start = timestamp.astimezone(timezone.utc)
+        end = start + timedelta(minutes=15 if timeframe == "15m" else 60)
+        return {
+            "timestamp": start.isoformat(),
+            "bar_start": start.isoformat(),
+            "bar_end": end.isoformat(),
+            "open": float(getattr(bar, "open")),
+            "high": float(getattr(bar, "high")),
+            "low": float(getattr(bar, "low")),
+            "close": float(getattr(bar, "close")),
+            "volume": float(getattr(bar, "volume")),
+            "is_closed": end <= now,
+        }
+
+    def _v12_provider_factory(request: Request) -> Callable[[Instrument], object] | None:
+        factory = getattr(request.app.state, "monitoring_provider_factory", None)
+        return factory if callable(factory) else None
+
+    def _v12_cached_bundle(
+        instrument: Instrument,
+        timeframe: str,
+        store: SQLiteStore,
+        *,
+        now: datetime,
+        provider_error: ProviderError,
+    ) -> MarketDataBundle | None:
+        """Return persisted bars only as an explicitly stale, honest fallback."""
+
+        cached_rows = store.list_market_bars(instrument.symbol, timeframe, limit=500)
+        cached_bars: list[Bar] = []
+        for row in cached_rows:
+            timestamp = _parse_utc_timestamp(row.get("bar_start"))
+            if timestamp is None:
+                continue
+            try:
+                cached_bars.append(
+                    Bar(
+                        timestamp,
+                        float(row["open"]),
+                        float(row["high"]),
+                        float(row["low"]),
+                        float(row["close"]),
+                        float(row["volume"]),
+                    )
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+        if not cached_bars:
+            return None
+        state = store.get_realtime_state(instrument.symbol) or {}
+        latest = cached_bars[-1]
+
+        def finite_or_none(value: object, *, positive: bool = False) -> float | None:
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                return None
+            if not math.isfinite(number) or (positive and number <= 0):
+                return None
+            return number
+
+        price = finite_or_none(state.get("price"), positive=True) or latest.close
+        volume = finite_or_none(state.get("volume"))
+        change_pct = finite_or_none(state.get("change_pct"))
+        high = finite_or_none(state.get("high")) or latest.high
+        low = finite_or_none(state.get("low")) or latest.low
+        quote_timestamp = _parse_utc_timestamp(state.get("last_trade_at")) or latest.timestamp
+        data_as_of = _parse_utc_timestamp(state.get("data_as_of")) or latest.timestamp
+        error_code = f"live_unavailable:{provider_error.code}"
+        snapshot = ProviderSnapshot("cache", now, data_as_of, True, error_code)
+        store.save_realtime_state(
+            {
+                "contract_version": "crypto_realtime_v1",
+                "symbol": instrument.symbol,
+                "provider": "cache",
+                "price": price,
+                "change_pct": change_pct,
+                "volume": volume,
+                "last_trade_at": quote_timestamp.isoformat(),
+                "data_as_of": data_as_of.isoformat(),
+                "freshness_status": "stale",
+                "stale_after_seconds": 120,
+                "reconnect_count": int(state.get("reconnect_count") or 0),
+                "last_error": error_code,
+                "age_seconds": max(0.0, (now - quote_timestamp).total_seconds()),
+            },
+            now=now,
+        )
+        return MarketDataBundle(
+            quote=Quote(instrument, quote_timestamp, price, volume, change_pct, high, low),
+            bars=tuple(cached_bars),
+            snapshot=snapshot,
+        )
+
+    def _v12_fetch_bundle(
+        instrument: Instrument,
+        timeframe: str,
+        store: SQLiteStore,
+        *,
+        provider_factory: Callable[[Instrument], object] | None = None,
+    ) -> tuple[MarketDataBundle, list[dict[str, object]], datetime]:
+        provider = (provider_factory or build_default_provider)(instrument)
+        try:
+            bundle = provider.get_bundle(instrument, timeframe, 240) if isinstance(provider, ProviderChain) else fetch_market_data(provider, instrument, timeframe, 240)
+        except ProviderError as exc:
+            point = datetime.now(timezone.utc)
+            bundle = _v12_cached_bundle(instrument, timeframe, store, now=point, provider_error=exc)
+            if bundle is None:
+                raise APIError(502, "MARKET_PROVIDER_UNAVAILABLE", "public crypto market provider is unavailable", detail=exc.code, context={"provider": exc.provider or "unknown"}) from exc
+        point = datetime.now(timezone.utc)
+        bars = [_v12_bar_payload(bar, timeframe=timeframe, now=point) for bar in bundle.bars]
+        store.upsert_market_bars(instrument.symbol, timeframe, bundle.bars, provider=bundle.snapshot.provider, data_as_of=bundle.snapshot.data_as_of, now=point)
+        age = max(0.0, (point - bundle.quote.timestamp.astimezone(timezone.utc)).total_seconds())
+        store.save_realtime_state({
+            "contract_version": "crypto_realtime_v1",
+            "symbol": instrument.symbol,
+            "provider": bundle.snapshot.provider,
+            "price": bundle.quote.price,
+            "change_pct": bundle.quote.change_pct,
+            "volume": bundle.quote.volume,
+            "last_trade_at": bundle.quote.timestamp.astimezone(timezone.utc).isoformat(),
+            "data_as_of": bundle.snapshot.data_as_of.astimezone(timezone.utc).isoformat(),
+            "freshness_status": "stale" if bundle.snapshot.stale or age > 120 else "fresh",
+            "stale_after_seconds": 120,
+            "reconnect_count": 0,
+            "last_error": bundle.snapshot.error_code,
+            "age_seconds": round(age, 3),
+        }, now=point)
+        return bundle, bars, point
+
+    @router.get("/market/realtime/{symbol}")
+    def market_realtime_v12(request: Request, symbol: str, store: SQLiteStore = Depends(get_store)) -> dict[str, object]:
+        instrument = _v12_crypto_instrument(symbol, store)
+        bundle, bars, point = _v12_fetch_bundle(instrument, "15m", store, provider_factory=_v12_provider_factory(request))
+        return {
+            "contract_version": "crypto_realtime_v1",
+            "symbol": instrument.symbol,
+            "provider": bundle.snapshot.to_dict(),
+            "quote": {
+                "timestamp": bundle.quote.timestamp.astimezone(timezone.utc).isoformat(),
+                "price": bundle.quote.price,
+                "change_pct": bundle.quote.change_pct,
+                "volume": bundle.quote.volume,
+                "high": bundle.quote.high,
+                "low": bundle.quote.low,
+            },
+            "bars": bars,
+            "data_as_of": bundle.snapshot.data_as_of.astimezone(timezone.utc).isoformat(),
+            "fetched_at": point.isoformat(),
+            "freshness": store.get_realtime_state(instrument.symbol) or {},
+            "capabilities": {"public_rest": True, "public_websocket": True, "accounts": False, "secrets": False, "orders": False},
+        }
+
+    @router.websocket("/market/realtime/{symbol}/stream")
+    async def market_realtime_stream_v12(
+        websocket: WebSocket,
+        symbol: str,
+        timeframe: str = "15m",
+        store: SQLiteStore = Depends(get_store),
+    ) -> None:
+        """Relay the public Binance kline stream with no account boundary.
+
+        The owned sidecar is the only process that opens this upstream socket.
+        The browser receives normalized bars and connection state, while REST
+        backfill remains available through ``/market/realtime/{symbol}``.
+        """
+
+        try:
+            instrument = _v12_crypto_instrument(symbol, store)
+            normalized_timeframe = str(timeframe).strip().lower()
+            if normalized_timeframe not in {"15m", "1h"}:
+                raise APIError(400, "INVALID_REALTIME_TIMEFRAME", "realtime timeframe must be 15m or 1h")
+        except APIError as exc:
+            await websocket.accept()
+            await websocket.send_json(exc.to_payload())
+            await websocket.close(code=1008)
+            return
+
+        await websocket.accept()
+        loop = asyncio.get_running_loop()
+        events: asyncio.Queue[dict[str, object]] = asyncio.Queue(maxsize=128)
+        stream = BinanceRealtimeStream(symbols=[instrument.symbol], timeframe=normalized_timeframe, max_symbols=50)
+
+        def publish(payload: dict[str, object]) -> None:
+            def enqueue() -> None:
+                if events.full():
+                    try:
+                        events.get_nowait()
+                    except asyncio.QueueEmpty:
+                        pass
+                events.put_nowait(payload)
+
+            loop.call_soon_threadsafe(enqueue)
+
+        def on_state(state: object) -> None:
+            payload = state.to_dict() if hasattr(state, "to_dict") else {"status": "unknown"}
+            publish({"type": "state", "contract_version": "crypto_realtime_v1", **payload})
+
+        def on_bar(bar_symbol: str, bar: object, is_closed: bool) -> None:
+            point = datetime.now(timezone.utc)
+            try:
+                store.upsert_market_bars(
+                    bar_symbol,
+                    normalized_timeframe,
+                    [bar],
+                    provider="binance_public_ws",
+                    data_as_of=getattr(bar, "timestamp", point),
+                    now=point,
+                )
+            except Exception:
+                # A malformed or concurrently closed client must never turn a
+                # stream callback into an unbounded sidecar failure.
+                pass
+            publish({
+                "type": "bar",
+                "contract_version": "crypto_realtime_v1",
+                "symbol": bar_symbol,
+                "bar": _v12_bar_payload(bar, timeframe=normalized_timeframe, now=point),
+                "is_closed": bool(is_closed),
+                "received_at": point.isoformat(),
+            })
+
+        worker = threading.Thread(
+            target=stream.run_forever,
+            kwargs={"on_bar": on_bar, "on_state": on_state},
+            name="aima-binance-public-ws",
+            daemon=True,
+        )
+        worker.start()
+        try:
+            while True:
+                try:
+                    payload = await asyncio.wait_for(events.get(), timeout=45.0)
+                except asyncio.TimeoutError:
+                    await websocket.send_json({"type": "heartbeat", "contract_version": "crypto_realtime_v1"})
+                    continue
+                await websocket.send_json(payload)
+        except (WebSocketDisconnect, RuntimeError):
+            pass
+        finally:
+            stream.stop()
+            worker.join(timeout=2.0)
+
+    @router.get("/monitoring")
+    def monitoring_policies_v12(
+        store: SQLiteStore = Depends(get_store),
+        runtime: MonitoringRuntime = Depends(get_monitoring_runtime),
+    ) -> dict[str, object]:
+        stored = {str(item["instrument_id"]): item for item in store.list_monitoring_policies()}
+        symbols = [item.symbol for item in phase1_universe() if item.asset_type.value == "crypto"]
+        for entry in store.list_watchlist_entries():
+            try:
+                instrument = _resolve_instrument(store, entry["symbol"])
+            except ValueError:
+                continue
+            if instrument.asset_type.value == "crypto":
+                symbols.append(instrument.symbol)
+        policies: list[dict[str, object]] = []
+        for symbol in sorted(set(symbols)):
+            policies.append(stored.get(symbol) or MonitoringPolicy.defaults(symbol).to_dict())
+        for symbol, policy in stored.items():
+            if symbol not in {str(item["instrument_id"]) for item in policies}:
+                policies.append(policy)
+        return {
+            "contract_version": "monitoring_policy_v1",
+            "policy_version": "trigger_policy_v2",
+            "policies": policies,
+            "realtime": store.list_realtime_states(),
+            "runtime": runtime.status(),
+            "defaults": {"enabled": False, "primary_timeframe": "15m", "context_timeframe": "1h", "auto_start": False, "resume": False},
+            "capabilities": {
+                "explicit_opt_in": True,
+                "startup_side_effect": False,
+                "background_runtime": True,
+                "runtime_lifecycle": ["start", "resume", "pause", "stop"],
+                "runtime_owner": "fastapi_sidecar",
+                "financial_calculations_owner": "python",
+                "supported_symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+                "max_symbols": 50,
+                "max_bars_per_symbol": 500,
+            },
+        }
+
+    @router.get("/monitoring/status")
+    def monitoring_runtime_status_v12(runtime: MonitoringRuntime = Depends(get_monitoring_runtime)) -> dict[str, object]:
+        return runtime.status()
+
+    @router.post("/monitoring/start")
+    def start_monitoring_runtime_v12(runtime: MonitoringRuntime = Depends(get_monitoring_runtime)) -> dict[str, object]:
+        return runtime.start(resume=False, user_initiated=True)
+
+    @router.post("/monitoring/resume")
+    def resume_monitoring_runtime_v12(runtime: MonitoringRuntime = Depends(get_monitoring_runtime)) -> dict[str, object]:
+        return runtime.start(resume=True, user_initiated=True)
+
+    @router.post("/monitoring/pause")
+    def pause_monitoring_runtime_v12(runtime: MonitoringRuntime = Depends(get_monitoring_runtime)) -> dict[str, object]:
+        return runtime.pause()
+
+    @router.post("/monitoring/stop")
+    def stop_monitoring_runtime_v12(runtime: MonitoringRuntime = Depends(get_monitoring_runtime)) -> dict[str, object]:
+        return runtime.stop(clear_resume=True)
+
+    @router.get("/monitoring/events")
+    async def monitoring_events_v12(
+        request: Request,
+        runtime: MonitoringRuntime = Depends(get_monitoring_runtime),
+    ):
+        subscriber = runtime.subscribe()
+
+        async def event_stream():
+            try:
+                while True:
+                    if await request.is_disconnected():
+                        break
+                    try:
+                        event = await asyncio.to_thread(subscriber.get, True, 10.0)
+                    except QueueEmpty:
+                        yield ": heartbeat\n\n"
+                        continue
+                    event_type = str(event.get("type") or "message")
+                    yield f"event: {event_type}\ndata: {json.dumps(event, ensure_ascii=False, separators=(',', ':'))}\n\n"
+            finally:
+                runtime.unsubscribe(subscriber)
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        )
+
+    @router.get("/monitoring/opportunities")
+    def monitoring_opportunities_v12(
+        symbol: str | None = None,
+        limit: int = 100,
+        store: SQLiteStore = Depends(get_store),
+    ) -> dict[str, object]:
+        normalized = _v12_crypto_instrument(symbol, store).symbol if symbol else None
+        return {
+            "contract_version": "opportunity_analysis_v1",
+            "validator": "python",
+            "model_tier": "smart_9b_only",
+            "analyses": store.list_opportunity_analyses(symbol=normalized, limit=_clamp_limit(limit, maximum=500)),
+        }
+
+    def _update_monitoring_policy_v12(
+        body: dict[str, Any],
+        *,
+        path_symbol: str | None,
+        service: MonitoringService,
+        store: SQLiteStore,
+    ) -> dict[str, object]:
+        try:
+            payload = dict(body)
+            if path_symbol is not None:
+                path_instrument = _v12_crypto_instrument(path_symbol, store)
+                body_instrument = payload.get("instrument_id", payload.get("symbol"))
+                if body_instrument is not None and str(body_instrument).strip().upper() != path_instrument.symbol:
+                    raise APIError(
+                        400,
+                        "MONITORING_SYMBOL_MISMATCH",
+                        "monitoring body symbol must match the path symbol",
+                        context={"path_symbol": path_instrument.symbol, "body_symbol": body_instrument},
+                    )
+                payload["instrument_id"] = path_instrument.symbol
+            policy = MonitoringPolicy.from_payload(payload)
+            _v12_crypto_instrument(policy.instrument_id, store)
+            return service.upsert_policy(policy)
+        except APIError:
+            raise
+        except (TypeError, ValueError) as exc:
+            raise APIError(400, "INVALID_MONITORING_POLICY", "monitoring policy failed strict validation", detail=str(exc)) from exc
+
+    @router.put("/monitoring")
+    def update_monitoring_policy_v12(
+        body: dict[str, Any] = Body(default_factory=dict),
+        service: MonitoringService = Depends(get_monitoring_service),
+        store: SQLiteStore = Depends(get_store),
+    ) -> dict[str, object]:
+        return _update_monitoring_policy_v12(body, path_symbol=None, service=service, store=store)
+
+    @router.put("/monitoring/{symbol}")
+    def update_monitoring_policy_v12_by_symbol(
+        symbol: str,
+        body: dict[str, Any] = Body(default_factory=dict),
+        service: MonitoringService = Depends(get_monitoring_service),
+        store: SQLiteStore = Depends(get_store),
+    ) -> dict[str, object]:
+        return _update_monitoring_policy_v12(body, path_symbol=symbol, service=service, store=store)
+
+    @router.get("/triggers")
+    def trigger_events_v12(symbol: str | None = None, limit: int = 100, store: SQLiteStore = Depends(get_store)) -> dict[str, object]:
+        normalized = _normalize_symbol(symbol, store) if symbol else None
+        return {"policy_version": "trigger_policy_v2", "events": store.list_trigger_events(symbol=normalized, limit=_clamp_limit(limit, maximum=500)), "dedupe": "fingerprint_unique", "cooldown_owner": "python"}
+
+    @router.post("/monitoring/run")
+    def run_monitoring_v12(
+        body: dict[str, Any] | None = Body(default=None),
+        service: MonitoringService = Depends(get_monitoring_service),
+    ) -> dict[str, object]:
+        body = body or {}
+        if set(body) - {"symbols"}:
+            raise APIError(400, "INVALID_MONITORING_RUN_PAYLOAD", "monitoring run accepts only symbols")
+        symbols = body.get("symbols")
+        if symbols is not None and (not isinstance(symbols, list) or len(symbols) > 50 or any(not isinstance(item, str) for item in symbols)):
+            raise APIError(400, "INVALID_MONITORING_SYMBOLS", "symbols must be a list of at most 50 strings")
+        return service.run(symbols=symbols).to_dict()
+
+    @router.get("/chart/{symbol}/bars")
+    def chart_bars_v12(request: Request, symbol: str, timeframe: str = "15m", limit: int = 240, store: SQLiteStore = Depends(get_store)) -> dict[str, object]:
+        normalized_timeframe = _normalize_timeframe(timeframe)
+        if normalized_timeframe not in {"15m", "1h"}:
+            raise APIError(400, "INVALID_CHART_TIMEFRAME", "chart timeframe must be 15m or 1h")
+        instrument = _v12_crypto_instrument(symbol, store)
+        bundle, bars, point = _v12_fetch_bundle(instrument, normalized_timeframe, store, provider_factory=_v12_provider_factory(request))
+        return {"contract_version": "chart_data_v1", "symbol": instrument.symbol, "timeframe": normalized_timeframe, "bars": bars[-_clamp_limit(limit, maximum=500):], "data_as_of": bundle.snapshot.data_as_of.astimezone(timezone.utc).isoformat(), "provider": bundle.snapshot.to_dict(), "tradingview": {"library": "lightweight-charts", "backend_api": False, "data_source": "app_supplied_public_market"}, "fetched_at": point.isoformat()}
+
+    @router.get("/chart/{symbol}/annotations")
+    def chart_annotations_v12(symbol: str, timeframe: str = "15m", store: SQLiteStore = Depends(get_store)) -> dict[str, object]:
+        normalized_timeframe = _normalize_timeframe(timeframe)
+        if normalized_timeframe not in {"15m", "1h"}:
+            raise APIError(400, "INVALID_CHART_TIMEFRAME", "chart timeframe must be 15m or 1h")
+        instrument = _v12_crypto_instrument(symbol, store)
+        return {"contract_version": "chart_annotations_v1", "symbol": instrument.symbol, "timeframe": normalized_timeframe, "annotations": store.list_chart_annotations(instrument.symbol, normalized_timeframe), "source": "python", "tradingview": {"backend_api": False}}
+
+    @router.get("/news/{symbol}")
+    def news_v12(symbol: str, locale: str = "zh-CN", store: SQLiteStore = Depends(get_store), news_provider: object = Depends(get_news_provider)) -> dict[str, object]:
+        instrument = _v12_crypto_instrument(symbol, store)
+        if locale not in {"en", "zh-CN"}:
+            raise APIError(400, "INVALID_NEWS_LOCALE", "news locale must be en or zh-CN")
+        result = NewsEngine(news_provider).collect(instrument, limit=20)
+        store.save_news_events(instrument.symbol, result)
+        artifacts = {str(item["news_id"]): item for item in store.list_localized_news_artifacts(locale="zh-CN", limit=500)}
+        events: list[dict[str, object]] = []
+        for event in result.events:
+            payload = event.to_dict()
+            if locale == "zh-CN":
+                payload["localized"] = artifacts.get(event.event_id)
+            events.append(payload)
+        return {"contract_version": "news_evidence_v1", "symbol": instrument.symbol, "locale": locale, "provider": result.provider, "available": result.available, "fetched_at": result.fetched_at.astimezone(timezone.utc).isoformat(), "error_code": result.error_code, "events": events, "clusters": [cluster.to_dict() for cluster in result.clusters], "capabilities": {"original_preserved": True, "numeric_guard": True, "translation_is_explicit_post": True}}
+
+    @router.post("/news/translate/{news_id}")
+    def translate_news_v12(news_id: str, service: NewsTranslationService = Depends(get_news_translation_service), store: SQLiteStore = Depends(get_store)) -> dict[str, object]:
+        record = store.get_news_event(news_id)
+        if record is None:
+            raise APIError(404, "NEWS_NOT_FOUND", "news evidence was not found; fetch the symbol news first")
+        payload = record.get("payload") if isinstance(record.get("payload"), dict) else {}
+        event_payload = {**payload, "id": news_id, "published_at": record.get("published_at"), "source": payload.get("source", "unknown")}
+        try:
+            return service.translate(event_payload).to_dict()
+        except (TypeError, ValueError) as exc:
+            raise APIError(422, "NEWS_TRANSLATION_FAILED", "news translation could not be validated", detail=str(exc)) from exc
+
 else:
     router = None
 
@@ -1719,6 +2268,12 @@ def create_app(
     scheduler_clock: Callable[[], datetime] | None = None,
     settlement_service: SettlementService | None = None,
     alert_reconciler: AlertReconciler | None = None,
+    monitoring_provider_factory: Callable[[Instrument], object] | None = None,
+    monitoring_clock: Callable[[], datetime] | None = None,
+    monitoring_service: MonitoringService | None = None,
+    monitoring_runtime: MonitoringRuntime | None = None,
+    monitoring_stream_factory: Callable[[tuple[str, ...]], object] | None = None,
+    monitoring_poll_interval_seconds: float = 30.0,
 ):
     """Create an API app with optional service injections for isolated tests."""
 
@@ -1731,11 +2286,18 @@ def create_app(
     app = FastAPI(
         title="AI Market Analyst",
         version=API_VERSION,
-        description="Local-first V1.1 market research API with deterministic point-in-time evidence, explicit local scheduling, paper-only tracking, read-only market intelligence and dual-tier local Qwen assistance.",
-        openapi_extra={"x-phase": API_PHASE, "x-product-baseline": "v1.1"},
+        description="Local-first V1.2 crypto monitoring API with deterministic point-in-time evidence, explicit opt-in monitoring, paper-only tracking, app-supplied charts and dual-tier local Qwen assistance.",
+        openapi_extra={"x-phase": API_PHASE, "x-product-baseline": "v1.2"},
     )
     app.state.api_phase = API_PHASE
     app.state.api_version = API_VERSION
+    app.state.monitoring_provider_factory = monitoring_provider_factory
+    app.state.monitoring_clock = monitoring_clock
+    app.state.monitoring_stream_factory = monitoring_stream_factory
+    app.state.monitoring_max_symbols = 50
+    app.state.monitoring_poll_interval_seconds = max(0.05, min(float(monitoring_poll_interval_seconds), 900.0))
+    app.state.monitoring_service = monitoring_service
+    app.state.monitoring_runtime = monitoring_runtime
     app.state.consult_service = _consult_service() if consult_service is _UNSET else consult_service
     app.add_middleware(
         CORSMiddleware,
@@ -1792,6 +2354,23 @@ def create_app(
     if store is not None:
         store.initialize()
         app.dependency_overrides[get_store] = lambda: store
+        if app.state.monitoring_service is None:
+            selected_llm = _llm_provider() if llm_provider is _UNSET else llm_provider
+            app.state.monitoring_service = MonitoringService(
+                store=store,
+                provider_factory=monitoring_provider_factory or build_default_provider,
+                llm_provider=selected_llm,
+                clock=monitoring_clock,
+            )
+        if app.state.monitoring_runtime is None:
+            app.state.monitoring_runtime = MonitoringRuntime(
+                store=store,
+                service=app.state.monitoring_service,
+                stream_factory=monitoring_stream_factory,
+                clock=monitoring_clock,
+                max_symbols=app.state.monitoring_max_symbols,
+                poll_interval_seconds=app.state.monitoring_poll_interval_seconds,
+            )
     if news_provider is not None:
         app.dependency_overrides[get_news_provider] = lambda: news_provider
         app.dependency_overrides[get_event_provider] = lambda: event_provider or NewsEventProviderAdapter(news_provider)
@@ -1837,6 +2416,12 @@ def create_app(
     app.state.scheduler_runtime = scheduler_runtime
 
     async def shutdown_scheduler() -> None:
+        monitoring = getattr(app.state, "monitoring_runtime", None)
+        if isinstance(monitoring, MonitoringRuntime):
+            try:
+                monitoring.stop(clear_resume=False)
+            except Exception:
+                pass
         runtime = getattr(app.state, "scheduler_runtime", None)
         if runtime is not None:
             try:
@@ -1844,6 +2429,40 @@ def create_app(
             except SchedulerRuntimeError:
                 pass
 
+    async def startup_monitoring() -> None:
+        # The app may be created without an injected store (the packaged
+        # sidecar uses the global app), so defer construction until lifespan
+        # startup/request while preserving a single app-scoped instance.
+        service = getattr(app.state, "monitoring_service", None)
+        runtime = getattr(app.state, "monitoring_runtime", None)
+        if not isinstance(service, MonitoringService):
+            selected_store = store if store is not None else _store()
+            selected_llm = _llm_provider() if llm_provider is _UNSET else llm_provider
+            service = MonitoringService(
+                store=selected_store,
+                provider_factory=monitoring_provider_factory or build_default_provider,
+                llm_provider=selected_llm,
+                clock=monitoring_clock,
+            )
+            app.state.monitoring_service = service
+        if not isinstance(runtime, MonitoringRuntime):
+            runtime = MonitoringRuntime(
+                store=service.store,
+                service=service,
+                stream_factory=monitoring_stream_factory,
+                clock=monitoring_clock,
+                max_symbols=app.state.monitoring_max_symbols,
+                poll_interval_seconds=app.state.monitoring_poll_interval_seconds,
+            )
+            app.state.monitoring_runtime = runtime
+        try:
+            resume_setting = runtime.store.get_app_setting("monitoring.resume").get("value") is True
+        except Exception:
+            resume_setting = False
+        if resume_setting:
+            runtime.start(resume=True, user_initiated=False)
+
+    app.router.on_startup.append(startup_monitoring)
     app.router.on_shutdown.append(shutdown_scheduler)
     return app
 

@@ -7,6 +7,8 @@ import type { AlertStatusResponse, ContextHealthResponse, ReleaseHealthResponse,
 import type { AsyncResource } from "../hooks/useAsyncResource";
 import { useAsyncResource } from "../hooks/useAsyncResource";
 import { useI18n } from "../i18n";
+import { notifyDesktopAlert } from "../desktopNotifications";
+import { isTauriRuntime, readAutostartState, restartOwnedBackend, setAutostartState } from "../desktopRuntime";
 
 interface SettingsHealthPageProps {
   apiClient: ApplicationShellApiClient;
@@ -134,7 +136,14 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
   const [aiLanguage, setAiLanguage] = useState<"follow_ui" | "en" | "zh-CN">("follow_ui");
   const [notificationLanguage, setNotificationLanguage] = useState<"en" | "zh-CN">("en");
   const [modelPreference, setModelPreference] = useState<"auto" | "fast" | "smart">("auto");
+  const [closeToTray, setCloseToTray] = useState(false);
+  const [autoStart, setAutoStart] = useState(false);
+  const [resumeMonitoring, setResumeMonitoring] = useState(false);
+  const [nativeAutoStart, setNativeAutoStart] = useState<boolean | null>(null);
+  const [backendAction, setBackendAction] = useState<string | null>(null);
+  const [backendActionStatus, setBackendActionStatus] = useState<string | null>(null);
   const [preferencesStatus, setPreferencesStatus] = useState<string | null>(null);
+  const [notificationStatus, setNotificationStatus] = useState<string | null>(null);
   const preferencesDirty = useRef(false);
 
   useEffect(() => {
@@ -144,27 +153,79 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
     const ai = valueFor("ai.response_language");
     const notification = valueFor("notifications.language");
     const model = valueFor("ai.model_preference");
+    const close = valueFor("desktop.close_to_tray");
+    const start = valueFor("desktop.auto_start");
+    const resume = valueFor("monitoring.resume");
     if (ui === "en" || ui === "zh-CN") setPreferenceLanguage(ui);
     if (ai === "follow_ui" || ai === "en" || ai === "zh-CN") setAiLanguage(ai);
     if (notification === "en" || notification === "zh-CN") setNotificationLanguage(notification);
     if (model === "auto" || model === "fast" || model === "smart") setModelPreference(model);
+    if (typeof close === "boolean") setCloseToTray(close);
+    if (typeof start === "boolean") setAutoStart(start);
+    if (typeof resume === "boolean") setResumeMonitoring(resume);
   }, [appSettings.data]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void readAutostartState().then((value) => {
+      if (!cancelled && value !== null && !preferencesDirty.current) {
+        setNativeAutoStart(value);
+        setAutoStart(value);
+      }
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   async function savePreferences() {
     setPreferencesStatus(null);
     try {
+      const osAutoStart = await setAutostartState(autoStart);
+      if (isTauriRuntime() && osAutoStart !== autoStart) {
+        throw new Error(t("settings.autoStartSyncFailed"));
+      }
       await Promise.all([
         apiClient.updateAppSetting("ui.language", preferenceLanguage),
         apiClient.updateAppSetting("ai.response_language", aiLanguage),
         apiClient.updateAppSetting("notifications.language", notificationLanguage),
         apiClient.updateAppSetting("ai.model_preference", modelPreference),
+        apiClient.updateAppSetting("desktop.close_to_tray", closeToTray),
+        apiClient.updateAppSetting("desktop.auto_start", autoStart),
+        apiClient.updateAppSetting("monitoring.resume", resumeMonitoring),
       ]);
+      setNativeAutoStart(osAutoStart ?? autoStart);
       setLanguage(preferenceLanguage);
       setPreferencesStatus(t("v11.preferencesSaved"));
       appSettings.retry();
     } catch (error: unknown) {
       setPreferencesStatus(error instanceof Error ? error.message : t("common.panelUnavailable"));
     }
+  }
+
+  async function restartBackend() {
+    setBackendAction("restart");
+    setBackendActionStatus(null);
+    try {
+      const status = await restartOwnedBackend();
+      if (!status) throw new Error(t("settings.backendRestartUnavailable"));
+      setBackendActionStatus(`${t("settings.backendRestarted")}: ${status.state}`);
+      health.retry();
+      provider.retry();
+      model.retry();
+    } catch (error: unknown) {
+      setBackendActionStatus(error instanceof Error ? error.message : t("settings.backendRestartFailed"));
+    } finally {
+      setBackendAction(null);
+    }
+  }
+
+  async function sendTestNotification() {
+    setNotificationStatus(null);
+    const sent = await notifyDesktopAlert({
+      title: t("settings.testNotificationTitle"),
+      body: t("settings.testNotificationBody"),
+      route: "/alerts",
+    });
+    setNotificationStatus(t(sent ? "settings.testNotificationSent" : "settings.testNotificationUnavailable"));
   }
 
   const healthDegraded = health.status === "ready" && health.data?.status !== "ok";
@@ -218,8 +279,22 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
             <label>{t("v11.notificationLanguage")}<select value={notificationLanguage} onChange={(event) => { preferencesDirty.current = true; setNotificationLanguage(event.target.value as "en" | "zh-CN"); }}><option value="zh-CN">{t("language.chinese")}</option><option value="en">{t("language.english")}</option></select></label>
             <label>{t("v11.modelPreference")}<select value={modelPreference} onChange={(event) => { preferencesDirty.current = true; setModelPreference(event.target.value as "auto" | "fast" | "smart"); }}><option value="auto">{t("v11.auto")}</option><option value="fast">{t("v11.fast")}</option><option value="smart">{t("v11.smart")}</option></select></label>
           </div>
+          <div className="preference-subsection">
+            <p className="subsection-label">{t("settings.desktopTitle")}</p>
+            <div className="preference-toggles">
+              <label><input type="checkbox" checked={closeToTray} onChange={(event) => { preferencesDirty.current = true; setCloseToTray(event.target.checked); }} />{t("settings.closeToTray")}</label>
+              <label><input type="checkbox" checked={autoStart} onChange={(event) => { preferencesDirty.current = true; setAutoStart(event.target.checked); }} />{t("settings.autoStart")}</label>
+              <label><input type="checkbox" checked={resumeMonitoring} onChange={(event) => { preferencesDirty.current = true; setResumeMonitoring(event.target.checked); }} />{t("settings.resumeMonitoring")}</label>
+            </div>
+            <p className="panel-reading">{t("settings.desktopDefaults")}</p>
+            <p className="panel-reading">{t("settings.autoStartOsState")}: {nativeAutoStart === null ? t("common.notSupplied") : t(nativeAutoStart ? "common.enabled" : "common.disabled")}</p>
+          </div>
           <button className="primary-button" type="button" onClick={() => void savePreferences()}>{t("v11.savePreferences")}</button>
           {preferencesStatus ? <p role="status">{preferencesStatus}</p> : null}
+          <div className="preference-action-row">
+            <button className="quiet-button" type="button" onClick={() => void sendTestNotification()}>{t("settings.testNotification")}</button>
+            {notificationStatus ? <p role="status">{notificationStatus}</p> : null}
+          </div>
           <p className="panel-reading">{t("v11.localAlertsOnly")}</p>
         </section>
         <AsyncPanel
@@ -233,6 +308,10 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
         >
           {health.data ? <HealthFacts health={health.data} /> : null}
         </AsyncPanel>
+        <div className="scheduler-actions" aria-label={t("settings.backendLifecycleControls")}>
+          <button className="quiet-button" type="button" onClick={() => void restartBackend()} disabled={backendAction !== null}>{backendAction === "restart" ? t("settings.backendRestarting") : t("settings.restartBackend")}</button>
+          {backendActionStatus ? <p className="panel-message" role="status">{backendActionStatus}</p> : null}
+        </div>
 
         <AsyncPanel
           title={t("settings.routing")}

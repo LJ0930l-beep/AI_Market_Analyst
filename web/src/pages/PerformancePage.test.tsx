@@ -88,7 +88,7 @@ describe("PerformancePage", () => {
     renderPerformance(client);
 
     const summaryPanel = await screen.findByRole("region", { name: "Performance summary" });
-    expect(within(summaryPanel).getByText("PRELIMINARY")).toBeInTheDocument();
+    expect(await within(summaryPanel).findByText("PRELIMINARY")).toBeInTheDocument();
     expect(within(summaryPanel).getByText("0.123457")).toBeInTheDocument();
     expect(within(screen.getByRole("region", { name: "Confidence buckets" })).getByText("0.6123456789")).toBeInTheDocument();
     expect(within(screen.getByRole("region", { name: "Current calibration" })).getByText("calibration-1")).toBeInTheDocument();

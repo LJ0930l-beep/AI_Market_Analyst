@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
@@ -15,6 +16,31 @@ from ..outcomes.engine import Outcome
 from ..providers.news import NewsEvent
 from ..providers.runtime import ProviderSnapshot
 from ..signals.schema import SignalProposal
+
+
+_MONITORING_TRIGGER_ALIASES = {
+    "REGIME": "REGIME_CHANGE",
+    "REGIME_CHANGE": "REGIME_CHANGE",
+    "BREAKOUT": "BREAKOUT",
+    "BREAKDOWN": "BREAKDOWN",
+    "VOLUME": "VOLUME_EXPANSION",
+    "VOLUME_EXPANSION": "VOLUME_EXPANSION",
+    "VOLATILITY": "VOLATILITY_EXPANSION",
+    "VOLATILITY_EXPANSION": "VOLATILITY_EXPANSION",
+    "LEVEL_PROXIMITY": "LEVEL_PROXIMITY",
+    "INVALIDATION": "SIGNAL_INVALIDATION",
+    "SIGNAL_INVALIDATION": "SIGNAL_INVALIDATION",
+    "EVENT_RISK": "EVENT_RISK",
+    "NEWS_SHOCK": "NEWS_SHOCK",
+}
+
+
+def _normalize_monitoring_trigger(value: object) -> str:
+    normalized = str(value).strip().upper().replace("-", "_").replace(" ", "_")
+    try:
+        return _MONITORING_TRIGGER_ALIASES[normalized]
+    except KeyError as exc:
+        raise ValueError(f"unsupported monitoring trigger type: {value}") from exc
 
 
 def _parse_utc_timestamp(value: object) -> datetime | None:
@@ -78,6 +104,21 @@ APP_SETTING_DEFINITIONS: dict[str, dict[str, object]] = {
         "value_type": "string",
         "allowed_values": ("auto", "fast", "smart"),
         "description": "Deterministic server-side Qwen tier preference for explicit AI requests.",
+    },
+    "desktop.close_to_tray": {
+        "default": False,
+        "value_type": "boolean",
+        "description": "Keep the desktop window hidden in the system tray when its close action is used.",
+    },
+    "desktop.auto_start": {
+        "default": False,
+        "value_type": "boolean",
+        "description": "Start the desktop application with Windows only after explicit user opt-in.",
+    },
+    "monitoring.resume": {
+        "default": False,
+        "value_type": "boolean",
+        "description": "Resume explicitly enabled monitoring policies after a user-started application session.",
     },
 }
 
@@ -253,6 +294,11 @@ class SQLiteStore:
                 "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                 (11, datetime.now(timezone.utc).isoformat()),
             )
+            self._ensure_v12_tables(db)
+            db.execute(
+                "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                (12, datetime.now(timezone.utc).isoformat()),
+            )
 
     @staticmethod
     def _ensure_v11_tables(db: sqlite3.Connection) -> None:
@@ -274,6 +320,154 @@ class SQLiteStore:
             );
             CREATE INDEX IF NOT EXISTS idx_daily_briefs_generated
                 ON daily_briefs(generated_at DESC, brief_id DESC);
+            """
+        )
+
+    @staticmethod
+    def _ensure_v12_tables(db: sqlite3.Connection) -> None:
+        """Create additive V1.2 crypto monitoring and localized evidence tables."""
+
+        db.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS monitoring_policies (
+                instrument_id TEXT PRIMARY KEY,
+                enabled INTEGER NOT NULL DEFAULT 0,
+                primary_timeframe TEXT NOT NULL DEFAULT '15m',
+                context_timeframe TEXT NOT NULL DEFAULT '1h',
+                trigger_types_json TEXT NOT NULL DEFAULT '[]',
+                min_trigger_score REAL NOT NULL DEFAULT 0.65,
+                ai_min_confidence REAL NOT NULL DEFAULT 0.60,
+                cooldown_minutes INTEGER NOT NULL DEFAULT 60,
+                quiet_hours_json TEXT NOT NULL DEFAULT '{}',
+                notify_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_monitoring_policies_enabled
+                ON monitoring_policies(enabled, updated_at DESC, instrument_id ASC);
+
+            CREATE TABLE IF NOT EXISTS market_bars (
+                symbol TEXT NOT NULL,
+                timeframe TEXT NOT NULL,
+                bar_start TEXT NOT NULL,
+                bar_end TEXT NOT NULL,
+                open REAL NOT NULL,
+                high REAL NOT NULL,
+                low REAL NOT NULL,
+                close REAL NOT NULL,
+                volume REAL NOT NULL,
+                provider TEXT NOT NULL,
+                data_as_of TEXT NOT NULL,
+                is_closed INTEGER NOT NULL DEFAULT 0,
+                received_at TEXT NOT NULL,
+                PRIMARY KEY(symbol, timeframe, bar_start)
+            );
+            CREATE INDEX IF NOT EXISTS idx_market_bars_lookup
+                ON market_bars(symbol, timeframe, bar_start DESC);
+
+            CREATE TABLE IF NOT EXISTS market_realtime_state (
+                symbol TEXT PRIMARY KEY,
+                provider TEXT NOT NULL,
+                price REAL,
+                change_pct REAL,
+                volume REAL,
+                last_trade_at TEXT,
+                data_as_of TEXT,
+                freshness_status TEXT NOT NULL,
+                stale_after_seconds INTEGER NOT NULL,
+                reconnect_count INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT,
+                updated_at TEXT NOT NULL,
+                payload_json TEXT NOT NULL DEFAULT '{}'
+            );
+            CREATE INDEX IF NOT EXISTS idx_realtime_state_freshness
+                ON market_realtime_state(freshness_status, updated_at DESC, symbol ASC);
+
+            CREATE TABLE IF NOT EXISTS bar_close_ledger (
+                symbol TEXT NOT NULL,
+                timeframe TEXT NOT NULL,
+                bar_start TEXT NOT NULL,
+                bar_end TEXT NOT NULL,
+                closed_at TEXT NOT NULL,
+                processed_at TEXT NOT NULL,
+                PRIMARY KEY(symbol, timeframe, bar_start)
+            );
+
+            CREATE TABLE IF NOT EXISTS trigger_events (
+                trigger_event_id TEXT PRIMARY KEY,
+                instrument_id TEXT NOT NULL,
+                timeframe TEXT NOT NULL,
+                bar_start TEXT NOT NULL,
+                bar_end TEXT NOT NULL,
+                trigger_type TEXT NOT NULL,
+                trigger_score REAL NOT NULL,
+                fingerprint TEXT NOT NULL UNIQUE,
+                policy_version TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'PENDING',
+                analysis_status TEXT NOT NULL DEFAULT 'NOT_REQUESTED',
+                payload_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_trigger_events_symbol_time
+                ON trigger_events(instrument_id, timeframe, bar_start DESC, trigger_type ASC);
+            CREATE INDEX IF NOT EXISTS idx_trigger_events_status
+                ON trigger_events(status, created_at DESC, trigger_event_id ASC);
+
+            CREATE TABLE IF NOT EXISTS opportunity_analyses (
+                analysis_id TEXT PRIMARY KEY,
+                trigger_event_id TEXT NOT NULL UNIQUE,
+                instrument_id TEXT NOT NULL,
+                timeframe TEXT NOT NULL,
+                bias TEXT NOT NULL,
+                confidence REAL NOT NULL,
+                model_id TEXT NOT NULL,
+                prompt_version TEXT NOT NULL,
+                data_as_of TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                raw_model_response TEXT,
+                validator_status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(trigger_event_id) REFERENCES trigger_events(trigger_event_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_opportunity_analyses_symbol
+                ON opportunity_analyses(instrument_id, created_at DESC, analysis_id ASC);
+
+            CREATE TABLE IF NOT EXISTS chart_annotations (
+                annotation_id TEXT PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                timeframe TEXT NOT NULL,
+                annotation_type TEXT NOT NULL,
+                bar_start TEXT,
+                price REAL,
+                label TEXT,
+                source TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(symbol, timeframe, annotation_type, bar_start, price, label)
+            );
+            CREATE INDEX IF NOT EXISTS idx_chart_annotations_lookup
+                ON chart_annotations(symbol, timeframe, created_at DESC, annotation_id ASC);
+
+            CREATE TABLE IF NOT EXISTS localized_news_artifacts (
+                news_id TEXT NOT NULL,
+                locale TEXT NOT NULL,
+                source_language TEXT NOT NULL,
+                original_title TEXT NOT NULL,
+                original_summary TEXT,
+                translated_title_zh TEXT,
+                translated_summary_zh TEXT,
+                evidence_json TEXT NOT NULL DEFAULT '{}',
+                source_hash TEXT NOT NULL,
+                model_id TEXT NOT NULL,
+                prompt_version TEXT NOT NULL,
+                translated_at TEXT NOT NULL,
+                numeric_guard_passed INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL,
+                PRIMARY KEY(news_id, locale)
+            );
+            CREATE INDEX IF NOT EXISTS idx_localized_news_lookup
+                ON localized_news_artifacts(news_id, locale, translated_at DESC);
             """
         )
 
@@ -1725,6 +1919,14 @@ class SQLiteStore:
         return [record["instrument"] for record in self.list_instrument_records()]  # type: ignore[misc]
 
     def resolve_instrument(self, symbol: str) -> Instrument:
+        # A durable registry entry is authoritative once it has been explicitly
+        # imported or registered.  This matters for symbols introduced by a
+        # later release: re-hydrating an older inferred instrument must not
+        # silently replace its exchange/metadata with a new canonical mapping.
+        if isinstance(symbol, str) and symbol == symbol.strip():
+            stored = self.get_instrument(symbol)
+            if stored is not None:
+                return stored
         try:
             return instrument_for(symbol)
         except (TypeError, ValueError) as canonical_error:
@@ -1830,6 +2032,33 @@ class SQLiteStore:
                     "INSERT OR REPLACE INTO news_events(event_id, symbol, published_at, payload_json) VALUES (?, ?, ?, ?)",
                     (event.event_id, symbol, event.published_at.isoformat(), json.dumps(event.to_dict(), sort_keys=True)),
                 )
+
+    def get_news_event(self, event_id: str) -> dict[str, object] | None:
+        with self._connect() as db:
+            row = db.execute("SELECT * FROM news_events WHERE event_id = ?", (event_id,)).fetchone()
+        if row is None:
+            return None
+        try:
+            payload = json.loads(row["payload_json"])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            payload = {}
+        return {"event_id": row["event_id"], "symbol": row["symbol"], "published_at": row["published_at"], "payload": payload}
+
+    def list_news_events(self, symbol: str, *, limit: int = 50) -> list[dict[str, object]]:
+        bounded = max(1, min(int(limit), 200))
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT * FROM news_events WHERE symbol = ? ORDER BY published_at DESC, event_id ASC LIMIT ?",
+                (symbol.strip().upper(), bounded),
+            ).fetchall()
+        results: list[dict[str, object]] = []
+        for row in rows:
+            try:
+                payload = json.loads(row["payload_json"])
+            except (TypeError, ValueError, json.JSONDecodeError):
+                payload = {}
+            results.append({"event_id": row["event_id"], "symbol": row["symbol"], "published_at": row["published_at"], "payload": payload})
+        return results
 
     def save_provider_snapshot(self, symbol: str, snapshot: ProviderSnapshot) -> None:
         with self._connect() as db:
@@ -2670,6 +2899,567 @@ class SQLiteStore:
             "capability": json.loads(row["capability_json"]),
         }
 
+    @staticmethod
+    def _monitoring_policy_from_row(row: sqlite3.Row) -> dict[str, object]:
+        def load_json(name: str, fallback: object) -> object:
+            try:
+                return json.loads(row[name])
+            except (TypeError, ValueError, json.JSONDecodeError):
+                return fallback
+
+        notify = load_json("notify_json", {})
+        if not isinstance(notify, dict):
+            notify = {}
+        notify_in_app = notify.get("in_app", notify.get("app", True))
+        notify_native = notify.get("native_notification", notify.get("desktop", True))
+        return {
+            "contract_version": "monitoring_policy_v1",
+            "instrument_id": row["instrument_id"],
+            "enabled": bool(row["enabled"]),
+            "primary_timeframe": row["primary_timeframe"],
+            "context_timeframe": row["context_timeframe"],
+            "trigger_types": [
+                _normalize_monitoring_trigger(item)
+                for item in (load_json("trigger_types_json", []) if isinstance(load_json("trigger_types_json", []), list) else [])
+            ],
+            "min_trigger_score": float(row["min_trigger_score"]),
+            "ai_min_confidence": float(row["ai_min_confidence"]),
+            "cooldown_minutes": int(row["cooldown_minutes"]),
+            "quiet_hours": load_json("quiet_hours_json", {}),
+            "notify": {**notify, "in_app": bool(notify_in_app), "native_notification": bool(notify_native), "desktop": bool(notify_native)},
+            "notify_in_app": bool(notify_in_app),
+            "notify_native_notification": bool(notify_native),
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    def upsert_monitoring_policy(self, policy: dict[str, object], *, now: datetime | None = None) -> dict[str, object]:
+        instrument_id = str(policy.get("instrument_id") or "").strip().upper()
+        if not instrument_id:
+            raise ValueError("monitoring policy instrument_id is required")
+        timestamp = self._utc_timestamp(now)
+        trigger_types = policy.get("trigger_types", [])
+        quiet_hours = policy.get("quiet_hours", {})
+        notify = policy.get("notify", {})
+        raw_notify_in_app = policy.get("notify_in_app", notify.get("in_app", notify.get("app", True)) if isinstance(notify, dict) else True)
+        raw_notify_native = policy.get("notify_native_notification", notify.get("native_notification", notify.get("desktop", True)) if isinstance(notify, dict) else True)
+        if not isinstance(trigger_types, list) or not all(isinstance(item, str) and item.strip() for item in trigger_types):
+            raise ValueError("monitoring policy trigger_types must be a list of strings")
+        if not isinstance(quiet_hours, dict) or not isinstance(notify, dict):
+            raise ValueError("monitoring policy quiet_hours and notify must be objects")
+        if type(raw_notify_in_app) is not bool or type(raw_notify_native) is not bool:
+            raise ValueError("monitoring policy notification preferences must be booleans")
+        canonical_trigger_types = tuple(dict.fromkeys(_normalize_monitoring_trigger(item) for item in trigger_types))
+        if type(policy.get("enabled", False)) is not bool:
+            raise ValueError("monitoring policy enabled must be a boolean")
+        primary_timeframe = str(policy.get("primary_timeframe", "15m")).strip().lower()
+        context_timeframe = str(policy.get("context_timeframe", "1h")).strip().lower()
+        if primary_timeframe != "15m" or context_timeframe not in {"15m", "1h"}:
+            raise ValueError("monitoring policy timeframes must be 15m and 1h")
+        if not trigger_types:
+            raise ValueError("monitoring policy requires at least one trigger type")
+        raw_min_trigger_score = policy.get("min_trigger_score", 0.65)
+        raw_ai_min_confidence = policy.get("ai_min_confidence", 0.60)
+        raw_cooldown_minutes = policy.get("cooldown_minutes", 60)
+        if isinstance(raw_min_trigger_score, bool) or not isinstance(raw_min_trigger_score, (int, float)):
+            raise ValueError("min_trigger_score must be a number")
+        if isinstance(raw_ai_min_confidence, bool) or not isinstance(raw_ai_min_confidence, (int, float)):
+            raise ValueError("ai_min_confidence must be a number")
+        if isinstance(raw_cooldown_minutes, bool) or type(raw_cooldown_minutes) is not int:
+            raise ValueError("cooldown_minutes must be an integer")
+        try:
+            min_trigger_score = float(raw_min_trigger_score)
+            ai_min_confidence = float(raw_ai_min_confidence)
+            cooldown_minutes = raw_cooldown_minutes
+        except (TypeError, ValueError) as exc:
+            raise ValueError("monitoring policy numeric fields are invalid") from exc
+        if not math.isfinite(min_trigger_score) or not 0.0 <= min_trigger_score <= 1.0:
+            raise ValueError("min_trigger_score must be in [0, 1]")
+        if not math.isfinite(ai_min_confidence) or not 0.0 <= ai_min_confidence <= 1.0:
+            raise ValueError("ai_min_confidence must be in [0, 1]")
+        if not 1 <= cooldown_minutes <= 24 * 60:
+            raise ValueError("cooldown_minutes must be between 1 and 1440")
+        with self._connect() as db:
+            existing = db.execute(
+                "SELECT created_at FROM monitoring_policies WHERE instrument_id = ?",
+                (instrument_id,),
+            ).fetchone()
+            created_at = str(existing["created_at"]) if existing is not None else timestamp
+            db.execute(
+                """INSERT OR REPLACE INTO monitoring_policies(
+                    instrument_id, enabled, primary_timeframe, context_timeframe,
+                    trigger_types_json, min_trigger_score, ai_min_confidence,
+                    cooldown_minutes, quiet_hours_json, notify_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    instrument_id,
+                    int(bool(policy.get("enabled", False))),
+                    primary_timeframe,
+                    context_timeframe,
+                    json.dumps(sorted(canonical_trigger_types), ensure_ascii=True),
+                    min_trigger_score,
+                    ai_min_confidence,
+                    cooldown_minutes,
+                    json.dumps(quiet_hours, sort_keys=True, ensure_ascii=True),
+                    json.dumps({**notify, "in_app": raw_notify_in_app, "native_notification": raw_notify_native, "desktop": raw_notify_native}, sort_keys=True, ensure_ascii=True),
+                    created_at,
+                    timestamp,
+                ),
+            )
+            row = db.execute("SELECT * FROM monitoring_policies WHERE instrument_id = ?", (instrument_id,)).fetchone()
+        assert row is not None
+        return self._monitoring_policy_from_row(row)
+
+    def get_monitoring_policy(self, instrument_id: str) -> dict[str, object] | None:
+        with self._connect() as db:
+            row = db.execute("SELECT * FROM monitoring_policies WHERE instrument_id = ?", (instrument_id.strip().upper(),)).fetchone()
+        return self._monitoring_policy_from_row(row) if row is not None else None
+
+    def list_monitoring_policies(self, *, enabled: bool | None = None) -> list[dict[str, object]]:
+        query = "SELECT * FROM monitoring_policies"
+        params: tuple[object, ...] = ()
+        if enabled is not None:
+            query += " WHERE enabled = ?"
+            params = (int(enabled),)
+        query += " ORDER BY instrument_id ASC"
+        with self._connect() as db:
+            rows = db.execute(query, params).fetchall()
+        return [self._monitoring_policy_from_row(row) for row in rows]
+
+    def delete_monitoring_policy(self, instrument_id: str) -> bool:
+        with self._connect() as db:
+            result = db.execute("DELETE FROM monitoring_policies WHERE instrument_id = ?", (instrument_id.strip().upper(),))
+        return result.rowcount > 0
+
+    @staticmethod
+    def _bar_seconds(timeframe: str) -> int:
+        values = {"5m": 300, "15m": 900, "1h": 3600, "4h": 14_400, "1d": 86_400}
+        try:
+            return values[timeframe.lower()]
+        except KeyError as exc:
+            raise ValueError(f"unsupported bar timeframe: {timeframe}") from exc
+
+    def upsert_market_bars(
+        self,
+        symbol: str,
+        timeframe: str,
+        bars: Iterable[object],
+        *,
+        provider: str,
+        data_as_of: datetime | str,
+        now: datetime | None = None,
+    ) -> int:
+        interval = self._bar_seconds(timeframe)
+        received_at = self._utc_timestamp(now)
+        data_as_of_text = self._utc_timestamp(data_as_of) if isinstance(data_as_of, datetime) else str(data_as_of)
+        if _parse_utc_timestamp(data_as_of_text) is None:
+            raise ValueError("market bar data_as_of must be an ISO timestamp")
+        provider_name = str(provider or "").strip()
+        if not provider_name:
+            raise ValueError("market bar provider is required")
+        rows: list[tuple[object, ...]] = []
+        for item in bars:
+            if isinstance(item, dict):
+                timestamp = item.get("timestamp")
+                values = (item.get("open"), item.get("high"), item.get("low"), item.get("close"), item.get("volume"))
+            else:
+                timestamp = getattr(item, "timestamp", None)
+                values = tuple(getattr(item, field, None) for field in ("open", "high", "low", "close", "volume"))
+            if isinstance(timestamp, datetime):
+                bar_start = self._utc_timestamp(timestamp)
+                bar_end = self._utc_timestamp(timestamp + timedelta(seconds=interval))
+            else:
+                bar_start = str(timestamp or "")
+                parsed = _parse_utc_timestamp(bar_start)
+                if parsed is None:
+                    raise ValueError("market bar timestamp must be an ISO timestamp")
+                bar_start = self._utc_timestamp(parsed)
+                bar_end = self._utc_timestamp(parsed + timedelta(seconds=interval))
+            if not bar_start or any(value is None for value in values):
+                raise ValueError("market bar is incomplete")
+            try:
+                numeric = tuple(float(value) for value in values)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("market bar numeric fields must be numbers") from exc
+            if any(not math.isfinite(value) for value in numeric):
+                raise ValueError("market bar numeric fields must be finite")
+            open_price, high_price, low_price, close_price, volume = numeric
+            if low_price <= 0 or close_price <= 0 or volume < 0 or high_price < max(open_price, close_price) or low_price > min(open_price, close_price):
+                raise ValueError("market bar violates OHLCV bounds")
+            is_closed = int((_parse_utc_timestamp(bar_end) or datetime.now(timezone.utc)) <= (_parse_utc_timestamp(received_at) or datetime.now(timezone.utc)))
+            rows.append((symbol.strip().upper(), timeframe.lower(), bar_start, bar_end, *numeric, provider_name, data_as_of_text, is_closed, received_at))
+        if not rows:
+            return 0
+        with self._connect() as db:
+            db.executemany(
+                """INSERT OR REPLACE INTO market_bars(
+                    symbol, timeframe, bar_start, bar_end, open, high, low, close, volume,
+                    provider, data_as_of, is_closed, received_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                rows,
+            )
+        return len(rows)
+
+    def list_market_bars(self, symbol: str, timeframe: str, *, limit: int = 500) -> list[dict[str, object]]:
+        bounded = max(1, min(int(limit), 2000))
+        with self._connect() as db:
+            rows = db.execute(
+                """SELECT symbol, timeframe, bar_start, bar_end, open, high, low, close, volume,
+                          provider, data_as_of, is_closed, received_at
+                     FROM market_bars WHERE symbol = ? AND timeframe = ?
+                     ORDER BY bar_start ASC LIMIT ?""",
+                (symbol.strip().upper(), timeframe.lower(), bounded),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def save_realtime_state(self, state: dict[str, object], *, now: datetime | None = None) -> dict[str, object]:
+        symbol = str(state.get("symbol") or "").strip().upper()
+        if not symbol:
+            raise ValueError("realtime state symbol is required")
+        timestamp = self._utc_timestamp(now)
+        payload = dict(state)
+        payload["symbol"] = symbol
+        provider = str(state.get("provider") or "unknown").strip()
+        freshness_status = str(state.get("freshness_status") or "unavailable").strip().lower()
+        if not provider or freshness_status not in {"fresh", "stale", "degraded", "unavailable"}:
+            raise ValueError("realtime state provider or freshness_status is invalid")
+
+        def optional_number(value: object, *, positive: bool = False, non_negative: bool = False) -> float | None:
+            if value is None:
+                return None
+            if isinstance(value, bool):
+                raise ValueError("realtime state numeric fields must be numbers")
+            try:
+                number = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("realtime state numeric fields must be numbers") from exc
+            if not math.isfinite(number) or (positive and number <= 0) or (non_negative and number < 0):
+                raise ValueError("realtime state numeric fields must be finite and bounded")
+            return number
+
+        price = optional_number(state.get("price"), positive=True)
+        change_pct = optional_number(state.get("change_pct"))
+        volume = optional_number(state.get("volume"), non_negative=True)
+        try:
+            stale_after_seconds = int(state.get("stale_after_seconds") or 120)
+            reconnect_count = int(state.get("reconnect_count") or 0)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("realtime state integer fields are invalid") from exc
+        if stale_after_seconds < 1 or reconnect_count < 0:
+            raise ValueError("realtime state integer fields are out of bounds")
+        for field in ("last_trade_at", "data_as_of"):
+            value = state.get(field)
+            if value is not None and _parse_utc_timestamp(str(value)) is None:
+                raise ValueError(f"realtime state {field} must be an ISO timestamp")
+        with self._connect() as db:
+            db.execute(
+                """INSERT OR REPLACE INTO market_realtime_state(
+                    symbol, provider, price, change_pct, volume, last_trade_at, data_as_of,
+                    freshness_status, stale_after_seconds, reconnect_count, last_error,
+                    updated_at, payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    symbol,
+                    provider,
+                    price,
+                    change_pct,
+                    volume,
+                    state.get("last_trade_at"),
+                    state.get("data_as_of"),
+                    freshness_status,
+                    stale_after_seconds,
+                    reconnect_count,
+                    state.get("last_error"),
+                    timestamp,
+                    json.dumps(payload, sort_keys=True, ensure_ascii=True),
+                ),
+            )
+        return payload
+
+    def get_realtime_state(self, symbol: str) -> dict[str, object] | None:
+        with self._connect() as db:
+            row = db.execute("SELECT * FROM market_realtime_state WHERE symbol = ?", (symbol.strip().upper(),)).fetchone()
+        if row is None:
+            return None
+        payload = dict(row)
+        try:
+            payload.update(json.loads(row["payload_json"]))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            pass
+        return payload
+
+    def list_realtime_states(self) -> list[dict[str, object]]:
+        with self._connect() as db:
+            rows = db.execute("SELECT * FROM market_realtime_state ORDER BY symbol ASC").fetchall()
+        return [self.get_realtime_state(str(row["symbol"])) or dict(row) for row in rows]
+
+    def claim_bar_close(self, symbol: str, timeframe: str, bar_start: str, bar_end: str, *, closed_at: datetime | str, processed_at: datetime | str | None = None) -> bool:
+        closed_text = self._utc_timestamp(closed_at) if isinstance(closed_at, datetime) else str(closed_at)
+        processed_text = self._utc_timestamp(processed_at) if isinstance(processed_at, datetime) else str(processed_at or closed_text)
+        with self._connect() as db:
+            result = db.execute(
+                """INSERT OR IGNORE INTO bar_close_ledger(
+                    symbol, timeframe, bar_start, bar_end, closed_at, processed_at
+                ) VALUES (?, ?, ?, ?, ?, ?)""",
+                (symbol.strip().upper(), timeframe.lower(), bar_start, bar_end, closed_text, processed_text),
+            )
+        return result.rowcount == 1
+
+    @staticmethod
+    def _trigger_event_from_row(row: sqlite3.Row) -> dict[str, object]:
+        try:
+            payload = json.loads(row["payload_json"])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            payload = {}
+        return {
+            "trigger_event_id": row["trigger_event_id"],
+            "instrument_id": row["instrument_id"],
+            "timeframe": row["timeframe"],
+            "bar_start": row["bar_start"],
+            "bar_end": row["bar_end"],
+            "trigger_type": row["trigger_type"],
+            "trigger_score": float(row["trigger_score"]),
+            "fingerprint": row["fingerprint"],
+            "policy_version": row["policy_version"],
+            "status": row["status"],
+            "analysis_status": row["analysis_status"],
+            "payload": payload,
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    def insert_trigger_event(self, event: dict[str, object], *, now: datetime | None = None) -> dict[str, object]:
+        event_id = str(event.get("trigger_event_id") or "").strip()
+        fingerprint = str(event.get("fingerprint") or "").strip()
+        if not event_id or not fingerprint:
+            raise ValueError("trigger event id and fingerprint are required")
+        timestamp = self._utc_timestamp(now)
+        payload = event.get("payload", {})
+        if not isinstance(payload, dict):
+            raise ValueError("trigger event payload must be an object")
+        with self._connect() as db:
+            insert_result = db.execute(
+                """INSERT OR IGNORE INTO trigger_events(
+                    trigger_event_id, instrument_id, timeframe, bar_start, bar_end,
+                    trigger_type, trigger_score, fingerprint, policy_version, status,
+                    analysis_status, payload_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    event_id,
+                    str(event.get("instrument_id") or "").strip().upper(),
+                    str(event.get("timeframe") or "15m").lower(),
+                    str(event.get("bar_start") or ""),
+                    str(event.get("bar_end") or ""),
+                    str(event.get("trigger_type") or "unknown"),
+                    float(event.get("trigger_score") or 0.0),
+                    fingerprint,
+                    str(event.get("policy_version") or "trigger_policy_v2"),
+                    str(event.get("status") or "PENDING"),
+                    str(event.get("analysis_status") or "NOT_REQUESTED"),
+                    json.dumps(payload, sort_keys=True, ensure_ascii=True),
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            inserted = insert_result.rowcount == 1
+            row = db.execute("SELECT * FROM trigger_events WHERE fingerprint = ?", (fingerprint,)).fetchone()
+        assert row is not None
+        result = self._trigger_event_from_row(row)
+        result["created"] = inserted
+        return result
+
+    def update_trigger_event(self, trigger_event_id: str, *, status: str | None = None, analysis_status: str | None = None, now: datetime | None = None) -> dict[str, object] | None:
+        fields: list[str] = []
+        params: list[object] = []
+        if status is not None:
+            fields.append("status = ?")
+            params.append(status)
+        if analysis_status is not None:
+            fields.append("analysis_status = ?")
+            params.append(analysis_status)
+        if fields:
+            fields.append("updated_at = ?")
+            params.append(self._utc_timestamp(now))
+            params.append(trigger_event_id)
+            with self._connect() as db:
+                db.execute(f"UPDATE trigger_events SET {', '.join(fields)} WHERE trigger_event_id = ?", tuple(params))
+        with self._connect() as db:
+            row = db.execute("SELECT * FROM trigger_events WHERE trigger_event_id = ?", (trigger_event_id,)).fetchone()
+        return self._trigger_event_from_row(row) if row is not None else None
+
+    def list_trigger_events(self, *, symbol: str | None = None, limit: int = 100) -> list[dict[str, object]]:
+        bounded = max(1, min(int(limit), 500))
+        query = "SELECT * FROM trigger_events"
+        params: list[object] = []
+        if symbol:
+            query += " WHERE instrument_id = ?"
+            params.append(symbol.strip().upper())
+        query += " ORDER BY bar_start DESC, trigger_event_id ASC LIMIT ?"
+        params.append(bounded)
+        with self._connect() as db:
+            rows = db.execute(query, tuple(params)).fetchall()
+        return [self._trigger_event_from_row(row) for row in rows]
+
+    def save_opportunity_analysis(self, analysis: dict[str, object], *, now: datetime | None = None) -> dict[str, object]:
+        analysis_id = str(analysis.get("analysis_id") or "").strip()
+        trigger_event_id = str(analysis.get("trigger_event_id") or "").strip()
+        if not analysis_id or not trigger_event_id:
+            raise ValueError("opportunity analysis ids are required")
+        timestamp = self._utc_timestamp(now)
+        payload = analysis.get("payload", analysis)
+        if not isinstance(payload, dict):
+            raise ValueError("opportunity analysis payload must be an object")
+        with self._connect() as db:
+            db.execute(
+                """INSERT OR REPLACE INTO opportunity_analyses(
+                    analysis_id, trigger_event_id, instrument_id, timeframe, bias, confidence,
+                    model_id, prompt_version, data_as_of, payload_json, raw_model_response,
+                    validator_status, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    analysis_id,
+                    trigger_event_id,
+                    str(analysis.get("instrument_id") or "").strip().upper(),
+                    str(analysis.get("timeframe") or "15m").lower(),
+                    str(analysis.get("bias") or "WAIT"),
+                    float(analysis.get("confidence") or 0.0),
+                    str(analysis.get("model_id") or ""),
+                    str(analysis.get("prompt_version") or ""),
+                    str(analysis.get("data_as_of") or timestamp),
+                    json.dumps(payload, sort_keys=True, ensure_ascii=True),
+                    analysis.get("raw_model_response"),
+                    str(analysis.get("validator_status") or "VALID"),
+                    timestamp,
+                ),
+            )
+        return analysis
+
+    def list_opportunity_analyses(self, *, symbol: str | None = None, limit: int = 100) -> list[dict[str, object]]:
+        bounded = max(1, min(int(limit), 500))
+        query = "SELECT * FROM opportunity_analyses"
+        params: list[object] = []
+        if symbol:
+            query += " WHERE instrument_id = ?"
+            params.append(symbol.strip().upper())
+        query += " ORDER BY created_at DESC, analysis_id DESC LIMIT ?"
+        params.append(bounded)
+        with self._connect() as db:
+            rows = db.execute(query, tuple(params)).fetchall()
+        results: list[dict[str, object]] = []
+        for row in rows:
+            try:
+                payload = json.loads(row["payload_json"])
+            except (TypeError, ValueError, json.JSONDecodeError):
+                payload = {}
+            results.append({**payload, "analysis_id": row["analysis_id"], "trigger_event_id": row["trigger_event_id"], "validator_status": row["validator_status"], "created_at": row["created_at"], "raw_model_response": row["raw_model_response"]})
+        return results
+
+    def save_chart_annotations(self, annotations: Iterable[dict[str, object]], *, now: datetime | None = None) -> int:
+        timestamp = self._utc_timestamp(now)
+        rows: list[tuple[object, ...]] = []
+        for annotation in annotations:
+            annotation_id = str(annotation.get("annotation_id") or "").strip()
+            if not annotation_id:
+                raise ValueError("chart annotation_id is required")
+            payload = annotation.get("payload", annotation)
+            if not isinstance(payload, dict):
+                raise ValueError("chart annotation payload must be an object")
+            rows.append((
+                annotation_id,
+                str(annotation.get("symbol") or "").strip().upper(),
+                str(annotation.get("timeframe") or "15m").lower(),
+                str(annotation.get("annotation_type") or "marker"),
+                annotation.get("bar_start"),
+                annotation.get("price"),
+                annotation.get("label"),
+                str(annotation.get("source") or "python"),
+                json.dumps(payload, sort_keys=True, ensure_ascii=True),
+                timestamp,
+            ))
+        if not rows:
+            return 0
+        with self._connect() as db:
+            db.executemany(
+                """INSERT OR REPLACE INTO chart_annotations(
+                    annotation_id, symbol, timeframe, annotation_type, bar_start, price,
+                    label, source, payload_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                rows,
+            )
+        return len(rows)
+
+    def list_chart_annotations(self, symbol: str, timeframe: str, *, limit: int = 100) -> list[dict[str, object]]:
+        bounded = max(1, min(int(limit), 500))
+        with self._connect() as db:
+            rows = db.execute(
+                """SELECT * FROM chart_annotations WHERE symbol = ? AND timeframe = ?
+                   ORDER BY COALESCE(bar_start, created_at) ASC, annotation_id ASC LIMIT ?""",
+                (symbol.strip().upper(), timeframe.lower(), bounded),
+            ).fetchall()
+        results: list[dict[str, object]] = []
+        for row in rows:
+            try:
+                payload = json.loads(row["payload_json"])
+            except (TypeError, ValueError, json.JSONDecodeError):
+                payload = {}
+            results.append({**dict(row), "payload": payload})
+        return results
+
+    def save_localized_news_artifact(self, artifact: dict[str, object]) -> dict[str, object]:
+        required = ("news_id", "locale", "source_language", "original_title", "source_hash", "model_id", "prompt_version", "translated_at", "status")
+        if any(not str(artifact.get(key) or "").strip() for key in required):
+            raise ValueError("localized news artifact is incomplete")
+        evidence = artifact.get("evidence", {})
+        if not isinstance(evidence, dict):
+            raise ValueError("localized news evidence must be an object")
+        with self._connect() as db:
+            db.execute(
+                """INSERT OR REPLACE INTO localized_news_artifacts(
+                    news_id, locale, source_language, original_title, original_summary,
+                    translated_title_zh, translated_summary_zh, evidence_json, source_hash,
+                    model_id, prompt_version, translated_at, numeric_guard_passed, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    str(artifact["news_id"]),
+                    str(artifact["locale"]),
+                    str(artifact["source_language"]),
+                    str(artifact["original_title"]),
+                    artifact.get("original_summary"),
+                    artifact.get("translated_title_zh"),
+                    artifact.get("translated_summary_zh"),
+                    json.dumps(evidence, sort_keys=True, ensure_ascii=True),
+                    str(artifact["source_hash"]),
+                    str(artifact["model_id"]),
+                    str(artifact["prompt_version"]),
+                    str(artifact["translated_at"]),
+                    int(bool(artifact.get("numeric_guard_passed", False))),
+                    str(artifact["status"]),
+                ),
+            )
+        return artifact
+
+    def list_localized_news_artifacts(self, *, news_id: str | None = None, locale: str = "zh-CN", limit: int = 100) -> list[dict[str, object]]:
+        bounded = max(1, min(int(limit), 500))
+        query = "SELECT * FROM localized_news_artifacts WHERE locale = ?"
+        params: list[object] = [locale]
+        if news_id:
+            query += " AND news_id = ?"
+            params.append(news_id)
+        query += " ORDER BY translated_at DESC, news_id ASC LIMIT ?"
+        params.append(bounded)
+        with self._connect() as db:
+            rows = db.execute(query, tuple(params)).fetchall()
+        results: list[dict[str, object]] = []
+        for row in rows:
+            result = dict(row)
+            try:
+                result["evidence"] = json.loads(row["evidence_json"])
+            except (TypeError, ValueError, json.JSONDecodeError):
+                result["evidence"] = {}
+            result["numeric_guard_passed"] = bool(row["numeric_guard_passed"])
+            results.append(result)
+        return results
+
     def counts(self) -> dict[str, int]:
         with self._connect() as db:
             return {
@@ -2699,6 +3489,14 @@ class SQLiteStore:
                 "phase6_event_clusters",
                 "market_memory_features",
                 "daily_briefs",
+                "monitoring_policies",
+                "market_bars",
+                "market_realtime_state",
+                "bar_close_ledger",
+                "trigger_events",
+                "opportunity_analyses",
+                "chart_annotations",
+                "localized_news_artifacts",
             )
         }
 

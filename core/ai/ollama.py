@@ -107,6 +107,62 @@ class OllamaProvider:
             return str(payload["response"])
         raise LLMError("Ollama response has no message content", code="model_invalid_envelope")
 
+    def generate_json(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        model_name: str,
+        prompt_version: str,
+        input_hash: str,
+        temperature: float | None = None,
+    ) -> tuple[dict[str, object], str, dict[str, object]]:
+        """Run a bounded structured call against an explicitly selected tier.
+
+        This is intentionally separate from ``analyze_market``: V1.2 callers
+        must name the Smart model and receive a hard error if that model is not
+        installed.  The adapter never substitutes ``self.model_name``.
+        """
+
+        started = time.perf_counter()
+        payload = {
+            "model": model_name,
+            "messages": messages,
+            "stream": False,
+            "format": "json",
+            "think": self.think,
+            "options": {
+                "temperature": self.temperature if temperature is None else max(0.0, min(float(temperature), 2.0)),
+                "num_ctx": self.context_length,
+                "num_predict": self.max_tokens,
+            },
+        }
+        try:
+            envelope = self._request("POST", "/api/chat", payload)
+            raw = self._content(envelope)
+            if len(raw) > self.max_response_chars:
+                raise LLMError("Ollama response exceeds output limit", code="output_too_long", raw_response=raw[: self.max_response_chars])
+            try:
+                decoded = json.loads(raw)
+            except (json.JSONDecodeError, TypeError, ValueError) as exc:
+                raise LLMError(f"invalid structured JSON: {exc}", code="parse_error", raw_response=raw) from exc
+            if not isinstance(decoded, dict):
+                raise LLMError("structured model output must be an object", code="parse_error", raw_response=raw)
+            elapsed = (time.perf_counter() - started) * 1000.0
+            metadata = {
+                "model_id": model_name,
+                "model_version": str(envelope.get("model") or model_name),
+                "prompt_version": prompt_version,
+                "input_hash": input_hash,
+                "latency_ms": round(elapsed, 3),
+                "raw_response": raw,
+                "parse_status": "valid",
+                "input_tokens_est": sum(len(item.get("content", "")) for item in messages) // 4,
+                "output_chars": len(raw),
+            }
+            return decoded, raw, metadata
+        except LLMError:
+            raise
+
     def analyze_market(
         self,
         context: MarketContext,

@@ -1,9 +1,9 @@
 {
-  "generated_at": "2026-08-20T16:28:30.171588+00:00",
+  "generated_at": "2026-08-31T12:12:27.565093+00:00",
   "legal_note": "This is an inventory and compatibility review input, not legal advice or a license approval.",
   "npm": {
     "compatibility": "No legal compatibility conclusion is inferred; review the listed licenses before redistribution.",
-    "package_count": 338,
+    "package_count": 343,
     "status": "review_required",
     "unknown_license_count": 51,
     "unknown_packages": [
@@ -65,8 +65,10 @@
     "declared_optional_dependencies": [
       "fastapi",
       "httpx",
+      "pyinstaller",
       "pytest",
       "uvicorn",
+      "websocket-client",
       "yfinance"
     ],
     "installed": [
@@ -81,14 +83,24 @@
         "version": "0.28.1"
       },
       {
-        "license": null,
+        "license": "GPLv2-or-later with a special exception which allows to use PyInstaller to build and distribute non-free programs (including commercial ones)",
+        "name": "pyinstaller",
+        "version": "6.21.0"
+      },
+      {
+        "license": "MIT",
         "name": "pytest",
-        "version": "9.1.1"
+        "version": "8.4.2"
       },
       {
         "license": null,
         "name": "uvicorn",
         "version": "0.52.3"
+      },
+      {
+        "license": "Apache-2.0",
+        "name": "websocket-client",
+        "version": "1.9.1"
       }
     ],
     "not_installed": [

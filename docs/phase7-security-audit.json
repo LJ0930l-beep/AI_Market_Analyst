@@ -8,7 +8,7 @@
     "telemetry": false,
     "timeouts_retries_bounded": true
   },
-  "generated_at": "2026-08-20T16:28:30.171588+00:00",
+  "generated_at": "2026-08-31T12:12:27.565093+00:00",
   "npm_audit_full": {
     "command": [
       "npm.cmd",
@@ -22,8 +22,8 @@
       "optional": 54,
       "peer": 8,
       "peerOptional": 0,
-      "prod": 10,
-      "total": 338
+      "prod": 15,
+      "total": 343
     },
     "status": "pass",
     "stderr_tail": null,
@@ -50,8 +50,8 @@
       "optional": 54,
       "peer": 8,
       "peerOptional": 0,
-      "prod": 10,
-      "total": 338
+      "prod": 15,
+      "total": 343
     },
     "status": "pass",
     "stderr_tail": null,
@@ -89,7 +89,7 @@
   "report_version": "phase7_security_audit_v1",
   "scope": "tracked and current scoped source plus installed dependency audit commands; no data databases or node_modules source scan",
   "tracked_secret_scan": {
-    "binary_files_skipped": 107,
+    "binary_files_skipped": 220,
     "finding_count": 0,
     "findings": [],
     "patterns": [

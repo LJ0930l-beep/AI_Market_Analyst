@@ -1,5 +1,14 @@
 # Changelog
 
+## V1.2 Crypto Smart Monitoring Windows desktop — developer-complete, 2026-08-31
+
+- Delivered the Tauri 2 Windows x64 desktop shell with a PyInstaller-owned FastAPI sidecar, AppData data/log/backup/runtime layout, explicit legacy SQLite import, NSIS installer, single-instance routing, system tray, native notification bridge and exact owned-process shutdown. Auto-start, resume and monitoring remain disabled by default.
+- Added public Binance REST/combined WebSocket BTCUSDT, ETHUSDT and SOLUSDT support with 15m/1h bounded bar cache, freshness state, reconnect/backfill evidence and Python-owned 15-minute bar-close exactly-once ledgering. TradingView Lightweight Charts is frontend-only and receives app-supplied bars/annotations.
+- Added explicit `MonitoringPolicy`, `trigger_policy_v2`, persistent trigger ledger/fingerprint/cooldown and 20/50-symbol resource bounds. Smart OpportunityAnalysis uses real `qwen3.5:9b` only when opted in; strict Python validation owns direction, levels, WAIT safety, Prediction/Outcome/Calibration integration and quarantine of invalid model output.
+- Added real `qwen3.5:4b` news translation caching with complete original Chinese evidence, structured numeric/date/price preservation and `numeric_guard`; added bilingual typed desktop routes, alert/notification click routing and responsive/accessibility coverage.
+- Added additive schema 12/API contracts, V1.2 user/completion/installer docs, screenshots, machine-readable test/live evidence and regression coverage. No accounts, secrets, private keys, broker, real orders, cloud notifier or unrelated process control were added.
+- Gate evidence: Python regression/unit/compile/pip checks, frontend lint/typecheck/Vitest/build/audits, 13/13 standalone browser E2E with axe/overflow, GNU Tauri production build and NSIS installer, sidecar smoke, real Windows install/reinstall/uninstall data retention, single-instance/tray/exit/relaunch and live BTC/ETH/SOL REST/WS/RSS/Ollama/monitoring smoke are recorded in `docs/v1.2-test-evidence.json` and `docs/v1.2-live-smoke.json`. Windows notification delivery reached the native platform event log; direct visual toast/click observation was limited by the automation surface. Fixture browser E2E is not presented as live evidence.
+
 ## Unreleased
 
 ### V1.1 premium bilingual market-intelligence terminal — developer-complete, supervisor Gate pending

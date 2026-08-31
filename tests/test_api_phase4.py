@@ -414,7 +414,7 @@ class Phase4APITests(unittest.TestCase):
 
         health = self.client.get("/health/providers")
         self.assertEqual(health.status_code, 200)
-        self.assertEqual(len(health.json()["routes"]), 6)
+        self.assertEqual(len(health.json()["routes"]), 7)
 
         invalid_run_filter = self.client.get("/replay/runs", params={"status": "unknown"})
         self.assertEqual(invalid_run_filter.status_code, 400)

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
-import { NavLink, Route, Routes, useLocation } from "react-router-dom";
+import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 import { apiClient as defaultApiClient, type ApplicationShellApiClient } from "./api/client";
 import type { HealthResponse } from "./api/types";
@@ -7,6 +7,17 @@ import { HealthStatus, type BackendHealthState } from "./components/HealthStatus
 import { TimeProvenanceRail } from "./components/TimeProvenanceRail";
 import { DashboardPage, emptyDashboardProvenance, type DashboardProvenance } from "./pages/DashboardPage";
 import { I18nProvider, useI18n, type TranslationKey } from "./i18n";
+import {
+  notifyDesktopAlert,
+  registerDesktopNotificationRouting,
+  registerMonitoringAlertStream,
+  type MonitoringAlertEvent,
+} from "./desktopNotifications";
+import {
+  registerDesktopBackendState,
+  registerDesktopMonitoringNotice,
+  type DesktopBackendStatus,
+} from "./desktopRuntime";
 
 const AssetDetailPage = lazy(() => import("./pages/AssetDetailPage").then((m) => ({ default: m.AssetDetailPage })));
 const AlertsPage = lazy(() => import("./pages/AlertsPage").then((m) => ({ default: m.AlertsPage })));
@@ -18,26 +29,29 @@ const ReplayLabPage = lazy(() => import("./pages/ReplayLabPage").then((m) => ({ 
 const SettingsHealthPage = lazy(() => import("./pages/SettingsHealthPage").then((m) => ({ default: m.SettingsHealthPage })));
 const WatchlistPage = lazy(() => import("./pages/WatchlistPage").then((m) => ({ default: m.WatchlistPage })));
 const MarketIntelligencePage = lazy(() => import("./pages/MarketIntelligencePage").then((m) => ({ default: m.MarketIntelligencePage })));
+const MonitoringPage = lazy(() => import("./pages/MonitoringPage").then((m) => ({ default: m.MonitoringPage })));
 
 interface NavigationItem {
   label: TranslationKey;
+  secondary: TranslationKey;
   to: string;
   icon: string;
   end?: boolean;
 }
 
 const navigationItems: NavigationItem[] = [
-  { label: "nav.dashboard", to: "/", icon: "⌂", end: true },
-  { label: "nav.signals", to: "/predictions", icon: "⌁" },
-  { label: "nav.watchlist", to: "/watchlist", icon: "◉" },
-  { label: "nav.markets", to: "/markets", icon: "▥" },
-  { label: "nav.calendar", to: "/calendar", icon: "□" },
-  { label: "nav.news", to: "/news", icon: "≡" },
-  { label: "nav.heatmap", to: "/heatmap", icon: "▦" },
-  { label: "nav.consult", to: "/consult", icon: "✦" },
-  { label: "nav.backtest", to: "/replay", icon: "↻" },
-  { label: "nav.performance", to: "/performance", icon: "⌁" },
-  { label: "nav.settings", to: "/settings", icon: "⚙" },
+  { label: "nav.dashboard", secondary: "nav.dashboard", to: "/", icon: "⌂", end: true },
+  { label: "nav.signals", secondary: "nav.signals", to: "/predictions", icon: "⌁" },
+  { label: "nav.watchlist", secondary: "nav.watchlist", to: "/watchlist", icon: "◉" },
+  { label: "nav.monitoring", secondary: "nav.monitoring", to: "/monitoring", icon: "◌" },
+  { label: "nav.markets", secondary: "nav.markets", to: "/markets", icon: "▥" },
+  { label: "nav.calendar", secondary: "nav.calendar", to: "/calendar", icon: "□" },
+  { label: "nav.news", secondary: "nav.news", to: "/news", icon: "≡" },
+  { label: "nav.heatmap", secondary: "nav.heatmap", to: "/heatmap", icon: "▦" },
+  { label: "nav.consult", secondary: "nav.consult", to: "/consult", icon: "✦" },
+  { label: "nav.backtest", secondary: "nav.backtest", to: "/replay", icon: "↻" },
+  { label: "nav.performance", secondary: "nav.performance", to: "/performance", icon: "⌁" },
+  { label: "nav.settings", secondary: "nav.settings", to: "/settings", icon: "⚙" },
 ];
 
 export interface ApplicationShellProps {
@@ -58,7 +72,7 @@ function NavigationLinks() {
             to={item.to}
           >
             <span className="nav-entry__icon" aria-hidden="true">{item.icon}</span>
-            <span className="nav-entry__label">{t(item.label)}<small aria-hidden="true">{item.to === "/" ? "Dashboard" : item.to.slice(1).replace("predictions", "Signals").replace("consult", "AI Assistant").replace("replay", "Replay / Backtest")}</small></span>
+            <span className="nav-entry__label">{t(item.label)}<small aria-hidden="true">{t(item.secondary)}</small></span>
           </NavLink>
         </li>
       ))}
@@ -114,6 +128,62 @@ function LanguageSelector() {
   );
 }
 
+function DesktopNotificationBridge() {
+  const navigate = useNavigate();
+  const { t } = useI18n();
+  const [backgroundAlert, setBackgroundAlert] = useState<MonitoringAlertEvent | null>(null);
+  const [monitoringNotice, setMonitoringNotice] = useState(false);
+  useEffect(() => {
+    let cleanup: (() => void) | undefined;
+    void registerDesktopNotificationRouting((route) => navigate(route)).then((unregister) => {
+      cleanup = unregister;
+    });
+    return () => cleanup?.();
+  }, [navigate]);
+  useEffect(() => {
+    const cleanup = registerMonitoringAlertStream((event) => {
+      if (event.notification.native) {
+        void notifyDesktopAlert({
+          title: event.alert.title,
+          body: event.alert.message,
+          route: event.route,
+        });
+      }
+      if (event.notification.in_app) setBackgroundAlert(event);
+    });
+    return cleanup;
+  }, []);
+  useEffect(() => {
+    let cleanup: (() => void) | undefined;
+    void registerDesktopMonitoringNotice(() => setMonitoringNotice(true)).then((unregister) => {
+      cleanup = unregister;
+    });
+    return () => cleanup?.();
+  }, []);
+  if (!backgroundAlert && !monitoringNotice) return null;
+  const route = backgroundAlert?.route ?? "/monitoring";
+  return (
+    <aside className="desktop-event-banner" role="status" aria-live="polite">
+      <div>
+        <strong>{backgroundAlert?.alert.title ?? t("monitoring.backgroundContinues")}</strong>
+        <p>{backgroundAlert?.alert.message ?? t("monitoring.backgroundContinuesBody")}</p>
+      </div>
+      <button
+        className="quiet-button"
+        type="button"
+        onClick={() => {
+          navigate(route);
+          setBackgroundAlert(null);
+          setMonitoringNotice(false);
+        }}
+      >
+        {t("monitoring.openBackgroundAlert")}
+      </button>
+      <button className="banner-dismiss" type="button" aria-label={t("common.dismiss")} onClick={() => { setBackgroundAlert(null); setMonitoringNotice(false); }}>×</button>
+    </aside>
+  );
+}
+
 function routeKey(pathname: string): TranslationKey {
   if (pathname === "/") {
     return "nav.dashboard";
@@ -126,25 +196,26 @@ function routeKey(pathname: string): TranslationKey {
 }
 
 interface PlaceholderPageProps {
-  title: string;
-  description: string;
-  nextTask?: string;
+  title: TranslationKey;
+  description: TranslationKey;
+  nextTask?: TranslationKey;
 }
 
-function PlaceholderPage({ title, description, nextTask = "a later Phase 4 task" }: PlaceholderPageProps) {
+function PlaceholderPage({ title, description, nextTask = "shell.laterPhase4" }: PlaceholderPageProps) {
+  const { t } = useI18n();
   return (
     <section className="page-placeholder" aria-labelledby="page-title">
       <div className="page-placeholder__topline">
-        <p className="eyebrow">Foundation surface</p>
-        <span className="status-chip status-chip--neutral">Not implemented</span>
+        <p className="eyebrow">{t("shell.foundationSurface")}</p>
+        <span className="status-chip status-chip--neutral">{t("shell.notImplemented")}</span>
       </div>
-      <h1 id="page-title">{title}</h1>
-      <p className="page-placeholder__description">{description}</p>
+      <h1 id="page-title">{t(title)}</h1>
+      <p className="page-placeholder__description">{t(description)}</p>
       <div className="placeholder-note" role="note">
-        <span className="placeholder-note__label">Scope note</span>
-        <span>Page implementation follows in {nextTask}.</span>
+        <span className="placeholder-note__label">{t("shell.scopeNote")}</span>
+        <span>{t("shell.pageImplementation")} {t(nextTask)}.</span>
       </div>
-      <p className="page-placeholder__boundary">No market data, signal, performance metric or recommendation is shown on this foundation route.</p>
+      <p className="page-placeholder__boundary">{t("shell.foundationRouteBoundary")}</p>
     </section>
   );
 }
@@ -152,8 +223,8 @@ function PlaceholderPage({ title, description, nextTask = "a later Phase 4 task"
 function NotFoundPage() {
   return (
     <PlaceholderPage
-      description="This workspace route is not registered in the current frontend foundation."
-      title="Route not found"
+      description="shell.routeNotRegistered"
+      title="shell.routeNotFound"
     />
   );
 }
@@ -183,6 +254,7 @@ function WorkspaceRoutes({
         path="watchlist"
         element={<WatchlistPage apiClient={apiClient} />}
       />
+      <Route path="monitoring" element={<MonitoringPage apiClient={apiClient} />} />
       <Route path="markets" element={<MarketIntelligencePage apiClient={apiClient} surface="markets" />} />
       <Route path="calendar" element={<MarketIntelligencePage apiClient={apiClient} surface="calendar" />} />
       <Route path="news" element={<MarketIntelligencePage apiClient={apiClient} surface="news" />} />
@@ -218,6 +290,7 @@ function ApplicationShellContent({ apiClient = defaultApiClient }: ApplicationSh
   const location = useLocation();
   const [healthState, setHealthState] = useState<BackendHealthState>("loading");
   const [health, setHealth] = useState<HealthResponse>();
+  const [desktopBackendState, setDesktopBackendState] = useState<DesktopBackendStatus | null>(null);
   const [provenance, setProvenance] = useState<DashboardProvenance>(() => emptyDashboardProvenance(t));
   const handleProvenanceChange = useCallback((next: DashboardProvenance) => setProvenance(next), []);
 
@@ -249,12 +322,25 @@ function ApplicationShellContent({ apiClient = defaultApiClient }: ApplicationSh
     return () => controller.abort();
   }, [apiClient]);
 
+  useEffect(() => {
+    let cleanup: (() => void) | undefined;
+    void registerDesktopBackendState((status) => setDesktopBackendState(status)).then((unregister) => {
+      cleanup = unregister;
+    });
+    return () => cleanup?.();
+  }, []);
+
+  const effectiveHealthState: BackendHealthState = desktopBackendState?.state === "degraded" || desktopBackendState?.state === "stopped"
+    ? "unavailable"
+    : healthState;
+
   return (
     <div className="app-frame" data-i18n-root="true">
+      <DesktopNotificationBridge />
       <a className="skip-link" href="#main-content">
         {t("shell.skipToContent")}
       </a>
-      <DesktopNavigation health={health} healthState={healthState} />
+      <DesktopNavigation health={health} healthState={effectiveHealthState} />
       <div className="app-column">
         <MobileNavigation />
         <header className="workspace-header">

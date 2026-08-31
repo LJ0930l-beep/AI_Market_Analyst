@@ -1,10 +1,27 @@
-# AI Market Analyst V1.1 Execution Plan
+# AI Market Analyst V1.2 Execution Plan
+
+## V1.2 phase handoff and acceptance
+
+The single active milestone is the complete V1.2 Windows desktop crypto smart-monitoring delivery. The V1.2 DOCX specification supplied by the user is authoritative over older repository details. Scope includes the Tauri 2 desktop shell and packaged FastAPI sidecar; AppData/import/migration; tray, native notification, installer and owned-process lifecycle; public crypto REST/WS with cache/freshness/reconnect/backfill; 15m close exactly-once; explicit-off MonitoringPolicy with `trigger_policy_v2`, ledger/dedupe/cooldown; real Smart 9B OpportunityAnalysis plus Python validation and Prediction/Outcome/Calibration; Fast 4B Chinese news translation with evidence and `numeric_guard`; Lightweight Charts 15m/1h overlays; typed bilingual UI and all release/live-smoke evidence.
+
+Required boundaries are unchanged: no account, secret, broker or real order; TradingView is chart-only; Python owns financial calculation and triggers; Smart 9B is never silently replaced by 4B; monitoring/auto-start/resume are off with no startup side effects; Exit stops only the exact owned sidecar tree. Required delivery gates are V1.1 regression, Python/frontend/Tauri/installer, real Windows install/launch/single-instance/tray/notification/exit/relaunch, migration/data retention, resource bounds, BTC/ETH/SOL live REST/WS, exactly-once, real Ollama 9B/4B behavior, chart and route accessibility/overflow checks.
+
+## V1.2 execution status
+
+1. PLAN — COMPLETE: specification, repository governance and acceptance gates read; V1.1 architecture retained.
+2. BUILD — COMPLETE: backend, storage, realtime/monitoring/news services, typed UI, Tauri shell, sidecar packaging, installer, docs and evidence implemented.
+3. VERIFY — COMPLETE: regression/unit/frontend/browser/package/live Windows and live provider/model gates executed.
+4. REPAIR — COMPLETE: the Sol review repairs add a real sidecar-owned monitoring runtime, dynamic tray lifecycle, official Windows autostart registration, active-close-to-tray safety, owned-backend watchdog/restart/degraded state, fixed production-build path, restricted WebView capabilities and an always-mounted alert-event bridge.
 
 ## Current phase
 
-Phase 7 - Security/release hardening, backup/restore, one-command startup and V1.0 Final Acceptance — SUPERVISOR_ACCEPTED.
+V1.2 complete Windows desktop crypto smart-monitoring delivery — DEVELOPER_COMPLETE; the repaired final package, live evidence and lifecycle evidence are recorded in the V1.2 documents and are pending Sol's independent review/acceptance. V1.0/V1.1 history remains preserved. No V1.3 or real-trading scope was started.
 
-Current task: V1.1 premium UI/UX, internationalization, Market Intelligence and dual-model Assistant — DEVELOPER_COMPLETE, pending supervisor review; V1.0 Final Acceptance remains SUPERVISOR_ACCEPTED / PASS and historical.
+## Repair Gate evidence
+
+- Production command is reproducible from `src-tauri`: `cargo +stable-x86_64-pc-windows-gnu tauri build --target x86_64-pc-windows-gnu`; the before-build wrapper resolves from `$PSScriptRoot`, invokes frontend and PyInstaller builds from the repository root, and fails fast on child errors.
+- Runtime acceptance covers startup no-scan, explicit start, pause/no-work, resume, stop, durable resume authorization, bounded 50-symbol selection, public stream degradation/backoff and alert event publication. Desktop source/security tests cover fixed Rust sidecar arguments, no WebView spawn permission, port-conflict safety, tray routing, backend watchdog/restart and exact uninstall autostart cleanup.
+- The live smoke uses the packaged sidecar with fixture fallback disabled and records the resident runtime lifecycle before the closed-bar exactly-once one-shot check. Installed lifecycle evidence separately records real install/relaunch/single-instance/data retention and the honest Windows notification click limitation.
 
 ## V1.1 task graph
 

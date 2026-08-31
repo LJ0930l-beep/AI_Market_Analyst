@@ -15,3 +15,9 @@ web/coverage/
 web/.vite/
 web/playwright-report/
 web/test-results/
+# V1.2 generated desktop/build outputs
+build/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/binaries/*.exe
+web/dist/

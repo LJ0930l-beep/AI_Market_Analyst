@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
@@ -28,6 +29,9 @@ class Bar:
     volume: float
 
     def __post_init__(self) -> None:
+        values = (self.open, self.high, self.low, self.close, self.volume)
+        if any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)) for value in values):
+            raise ValueError("OHLCV fields must be finite numbers")
         if self.high < max(self.open, self.close) or self.low > min(self.open, self.close):
             raise ValueError("OHLC bar violates high/low bounds")
         if self.low <= 0 or self.close <= 0:
@@ -47,6 +51,8 @@ class Quote:
     low: float | None = None
 
     def __post_init__(self) -> None:
+        if isinstance(self.price, bool) or not isinstance(self.price, (int, float)) or not math.isfinite(float(self.price)):
+            raise ValueError("quote price must be a finite number")
         if self.price <= 0:
             raise ValueError("quote price must be positive")
 

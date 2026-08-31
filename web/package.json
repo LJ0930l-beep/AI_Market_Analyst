@@ -1,7 +1,7 @@
 {
   "name": "ai-market-analyst-web",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,11 +16,16 @@
     "e2e:install": "playwright install chromium",
     "e2e:preflight": "node e2e/preflight.mjs",
     "screenshots:v11": "node e2e/run-screenshots.mjs",
+    "screenshots:v12": "node e2e/run-screenshots.mjs",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "vitest src"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-autostart": "^2.5.1",
+    "@tauri-apps/plugin-notification": "^2.3.3",
+    "lightweight-charts": "^5.2.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.18.0"

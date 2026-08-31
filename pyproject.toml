@@ -4,15 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-market-analyst"
-version = "1.1.0"
-description = "Local-first market research, news, Ollama analysis, and paper tracking"
+version = "1.2.0"
+description = "Local-first crypto market monitoring, news translation, Ollama analysis, and paper tracking"
 requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
-api = ["fastapi>=0.115", "uvicorn[standard]>=0.30", "httpx>=0.27"]
+api = ["fastapi>=0.115", "uvicorn[standard]>=0.30", "httpx>=0.27", "websocket-client>=1.8"]
 market = ["yfinance>=0.2.40"]
 dev = ["pytest>=8.0"]
+desktop = ["pyinstaller>=6.0"]
 
 [tool.setuptools.packages.find]
 where = ["."]

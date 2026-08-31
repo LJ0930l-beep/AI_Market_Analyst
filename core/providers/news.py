@@ -44,6 +44,10 @@ class NewsEvent:
     credibility: int = 50
     impact_horizon: str = ImpactHorizon.UNKNOWN.value
     dedupe_hash: str | None = None
+    actual: object | None = None
+    forecast: object | None = None
+    previous: object | None = None
+    unit: str | None = None
 
     def __post_init__(self) -> None:
         if not self.event_id or not self.source or not self.title:
@@ -86,6 +90,10 @@ class NewsEvent:
             "credibility": self.credibility,
             "impact_horizon": self.impact_horizon,
             "dedupe_hash": self.dedupe_hash,
+            "actual": self.actual,
+            "forecast": self.forecast,
+            "previous": self.previous,
+            "unit": self.unit,
         }
 
 

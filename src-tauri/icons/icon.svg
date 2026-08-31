@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="AI Market Analyst">
+  <rect width="256" height="256" rx="48" fill="#10201f"/>
+  <path d="M47 169 86 91l28 48 29-59 66 89" fill="none" stroke="#64d6a1" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="86" cy="91" r="12" fill="#f2c66d"/>
+  <circle cx="143" cy="80" r="12" fill="#76c7dc"/>
+  <path d="M54 196h148" stroke="#a9beb9" stroke-width="10" stroke-linecap="round"/>
+</svg>

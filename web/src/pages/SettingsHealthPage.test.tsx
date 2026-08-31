@@ -40,9 +40,9 @@ describe("SettingsHealthPage", () => {
     const { providerHealth } = renderSettings();
 
     const backend = await screen.findByRole("region", { name: "Backend service" });
-    expect(await within(backend).findByText("1.1.0")).toBeInTheDocument();
+    expect(await within(backend).findByText("1.2.0")).toBeInTheDocument();
     expect(within(backend).getAllByText("No")).toHaveLength(2);
-    expect(screen.getByRole("region", { name: "Release / local capability" })).toHaveTextContent("Phase 7 · API 1.1.0");
+    expect(screen.getByRole("region", { name: "Release / local capability" })).toHaveTextContent("Phase 7 · API 1.2.0");
 
     const provider = screen.getByRole("region", { name: "Market and news routing" });
     expect(await within(provider).findByRole("alert")).toHaveTextContent("This panel is unavailable");
@@ -53,12 +53,14 @@ describe("SettingsHealthPage", () => {
     expect(within(model).getByText("MODEL_NOT_CONFIGURED")).toBeInTheDocument();
     expect(within(model).getByText("qwen_consult_v2")).toBeInTheDocument();
     expect(within(model).getByText("disabled (read-only consultation)")).toBeInTheDocument();
-    expect(screen.getByText(/No secrets, broker connections, real orders or external notifiers are exposed here; alerts are local observability/)).toBeInTheDocument();
+    expect(screen.getByText(/No secrets, broker connections, real orders or cloud notifiers are exposed here; alerts stay local/)).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Alert reconciliation" })).toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Local Watchlist scheduler" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Enable scheduler" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Phase 6 context capabilities" })).toHaveTextContent("market_memory_v1");
+    fireEvent.click(screen.getByRole("button", { name: "Send test Windows notification" }));
+    expect(await screen.findByText("Windows notification is unavailable in this runtime or permission is denied.")).toBeInTheDocument();
 
     fireEvent.click(within(provider).getByRole("button", { name: "Retry Market and news routing" }));
     expect(await within(provider).findByText("fixture_news")).toBeInTheDocument();

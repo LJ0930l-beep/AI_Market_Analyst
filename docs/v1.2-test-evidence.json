@@ -1,0 +1,235 @@
+{
+  "contract": "v12_test_evidence_v1",
+  "date": "2026-08-31",
+  "status": "developer_complete",
+  "acceptance": "pending_sol_independent_review",
+  "package": {
+    "version": "1.2.0",
+    "api_phase": 7,
+    "sqlite_schema": 12,
+    "branch": "main",
+    "installer": "D:\\RJ\\codex\\ai-market-analyst\\src-tauri\\target\\x86_64-pc-windows-gnu\\release\\bundle\\nsis\\AI Market Analyst_1.2.0_x64-setup.exe",
+    "installer_bytes": 42531412,
+    "installer_sha256": "97FA0CF1778F423AEE12E486C818BB7FB38730A9E300A796591DC5A8BFD698D4",
+    "main_executable_sha256": "C06FE7A75FDD36169F2F0B928A5B3AC65E76CC93DE9443F09FE8AAA29CDA7321",
+    "installed_main_executable_sha256": "12ECCB64CE3009036888B7F7F23412BAFF3BAC976292AB6A7E9F042EAA44590A",
+    "sidecar_executable_sha256": "64D416AFCFBBC21B91490B7A94B84660218AE06777038F2536BBC5F8682FD84B",
+    "default_program_directory": "%LOCALAPPDATA%\\Programs\\AI Market Analyst",
+    "runtime_data_directory": "%LOCALAPPDATA%\\AI Market Analyst"
+  },
+  "python": {
+    "pytest": {
+      "command": "python -m pytest -q",
+      "status": "passed",
+      "passed": 153,
+      "skipped": 1,
+      "warnings": 1,
+      "summary": "153 passed, 1 skipped, 1 warning in 37.61s"
+    },
+    "unittest": {
+      "command": "python -B -m unittest discover -s tests -v",
+      "status": "passed",
+      "tests": 132,
+      "skipped": 1,
+      "summary": "Ran 132 tests; OK (skipped=1)"
+    },
+    "v12_focus": {
+      "command": "python -m pytest -q tests/test_v12_api.py tests/test_v12_monitoring.py tests/test_v12_news_desktop.py tests/test_v12_realtime.py tests/test_v12_desktop_security.py tests/test_v12_monitoring_runtime.py tests/test_migration.py",
+      "status": "passed",
+      "passed": 23,
+      "warnings": 1
+    },
+    "compileall": {
+      "command": "python -B -m compileall -q apps core tests scripts",
+      "status": "passed"
+    },
+    "pip_check": {
+      "command": "python -m pip check",
+      "status": "passed",
+      "summary": "No broken requirements found."
+    }
+  },
+  "frontend": {
+    "lint": {
+      "command": "cd web; npm run lint",
+      "status": "passed"
+    },
+    "typecheck": {
+      "command": "cd web; npm run typecheck",
+      "status": "passed"
+    },
+    "vitest": {
+      "command": "cd web; npm test -- --run",
+      "status": "passed",
+      "files": 17,
+      "tests": 74,
+      "summary": "17 test files, 76 tests"
+    },
+    "build": {
+      "command": "cd web; npm run build",
+      "status": "passed",
+      "vite": "6.4.3"
+    },
+    "npm_audit": {
+      "command": "cd web; npm run audit",
+      "status": "passed",
+      "high_or_higher_vulnerabilities": 0
+    },
+    "npm_audit_production": {
+      "command": "cd web; npm run audit:production",
+      "status": "passed",
+      "high_or_higher_vulnerabilities": 0
+    },
+    "e2e_preflight": {
+      "command": "cd web; npm run e2e:preflight",
+      "status": "passed",
+      "playwright": "1.62.1"
+    },
+    "e2e": {
+      "command": "cd web; npm run e2e",
+      "status": "passed",
+      "tests": 13,
+      "passed": 13,
+      "product_routes": 15,
+      "axe_scans": 30,
+      "overflow_checks": 30,
+      "fixture_boundary": "UI contract evidence only; not live-provider/model proof"
+    }
+  },
+  "tauri": {
+    "check": {
+      "command": "cargo +stable-x86_64-pc-windows-gnu check --target x86_64-pc-windows-gnu",
+      "status": "passed"
+    },
+    "production_build": {
+      "command": "cargo +stable-x86_64-pc-windows-gnu tauri build --target x86_64-pc-windows-gnu",
+      "working_directory": "src-tauri",
+      "status": "passed",
+      "target": "x86_64-pc-windows-gnu",
+      "bundle": "NSIS"
+    },
+    "runtime": "installed package contains built React assets and packaged sidecar; no Vite/npm/Node runtime dependency"
+  },
+  "sidecar_smoke": {
+    "command": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\v12-sidecar-smoke.ps1 18768",
+    "status": "passed",
+    "health_status": "ok",
+    "phase": 7,
+    "api_version": "1.2.0",
+    "schema_version": 12,
+    "real_orders": false,
+    "private_keys": false,
+    "fixture_fallback": "0",
+    "app_data_created": true
+  },
+  "live_smoke": {
+    "command": "python scripts\\v12-live-smoke.py --binary src-tauri\\target\\x86_64-pc-windows-gnu\\release\\ai-market-analyst-backend.exe --port 18766 --output docs\\v1.2-live-smoke.json",
+    "artifact": "docs/v1.2-live-smoke.json",
+    "status": "passed",
+    "fixture_fallback": false,
+    "required_failures": [],
+    "provider": "binance_public",
+    "symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+    "rest_bars_per_symbol": 240,
+    "websocket_bar_received": true,
+    "chart_timeframes": ["15m", "1h"],
+    "chart_bars_per_request": 120,
+    "chart_backend_api": false,
+    "chart_data_source": "app_supplied_public_market",
+    "resource_max_symbols": 50,
+    "resource_active_symbols": 3,
+    "bar_close_exactly_once": true,
+    "repeat_statuses": {
+      "BTCUSDT": "NO_NEW_CLOSED_BAR",
+      "ETHUSDT": "NO_NEW_CLOSED_BAR",
+      "SOLUSDT": "NO_NEW_CLOSED_BAR"
+    },
+    "news_provider": "google_news_rss",
+    "news_event_count": 20,
+    "translation_model": "qwen3.5:4b",
+    "translation_status": "translated",
+    "numeric_guard_passed": true,
+    "original_evidence_preserved": true,
+    "smart_model": "qwen3.5:9b",
+    "smart_model_available": true,
+    "smart_structured_json": true,
+    "smart_model_fallback": false,
+    "monitoring_run": "COMPLETED",
+    "trigger_event_count": 6,
+    "opportunity_count": 4,
+    "analysis_rows_recorded": true,
+    "monitoring_runtime_lifecycle": "stopped -> start/running -> pause/no-work -> resume/running -> stop/stopped",
+    "monitoring_startup_no_scan": true,
+    "monitoring_resume_requires_prior_explicit_start": true
+  },
+  "resource_and_policy": {
+    "cache_limit_20_test": "passed; active symbols bounded at 20",
+    "cache_limit_50_test": "passed; active symbols bounded at 50",
+    "default_monitoring_enabled": false,
+    "default_auto_start": false,
+    "default_resume": false,
+    "startup_scan": false,
+    "smart_fallback_to_fast": false
+  },
+  "installer_smoke": {
+    "artifact": "docs/v1.2-installer-smoke.md",
+    "status": "passed_with_observation_limit",
+    "interactive_installer_launch": "passed; real Welcome page observed from the final .exe",
+    "interactive_next_click": "not_observed; CUA action could not activate the installer window, so silent install evidence is used for the lifecycle run",
+    "install_exit": 0,
+    "reinstall_exit": 0,
+    "uninstall_exit": 0,
+    "window_title": "AI Market Analyst · V1.2",
+    "health_status": "ok",
+    "second_launch_exit": 0,
+    "single_instance": true,
+    "owned_process_records": 3,
+    "graceful_close_message": true,
+    "test_port": 18771,
+    "test_port_released_after_close": true,
+    "program_removed_after_uninstall": true,
+    "isolated_database_sha256_before_and_after": "DD6D1B14CF90FB11432D61B08BF4C87B22D701B0BC4C25B7A3F2C0815E057F0F",
+    "tray_menu": "dynamic Show/terminal/status/Pause-Resume/Settings/Restart/Exit wired; source/security tests pass; native popup actions not directly observable in this automation surface",
+    "monitoring_runtime": "installed final package API lifecycle passed: stopped/run_count0 -> start/cycle1 -> pause stable -> resume/cycle2 -> stop/no worker",
+    "active_close": "active runtime forced hide-to-tray with one-time notice; inactive close-to-tray and exit combinations passed",
+    "autostart_os_state": "official plugin Run and StartupApproved values observed when enabled; final uninstall removed both exact values and reinstall default was absent",
+    "backend_watchdog_restart": "exact sidecar crash -> degraded UI -> Settings restart -> ready",
+    "port_conflict": "default port occupied by unrelated Codex sidecar; app stayed alive/degraded and foreign listener remained",
+    "notification_delivery": "Windows PushNotification event-log delivery observed",
+    "notification_click": "safe Tauri action route wired and browser-tested; direct OS click was not visually observed in this automation surface",
+    "unrelated_processes": "Ollama PID 8320 and unrelated Codex sidecar were left running",
+    "final_relaunch": {
+      "health": "ok",
+      "api_phase": 7,
+      "api_version": "1.2.0",
+      "runtime_state": "stopped",
+      "runtime_active": false,
+      "runtime_worker": false,
+      "runtime_run_count": 0,
+      "resume_eligible": false,
+      "default_monitoring_enabled": false,
+      "default_auto_start": false,
+      "default_resume": false,
+      "run_key_present": false,
+      "startup_approved_present": false
+    }
+  },
+  "release_observations": {
+    "screenshots": [
+      "docs/screenshots/v1.2/monitoring-en.png",
+      "docs/screenshots/v1.2/monitoring-zh-CN.png"
+    ],
+    "msvc_bootstrap": "Visual Studio Build Tools download succeeded, but silent install ended with UAC error 0x80070642; GNU Rust/LLVM-MinGW toolchain was used for the passing Windows x64 build.",
+    "warnings": [
+      "Known Starlette/httpx deprecation warning in the Python TestClient stack.",
+      "PyInstaller reported hidden import tzdata not found; the packaged smoke and live run passed."
+    ],
+    "pip_audit": "Not installed in this environment; dependency/license artifacts retain review-required status.",
+    "limitations": [
+      "Public Binance/RSS availability and rate limits can make runtime evidence stale or unavailable.",
+      "Windows toast visibility and OS notification settings are outside the app; direct visual toast/click was not asserted.",
+      "The package is Windows x64 and uses loopback port 18765 by default; AIMA_SIDECAR_PORT is an explicit local test override.",
+      "The product has no exchange account, secret, private key, broker, cloud notifier or real-order path."
+    ]
+  }
+}

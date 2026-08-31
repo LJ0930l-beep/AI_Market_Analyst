@@ -1,4 +1,5 @@
 import { useCallback, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 
 import type { ApplicationShellApiClient } from "../api/client";
 import type { AlertFilters, AlertRecord, AlertSeverity, AlertSource, AlertStatus } from "../api/types";
@@ -45,7 +46,7 @@ function AlertCard({ alert, onAcknowledge, busy }: { alert: AlertRecord; onAckno
     <li className={`alert-card alert-card--${String(alert.severity).toLowerCase()}`}>
       <div className="alert-card__header">
         <div>
-          <p className="eyebrow">{source} · {alert.symbol ?? t("alerts.workspace")}</p>
+          <p className="eyebrow">{source} · {alert.symbol ? <Link to={`/assets/${encodeURIComponent(alert.symbol)}`}>{alert.symbol}</Link> : t("alerts.workspace")}</p>
           <h3>{alert.title}</h3>
         </div>
         <div className="alert-card__badges" aria-label={`${t("common.alert")} ${text(alert.severity)} ${text(alert.status)}`}>

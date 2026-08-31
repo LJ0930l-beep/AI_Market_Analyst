@@ -100,6 +100,16 @@ def instrument_for(symbol: str) -> Instrument:
             trading_hours=TradingHours.AROUND_THE_CLOCK,
             sector="Crypto",
         )
+    if normalized in {"SOL", "SOLUSDT"}:
+        return Instrument(
+            symbol="SOLUSDT",
+            asset_type=AssetType.CRYPTO,
+            exchange="PUBLIC",
+            currency="USDT",
+            timezone="UTC",
+            trading_hours=TradingHours.AROUND_THE_CLOCK,
+            sector="Crypto",
+        )
     if normalized in {"AAPL", "NVDA", "TSLA", "AMD"}:
         sector = {
             "AAPL": "Technology",
@@ -152,7 +162,10 @@ def parse_instrument_candidate(symbol: object, asset_type: object) -> Instrument
         raise _candidate_error("symbol is too long")
 
     try:
-        canonical = instrument_for(normalized)
+        # SOL was introduced as an explicit V1.2 expansion symbol.  Keep its
+        # V1.1 registration semantics (inferred Binance metadata) so older
+        # imported registries do not change meaning on reopen.
+        canonical = None if normalized in {"SOL", "SOLUSDT"} else instrument_for(normalized)
     except ValueError:
         canonical = None
     if canonical is not None:
@@ -251,4 +264,4 @@ def instrument_from_payload(payload: dict[str, object]) -> Instrument:
 
 
 def phase1_universe() -> tuple[Instrument, ...]:
-    return tuple(instrument_for(symbol) for symbol in ("AAPL", "NVDA", "TSLA", "AMD", "BTCUSDT", "ETHUSDT"))
+    return tuple(instrument_for(symbol) for symbol in ("AAPL", "NVDA", "TSLA", "AMD", "BTCUSDT", "ETHUSDT", "SOLUSDT"))
