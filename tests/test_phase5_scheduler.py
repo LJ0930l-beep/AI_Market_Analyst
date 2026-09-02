@@ -250,13 +250,13 @@ class SchedulerCoreTests(unittest.TestCase):
             connection.close()
             upgraded = SQLiteStore(pre_migration)
             upgraded.initialize()
-            self.assertEqual(upgraded.schema_version(), 12)
+            self.assertEqual(upgraded.schema_version(), 13)
             self.assertEqual(upgraded.counts()["scheduler_runs"], 0)
 
             path = Path(temp) / "scheduler.sqlite3"
             store = SQLiteStore(path)
             store.initialize()
-            self.assertEqual(store.schema_version(), 12)
+            self.assertEqual(store.schema_version(), 13)
             self.assertEqual(store.counts()["scheduler_runs"], 0)
             store.create_scheduler_run(
                 run_id="crashed-run",
@@ -272,7 +272,7 @@ class SchedulerCoreTests(unittest.TestCase):
             self.assertEqual(store.list_scheduler_items("crashed-run")[0]["status"], "INTERRUPTED")
             reopened = SQLiteStore(path)
             reopened.initialize()
-            self.assertEqual(reopened.schema_version(), 12)
+            self.assertEqual(reopened.schema_version(), 13)
             self.assertEqual(reopened.counts()["scheduler_items"], 1)
             runtime.close()
 
@@ -506,7 +506,10 @@ class SchedulerCoreTests(unittest.TestCase):
             self.assertEqual(run.json()["run"]["status"], "COMPLETED")
             history = client.get("/scheduler/history")
             self.assertEqual(history.status_code, 200)
-            self.assertGreaterEqual(len(history.json()["runs"]), 2)
+            # The explicit manual run is deterministic; the first scheduled
+            # iteration is intentionally asynchronous and may not win the
+            # race with the immediate stop in this API-level test.
+            self.assertGreaterEqual(len(history.json()["runs"]), 1)
             self.assertEqual(client.put("/settings/scheduler.enabled", json={"value": False}).status_code, 200)
             self.assertFalse(client.get("/scheduler/status").json()["thread_alive"])
             self.assertGreaterEqual(client.get("/stats").json()["scheduler_runs"], 1)

@@ -8,7 +8,7 @@ import type { AsyncResource } from "../hooks/useAsyncResource";
 import { useAsyncResource } from "../hooks/useAsyncResource";
 import { useI18n } from "../i18n";
 import { notifyDesktopAlert } from "../desktopNotifications";
-import { isTauriRuntime, readAutostartState, restartOwnedBackend, setAutostartState } from "../desktopRuntime";
+import { isTauriRuntime, readAutostartState, registerDesktopBackendState, restartOwnedBackend, setAutostartState, type DesktopBackendStatus } from "../desktopRuntime";
 
 interface SettingsHealthPageProps {
   apiClient: ApplicationShellApiClient;
@@ -119,6 +119,7 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
   const alertLoader = useCallback((signal: AbortSignal) => apiClient.alertStatus(signal), [apiClient]);
   const contextLoader = useCallback((signal: AbortSignal) => apiClient.contextHealth(signal), [apiClient]);
   const appSettingsLoader = useCallback((signal: AbortSignal) => apiClient.appSettings(signal), [apiClient]);
+  const hydrationLoader = useCallback((signal: AbortSignal) => apiClient.hydrationStatus(signal), [apiClient]);
 
   const health = useAsyncResource(healthLoader);
   const provider = useAsyncResource(providerLoader);
@@ -130,6 +131,7 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
   const alerts = useAsyncResource(alertLoader);
   const context = useAsyncResource(contextLoader);
   const appSettings = useAsyncResource(appSettingsLoader);
+  const hydration = useAsyncResource(hydrationLoader);
   const [action, setAction] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [preferenceLanguage, setPreferenceLanguage] = useState<"en" | "zh-CN">(language);
@@ -144,7 +146,17 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
   const [backendActionStatus, setBackendActionStatus] = useState<string | null>(null);
   const [preferencesStatus, setPreferencesStatus] = useState<string | null>(null);
   const [notificationStatus, setNotificationStatus] = useState<string | null>(null);
+  const [desktopBackend, setDesktopBackend] = useState<DesktopBackendStatus | null>(null);
+  const [hydrationAction, setHydrationAction] = useState(false);
   const preferencesDirty = useRef(false);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) return () => undefined;
+    let cleanup: (() => void) | undefined;
+    const onState = (status: DesktopBackendStatus) => setDesktopBackend(status);
+    void registerDesktopBackendState(onState).then((unregister) => { cleanup = unregister; });
+    return () => cleanup?.();
+  }, []);
 
   useEffect(() => {
     if (!appSettings.data || preferencesDirty.current) return;
@@ -161,7 +173,12 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
     if (notification === "en" || notification === "zh-CN") setNotificationLanguage(notification);
     if (model === "auto" || model === "fast" || model === "smart") setModelPreference(model);
     if (typeof close === "boolean") setCloseToTray(close);
-    if (typeof start === "boolean") setAutoStart(start);
+    // In the packaged desktop the official plugin is the authority.  An
+    // AppData preference may survive uninstall while Windows registration is
+    // intentionally removed, so allowing that stale value to win creates a
+    // checked box beside an "OS disabled" status.  Browser/dev mode has no
+    // native registry and continues to use the API value.
+    if (typeof start === "boolean" && !isTauriRuntime()) setAutoStart(start);
     if (typeof resume === "boolean") setResumeMonitoring(resume);
   }, [appSettings.data]);
 
@@ -207,6 +224,7 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
     try {
       const status = await restartOwnedBackend();
       if (!status) throw new Error(t("settings.backendRestartUnavailable"));
+      setDesktopBackend(status);
       setBackendActionStatus(`${t("settings.backendRestarted")}: ${status.state}`);
       health.retry();
       provider.retry();
@@ -215,6 +233,16 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
       setBackendActionStatus(error instanceof Error ? error.message : t("settings.backendRestartFailed"));
     } finally {
       setBackendAction(null);
+    }
+  }
+
+  async function refreshHydration() {
+    setHydrationAction(true);
+    try {
+      await apiClient.refreshHydration();
+      hydration.retry();
+    } finally {
+      setHydrationAction(false);
     }
   }
 
@@ -307,6 +335,15 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
           degradedMessage={t("settings.backendDegraded")}
         >
           {health.data ? <HealthFacts health={health.data} /> : null}
+          {desktopBackend ? (
+            <dl className="fact-list fact-list--compact settings-desktop-facts">
+              <div className="fact-list__row"><dt>{t("settings.backendAddress")}</dt><dd>{desktopBackend.base_url || t("common.notSupplied")}</dd></div>
+              <div className="fact-list__row"><dt>{t("settings.backendPid")}</dt><dd>{desktopBackend.pid ?? t("common.notSupplied")}</dd></div>
+              <div className="fact-list__row"><dt>{t("settings.backendInstance")}</dt><dd>{desktopBackend.instance_id ?? t("common.notSupplied")}</dd></div>
+              <div className="fact-list__row"><dt>{t("settings.backendContract")}</dt><dd>{desktopBackend.contract_version} · {t("settings.backendOwnership")} {t(desktopBackend.ownership_verified ? "common.yes" : "common.no")}</dd></div>
+              {desktopBackend.last_error ? <div className="fact-list__row"><dt>{t("settings.backendError")}</dt><dd>{desktopBackend.last_error}</dd></div> : null}
+            </dl>
+          ) : null}
         </AsyncPanel>
         <div className="scheduler-actions" aria-label={t("settings.backendLifecycleControls")}>
           <button className="quiet-button" type="button" onClick={() => void restartBackend()} disabled={backendAction !== null}>{backendAction === "restart" ? t("settings.backendRestarting") : t("settings.restartBackend")}</button>
@@ -324,6 +361,29 @@ export function SettingsHealthPage({ apiClient }: SettingsHealthPageProps) {
           degradedMessage={t("settings.routingDegraded")}
         >
           {provider.data ? <ProviderRouting provider={provider.data} /> : null}
+        </AsyncPanel>
+
+        <AsyncPanel
+          title={t("settings.hydration")}
+          source="GET /hydration/status"
+          freshness={hydration.data?.last_success_at ?? t("settings.healthProbeTimestampMissing")}
+          state={hydration.status === "loading" ? "loading" : hydration.status === "unavailable" ? "unavailable" : hydration.data?.state === "degraded" ? "degraded" : hydration.data ? "ready" : "empty"}
+          error={hydration.error}
+          onRetry={hydration.retry}
+          emptyMessage={t("dashboard.hydrationOffline")}
+          degradedMessage={t("dashboard.hydrationDegraded")}
+        >
+          {hydration.data ? (
+            <div className="scheduler-facts">
+              <dl className="fact-list fact-list--compact">
+                <div className="fact-list__row"><dt>{t("settings.hydration")}</dt><dd>{hydration.data.state} · {t("settings.workerAlive")} {t(hydration.data.worker_alive ? "common.yes" : "common.no")}</dd></div>
+                <div className="fact-list__row"><dt>{t("settings.hydrationLastUpdate")}</dt><dd>{hydration.data.last_success_at ?? t("common.notSupplied")}</dd></div>
+                <div className="fact-list__row"><dt>{t("settings.hydrationSources")}</dt><dd>{schedulerText(hydration.data.sources, t("common.notDisplayable"))}</dd></div>
+                <div className="fact-list__row"><dt>{t("settings.cache")}</dt><dd>{schedulerText(hydration.data.cache, t("common.notDisplayable"))}</dd></div>
+              </dl>
+              <button className="quiet-button" type="button" onClick={() => void refreshHydration()} disabled={hydrationAction}>{hydrationAction ? t("settings.hydrationRefreshing") : t("settings.hydrationRefresh")}</button>
+            </div>
+          ) : null}
         </AsyncPanel>
 
         <AsyncPanel

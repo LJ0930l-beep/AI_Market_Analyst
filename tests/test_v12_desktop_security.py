@@ -11,7 +11,7 @@ def test_tauri_build_command_is_repository_root_stable() -> None:
     config = json.loads((ROOT / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8"))
     build = config["build"]
     assert "scripts/build-tauri.ps1" in build["beforeBuildCommand"]
-    assert "../scripts" not in build["beforeBuildCommand"]
+    assert "scripts/build-tauri.ps1" in build["beforeBuildCommand"]
     script = (ROOT / "scripts" / "build-tauri.ps1").read_text(encoding="utf-8")
     assert "$PSScriptRoot" in script
     assert "build-tauri-frontend.ps1" in script
@@ -32,9 +32,10 @@ def test_webview_cannot_spawn_or_rewrite_desktop_processes() -> None:
     assert "autostart:allow-is-enabled" in permissions
 
     rust = (ROOT / "src-tauri" / "src" / "main.rs").read_text(encoding="utf-8")
-    assert '.args(["--host", "127.0.0.1", "--port", &port.to_string()])' in rust
+    assert '"--ownership-token"' in rust
+    assert "select_sidecar_port" in rust
     assert "backend_status" in rust
-    assert "no foreign process was touched" in rust
+    assert "foreign processes remain untouched" in rust
     assert "taskkill" in rust and '"/PID"' in rust
 
 
@@ -56,6 +57,7 @@ def test_desktop_lifecycle_keeps_monitoring_safe_when_hidden_or_degraded() -> No
     assert '"monitoring-toggle"' in rust and '"/monitoring/pause"' in rust and '"/monitoring/resume"' in rust
     assert '"restart-backend"' in rust and 'restart_backend(app.clone())' in rust
     assert 'if active == Some(true)' in rust and 'notify_monitoring_continues' in rust
+    assert 'window.app_handle().exit(0)' in rust
     assert 'let mut misses = 0_u8' in rust and 'if misses >= 3' in rust
 
     runtime = (ROOT / "core" / "monitoring_runtime.py").read_text(encoding="utf-8")

@@ -4,7 +4,7 @@ $frontendScript = Join-Path $PSScriptRoot "build-tauri-frontend.ps1"
 $sidecarScript = Join-Path $PSScriptRoot "build-sidecar.ps1"
 foreach ($required in @($frontendScript, $sidecarScript, (Join-Path $projectRoot "web\package.json"), (Join-Path $projectRoot "apps\sidecar.py"))) {
   if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
-    throw "V1.2 release build input is missing: $required"
+    throw "V1.2.1 release build input is missing: $required"
   }
 }
 Push-Location $projectRoot

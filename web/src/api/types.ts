@@ -14,6 +14,13 @@ export interface HealthResponse {
   product: string;
   real_orders: false;
   private_keys: false;
+  ready?: boolean;
+  contract_version?: string;
+  instance_id?: string;
+  pid?: number;
+  launcher_pid?: number;
+  port?: number;
+  ownership_verified?: boolean;
 }
 
 export interface ReleaseHealthResponse extends JsonRecord {
@@ -164,7 +171,28 @@ export type AppSettingKey =
   | "ai.model_preference"
   | "desktop.close_to_tray"
   | "desktop.auto_start"
-  | "monitoring.resume";
+  | "monitoring.resume"
+  | "market_hydration.enabled";
+
+export interface PublicHydrationStatus extends JsonRecord {
+  contract_version: string;
+  enabled: boolean;
+  state: "disabled" | "idle" | "starting" | "refreshing" | "ready" | "degraded" | "stopped" | string;
+  worker_alive: boolean;
+  market_symbols: string[];
+  news_symbols: string[];
+  sources: JsonRecord;
+  last_refresh_at?: string | null;
+  last_success_at?: string | null;
+  last_run_id?: string | null;
+  run_count: number;
+  next_refresh_at?: string | null;
+  last_error?: string | null;
+  last_errors: string[];
+  cache: JsonRecord;
+  provider_calls: number;
+  domain_writes: number;
+}
 
 export interface MarketPulseItem extends JsonRecord {
   symbol: string;
@@ -240,6 +268,7 @@ export interface MarketIntelligenceResponse extends JsonRecord {
   heatmap: { status: string; cells: HeatmapCell[]; capability: string; taxonomy_version: string };
   news: { status: string; items: IntelligenceEvent[]; missing_reasons: string[] };
   daily_brief?: DailyBrief | null;
+  hydration?: PublicHydrationStatus;
   capabilities: JsonRecord;
 }
 

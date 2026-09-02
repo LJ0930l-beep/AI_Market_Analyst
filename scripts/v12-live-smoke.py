@@ -1,4 +1,4 @@
-"""Run a disposable, real-provider V1.2 smoke against the packaged sidecar.
+"""Run a disposable, real-provider V1.2.1 smoke against the packaged sidecar.
 
 This probe deliberately records capability failures instead of replacing live
 responses with fixtures.  It owns only the child process it starts and never
@@ -24,7 +24,7 @@ from urllib.request import Request, urlopen
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BINARY = REPO_ROOT / "src-tauri" / "binaries" / "ai-market-analyst-backend-x86_64-pc-windows-msvc.exe"
-DEFAULT_OUTPUT = REPO_ROOT / "docs" / "v1.2-live-smoke.json"
+DEFAULT_OUTPUT = REPO_ROOT / "docs" / "v1.2.1-live-smoke.json"
 SYMBOLS = ("BTCUSDT", "ETHUSDT", "SOLUSDT")
 
 
@@ -190,6 +190,30 @@ def _websocket_smoke(base_url: str) -> dict[str, object]:
     except Exception as exc:  # pragma: no cover - depends on public WebSocket/network availability
         result.update({"status": "failed", "error": type(exc).__name__, "error_code": str(getattr(exc, "code", "WEBSOCKET_SMOKE_FAILED"))})
     return result
+
+
+def _hydration_smoke(base_url: str) -> dict[str, object]:
+    """Wait for the sidecar-owned first-start public cache refresh."""
+
+    last: dict[str, object] = {"ok": False, "error": "not attempted"}
+    deadline = perf_counter() + 75.0
+    while perf_counter() < deadline:
+        last = _request(base_url, "/hydration/status", timeout=15.0)
+        payload = _payload(last)
+        if isinstance(payload.get("last_durable_run"), dict):
+            break
+        time.sleep(1.0)
+    summary = _endpoint_summary(
+        last,
+        fields=(
+            "contract_version", "enabled", "state", "worker_alive", "market_symbols",
+            "news_symbols", "last_refresh_at", "last_success_at", "last_error",
+            "cache", "provider_calls", "domain_writes", "last_durable_run",
+        ),
+    )
+    payload = _payload(last)
+    summary["status"] = "passed" if last.get("ok") and payload.get("enabled") is True and isinstance(payload.get("last_durable_run"), dict) else "failed"
+    return summary
 
 
 def _monitoring_smoke(base_url: str) -> dict[str, object]:
@@ -377,7 +401,7 @@ def run(binary: Path, output: Path, *, port: int) -> int:
     )
     process: subprocess.Popen[bytes] | None = None
     evidence: dict[str, object] = {
-        "contract": "v12_live_smoke_v1",
+        "contract": "v121_live_smoke_v1",
         "started_at": started_at,
         "finished_at": None,
         "fixture_fallback": False,
@@ -389,6 +413,7 @@ def run(binary: Path, output: Path, *, port: int) -> int:
         "realtime": {},
         "charts": {},
         "monitoring": {},
+        "hydration": {},
         "news": {},
         "model_9b": _model_smoke(),
     }
@@ -406,13 +431,13 @@ def run(binary: Path, output: Path, *, port: int) -> int:
                 stderr=stderr,
             )
         health = _wait_for_sidecar(base_url)
-        evidence["sidecar"] = _endpoint_summary(health, fields=("status", "version", "phase"))
+        evidence["sidecar"] = _endpoint_summary(health, fields=("status", "ready", "phase", "api_version", "contract_version", "instance_id", "pid", "launcher_pid", "port", "ownership_verified"))
         if not health.get("ok"):
             evidence["sidecar"]["stderr_tail"] = stderr_path.read_text(encoding="utf-8", errors="replace")[-2000:]
             return_code = 1
             return return_code
         release = _request(base_url, "/health/release")
-        evidence["release"] = _endpoint_summary(release, fields=("version", "phase", "database", "capabilities"))
+        evidence["release"] = _endpoint_summary(release, fields=("version", "api_version", "phase", "database", "capabilities"))
         providers = _request(base_url, "/health/providers")
         evidence["provider_health"] = _endpoint_summary(providers, fields=("providers", "capabilities"))
         model_health = _request(base_url, "/health/model")
@@ -440,6 +465,8 @@ def run(binary: Path, output: Path, *, port: int) -> int:
                     evidence["charts"][key]["provider_name"] = provider.get("provider")
                     evidence["charts"][key]["stale"] = provider.get("stale")
 
+        evidence["hydration"] = _hydration_smoke(base_url)
+
         evidence["monitoring"] = _monitoring_smoke(base_url)
 
         news = _request(base_url, "/news/BTCUSDT?locale=en", timeout=30.0)
@@ -457,10 +484,13 @@ def run(binary: Path, output: Path, *, port: int) -> int:
                 if translation.get("ok"):
                     evidence["news"]["translation"]["translated_title_present"] = bool(translation_payload.get("translated_title_zh"))
         required_failures: list[str] = []
-        if not bool(evidence.get("sidecar", {}).get("ok")):
+        sidecar_evidence = evidence.get("sidecar", {})
+        if not bool(sidecar_evidence.get("ok")) or sidecar_evidence.get("api_version") != "1.2.1" or sidecar_evidence.get("contract_version") != "desktop_backend_v1" or int(sidecar_evidence.get("pid", 0) or 0) <= 0 or int(sidecar_evidence.get("launcher_pid", 0) or 0) <= 0:
             required_failures.append("sidecar_ready")
-        if not bool(evidence.get("release", {}).get("ok")) or evidence.get("release", {}).get("database", {}).get("schema_version") != 12:
-            required_failures.append("release_schema_12")
+        if not bool(evidence.get("release", {}).get("ok")) or evidence.get("release", {}).get("api_version") != "1.2.1" or evidence.get("release", {}).get("database", {}).get("schema_version") != 13:
+            required_failures.append("release_schema_13")
+        if evidence.get("hydration", {}).get("status") != "passed":
+            required_failures.append("sidecar_public_hydration")
         if evidence.get("model_9b", {}).get("status") != "passed":
             required_failures.append("real_9b")
         if evidence.get("websocket", {}).get("status") != "passed":
@@ -517,7 +547,7 @@ def run(binary: Path, output: Path, *, port: int) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run a real-provider V1.2 packaged sidecar smoke")
+    parser = argparse.ArgumentParser(description="Run a real-provider V1.2.1 packaged sidecar smoke")
     parser.add_argument("--binary", type=Path, default=DEFAULT_BINARY)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--port", type=int, default=18_766)

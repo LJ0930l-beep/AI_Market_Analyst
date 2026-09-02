@@ -1,0 +1,89 @@
+{
+  "contract": "v121_test_evidence_v1",
+  "generated_at": "2026-09-02T21:38:52+08:00",
+  "status": "developer_complete",
+  "acceptance": "pending_sol_independent_review",
+  "versions": {
+    "package_api": "1.2.1",
+    "desktop": "desktop_backend_v1",
+    "monitoring_runtime": "monitoring_runtime_v1",
+    "trigger_policy": "trigger_policy_v2",
+    "sqlite_schema": 13
+  },
+  "artifacts": {
+    "installer": {
+      "path": "D:\\RJ\\codex\\ai-market-analyst\\src-tauri\\target\\x86_64-pc-windows-gnu\\release\\bundle\\nsis\\AI Market Analyst_1.2.1_x64-setup.exe",
+      "bytes": 42553026,
+      "sha256": "A284FD70CB91E8D67955B1A9E367FE18C3FC4A60D2A74170018E5F8519C464C4"
+    },
+    "release_executable_sha256": "0A84904079492238767E9F5F163525E2C00480D5B964E32B49B4CB358A856ABE",
+    "release_sidecar_sha256": "4E4077512206781C7459798587F5D9352E67D321206BCF28643EED7FC4303059",
+    "installed_executable_sha256": "D9F2399D63C6C5EBB8C1C7CE2D18D1FA3336912E54F833C15594733AB66CBE4D"
+  },
+  "gates": {
+    "python_full": "PASS: 158 passed, 1 skipped, 1 warning in 36.37s",
+    "python_v12_v121_focused": "PASS: 28 passed, 1 warning in 8.92s",
+    "python_unittest": "PASS: Ran 132 tests in 30.596s; OK (skipped=1)",
+    "python_compileall": "PASS",
+    "python_pip_check": "PASS: No broken requirements found.",
+    "frontend_order": [
+      "PASS: npm run build; Vite 6.4.3, 75 modules",
+      "PASS: npm run lint",
+      "PASS: npm run typecheck",
+      "PASS: npm test -- --run; 18 files, 78 tests"
+    ],
+    "frontend_e2e": "PASS: Playwright 1.62.1; 13 passed in 1.0m; 15 routes, 30 axe scans, 30 overflow checks; deterministic fixture UI",
+    "npm_audit_full": "PASS: 0 vulnerabilities",
+    "npm_audit_production": "PASS: 0 vulnerabilities",
+    "tracked_secret_scan": "PASS: 0 findings",
+    "cargo_check_gnu_x64": "PASS",
+    "tauri_production_build": "PASS: cargo +stable-x86_64-pc-windows-gnu tauri build --target x86_64-pc-windows-gnu from src-tauri",
+    "packaged_sidecar_smoke": "PASS: API 1.2.1, desktop_backend_v1, schema 13, AppData, fixture fallback 0",
+    "live_smoke": "PASS: docs/v1.2.1-live-smoke.json, fixture fallback false, required_failures empty",
+    "screenshots": "PASS: 2 V1.2.1 monitoring screenshots; historical V1.1 set regenerated"
+  },
+  "live_summary": {
+    "public_rest": "BTCUSDT, ETHUSDT, SOLUSDT; binance_public; 240 bars each; fresh",
+    "public_websocket": "PASS: BTCUSDT state and bar messages",
+    "charts": "15m and 1h; 120 bars per symbol/timeframe; app-supplied public data",
+    "monitoring": "PASS: startup no scan; start; cycle; pause stable; resume; cycle; stop",
+    "bar_close_exactly_once": true,
+    "trigger_events": 3,
+    "opportunity_analyses": 3,
+    "smart_model": "PASS: qwen3.5:9b structured output; all saved analysis rows identify qwen3.5:9b",
+    "news": "PASS: 20 real English google_news_rss events; qwen3.5:4b Chinese translation; numeric_guard true",
+    "public_hydration": "PASS: durable schema-13 audit, provider calls 9, domain writes 0"
+  },
+  "installed_windows": {
+    "default_environment": true,
+    "launch_backend_ready": "PASS",
+    "single_instance": "PASS",
+    "autostart_os_state": "PASS: exact HKCU Run value created on enable and removed on disable/uninstall; final off",
+    "resume_default": "PASS: false and independent from autostart",
+    "owned_backend_crash_restart": "PASS: degraded visible, only owned sidecar restarted, Ollama survived",
+    "foreign_18765": "PASS: foreign listener retained, app selected 18766, no takeover/kill",
+    "active_close": "PASS: hidden-to-tray, sidecar worker remained active, one-time notice observed",
+    "inactive_close": "PASS: product exited and listener released with close_to_tray false",
+    "uninstall_retention": "PASS: program/autostart removed; AppData database byte-for-byte retained",
+    "upgrade_retention": "PASS: pre/post database SHA-256 unchanged",
+    "final_state": "installed app healthy; monitoring stopped; auto_start false; resume false"
+  },
+  "limits": [
+    "Direct native Windows ordinary-toast click was not observable through the automation surface and is not claimed as observed.",
+    "Native taskbar tray popup was not targetable; direct popup menu clicks are not claimed, while source/tests and installed active-close/background/reopen behavior cover the lifecycle.",
+    "pip-audit is unavailable; license inventories remain review_required.",
+    "PyInstaller emitted a non-fatal tzdata hidden-import warning; packaged sidecar and live smokes passed.",
+    "FastAPI TestClient emitted one known Starlette/httpx deprecation warning."
+  ],
+  "safety": {
+    "monitoring_default": false,
+    "autostart_default": false,
+    "resume_default": false,
+    "startup_trigger_or_model_scan": false,
+    "webview_arbitrary_spawn": false,
+    "accounts_or_secrets": false,
+    "broker_or_real_orders": false,
+    "proprietary_chart_assets": false,
+    "unrelated_process_control": false
+  }
+}

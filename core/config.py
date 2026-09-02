@@ -11,9 +11,9 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.1"
 API_PHASE = 7
-CURRENT_SCHEMA_VERSION = 12
+CURRENT_SCHEMA_VERSION = 13
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_API_PORT = 8000
 DEFAULT_WEB_PORT = 4173

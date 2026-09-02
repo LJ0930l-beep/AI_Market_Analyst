@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { I18nProvider } from "../i18n";
 import { MonitoringPage } from "./MonitoringPage";
-import { createFakeClient } from "../test/fakeClient";
+import { createFakeClient, fakeMonitoring, fakeMonitoringPolicy } from "../test/fakeClient";
 
 function renderMonitoring(client = createFakeClient()) {
   render(
@@ -21,7 +21,15 @@ describe("MonitoringPage", () => {
   it("keeps every policy disabled until the user opts in and exposes the run action", async () => {
     const updateMonitoringPolicy = vi.fn().mockResolvedValue(undefined);
     const runMonitoring = vi.fn().mockResolvedValue({ status: "NO_NEW_CLOSED_BAR", items: [] });
-    const client = renderMonitoring(createFakeClient({ updateMonitoringPolicy, runMonitoring }));
+    let monitoringResponse = fakeMonitoring;
+    const monitoring = vi.fn().mockImplementation(async () => monitoringResponse);
+    updateMonitoringPolicy.mockImplementation(async (policy) => {
+      monitoringResponse = {
+        ...monitoringResponse,
+        policies: [{ ...fakeMonitoringPolicy, ...policy }],
+      };
+    });
+    const client = renderMonitoring(createFakeClient({ monitoring, updateMonitoringPolicy, runMonitoring }));
 
     await screen.findByRole("heading", { name: "Smart monitoring" });
     await waitFor(() => expect(screen.getAllByText("Loaded").length).toBeGreaterThan(0));
@@ -37,8 +45,10 @@ describe("MonitoringPage", () => {
     fireEvent.click(within(btcCard as HTMLElement).getByRole("button", { name: "Save policy" }));
     await waitFor(() => expect(updateMonitoringPolicy).toHaveBeenCalledWith(expect.objectContaining({ instrument_id: "BTCUSDT", enabled: true })));
 
-    fireEvent.click(screen.getByRole("button", { name: "Run monitoring now" }));
-    await waitFor(() => expect(runMonitoring).toHaveBeenCalledWith(["BTCUSDT", "ETHUSDT", "SOLUSDT"]));
+    const runButton = screen.getByRole("button", { name: "Run monitoring now" });
+    await waitFor(() => expect(runButton).not.toBeDisabled());
+    fireEvent.click(runButton);
+    await waitFor(() => expect(runMonitoring).toHaveBeenCalledWith(["BTCUSDT"]));
     expect(client.monitoringOpportunities).toHaveBeenCalled();
   });
 });

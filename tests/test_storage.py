@@ -100,7 +100,7 @@ class StorageTests(unittest.TestCase):
             )
             reopened = SQLiteStore(path)
             reopened.initialize()
-            self.assertEqual(reopened.schema_version(), 12)
+            self.assertEqual(reopened.schema_version(), 13)
             self.assertEqual(reopened.get_replay_run("replay-test")["status"], "RUNNING")
             self.assertEqual(len(reopened.list_replay_samples("replay-test")), 1)
             records = reopened.list_prediction_records(source_type="replay", replay_run_id="replay-test")

@@ -28,6 +28,18 @@ _NUMBER_RE = re.compile(
     re.IGNORECASE,
 )
 _TICKER_RE = re.compile(r"(?<![A-Za-z0-9])[A-Z][A-Z0-9]{1,11}(?:USDT|USD)?(?![A-Za-z0-9])")
+_ENGLISH_MONTH_NUMBERS = {
+    "jan": "1", "january": "1", "feb": "2", "february": "2",
+    "mar": "3", "march": "3", "apr": "4", "april": "4",
+    "may": "5", "jun": "6", "june": "6", "jul": "7", "july": "7",
+    "aug": "8", "august": "8", "sep": "9", "sept": "9", "september": "9",
+    "oct": "10", "october": "10", "nov": "11", "november": "11",
+    "dec": "12", "december": "12",
+}
+_ENGLISH_MONTH_RE = re.compile(
+    r"(?<![A-Za-z])(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?![A-Za-z])",
+    re.IGNORECASE,
+)
 
 
 def sanitize_untrusted_text(value: object, *, max_chars: int = 2000) -> str:
@@ -139,9 +151,18 @@ def numeric_guard(original: object, translated: object) -> NumericGuardResult:
             missing.append(token)
         else:
             unmatched.pop(match_index)
+    # Translating an English month name to the conventional Chinese numeric
+    # month form is value-preserving (for example, "Aug. 14" -> "8月14日").
+    # Permit only those exact month numbers; every other added numeric token
+    # remains a guard failure.
+    month_equivalent_keys = {
+        ("number", f"{Decimal(_ENGLISH_MONTH_NUMBERS[match.group(0).lower().rstrip('.')])}|")
+        for match in _ENGLISH_MONTH_RE.finditer(original_text)
+    }
+    required_keys = {_token_key(required_token) for required_token in required}
     unexpected = tuple(
         token for token, key in zip(translated_tokens, translated_keys)
-        if key is not None and key not in { _token_key(required_token) for required_token in required }
+        if key is not None and key not in required_keys and key not in month_equivalent_keys
     )
     return NumericGuardResult(not missing and not unexpected, required, tuple(missing), unexpected)
 

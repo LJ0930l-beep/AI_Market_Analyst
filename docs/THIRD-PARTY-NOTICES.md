@@ -1,6 +1,6 @@
-# Third-party notices for AI Market Analyst V1.2
+# Third-party notices for AI Market Analyst V1.2.1
 
-This inventory covers the direct runtime/build dependencies used to produce the V1.2 Windows package. It is an attribution and review aid, not legal advice. Transitive dependencies retain their own upstream licenses; the lockfiles and package metadata are the source of truth for a complete license review.
+This inventory covers the direct runtime/build dependencies used to produce the V1.2.1 Windows package. It is an attribution and review aid, not legal advice. Transitive dependencies retain their own upstream licenses; the lockfiles and package metadata are the source of truth for a complete license review.
 
 ## Frontend
 
@@ -30,4 +30,4 @@ Cargo transitive crates are resolved by `src-tauri/Cargo.lock` and are not relic
 - Ollama and the `qwen3.5:4b` / `qwen3.5:9b` model weights are external local dependencies. They are not bundled by the installer; their upstream model and software terms apply separately.
 - Binance public REST/WebSocket and Google News RSS are public network sources used at runtime. No account credential, secret, proprietary data feed or authenticated exchange connection is shipped.
 
-No paid account, secret, private key, broker connector, real-order code or proprietary chart library is included in V1.2.
+No paid account, secret, private key, broker connector, real-order code or proprietary chart library is included in V1.2.1.

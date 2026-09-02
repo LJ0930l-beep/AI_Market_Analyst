@@ -1,5 +1,14 @@
 # Changelog
 
+## V1.2.1 Production Usability Repair — developer-complete, 2026-09-02
+
+- Made the documented Tauri GNU production command reproducible from `src-tauri`; it rebuilds the React assets, PyInstaller sidecar, desktop executable and NSIS installer without a production Node/Vite dependency.
+- Added a sidecar-owned, explicit-opt-in `monitoring_runtime_v1` with start/resume/pause/stop, enabled-policy-only REST/WS/backfill/freshness work, bounded retries/resources, 15-minute close exactly-once processing, durable Smart 9B opportunities and background alert events while the window is hidden.
+- Reworked the tray and close lifecycle around real runtime state: dynamic status, pause/resume, exact Settings routing, owned-backend restart/degraded handling, active-monitoring close-to-tray notice, safe inactive exit and single-instance activation.
+- Integrated the official Tauri Windows autostart plugin with OS-authoritative UI state, independent resume authorization and off-by-default behavior. Added exact owned-sidecar watchdog/restart and safe automatic selection across loopback ports `18765..18828` without taking over a foreign listener.
+- Removed WebView process-spawn capability, added the always-mounted deduped alert-to-native-notification bridge, additive schema 13 hydration audit evidence, numeric-guard month-name equivalence, and retained all no-account/no-secret/no-order safety boundaries.
+- Re-ran Python/V1.1/V1.2 regressions, frontend build/lint/typecheck/Vitest/E2E/audits, Cargo check, official production packaging, packaged sidecar/live provider/model smoke, and installed Windows autostart/crash/restart/port-conflict/retention/single-instance/close lifecycle checks. Honest direct tray-popup and ordinary Windows toast-click observation limits remain recorded in the V1.2.1 evidence.
+
 ## V1.2 Crypto Smart Monitoring Windows desktop — developer-complete, 2026-08-31
 
 - Delivered the Tauri 2 Windows x64 desktop shell with a PyInstaller-owned FastAPI sidecar, AppData data/log/backup/runtime layout, explicit legacy SQLite import, NSIS installer, single-instance routing, system tray, native notification bridge and exact owned-process shutdown. Auto-start, resume and monitoring remain disabled by default.

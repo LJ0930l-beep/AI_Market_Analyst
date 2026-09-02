@@ -14,8 +14,11 @@ import {
   type MonitoringAlertEvent,
 } from "./desktopNotifications";
 import {
+  isTauriRuntime,
+  readDesktopBackendStatus,
   registerDesktopBackendState,
   registerDesktopMonitoringNotice,
+  restartOwnedBackend,
   type DesktopBackendStatus,
 } from "./desktopRuntime";
 
@@ -128,7 +131,7 @@ function LanguageSelector() {
   );
 }
 
-function DesktopNotificationBridge() {
+function DesktopNotificationBridge({ enabled = true }: { enabled?: boolean }) {
   const navigate = useNavigate();
   const { t } = useI18n();
   const [backgroundAlert, setBackgroundAlert] = useState<MonitoringAlertEvent | null>(null);
@@ -141,6 +144,7 @@ function DesktopNotificationBridge() {
     return () => cleanup?.();
   }, [navigate]);
   useEffect(() => {
+    if (!enabled) return () => undefined;
     const cleanup = registerMonitoringAlertStream((event) => {
       if (event.notification.native) {
         void notifyDesktopAlert({
@@ -152,7 +156,7 @@ function DesktopNotificationBridge() {
       if (event.notification.in_app) setBackgroundAlert(event);
     });
     return cleanup;
-  }, []);
+  }, [enabled]);
   useEffect(() => {
     let cleanup: (() => void) | undefined;
     void registerDesktopMonitoringNotice(() => setMonitoringNotice(true)).then((unregister) => {
@@ -181,6 +185,33 @@ function DesktopNotificationBridge() {
       </button>
       <button className="banner-dismiss" type="button" aria-label={t("common.dismiss")} onClick={() => { setBackgroundAlert(null); setMonitoringNotice(false); }}>×</button>
     </aside>
+  );
+}
+
+function BackendStartupGate({
+  status,
+  onRetry,
+  onRestart,
+  busy,
+}: {
+  status: DesktopBackendStatus | null;
+  onRetry: () => void;
+  onRestart: () => void;
+  busy: boolean;
+}) {
+  const { t } = useI18n();
+  const degraded = status?.state === "degraded" || status?.state === "stopped";
+  return (
+    <section className="terminal-error backend-startup-gate" role="status" aria-live="polite">
+      <p className="eyebrow">{t("shell.localFirst")}</p>
+      <h1>{degraded ? t("shell.backendDegraded") : t("shell.connectingBackend")}</h1>
+      <p>{status?.last_error ?? t("shell.backendReady")}</p>
+      {status?.port ? <p className="data-meta">127.0.0.1:{status.port} · {status.instance_id ?? t("common.notSupplied")}</p> : null}
+      <div className="scheduler-actions">
+        <button className="quiet-button" type="button" onClick={onRetry}>{t("shell.retryBackend")}</button>
+        {degraded ? <button className="primary-button" type="button" onClick={onRestart} disabled={busy}>{busy ? t("shell.restartingBackend") : t("shell.restartBackend")}</button> : null}
+      </div>
+    </section>
   );
 }
 
@@ -288,9 +319,12 @@ function WorkspaceRoutes({
 function ApplicationShellContent({ apiClient = defaultApiClient }: ApplicationShellProps) {
   const { t } = useI18n();
   const location = useLocation();
+  const desktopOwned = isTauriRuntime() && apiClient === defaultApiClient;
   const [healthState, setHealthState] = useState<BackendHealthState>("loading");
   const [health, setHealth] = useState<HealthResponse>();
   const [desktopBackendState, setDesktopBackendState] = useState<DesktopBackendStatus | null>(null);
+  const [desktopReady, setDesktopReady] = useState(!desktopOwned);
+  const [backendRestarting, setBackendRestarting] = useState(false);
   const [provenance, setProvenance] = useState<DashboardProvenance>(() => emptyDashboardProvenance(t));
   const handleProvenanceChange = useCallback((next: DashboardProvenance) => setProvenance(next), []);
 
@@ -301,6 +335,7 @@ function ApplicationShellContent({ apiClient = defaultApiClient }: ApplicationSh
   }, [location.pathname, t]);
 
   useEffect(() => {
+    if (desktopOwned && !desktopReady) return () => undefined;
     const controller = new AbortController();
     setHealthState("loading");
     setHealth(undefined);
@@ -320,14 +355,39 @@ function ApplicationShellContent({ apiClient = defaultApiClient }: ApplicationSh
       });
 
     return () => controller.abort();
-  }, [apiClient]);
+  }, [apiClient, desktopOwned, desktopReady]);
 
   useEffect(() => {
+    if (!desktopOwned) return () => undefined;
     let cleanup: (() => void) | undefined;
-    void registerDesktopBackendState((status) => setDesktopBackendState(status)).then((unregister) => {
+    const onState = (status: DesktopBackendStatus) => {
+      setDesktopBackendState(status);
+      setDesktopReady(status.state === "ready" || (status.state === "degraded" && Boolean(status.base_url)));
+    };
+    void registerDesktopBackendState(onState).then((unregister) => {
       cleanup = unregister;
     });
     return () => cleanup?.();
+  }, [desktopOwned]);
+
+  const retryDesktopBackend = useCallback(() => {
+    void readDesktopBackendStatus().then((status) => {
+      if (!status) return;
+      setDesktopBackendState(status);
+      setDesktopReady(status.state === "ready" || (status.state === "degraded" && Boolean(status.base_url)));
+    });
+  }, []);
+
+  const restartDesktopBackend = useCallback(() => {
+    setBackendRestarting(true);
+    void restartOwnedBackend()
+      .then((status) => {
+        if (status) {
+          setDesktopBackendState(status);
+          setDesktopReady(status.state === "ready" || (status.state === "degraded" && Boolean(status.base_url)));
+        }
+      })
+      .finally(() => setBackendRestarting(false));
   }, []);
 
   const effectiveHealthState: BackendHealthState = desktopBackendState?.state === "degraded" || desktopBackendState?.state === "stopped"
@@ -336,40 +396,46 @@ function ApplicationShellContent({ apiClient = defaultApiClient }: ApplicationSh
 
   return (
     <div className="app-frame" data-i18n-root="true">
-      <DesktopNotificationBridge />
+      <DesktopNotificationBridge enabled={!desktopOwned || desktopReady} />
       <a className="skip-link" href="#main-content">
         {t("shell.skipToContent")}
       </a>
-      <DesktopNavigation health={health} healthState={effectiveHealthState} />
-      <div className="app-column">
-        <MobileNavigation />
-        <header className="workspace-header">
-          <div>
-            <p className="eyebrow">{t("shell.privateWorkstation")}</p>
-            <p className="workspace-header__route">{t("shell.researchDesk")} / {t(routeKey(location.pathname))}</p>
+      {desktopOwned && !desktopReady ? (
+        <BackendStartupGate status={desktopBackendState} onRetry={retryDesktopBackend} onRestart={restartDesktopBackend} busy={backendRestarting} />
+      ) : (
+        <>
+          <DesktopNavigation health={health} healthState={effectiveHealthState} />
+          <div className="app-column">
+            <MobileNavigation />
+            <header className="workspace-header">
+              <div>
+                <p className="eyebrow">{t("shell.privateWorkstation")}</p>
+                <p className="workspace-header__route">{t("shell.researchDesk")} / {t(routeKey(location.pathname))}</p>
+              </div>
+              <div className="workspace-header__controls">
+                <p className="workspace-header__note">{t("shell.orientation")}</p>
+                <LanguageSelector />
+              </div>
+            </header>
+            <main className="workspace-main" id="main-content" tabIndex={-1}>
+              <div className="route-surface">
+                <WorkspaceRoutes apiClient={apiClient} onProvenanceChange={handleProvenanceChange} />
+              </div>
+              <aside className="provenance-column" aria-label={t("shell.timeProvenance")}>
+                <TimeProvenanceRail
+                  generatedAt={provenance.generatedAt}
+                  reevaluateAt={provenance.reevaluateAt}
+                  expiresAt={provenance.expiresAt}
+                  dataSource={provenance.dataSource}
+                  model={provenance.model}
+                  state={provenance.state}
+                  footer={<p>{provenance.footer}</p>}
+                />
+              </aside>
+            </main>
           </div>
-          <div className="workspace-header__controls">
-            <p className="workspace-header__note">{t("shell.orientation")}</p>
-            <LanguageSelector />
-          </div>
-        </header>
-        <main className="workspace-main" id="main-content" tabIndex={-1}>
-          <div className="route-surface">
-            <WorkspaceRoutes apiClient={apiClient} onProvenanceChange={handleProvenanceChange} />
-          </div>
-          <aside className="provenance-column" aria-label={t("shell.timeProvenance")}>
-            <TimeProvenanceRail
-              generatedAt={provenance.generatedAt}
-              reevaluateAt={provenance.reevaluateAt}
-              expiresAt={provenance.expiresAt}
-              dataSource={provenance.dataSource}
-              model={provenance.model}
-              state={provenance.state}
-              footer={<p>{provenance.footer}</p>}
-            />
-          </aside>
-        </main>
-      </div>
+        </>
+      )}
     </div>
   );
 }

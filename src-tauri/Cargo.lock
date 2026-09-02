@@ -19,7 +19,7 @@ dependencies = [
 
 [[package]]
 name = "ai-market-analyst"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -29,6 +29,7 @@ dependencies = [
  "tauri-plugin-notification",
  "tauri-plugin-shell",
  "tauri-plugin-single-instance",
+ "uuid",
 ]
 
 [[package]]

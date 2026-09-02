@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { type ApplicationShellApiClient } from "../api/client";
-import type { MonitoringPolicy, MonitoringResponse, MonitoringRuntimeStatus, OpportunityAnalysis, OpportunityAnalysesResponse, RealtimeState, TriggerEvent, TriggerType } from "../api/types";
+import { getRealtimeStreamUrl, type ApplicationShellApiClient } from "../api/client";
+import type { ChartAnnotation, MarketBar, MonitoringPolicy, MonitoringResponse, MonitoringRuntimeStatus, OpportunityAnalysis, OpportunityAnalysesResponse, RealtimeState, TriggerEvent, TriggerType } from "../api/types";
 import { AsyncPanel, type PanelState } from "../components/AsyncPanel";
+import { OhlcvChart } from "../components/OhlcvChart";
 import { useAsyncResource } from "../hooks/useAsyncResource";
 import { useI18n } from "../i18n";
 
@@ -135,6 +136,117 @@ function runtimeStateLabel(value: string | undefined, t: ReturnType<typeof useI1
   return value && labels[value] ? t(labels[value]) : value || t("common.unknown");
 }
 
+interface MonitoringChartPayload {
+  bars: MarketBar[];
+  annotations: ChartAnnotation[];
+  provider?: string;
+  dataAsOf?: string;
+}
+
+function isMarketBar(value: unknown): value is MarketBar {
+  if (typeof value !== "object" || value === null) return false;
+  const bar = value as Record<string, unknown>;
+  return typeof bar.timestamp === "string"
+    && ["open", "high", "low", "close", "volume"].every((key) => typeof bar[key] === "number" && Number.isFinite(bar[key]));
+}
+
+function MonitoringChart({ apiClient }: { apiClient: ApplicationShellApiClient }) {
+  const { formatNumber, t } = useI18n();
+  const [symbol, setSymbol] = useState(SUPPORTED_SYMBOLS[0]);
+  const [timeframe, setTimeframe] = useState<"15m" | "1h">("15m");
+  const [bars, setBars] = useState<MarketBar[]>([]);
+  const [streamState, setStreamState] = useState<"connecting" | "live" | "disconnected">("connecting");
+  const loader = useCallback(async (signal: AbortSignal): Promise<MonitoringChartPayload> => {
+    const [barResponse, annotationResponse] = await Promise.all([
+      apiClient.chartBars(symbol, timeframe, 240, signal),
+      apiClient.chartAnnotations(symbol, timeframe, signal),
+    ]);
+    return {
+      bars: barResponse.bars,
+      annotations: annotationResponse.annotations,
+      provider: barResponse.provider?.provider,
+      dataAsOf: barResponse.data_as_of,
+    };
+  }, [apiClient, symbol, timeframe]);
+  const chart = useAsyncResource(loader);
+
+  useEffect(() => {
+    setBars(chart.data?.bars ?? []);
+  }, [chart.data]);
+
+  useEffect(() => {
+    const timer = window.setInterval(chart.retry, 30_000);
+    return () => window.clearInterval(timer);
+  }, [chart.retry]);
+
+  useEffect(() => {
+    setStreamState("connecting");
+    if (typeof window === "undefined" || typeof window.WebSocket === "undefined") {
+      setStreamState("disconnected");
+      return () => undefined;
+    }
+    let socket: WebSocket;
+    try {
+      socket = new WebSocket(getRealtimeStreamUrl(symbol, timeframe));
+    } catch {
+      setStreamState("disconnected");
+      return () => undefined;
+    }
+    socket.onopen = () => setStreamState("live");
+    socket.onclose = () => setStreamState("disconnected");
+    socket.onerror = () => setStreamState("disconnected");
+    socket.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data as string) as Record<string, unknown>;
+        const liveBar = payload.bar;
+        if (payload.type !== "bar" || payload.symbol !== symbol || !isMarketBar(liveBar)) return;
+        setBars((current) => {
+          const next = [...current];
+          const index = next.findIndex((item) => item.timestamp === liveBar.timestamp);
+          if (index >= 0) next[index] = liveBar;
+          else next.push(liveBar);
+          return next.sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp)).slice(-500);
+        });
+      } catch {
+        // A malformed public stream event does not replace the durable REST chart.
+      }
+    };
+    return () => socket.close();
+  }, [symbol, timeframe]);
+
+  const state: PanelState = chart.status === "loading"
+    ? "loading"
+    : chart.status === "unavailable"
+      ? "unavailable"
+      : !chart.data || bars.length === 0
+        ? "empty"
+        : "ready";
+  const streamLabel = streamState === "live" ? t("monitoring.wsLive") : streamState === "connecting" ? t("common.pending") : t("monitoring.wsDisconnected");
+  return (
+    <AsyncPanel
+      title={t("monitoring.chartTerminal")}
+      source="GET /chart/{symbol}/bars + WS /market/realtime/{symbol}/stream"
+      freshness={chart.data?.dataAsOf ?? t("monitoring.chartLoading")}
+      state={state}
+      error={chart.error}
+      onRetry={chart.retry}
+      emptyMessage={t("monitoring.chartUnavailable")}
+      degradedMessage={t("monitoring.chartUnavailable")}
+      className="monitoring-panel monitoring-chart-panel"
+    >
+      <div className="monitoring-chart-controls" aria-label={t("monitoring.chartTerminal")}>
+        <label>{t("common.symbol")}<select value={symbol} onChange={(event) => setSymbol(event.target.value)}>{SUPPORTED_SYMBOLS.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+        <label>{t("common.timeframe")}<select value={timeframe} onChange={(event) => setTimeframe(event.target.value as "15m" | "1h")}><option value="15m">{t("monitoring.chartTimeframe15m")}</option><option value="1h">{t("monitoring.chartTimeframe1h")}</option></select></label>
+        <span className={`status-chip status-chip--${streamState === "live" ? "positive" : "neutral"}`}>{streamLabel}</span>
+        <span className="data-meta">{bars.length} {t("monitoring.chartBars")}{chart.data?.provider ? ` · ${chart.data.provider}` : ""}</span>
+      </div>
+      <OhlcvChart symbol={symbol} timeframe={timeframe} bars={bars} annotations={chart.data?.annotations ?? []} />
+      {(chart.data?.annotations.length ?? 0) === 0 ? <p className="panel-reading">{t("monitoring.chartNoAnnotations")}</p> : null}
+      {chart.data?.dataAsOf ? <p className="data-meta">{t("monitoring.opportunityDataAsOf")}: {chart.data.dataAsOf} · {formatNumber(bars.length, { maximumFractionDigits: 0 })} {t("monitoring.chartBars")}</p> : null}
+    </AsyncPanel>
+  );
+}
+
 export function MonitoringPage({ apiClient }: MonitoringPageProps) {
   const { formatNumber, t } = useI18n();
   const monitoringLoader = useCallback((signal: AbortSignal) => apiClient.monitoring(signal), [apiClient]);
@@ -150,6 +262,10 @@ export function MonitoringPage({ apiClient }: MonitoringPageProps) {
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const runtimeStatus: MonitoringRuntimeStatus | undefined = runtime.data ?? monitoring.data?.runtime;
+  const enabledSymbols = useMemo(
+    () => SUPPORTED_SYMBOLS.filter((symbol) => (drafts[symbol] ?? policyFor(monitoring.data, symbol)).enabled),
+    [drafts, monitoring.data],
+  );
 
   useEffect(() => {
     if (!monitoring.data || dirty) return;
@@ -192,10 +308,14 @@ export function MonitoringPage({ apiClient }: MonitoringPageProps) {
   }
 
   async function runNow() {
+    if (enabledSymbols.length === 0) {
+      setMessage(t("monitoring.runDisabledNoSymbols"));
+      return;
+    }
     setBusy("run");
     setMessage(null);
     try {
-      const result = await apiClient.runMonitoring(SUPPORTED_SYMBOLS);
+      const result = await apiClient.runMonitoring(enabledSymbols);
       const status = typeof result.status === "string" ? result.status : t("common.complete");
       setMessage(`${t("monitoring.runComplete")}: ${status}`);
       monitoring.retry();
@@ -244,8 +364,10 @@ export function MonitoringPage({ apiClient }: MonitoringPageProps) {
         <p>{t("monitoring.noStartupSideEffect")}</p>
       </section>
 
+      <MonitoringChart apiClient={apiClient} />
+
       <div className="monitoring-actions">
-        <button className="primary-button" type="button" onClick={() => void runNow()} disabled={busy !== null}>
+        <button className="primary-button" type="button" onClick={() => void runNow()} disabled={busy !== null || enabledSymbols.length === 0}>
           {busy === "run" ? t("monitoring.running") : t("monitoring.runNow")}
         </button>
         <span className="data-meta">{t("monitoring.runHint")}</span>

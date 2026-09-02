@@ -44,6 +44,8 @@ def test_news_translation_cache_preserves_original_and_numeric_tokens(tmp_path: 
     assert first.original_title == event.title
     assert first.evidence["numeric_guard"]["passed"] is True
     assert numeric_guard("value -3.5% on BTCUSDT", "值 -3.5% 于 BTCUSDT").passed
+    assert numeric_guard("Order flow at Aug. 14, 7 p.m. UTC", "8月14日 UTC 下午7点的订单流").passed
+    assert not numeric_guard("Order flow at Aug. 14", "8月14日新增9个订单").passed
 
 
 def test_news_source_is_sanitized_before_model_and_failed_guard_is_visible(tmp_path: Path) -> None:
@@ -79,7 +81,7 @@ def test_explicit_legacy_import_and_owned_process_fingerprint(tmp_path: Path) ->
     connection.close()
     report = import_legacy_database(source=source, destination=destination)
     assert report.imported is True
-    assert SQLiteStore(destination).schema_version() == 12
+    assert SQLiteStore(destination).schema_version() == 13
     connection = sqlite3.connect(destination)
     assert connection.execute("SELECT value FROM legacy_marker").fetchone()[0] == "v11"
     connection.close()

@@ -14,7 +14,7 @@ from typing import Any, Mapping
 from .storage import SQLiteStore
 
 MARKET_INTELLIGENCE_VERSION = "market_intelligence_v1"
-PULSE_SYMBOLS = ("BTCUSDT", "ETHUSDT", "NVDA", "NASDAQ", "VIX", "US10Y")
+PULSE_SYMBOLS = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "NVDA", "NASDAQ", "VIX", "US10Y")
 SECTOR_BY_SYMBOL = {
     "NVDA": ("semiconductors", "equity"),
     "AAPL": ("ai_technology", "equity"),
@@ -77,6 +77,27 @@ def _freshness(prediction: Mapping[str, Any], context: Mapping[str, Any], as_of:
 
 
 def _pulse_entry(symbol: str, record: Mapping[str, Any] | None, as_of: datetime) -> dict[str, object]:
+    realtime = record.get("realtime") if isinstance(record, Mapping) else None
+    if isinstance(realtime, Mapping):
+        timestamp = _utc(realtime.get("data_as_of")) or _utc(realtime.get("last_trade_at"))
+        if timestamp is None:
+            freshness: dict[str, object] = {"status": "unknown", "data_as_of": None, "age_seconds": None}
+        else:
+            age = max(0, int((as_of - timestamp).total_seconds()))
+            source_status = str(realtime.get("freshness_status") or "unknown")
+            freshness = {"status": source_status, "data_as_of": timestamp.isoformat(), "age_seconds": age, "provider": realtime.get("provider")}
+        price = _number(realtime, "price")
+        change = _number(realtime, "change_pct")
+        missing = [name for name, value in (("price_missing", price), ("change_missing", change)) if value is None]
+        return {
+            "symbol": symbol,
+            "status": "available" if not missing and freshness.get("status") == "fresh" else "degraded",
+            "price": price,
+            "change_pct": change,
+            "freshness": freshness,
+            "provenance": ["sidecar_public_hydration", "durable_realtime_cache"],
+            "missing_reasons": missing,
+        }
     if record is None:
         return {
             "symbol": symbol,
@@ -187,6 +208,12 @@ def build_market_intelligence(store: SQLiteStore, *, as_of: datetime | None = No
     all_symbols = {item.symbol for item in store.list_instruments()}
     all_symbols.update(entry["symbol"] for entry in store.list_watchlist_entries())
     records = store.list_latest_prediction_records(all_symbols | set(PULSE_SYMBOLS))
+    realtime_records = {str(item.get("symbol")): item for item in store.list_realtime_states() if item.get("symbol")}
+    for symbol, realtime in realtime_records.items():
+        if symbol not in records:
+            records[symbol] = {"realtime": realtime}
+        else:
+            records[symbol]["realtime"] = realtime
     pulse = [_pulse_entry(symbol, records.get(symbol), cutoff) for symbol in PULSE_SYMBOLS]
     watchlist: list[dict[str, object]] = []
     for entry in store.list_watchlist_entries():
@@ -194,6 +221,7 @@ def build_market_intelligence(store: SQLiteStore, *, as_of: datetime | None = No
         record = records.get(symbol)
         prediction = record.get("prediction") if isinstance(record, Mapping) else None
         context = _context(prediction) if isinstance(prediction, Mapping) else {}
+        realtime = record.get("realtime") if isinstance(record, Mapping) else None
         watchlist.append({
             "symbol": symbol,
             "asset_type": next((item.asset_type.value for item in store.list_instruments() if item.symbol == symbol), None),
@@ -203,8 +231,8 @@ def build_market_intelligence(store: SQLiteStore, *, as_of: datetime | None = No
             "raw_confidence": prediction.get("raw_confidence") if isinstance(prediction, Mapping) else None,
             "calibrated_confidence": prediction.get("calibrated_confidence") if isinstance(prediction, Mapping) else None,
             "market_regime": context.get("quant", {}).get("market_regime") if isinstance(context.get("quant"), Mapping) else None,
-            "freshness": _freshness(prediction, context, cutoff) if isinstance(prediction, Mapping) else {"status": "unavailable"},
-            "status": "monitoring" if isinstance(prediction, Mapping) else "awaiting_analysis",
+            "freshness": _freshness(prediction, context, cutoff) if isinstance(prediction, Mapping) else (_pulse_entry(symbol, {"realtime": realtime}, cutoff)["freshness"] if isinstance(realtime, Mapping) else {"status": "unavailable"}),
+            "status": "monitoring" if isinstance(prediction, Mapping) else ("market_data_ready" if isinstance(realtime, Mapping) and _number(realtime, "price") is not None else "awaiting_analysis"),
         })
     predictions = [record["prediction"] for record in records.values() if isinstance(record.get("prediction"), Mapping)]
     predictions.sort(key=lambda value: (str(value.get("generated_at") or ""), str(value.get("prediction_id") or "")), reverse=True)
@@ -234,6 +262,7 @@ def build_market_intelligence(store: SQLiteStore, *, as_of: datetime | None = No
             "watchlist_monitoring": "durable_watchlist_plus_latest_prediction",
             "heatmap": "typed_taxonomy_with_saved_change_only",
             "live_fetch_on_get": False,
+            "public_cache": "sidecar_hydration_only",
         },
     }
 

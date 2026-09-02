@@ -1,0 +1,947 @@
+{
+  "contract": "v121_live_smoke_v1",
+  "started_at": "2026-09-02T13:37:38.509350+00:00",
+  "finished_at": "2026-09-02T13:38:52.166594+00:00",
+  "fixture_fallback": false,
+  "binary": "D:\\RJ\\codex\\ai-market-analyst\\src-tauri\\target\\x86_64-pc-windows-gnu\\release\\ai-market-analyst-backend.exe",
+  "owned_child_only": true,
+  "app_data_is_disposable": true,
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT"
+  ],
+  "sidecar": {
+    "ok": true,
+    "status_code": 200,
+    "elapsed_ms": 564.237,
+    "status": "ok",
+    "ready": true,
+    "phase": 7,
+    "api_version": "1.2.1",
+    "contract_version": "desktop_backend_v1",
+    "instance_id": "standalone-17512-cb3989e5329d",
+    "pid": 17512,
+    "launcher_pid": 8000,
+    "port": 18766,
+    "ownership_verified": false,
+    "owned_pid": 8000,
+    "exit_code": 1
+  },
+  "realtime": {
+    "BTCUSDT": {
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 454.164,
+      "contract_version": "crypto_realtime_v1",
+      "symbol": "BTCUSDT",
+      "data_as_of": "2026-09-02T13:37:57.022113+00:00",
+      "fetched_at": "2026-09-02T13:37:57.264439+00:00",
+      "provider": {
+        "provider": "binance_public",
+        "fetched_at": "2026-09-02T13:37:56.855273+00:00",
+        "data_as_of": "2026-09-02T13:37:57.022113+00:00",
+        "stale": false,
+        "error_code": null
+      },
+      "freshness": {
+        "symbol": "BTCUSDT",
+        "provider": "binance_public",
+        "price": 76629.64,
+        "change_pct": null,
+        "volume": null,
+        "last_trade_at": "2026-09-02T13:37:57.022113+00:00",
+        "data_as_of": "2026-09-02T13:37:57.022113+00:00",
+        "freshness_status": "fresh",
+        "stale_after_seconds": 120,
+        "reconnect_count": 0,
+        "last_error": null,
+        "updated_at": "2026-09-02T13:37:57.264439+00:00",
+        "payload_json": "{\"age_seconds\": 0.242, \"change_pct\": null, \"contract_version\": \"crypto_realtime_v1\", \"data_as_of\": \"2026-09-02T13:37:57.022113+00:00\", \"freshness_status\": \"fresh\", \"last_error\": null, \"last_trade_at\": \"2026-09-02T13:37:57.022113+00:00\", \"price\": 76629.64, \"provider\": \"binance_public\", \"reconnect_count\": 0, \"stale_after_seconds\": 120, \"symbol\": \"BTCUSDT\", \"volume\": null}",
+        "age_seconds": 0.242,
+        "contract_version": "crypto_realtime_v1"
+      },
+      "capabilities": {
+        "public_rest": true,
+        "public_websocket": true,
+        "accounts": false,
+        "secrets": false,
+        "orders": false
+      },
+      "bar_count": 240,
+      "quote_present": true,
+      "provider_name": "binance_public",
+      "stale": false
+    },
+    "ETHUSDT": {
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 451.154,
+      "contract_version": "crypto_realtime_v1",
+      "symbol": "ETHUSDT",
+      "data_as_of": "2026-09-02T13:37:58.329917+00:00",
+      "fetched_at": "2026-09-02T13:37:58.559780+00:00",
+      "provider": {
+        "provider": "binance_public",
+        "fetched_at": "2026-09-02T13:37:58.152196+00:00",
+        "data_as_of": "2026-09-02T13:37:58.329917+00:00",
+        "stale": false,
+        "error_code": null
+      },
+      "freshness": {
+        "symbol": "ETHUSDT",
+        "provider": "binance_public",
+        "price": 2380.11,
+        "change_pct": null,
+        "volume": null,
+        "last_trade_at": "2026-09-02T13:37:58.329917+00:00",
+        "data_as_of": "2026-09-02T13:37:58.329917+00:00",
+        "freshness_status": "fresh",
+        "stale_after_seconds": 120,
+        "reconnect_count": 0,
+        "last_error": null,
+        "updated_at": "2026-09-02T13:37:58.559780+00:00",
+        "payload_json": "{\"age_seconds\": 0.23, \"change_pct\": null, \"contract_version\": \"crypto_realtime_v1\", \"data_as_of\": \"2026-09-02T13:37:58.329917+00:00\", \"freshness_status\": \"fresh\", \"last_error\": null, \"last_trade_at\": \"2026-09-02T13:37:58.329917+00:00\", \"price\": 2380.11, \"provider\": \"binance_public\", \"reconnect_count\": 0, \"stale_after_seconds\": 120, \"symbol\": \"ETHUSDT\", \"volume\": null}",
+        "age_seconds": 0.23,
+        "contract_version": "crypto_realtime_v1"
+      },
+      "capabilities": {
+        "public_rest": true,
+        "public_websocket": true,
+        "accounts": false,
+        "secrets": false,
+        "orders": false
+      },
+      "bar_count": 240,
+      "quote_present": true,
+      "provider_name": "binance_public",
+      "stale": false
+    },
+    "SOLUSDT": {
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 421.561,
+      "contract_version": "crypto_realtime_v1",
+      "symbol": "SOLUSDT",
+      "data_as_of": "2026-09-02T13:37:59.770482+00:00",
+      "fetched_at": "2026-09-02T13:37:59.961762+00:00",
+      "provider": {
+        "provider": "binance_public",
+        "fetched_at": "2026-09-02T13:37:59.590222+00:00",
+        "data_as_of": "2026-09-02T13:37:59.770482+00:00",
+        "stale": false,
+        "error_code": null
+      },
+      "freshness": {
+        "symbol": "SOLUSDT",
+        "provider": "binance_public",
+        "price": 98.01,
+        "change_pct": null,
+        "volume": null,
+        "last_trade_at": "2026-09-02T13:37:59.770482+00:00",
+        "data_as_of": "2026-09-02T13:37:59.770482+00:00",
+        "freshness_status": "fresh",
+        "stale_after_seconds": 120,
+        "reconnect_count": 0,
+        "last_error": null,
+        "updated_at": "2026-09-02T13:37:59.961762+00:00",
+        "payload_json": "{\"age_seconds\": 0.191, \"change_pct\": null, \"contract_version\": \"crypto_realtime_v1\", \"data_as_of\": \"2026-09-02T13:37:59.770482+00:00\", \"freshness_status\": \"fresh\", \"last_error\": null, \"last_trade_at\": \"2026-09-02T13:37:59.770482+00:00\", \"price\": 98.01, \"provider\": \"binance_public\", \"reconnect_count\": 0, \"stale_after_seconds\": 120, \"symbol\": \"SOLUSDT\", \"volume\": null}",
+        "age_seconds": 0.191,
+        "contract_version": "crypto_realtime_v1"
+      },
+      "capabilities": {
+        "public_rest": true,
+        "public_websocket": true,
+        "accounts": false,
+        "secrets": false,
+        "orders": false
+      },
+      "bar_count": 240,
+      "quote_present": true,
+      "provider_name": "binance_public",
+      "stale": false
+    }
+  },
+  "charts": {
+    "BTCUSDT/15m": {
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 402.459,
+      "contract_version": "chart_data_v1",
+      "symbol": "BTCUSDT",
+      "timeframe": "15m",
+      "data_as_of": "2026-09-02T13:37:57.475200+00:00",
+      "provider": {
+        "provider": "binance_public",
+        "fetched_at": "2026-09-02T13:37:57.308130+00:00",
+        "data_as_of": "2026-09-02T13:37:57.475200+00:00",
+        "stale": false,
+        "error_code": null
+      },
+      "tradingview": {
+        "library": "lightweight-charts",
+        "backend_api": false,
+        "data_source": "app_supplied_public_market"
+      },
+      "bar_count": 120,
+      "provider_name": "binance_public",
+      "stale": false
+    },
+    "BTCUSDT/1h": {
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 441.342,
+      "contract_version": "chart_data_v1",
+      "symbol": "BTCUSDT",
+      "timeframe": "1h",
+      "data_as_of": "2026-09-02T13:37:57.879640+00:00",
+      "provider": {
+        "provider": "binance_public",
+        "fetched_at": "2026-09-02T13:37:57.713269+00:00",
+        "data_as_of": "2026-09-02T13:37:57.879640+00:00",
+        "stale": false,
+        "error_code": null
+      },
+      "tradingview": {
+        "library": "lightweight-charts",
+        "backend_api": false,
+        "data_source": "app_supplied_public_market"
+      },
+      "bar_count": 120,
+      "provider_name": "binance_public",
+      "stale": false
+    },
+    "ETHUSDT/15m": {
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 527.69,
+      "contract_version": "chart_data_v1",
+      "symbol": "ETHUSDT",
+      "timeframe": "15m",
+      "data_as_of": "2026-09-02T13:37:58.778266+00:00",
+      "provider": {
+        "provider": "binance_public",
+        "fetched_at": "2026-09-02T13:37:58.603267+00:00",
+        "data_as_of": "2026-09-02T13:37:58.778266+00:00",
+        "stale": false,
+        "error_code": null
+      },
+      "tradingview": {
+        "library": "lightweight-charts",
+        "backend_api": false,
+        "data_source": "app_supplied_public_market"
+      },
+      "bar_count": 120,
+      "provider_name": "binance_public",
+      "stale": false
+    },
+    "ETHUSDT/1h": {
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 457.973,
+      "contract_version": "chart_data_v1",
+      "symbol": "ETHUSDT",
+      "timeframe": "1h",
+      "data_as_of": "2026-09-02T13:37:59.312622+00:00",
+      "provider": {
+        "provider": "binance_public",
+        "fetched_at": "2026-09-02T13:37:59.130629+00:00",
+        "data_as_of": "2026-09-02T13:37:59.312622+00:00",
+        "stale": false,
+        "error_code": null
+      },
+      "tradingview": {
+        "library": "lightweight-charts",
+        "backend_api": false,
+        "data_source": "app_supplied_public_market"
+      },
+      "bar_count": 120,
+      "provider_name": "binance_public",
+      "stale": false
+    },
+    "SOLUSDT/15m": {
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 402.789,
+      "contract_version": "chart_data_v1",
+      "symbol": "SOLUSDT",
+      "timeframe": "15m",
+      "data_as_of": "2026-09-02T13:38:00.179658+00:00",
+      "provider": {
+        "provider": "binance_public",
+        "fetched_at": "2026-09-02T13:38:00.013247+00:00",
+        "data_as_of": "2026-09-02T13:38:00.179658+00:00",
+        "stale": false,
+        "error_code": null
+      },
+      "tradingview": {
+        "library": "lightweight-charts",
+        "backend_api": false,
+        "data_source": "app_supplied_public_market"
+      },
+      "bar_count": 120,
+      "provider_name": "binance_public",
+      "stale": false
+    },
+    "SOLUSDT/1h": {
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 407.107,
+      "contract_version": "chart_data_v1",
+      "symbol": "SOLUSDT",
+      "timeframe": "1h",
+      "data_as_of": "2026-09-02T13:38:00.582324+00:00",
+      "provider": {
+        "provider": "binance_public",
+        "fetched_at": "2026-09-02T13:38:00.414431+00:00",
+        "data_as_of": "2026-09-02T13:38:00.582324+00:00",
+        "stale": false,
+        "error_code": null
+      },
+      "tradingview": {
+        "library": "lightweight-charts",
+        "backend_api": false,
+        "data_source": "app_supplied_public_market"
+      },
+      "bar_count": 120,
+      "provider_name": "binance_public",
+      "stale": false
+    }
+  },
+  "monitoring": {
+    "status": "passed",
+    "policy_updates": {
+      "BTCUSDT": {
+        "ok": true,
+        "status_code": 200,
+        "elapsed_ms": 25.449,
+        "contract_version": "monitoring_policy_v1",
+        "instrument_id": "BTCUSDT",
+        "enabled": true,
+        "primary_timeframe": "15m"
+      },
+      "ETHUSDT": {
+        "ok": true,
+        "status_code": 200,
+        "elapsed_ms": 25.133,
+        "contract_version": "monitoring_policy_v1",
+        "instrument_id": "ETHUSDT",
+        "enabled": true,
+        "primary_timeframe": "15m"
+      },
+      "SOLUSDT": {
+        "ok": true,
+        "status_code": 200,
+        "elapsed_ms": 28.178,
+        "contract_version": "monitoring_policy_v1",
+        "instrument_id": "SOLUSDT",
+        "enabled": true,
+        "primary_timeframe": "15m"
+      }
+    },
+    "runtime": {
+      "initial": {
+        "ok": true,
+        "status_code": 200,
+        "elapsed_ms": 12.785,
+        "contract_version": "monitoring_runtime_v1",
+        "state": "stopped",
+        "active": false,
+        "worker_alive": false,
+        "run_count": 0,
+        "resume_eligible": false,
+        "active_symbols": []
+      },
+      "startup_no_scan": true,
+      "start": {
+        "ok": true,
+        "status_code": 200,
+        "elapsed_ms": 28.221,
+        "contract_version": "monitoring_runtime_v1",
+        "state": "starting",
+        "active": true,
+        "worker_alive": true,
+        "run_count": 0,
+        "active_symbols": [],
+        "stream": {
+          "status": "stopped",
+          "provider": "binance_public_ws",
+          "symbols": [],
+          "timeframe": "15m",
+          "reconnect_count": 0,
+          "last_message_at": null,
+          "last_error": null,
+          "public_only": true
+        }
+      },
+      "first_cycle": {
+        "ok": true,
+        "status_code": 200,
+        "elapsed_ms": 10.487,
+        "contract_version": "monitoring_runtime_v1",
+        "state": "running",
+        "active": true,
+        "worker_alive": true,
+        "run_count": 1,
+        "last_cycle_at": "2026-09-02T13:38:04.007147+00:00",
+        "last_cycle_status": "COMPLETED",
+        "consecutive_failures": 0,
+        "stream": {
+          "status": "connected",
+          "provider": "binance_public_ws",
+          "symbols": [
+            "BTCUSDT",
+            "ETHUSDT",
+            "SOLUSDT"
+          ],
+          "timeframe": "15m",
+          "reconnect_count": 0,
+          "last_message_at": null,
+          "last_error": null,
+          "public_only": true
+        },
+        "resource": {
+          "max_symbols": 50,
+          "active_symbols": 3,
+          "bounded": true
+        }
+      },
+      "first_cycle_passed": true,
+      "pause": {
+        "ok": true,
+        "status_code": 200,
+        "elapsed_ms": 197.21,
+        "contract_version": "monitoring_runtime_v1",
+        "state": "paused",
+        "active": false,
+        "worker_alive": false,
+        "run_count": 1,
+        "active_symbols": [],
+        "stream": {
+          "status": "stopped",
+          "provider": "binance_public_ws",
+          "symbols": [],
+          "timeframe": "15m",
+          "reconnect_count": 1,
+          "last_message_at": "2026-09-02T13:38:27.598806+00:00",
+          "last_error": null,
+          "public_only": true
+        }
+      },
+      "pause_check": {
+        "ok": true,
+        "status_code": 200,
+        "elapsed_ms": 10.475,
+        "contract_version": "monitoring_runtime_v1",
+        "state": "paused",
+        "active": false,
+        "worker_alive": false,
+        "run_count": 1,
+        "active_symbols": []
+      },
+      "pause_stable": true,
+      "resume": {
+        "ok": true,
+        "status_code": 200,
+        "elapsed_ms": 24.964,
+        "contract_version": "monitoring_runtime_v1",
+        "state": "starting",
+        "active": true,
+        "worker_alive": true,
+        "run_count": 1,
+        "active_symbols": [],
+        "stream": {
+          "status": "stopped",
+          "provider": "binance_public_ws",
+          "symbols": [],
+          "timeframe": "15m",
+          "reconnect_count": 1,
+          "last_message_at": "2026-09-02T13:38:27.598806+00:00",
+          "last_error": null,
+          "public_only": true
+        }
+      },
+      "resume_cycle": {
+        "ok": true,
+        "status_code": 200,
+        "elapsed_ms": 11.03,
+        "contract_version": "monitoring_runtime_v1",
+        "state": "running",
+        "active": true,
+        "worker_alive": true,
+        "run_count": 2,
+        "last_cycle_at": "2026-09-02T13:38:30.430655+00:00",
+        "last_cycle_status": "COMPLETED",
+        "consecutive_failures": 0,
+        "stream": {
+          "status": "connected",
+          "provider": "binance_public_ws",
+          "symbols": [
+            "BTCUSDT",
+            "ETHUSDT",
+            "SOLUSDT"
+          ],
+          "timeframe": "15m",
+          "reconnect_count": 0,
+          "last_message_at": null,
+          "last_error": null,
+          "public_only": true
+        }
+      },
+      "resume_cycle_passed": true,
+      "pause_after_resume": {
+        "ok": true,
+        "status_code": 200,
+        "elapsed_ms": 158.208,
+        "contract_version": "monitoring_runtime_v1",
+        "state": "paused",
+        "active": false,
+        "worker_alive": false,
+        "run_count": 2,
+        "active_symbols": []
+      },
+      "stop": {
+        "ok": true,
+        "status_code": 200,
+        "elapsed_ms": 26.488,
+        "contract_version": "monitoring_runtime_v1",
+        "state": "stopped",
+        "active": false,
+        "worker_alive": false,
+        "run_count": 2,
+        "resume_eligible": false,
+        "active_symbols": []
+      },
+      "lifecycle_passed": true
+    },
+    "run": {
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 2202.433,
+      "contract_version": "monitoring_policy_v1",
+      "status": "COMPLETED",
+      "as_of": "2026-09-02T13:38:34.662163+00:00",
+      "resource": {
+        "max_symbols": 50,
+        "active_symbols": 3,
+        "symbols": [
+          "BTCUSDT",
+          "ETHUSDT",
+          "SOLUSDT"
+        ],
+        "max_bars_per_symbol": 500,
+        "cached_bars": 1080,
+        "model_concurrency": 1
+      },
+      "capabilities": {
+        "financial_calculations_owner": "python",
+        "trigger_policy": "trigger_policy_v2",
+        "bar_close_exactly_once": true,
+        "smart_fallback_to_fast": false,
+        "real_orders": false,
+        "external_notifications": false
+      }
+    },
+    "smart_analysis_saved": true,
+    "item_statuses": {
+      "BTCUSDT": "NO_NEW_CLOSED_BAR",
+      "ETHUSDT": "NO_NEW_CLOSED_BAR",
+      "SOLUSDT": "NO_NEW_CLOSED_BAR"
+    },
+    "events": {
+      "BTCUSDT": [],
+      "ETHUSDT": [],
+      "SOLUSDT": []
+    },
+    "triggers": {
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 11.211,
+      "policy_version": "trigger_policy_v2",
+      "dedupe": "fingerprint_unique",
+      "cooldown_owner": "python"
+    },
+    "trigger_event_count": 3,
+    "opportunities": {
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 10.196,
+      "contract_version": "opportunity_analysis_v1",
+      "validator": "python",
+      "model_tier": "smart_9b_only"
+    },
+    "opportunity_count": 3,
+    "analysis_rows": [
+      {
+        "symbol": "ETHUSDT",
+        "model_id": "qwen3.5:9b",
+        "validator_status": "VALID",
+        "trigger_event_id": "trigger-b1dc8ba59be469364bd26319",
+        "bias": "WAIT",
+        "confidence": 0.0,
+        "raw_model_response": "{\n  \"bias\": \"WAIT\",\n  \"confidence\": 0.0,\n  \"event_risk\": false,\n  \"evidence\": [],\n  \"holding_horizon\": \"next_4h\",\n  \"invalidation\": [],\n  \"invalidation_price\": null,\n  \"missing_evidence\": [\n    \"Confirmation of trend continuation or reversal beyond the current bar close\",\n    \"Volume confirmation relative to average volume for a directional move\"\n  ],\n  \"news_context\": [],\n  \"re_evaluate_at\": \"2026-09-02T14:00:00+00:00\",\n  \"regime\": \"consolidation_with_high_volatility\",\n  \"targets\": [],\n  \"watch_zone\": null\n}"
+      },
+      {
+        "symbol": "SOLUSDT",
+        "model_id": "qwen3.5:9b",
+        "validator_status": "VALID",
+        "trigger_event_id": "trigger-7572e58bb2dc4d39a61bd004",
+        "bias": "WAIT",
+        "confidence": 0.42,
+        "raw_model_response": "{\n  \"bias\": \"WAIT\",\n  \"confidence\": 0.42,\n  \"event_risk\": false,\n  \"evidence\": [\n    \"Price closed at 98.30 below EMA20 (98.43) and significantly below EMA50 (99.11).\",\n    \"Recent 1h context shows a lower high of 100.02 compared to the previous session's 99.85, indicating potential resistance.\",\n    \"Intraday volatility has narrowed with lower highs since 12:30 UTC.\"\n  ],\n  \"holding_horizon\": \"next_4h\",\n  \"invalidation\": [],\n  \"invalidation_price\": null,\n  \"missing_evidence\": [\n    \"Confirmation of a sustained break above EMA50 or below the 1h support zone.\",\n    \"Volume spike confirming a regime shift.\"\n  ],\n  \"news_context\": [],\n  \"re_evaluate_at\": \"2026-09-02T17:30:00+00:00\",\n  \"regime\": \"consolidation_below_ma\",\n  \"targets\": [],\n  \"watch_zone\": null\n}"
+      },
+      {
+        "symbol": "BTCUSDT",
+        "model_id": "qwen3.5:9b",
+        "validator_status": "VALID",
+        "trigger_event_id": "trigger-68fe03543fb9ce164b357b7a",
+        "bias": "WAIT",
+        "confidence": 0.0,
+        "raw_model_response": "{\n  \"bias\": \"WAIT\",\n  \"confidence\": 0.0,\n  \"event_risk\": false,\n  \"evidence\": [],\n  \"holding_horizon\": \"next_4h\",\n  \"invalidation\": [],\n  \"invalidation_price\": null,\n  \"missing_evidence\": [\n    \"Validated entry signal confirmation\",\n    \"Confirmed trend continuation beyond invalidation levels\"\n  ],\n  \"news_context\": [],\n  \"re_evaluate_at\": \"2026-09-02T14:30:00+00:00\",\n  \"regime\": \"volatile consolidation\",\n  \"targets\": [],\n  \"watch_zone\": null\n}"
+      }
+    ],
+    "repeat_run": {
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 2857.148,
+      "contract_version": "monitoring_policy_v1",
+      "status": "COMPLETED",
+      "as_of": "2026-09-02T13:38:36.885167+00:00",
+      "resource": {
+        "max_symbols": 50,
+        "active_symbols": 3,
+        "symbols": [
+          "BTCUSDT",
+          "ETHUSDT",
+          "SOLUSDT"
+        ],
+        "max_bars_per_symbol": 500,
+        "cached_bars": 1080,
+        "model_concurrency": 1
+      }
+    },
+    "repeat_item_statuses": {
+      "BTCUSDT": "NO_NEW_CLOSED_BAR",
+      "ETHUSDT": "NO_NEW_CLOSED_BAR",
+      "SOLUSDT": "NO_NEW_CLOSED_BAR"
+    },
+    "bar_close_exactly_once": true
+  },
+  "hydration": {
+    "ok": true,
+    "status_code": 200,
+    "elapsed_ms": 11.492,
+    "contract_version": "public_hydration_v1",
+    "enabled": true,
+    "state": "ready",
+    "worker_alive": true,
+    "market_symbols": [
+      "BTCUSDT",
+      "ETHUSDT",
+      "SOLUSDT",
+      "NVDA",
+      "NASDAQ",
+      "VIX",
+      "US10Y"
+    ],
+    "news_symbols": [
+      "BTCUSDT",
+      "NVDA"
+    ],
+    "last_refresh_at": "2026-09-02T13:37:54.615900+00:00",
+    "last_success_at": "2026-09-02T13:37:54.615900+00:00",
+    "last_error": null,
+    "cache": {
+      "symbols": [
+        "BTCUSDT",
+        "ETHUSDT",
+        "NASDAQ",
+        "NVDA",
+        "SOLUSDT",
+        "US10Y",
+        "VIX"
+      ],
+      "fresh_symbols": 5,
+      "stale_symbols": 2
+    },
+    "provider_calls": 9,
+    "domain_writes": 0,
+    "last_durable_run": {
+      "run_id": "hydration-5dab16a7efc34556a3305ce758e63889",
+      "started_at": "2026-09-02T13:37:54.615900+00:00",
+      "finished_at": "2026-09-02T13:38:03.678372+00:00",
+      "status": "ready",
+      "providers": {
+        "market": {
+          "BTCUSDT": "binance_public",
+          "ETHUSDT": "binance_public",
+          "NASDAQ": "yfinance",
+          "NVDA": "yfinance",
+          "SOLUSDT": "binance_public",
+          "US10Y": "yfinance",
+          "VIX": "yfinance",
+          "news:BTCUSDT": "google_news_rss",
+          "news:NVDA": "google_news_rss"
+        },
+        "news": {
+          "news:BTCUSDT": "google_news_rss",
+          "news:NVDA": "google_news_rss"
+        }
+      },
+      "errors": [],
+      "cache": {
+        "fresh_symbols": 5,
+        "stale_symbols": 2,
+        "symbols": [
+          "BTCUSDT",
+          "ETHUSDT",
+          "NASDAQ",
+          "NVDA",
+          "SOLUSDT",
+          "US10Y",
+          "VIX"
+        ]
+      }
+    },
+    "status": "passed"
+  },
+  "news": {
+    "ok": true,
+    "status_code": 200,
+    "elapsed_ms": 248.374,
+    "contract_version": "news_evidence_v1",
+    "symbol": "BTCUSDT",
+    "locale": "en",
+    "provider": "google_news_rss",
+    "available": true,
+    "error_code": null,
+    "capabilities": {
+      "original_preserved": true,
+      "numeric_guard": true,
+      "translation_is_explicit_post": true
+    },
+    "event_count": 20,
+    "sample_event": {
+      "id": "fcdc0562ff8cc9aaafe3b7dc",
+      "source": "CryptoRank",
+      "title": "BTC/USDT Spot CVD Chart Analysis: Volume Heatmap and Order Flow at Aug. 14, 7 p.m. UTC - CryptoRank",
+      "published_at": "2026-08-14T07:00:00+00:00"
+    },
+    "translation": {
+      "ok": true,
+      "status_code": 200,
+      "elapsed_ms": 9057.055,
+      "contract_version": "localized_news_artifact_v1",
+      "news_id": "fcdc0562ff8cc9aaafe3b7dc",
+      "locale": "zh-CN",
+      "source_language": "en",
+      "model_id": "qwen3.5:4b",
+      "prompt_version": "news_translation_v1",
+      "numeric_guard_passed": true,
+      "status": "translated",
+      "evidence": {
+        "original": {
+          "source": "CryptoRank",
+          "published_at": "2026-08-14T07:00:00+00:00",
+          "title": "BTC/USDT Spot CVD Chart Analysis: Volume Heatmap and Order Flow at Aug. 14, 7 p.m. UTC - CryptoRank",
+          "summary": "BTC/USDT Spot CVD Chart Analysis: Volume Heatmap and Order Flow at Aug. 14, 7 p.m. UTC CryptoRank"
+        },
+        "numeric_tokens": [
+          "BTC",
+          "USDT",
+          "CVD",
+          "14",
+          "7",
+          "UTC"
+        ],
+        "structured_values": {},
+        "numeric_guard": {
+          "passed": true,
+          "required_tokens": [
+            "BTC",
+            "USDT",
+            "CVD",
+            "14",
+            "7",
+            "UTC"
+          ],
+          "missing_tokens": [],
+          "unexpected_tokens": []
+        },
+        "translation": {
+          "title_zh": "BTC/USDT现货CVD图表分析：8月14日UTC下午7点成交量热力图与订单流 - CryptoRank",
+          "summary_zh": "BTC/USDT现货CVD图表分析：成交量热力图与订单流分析，发布于2026年8月14日UTC下午7点。"
+        },
+        "model_metadata": {
+          "model_id": "qwen3.5:4b",
+          "model_version": "qwen3.5:4b",
+          "prompt_version": "news_translation_v1",
+          "input_hash": "4f24a53a1863efac7e2799ffb9d51887910b83300f56d995e4a925010a4c594b",
+          "latency_ms": 9023.78
+        }
+      },
+      "translated_title_present": true
+    }
+  },
+  "model_9b": {
+    "requested_model": "qwen3.5:9b",
+    "checked_at": "2026-09-02T13:37:38.511356+00:00",
+    "health": {
+      "provider": "ollama",
+      "available": true,
+      "model_id": "qwen3.5:9b",
+      "model_available": true,
+      "models": [
+        "qwen3.5:9b",
+        "qwen3.5:4b"
+      ],
+      "context_length": 8192,
+      "quantization": "Q4_K_M",
+      "think": false
+    },
+    "status": "passed",
+    "structured_json": true,
+    "returned_keys": [
+      "model",
+      "status"
+    ],
+    "metadata": {
+      "model_id": "qwen3.5:9b",
+      "model_version": "qwen3.5:9b",
+      "prompt_version": "v12_live_smoke_v1",
+      "latency_ms": 13171.558,
+      "parse_status": "valid",
+      "output_chars": 45
+    }
+  },
+  "release": {
+    "ok": true,
+    "status_code": 200,
+    "elapsed_ms": 11.495,
+    "api_version": "1.2.1",
+    "phase": 7,
+    "database": {
+      "available": true,
+      "schema_version": 13,
+      "path": "market_analyst.sqlite3"
+    },
+    "capabilities": {
+      "local_only": true,
+      "cloud_required": false,
+      "telemetry": false,
+      "external_notifications": false,
+      "broker_or_real_order": false,
+      "private_keys": false,
+      "scheduler_default_enabled": false,
+      "model_analysis_concurrency": 1,
+      "backup_format": "phase7_backup_v1",
+      "app_data": "%LOCALAPPDATA%/AI Market Analyst/{data,logs,backups,runtime}",
+      "explicit_legacy_import": true,
+      "monitoring_default_enabled": false,
+      "auto_start_default_enabled": false,
+      "resume_monitoring_default_enabled": false,
+      "owned_sidecar_only_shutdown": true,
+      "config_paths_redacted": true,
+      "qwen_consult": {
+        "contract_version": "qwen_consult_v2",
+        "configured": true,
+        "provider": "ollama",
+        "model_id": "qwen3.5:9b",
+        "models": {
+          "fast": "qwen3.5:4b",
+          "smart": "qwen3.5:9b"
+        },
+        "preference_values": [
+          "auto",
+          "fast",
+          "smart"
+        ],
+        "routing": {
+          "version": "qwen_route_v1",
+          "owner": "python",
+          "fast_model": "qwen3.5:4b",
+          "smart_model": "qwen3.5:9b",
+          "client_model_override": false,
+          "auto_policy": "task_to_tier",
+          "fallback_policy": "no_fabricated_answer; explicit tier never silently changes"
+        },
+        "endpoint_scope": "loopback_only",
+        "streaming": "ndjson",
+        "availability": "deferred_to_health_model_or_consult_request",
+        "conversation_storage": "browser_session_only",
+        "database_writes": false,
+        "model_concurrency": 1,
+        "limits": {
+          "max_body_bytes": 32768,
+          "max_messages": 24,
+          "max_message_chars": 4000,
+          "max_total_message_chars": 16000,
+          "max_output_chars": 12000,
+          "max_output_tokens": 700,
+          "connect_timeout_seconds": 3.0,
+          "first_token_timeout_seconds": 60.0,
+          "stream_idle_timeout_seconds": 20.0,
+          "total_timeout_seconds": 90.0,
+          "retries": 0
+        }
+      },
+      "model_routing": {
+        "version": "qwen_route_v1",
+        "owner": "python",
+        "fast_model": "qwen3.5:4b",
+        "smart_model": "qwen3.5:9b",
+        "client_model_override": false,
+        "auto_policy": "task_to_tier",
+        "fallback_policy": "no_fabricated_answer; explicit tier never silently changes"
+      },
+      "market_intelligence": {
+        "version": "market_intelligence_v1",
+        "get_is_read_only": true,
+        "live_fetch_on_get": false,
+        "daily_brief_generation": "explicit_post_only"
+      },
+      "public_hydration": {
+        "version": "public_hydration_v1",
+        "sidecar_owned": true,
+        "llm_calls": false,
+        "monitoring_side_effect": false,
+        "default_enabled": true
+      }
+    }
+  },
+  "provider_health": {
+    "ok": true,
+    "status_code": 200,
+    "elapsed_ms": 1.791
+  },
+  "model_health": {
+    "ok": true,
+    "status_code": 200,
+    "elapsed_ms": 4.013,
+    "provider": "ollama",
+    "models": [
+      "qwen3.5:9b",
+      "qwen3.5:4b"
+    ]
+  },
+  "websocket": {
+    "url": "ws://127.0.0.1:18766/market/realtime/BTCUSDT/stream?timeframe=15m",
+    "status": "passed",
+    "message_types": [
+      "state",
+      "bar"
+    ],
+    "bar_received": true,
+    "sample_bar": {
+      "timestamp": "2026-09-02T13:30:00+00:00",
+      "open": 76881.12,
+      "high": 76881.12,
+      "low": 76625.0,
+      "close": 76629.64,
+      "volume": 100.41486,
+      "is_closed": false
+    }
+  },
+  "required_failures": [],
+  "status": "passed"
+}

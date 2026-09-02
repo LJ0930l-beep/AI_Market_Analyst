@@ -33,7 +33,7 @@ class MigrationTests(unittest.TestCase):
 
             store = SQLiteStore(path)
             store.initialize()
-            self.assertEqual(store.schema_version(), 12)
+            self.assertEqual(store.schema_version(), 13)
             self.assertEqual(store.counts()["predictions"], 1)
             self.assertEqual(store.counts()["watchlist_entries"], 0)
             self.assertEqual(store.counts()["app_settings"], 0)

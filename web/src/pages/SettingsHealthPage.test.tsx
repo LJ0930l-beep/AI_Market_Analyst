@@ -40,9 +40,9 @@ describe("SettingsHealthPage", () => {
     const { providerHealth } = renderSettings();
 
     const backend = await screen.findByRole("region", { name: "Backend service" });
-    expect(await within(backend).findByText("1.2.0")).toBeInTheDocument();
+    expect(await within(backend).findByText("1.2.1")).toBeInTheDocument();
     expect(within(backend).getAllByText("No")).toHaveLength(2);
-    expect(screen.getByRole("region", { name: "Release / local capability" })).toHaveTextContent("Phase 7 · API 1.2.0");
+    expect(screen.getByRole("region", { name: "Release / local capability" })).toHaveTextContent("Phase 7 · API 1.2.1");
 
     const provider = screen.getByRole("region", { name: "Market and news routing" });
     expect(await within(provider).findByRole("alert")).toHaveTextContent("This panel is unavailable");

@@ -25,6 +25,7 @@ class YFinanceProvider:
 
     _INTERVALS = {"5m": "5m", "15m": "15m", "1h": "1h", "4h": "1h", "1d": "1d"}
     _RANGES = {"5m": "60d", "15m": "60d", "1h": "730d", "4h": "730d", "1d": "2y"}
+    _PROVIDER_SYMBOLS = {"NASDAQ": "^IXIC", "VIX": "^VIX", "US10Y": "^TNX"}
 
     def __init__(
         self,
@@ -58,7 +59,7 @@ class YFinanceProvider:
             raise ProviderError(f"unsupported Yahoo timeframe: {timeframe}", code="unsupported_timeframe", provider=self.provider_name)
         multiplier = 4 if timeframe.lower() == "4h" else 1
         params = {"range": self._RANGES[timeframe.lower()], "interval": interval, "includePrePost": "false", "events": "div,splits", "includeTimestamps": "true"}
-        url = f"{self.base_url}/{quote(instrument.symbol)}?{urlencode(params)}"
+        url = f"{self.base_url}/{quote(self._PROVIDER_SYMBOLS.get(instrument.symbol, instrument.symbol), safe='')}?{urlencode(params)}"
         last_error: Exception | None = None
         for attempt in range(self.retries + 1):
             try:

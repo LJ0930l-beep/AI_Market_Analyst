@@ -8,7 +8,7 @@
     "telemetry": false,
     "timeouts_retries_bounded": true
   },
-  "generated_at": "2026-08-31T12:12:27.565093+00:00",
+  "generated_at": "2026-09-02T13:22:06.498855+00:00",
   "npm_audit_full": {
     "command": [
       "npm.cmd",
@@ -89,7 +89,7 @@
   "report_version": "phase7_security_audit_v1",
   "scope": "tracked and current scoped source plus installed dependency audit commands; no data databases or node_modules source scan",
   "tracked_secret_scan": {
-    "binary_files_skipped": 220,
+    "binary_files_skipped": 225,
     "finding_count": 0,
     "findings": [],
     "patterns": [

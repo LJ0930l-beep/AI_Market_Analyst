@@ -42,8 +42,11 @@ try {
         $stderr = if (Test-Path $stderrPath) { Get-Content -LiteralPath $stderrPath -Raw } else { "" }
         throw "packaged sidecar did not become ready: $stderr"
     }
+    if ([string]$health.api_version -ne "1.2.1" -or [string]$health.contract_version -ne "desktop_backend_v1" -or [int]$health.pid -le 0 -or [int]$health.launcher_pid -le 0) {
+        throw "unexpected desktop health contract: $($health | ConvertTo-Json -Compress)"
+    }
     $release = Invoke-RestMethod "$baseUrl/health/release" -TimeoutSec 5
-    if ([int]$release.database.schema_version -ne 12) {
+    if ([int]$release.database.schema_version -ne 13) {
         throw "unexpected schema version: $($release.database.schema_version)"
     }
     [pscustomobject]@{

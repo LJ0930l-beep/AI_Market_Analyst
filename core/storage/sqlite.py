@@ -120,6 +120,16 @@ APP_SETTING_DEFINITIONS: dict[str, dict[str, object]] = {
         "value_type": "boolean",
         "description": "Resume explicitly enabled monitoring policies after a user-started application session.",
     },
+    "market_hydration.enabled": {
+        "default": True,
+        "value_type": "boolean",
+        "description": "Allow the sidecar to refresh public market/news cache without invoking a model or monitoring policy.",
+    },
+    "market_hydration.defaults_seeded": {
+        "default": False,
+        "value_type": "boolean",
+        "description": "Internal one-time marker so a user-deleted default public watchlist is not recreated on restart.",
+    },
 }
 
 APP_SETTING_DEFAULTS: dict[str, object] = {
@@ -299,6 +309,11 @@ class SQLiteStore:
                 "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                 (12, datetime.now(timezone.utc).isoformat()),
             )
+            self._ensure_v13_tables(db)
+            db.execute(
+                "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                (13, datetime.now(timezone.utc).isoformat()),
+            )
 
     @staticmethod
     def _ensure_v11_tables(db: sqlite3.Connection) -> None:
@@ -468,6 +483,26 @@ class SQLiteStore:
             );
             CREATE INDEX IF NOT EXISTS idx_localized_news_lookup
                 ON localized_news_artifacts(news_id, locale, translated_at DESC);
+            """
+        )
+
+    @staticmethod
+    def _ensure_v13_tables(db: sqlite3.Connection) -> None:
+        """Create the additive public-hydration evidence ledger."""
+
+        db.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS public_hydration_runs (
+                run_id TEXT PRIMARY KEY,
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                status TEXT NOT NULL,
+                providers_json TEXT NOT NULL DEFAULT '{}',
+                errors_json TEXT NOT NULL DEFAULT '[]',
+                cache_json TEXT NOT NULL DEFAULT '{}'
+            );
+            CREATE INDEX IF NOT EXISTS idx_public_hydration_runs_started
+                ON public_hydration_runs(started_at DESC, run_id DESC);
             """
         )
 
@@ -1989,6 +2024,59 @@ class SQLiteStore:
                 "INSERT INTO market_snapshots(symbol, timeframe, captured_at, payload_json) VALUES (?, ?, ?, ?)",
                 (symbol, timeframe, captured_at, json.dumps(payload, sort_keys=True)),
             )
+
+    def save_public_hydration_run(
+        self,
+        *,
+        run_id: str,
+        started_at: str,
+        finished_at: str | None,
+        status: str,
+        providers: dict[str, object],
+        errors: list[str],
+        cache: dict[str, object],
+    ) -> None:
+        """Persist bounded cache-refresh evidence without domain semantics."""
+
+        with self._connect() as db:
+            db.execute(
+                """INSERT OR REPLACE INTO public_hydration_runs(
+                    run_id, started_at, finished_at, status, providers_json,
+                    errors_json, cache_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    str(run_id),
+                    str(started_at),
+                    finished_at,
+                    str(status),
+                    json.dumps(providers, sort_keys=True, ensure_ascii=True),
+                    json.dumps(errors[:20], sort_keys=True, ensure_ascii=True),
+                    json.dumps(cache, sort_keys=True, ensure_ascii=True),
+                ),
+            )
+
+    def latest_public_hydration_run(self) -> dict[str, object] | None:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT * FROM public_hydration_runs ORDER BY started_at DESC, run_id DESC LIMIT 1"
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            providers = json.loads(row["providers_json"])
+            errors = json.loads(row["errors_json"])
+            cache = json.loads(row["cache_json"])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            providers, errors, cache = {}, [], {}
+        return {
+            "run_id": row["run_id"],
+            "started_at": row["started_at"],
+            "finished_at": row["finished_at"],
+            "status": row["status"],
+            "providers": providers if isinstance(providers, dict) else {},
+            "errors": errors if isinstance(errors, list) else [],
+            "cache": cache if isinstance(cache, dict) else {},
+        }
 
     def save_prediction(self, signal: SignalProposal) -> None:
         with self._connect() as db:

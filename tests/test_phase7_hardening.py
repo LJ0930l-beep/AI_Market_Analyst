@@ -43,8 +43,8 @@ class Phase7BackupTests(unittest.TestCase):
             source_counts = source_store.counts()
             manifest = backup_database(source, backup)
             self.assertEqual(manifest["format_version"], "phase7_backup_v1")
-            self.assertEqual(manifest["app_version"], "1.2.0")
-            self.assertEqual(manifest["schema_version"], 12)
+            self.assertEqual(manifest["app_version"], "1.2.1")
+            self.assertEqual(manifest["schema_version"], 13)
             self.assertEqual(manifest["counts"]["predictions"], source_counts["predictions"])
 
             self._seed(target, prediction_id="different-target")
@@ -254,7 +254,8 @@ class Phase7ConfigurationAndApiTests(unittest.TestCase):
             app = create_app(store=store, llm_provider=BrokenModel())
             with TestClient(app) as client:
                 health = client.get("/health")
-                self.assertEqual(health.json(), {
+                health_payload = health.json()
+                self.assertEqual({key: health_payload[key] for key in ("status", "phase", "api_version", "product", "real_orders", "private_keys")}, {
                     "status": "ok",
                     "phase": API_PHASE,
                     "api_version": API_VERSION,
@@ -262,10 +263,13 @@ class Phase7ConfigurationAndApiTests(unittest.TestCase):
                     "real_orders": False,
                     "private_keys": False,
                 })
+                self.assertTrue(health_payload["ready"])
+                self.assertEqual(health_payload["contract_version"], "desktop_backend_v1")
+                self.assertFalse(health_payload["ownership_verified"])
                 release = client.get("/health/release")
                 self.assertEqual(release.status_code, 200)
-                self.assertEqual(release.json()["api_version"], "1.2.0")
-                self.assertEqual(release.json()["database"]["schema_version"], 12)
+                self.assertEqual(release.json()["api_version"], "1.2.1")
+                self.assertEqual(release.json()["database"]["schema_version"], 13)
                 self.assertNotIn(str(Path(temp).resolve()), json.dumps(release.json()))
                 self.assertFalse(release.json()["capabilities"]["external_notifications"])
                 model = client.get("/health/model")

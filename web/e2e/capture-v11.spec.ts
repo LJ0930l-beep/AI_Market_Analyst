@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const outputDirectory = path.resolve(currentDirectory, "..", "..", "docs", "screenshots", "v1.1");
-const v12OutputDirectory = path.resolve(currentDirectory, "..", "..", "docs", "screenshots", "v1.2");
+const v12OutputDirectory = path.resolve(currentDirectory, "..", "..", "docs", "screenshots", "v1.2.1");
 
 test("capture deterministic V1.1 desktop surfaces", async ({ page }) => {
   test.setTimeout(60_000);

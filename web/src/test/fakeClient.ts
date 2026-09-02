@@ -45,7 +45,7 @@ import type {
 export const fakeHealth: HealthResponse = {
   status: "ok",
   phase: 7,
-  api_version: "1.2.0",
+  api_version: "1.2.1",
   product: "AI Market Analyst",
   real_orders: false,
   private_keys: false,
@@ -279,8 +279,8 @@ export const fakeProviderHealth: ProviderHealthResponse = {
 export const fakeReleaseHealth: ReleaseHealthResponse = {
   status: "ok",
   phase: 7,
-  api_version: "1.2.0",
-  database: { available: true, schema_version: 12, path: "market_analyst.sqlite3" },
+  api_version: "1.2.1",
+  database: { available: true, schema_version: 13, path: "market_analyst.sqlite3" },
   backup: { available: true, format_version: "phase7_backup_v1", restore_requires_explicit_command: true },
   capabilities: {
     local_only: true,
@@ -302,7 +302,7 @@ export const fakeReleaseHealth: ReleaseHealthResponse = {
 
 export const fakeContextHealth: ContextHealthResponse = {
   phase: 7,
-  api_version: "1.2.0",
+  api_version: "1.2.1",
   benchmark: { context_version: "benchmark_context_v1", mapping_version: "benchmark_mapping_v1" },
   events: { schema_version: "event_schema_v1", cluster_version: "event_cluster_v1" },
   memory: { version: "market_memory_v1", feature_version: "feature_representation_v1", retention_limit: 1000 },
@@ -661,7 +661,26 @@ export const fakeMarketIntelligence: MarketIntelligenceResponse = {
   },
   news: { status: "unavailable", items: [], missing_reasons: ["no_stored_point_in_time_news"] },
   daily_brief: fakeDailyBrief.brief,
-  capabilities: { live_fetch_on_get: false },
+  hydration: {
+    contract_version: "public_hydration_v1",
+    enabled: true,
+    state: "ready",
+    worker_alive: true,
+    market_symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "NVDA", "NASDAQ", "VIX", "US10Y"],
+    news_symbols: ["BTCUSDT", "NVDA"],
+    sources: { market: { BTCUSDT: "binance_public" }, news: { "news:BTCUSDT": "rss" } },
+    last_refresh_at: "2030-01-02T12:00:00Z",
+    last_success_at: "2030-01-02T12:00:00Z",
+    last_run_id: "hydration-fixture",
+    run_count: 1,
+    next_refresh_at: "2030-01-02T12:05:00Z",
+    last_error: null,
+    last_errors: [],
+    cache: { symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "NVDA"], fresh_symbols: 4, stale_symbols: 0 },
+    provider_calls: 9,
+    domain_writes: 0,
+  },
+  capabilities: { live_fetch_on_get: false, public_hydration: "sidecar_owned" },
 };
 
 export function createFakeClient(overrides: Partial<ApplicationShellApiClient> = {}): ApplicationShellApiClient {
@@ -678,6 +697,8 @@ export function createFakeClient(overrides: Partial<ApplicationShellApiClient> =
       consult: { contract_version: "qwen_consult_v2", configured: true, available: true, model_id: "qwen3.5:9b", models: { fast: "qwen3.5:4b", smart: "qwen3.5:9b" } },
     }),
     marketIntelligence: vi.fn().mockResolvedValue(fakeMarketIntelligence),
+    hydrationStatus: vi.fn().mockResolvedValue(fakeMarketIntelligence.hydration),
+    refreshHydration: vi.fn().mockResolvedValue(fakeMarketIntelligence.hydration),
     dailyBrief: vi.fn().mockResolvedValue(fakeDailyBrief),
     generateDailyBrief: vi.fn().mockResolvedValue(fakeDailyBrief),
     consultStream: vi.fn(async (_request, onEvent: (event: ConsultStreamEvent) => void) => {

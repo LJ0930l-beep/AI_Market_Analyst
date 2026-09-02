@@ -8,8 +8,8 @@ import os
 import sys
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
+from uuid import uuid4
 
-from apps.api.main import app
 from core.config import database_path_from_env
 from core.desktop_runtime import ensure_app_data_layout, ownership_fingerprint, write_runtime_manifest
 from core.storage import SQLiteStore
@@ -18,13 +18,22 @@ from core.storage import SQLiteStore
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="AI Market Analyst owned local API sidecar")
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=18765)
+    parser.add_argument("--port", type=int, default=int(os.environ.get("AIMA_SIDECAR_PORT", "18765")))
+    parser.add_argument("--instance-id", default=f"standalone-{os.getpid()}-{uuid4().hex[:12]}")
+    parser.add_argument("--ownership-token", default=uuid4().hex)
     args = parser.parse_args(argv)
     if args.host not in {"127.0.0.1", "localhost", "::1"}:
         parser.error("the packaged sidecar binds only to loopback")
     if not 1024 <= args.port <= 65_535:
         parser.error("port must be between 1024 and 65535")
     os.environ.setdefault("AIMA_PACKAGED_SIDECAR", "1")
+    os.environ["AIMA_INSTANCE_ID"] = args.instance_id
+    os.environ["AIMA_OWNERSHIP_TOKEN"] = args.ownership_token
+    os.environ["AIMA_SIDECAR_BOUND_PORT"] = str(args.port)
+    os.environ.setdefault("AIMA_PUBLIC_HYDRATION", "1")
+    # Import only after the session environment is fixed so FastAPI's global
+    # app is constructed with the packaged-sidecar lifecycle boundary.
+    from apps.api.main import app
     paths = ensure_app_data_layout()
     started_at = datetime.now(timezone.utc)
     command_line = " ".join(sys.argv)

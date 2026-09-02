@@ -31,6 +31,7 @@ import type {
   OpportunityAnalysesResponse,
   MarketContextResponse,
   MarketIntelligenceResponse,
+  PublicHydrationStatus,
   DailyBriefResponse,
   ModelHealthResponse,
   Outcome,
@@ -124,6 +125,8 @@ export interface MarketApiClient {
   contextHealth(signal?: AbortSignal): Promise<ContextHealthResponse>;
   modelHealth(signal?: AbortSignal): Promise<ModelHealthResponse>;
   marketIntelligence(signal?: AbortSignal): Promise<MarketIntelligenceResponse>;
+  hydrationStatus(signal?: AbortSignal): Promise<PublicHydrationStatus>;
+  refreshHydration(signal?: AbortSignal): Promise<PublicHydrationStatus>;
   dailyBrief(language?: "en" | "zh-CN", signal?: AbortSignal): Promise<DailyBriefResponse>;
   generateDailyBrief(language: "en" | "zh-CN", modelPreference: "auto" | "fast" | "smart", signal?: AbortSignal): Promise<DailyBriefResponse>;
   consultStream(request: ConsultRequest, onEvent: (event: ConsultStreamEvent) => void, signal?: AbortSignal): Promise<void>;
@@ -191,6 +194,8 @@ export type ApplicationShellApiClient = Pick<
   | "contextHealth"
   | "modelHealth"
   | "marketIntelligence"
+  | "hydrationStatus"
+  | "refreshHydration"
   | "dailyBrief"
   | "generateDailyBrief"
   | "consultStream"
@@ -419,6 +424,14 @@ export class ApiClient implements MarketApiClient {
 
   marketIntelligence(signal?: AbortSignal): Promise<MarketIntelligenceResponse> {
     return this.request<MarketIntelligenceResponse>("/market-intelligence", { signal });
+  }
+
+  hydrationStatus(signal?: AbortSignal): Promise<PublicHydrationStatus> {
+    return this.request<PublicHydrationStatus>("/hydration/status", { signal });
+  }
+
+  refreshHydration(signal?: AbortSignal): Promise<PublicHydrationStatus> {
+    return this.request<PublicHydrationStatus>("/hydration/refresh", { method: "POST", signal });
   }
 
   dailyBrief(language?: "en" | "zh-CN", signal?: AbortSignal): Promise<DailyBriefResponse> {

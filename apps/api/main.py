@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import asyncio
+import hmac
 import math
 import threading
 from queue import Empty as QueueEmpty
@@ -51,6 +52,7 @@ from core.instruments import (
 )
 from core.memory import MarketMemoryService, memory_capabilities
 from core.market_intelligence import MARKET_INTELLIGENCE_VERSION, brief_source_evidence, build_market_intelligence
+from core.market_hydration import HYDRATION_CONTRACT_VERSION, MarketHydrationRuntime
 from core.model_routing import DEFAULT_FAST_MODEL, ModelRoutingConfig
 from core.monitoring import MonitoringPolicy, MonitoringService, SUPPORTED_TRIGGER_TYPES
 from core.monitoring_runtime import MonitoringRuntime
@@ -88,6 +90,7 @@ from core.storage import APP_SETTING_DEFINITIONS, SQLiteStore, validate_app_sett
 
 _UNSET = object()
 API_VERSION = APP_VERSION
+DESKTOP_CONTRACT_VERSION = "desktop_backend_v1"
 DEFAULT_CORS_ORIGINS = (
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -687,12 +690,32 @@ if FastAPI is not None:
     router = APIRouter()
 
     @router.get("/health")
-    def health() -> dict[str, object]:
+    def health(request: Request) -> dict[str, object]:
+        expected_token = os.environ.get("AIMA_OWNERSHIP_TOKEN", "")
+        supplied_token = request.headers.get("x-aima-ownership-token", "")
+        ownership_verified = bool(expected_token) and hmac.compare_digest(supplied_token, expected_token)
+        raw_port = os.environ.get("AIMA_SIDECAR_BOUND_PORT")
+        try:
+            bound_port = int(raw_port) if raw_port else None
+        except ValueError:
+            bound_port = None
+        raw_launcher_pid = os.environ.get("AIMA_SIDECAR_LAUNCHER_PID")
+        try:
+            launcher_pid = int(raw_launcher_pid) if raw_launcher_pid else os.getppid()
+        except ValueError:
+            launcher_pid = None
         return {
             "status": "ok",
+            "ready": True,
             "phase": API_PHASE,
             "api_version": API_VERSION,
             "product": "AI Market Analyst",
+            "contract_version": DESKTOP_CONTRACT_VERSION,
+            "instance_id": os.environ.get("AIMA_INSTANCE_ID"),
+            "pid": os.getpid(),
+            "launcher_pid": launcher_pid,
+            "port": bound_port,
+            "ownership_verified": ownership_verified,
             "real_orders": False,
             "private_keys": False,
         }
@@ -794,6 +817,13 @@ if FastAPI is not None:
             "live_fetch_on_get": False,
             "daily_brief_generation": "explicit_post_only",
         }
+        capabilities["public_hydration"] = {
+            "version": HYDRATION_CONTRACT_VERSION,
+            "sidecar_owned": True,
+            "llm_calls": False,
+            "monitoring_side_effect": False,
+            "default_enabled": True,
+        }
         return {
             "status": "ok" if database.get("available") else "degraded",
             "phase": API_PHASE,
@@ -827,11 +857,38 @@ if FastAPI is not None:
 
     @router.get("/market-intelligence")
     def market_intelligence(
+        request: Request,
         as_of: str | None = None,
         store: SQLiteStore = Depends(get_store),
     ) -> dict[str, object]:
         cutoff = _required_utc_timestamp(as_of) if as_of is not None else datetime.now(timezone.utc)
-        return build_market_intelligence(store, as_of=cutoff)
+        view = build_market_intelligence(store, as_of=cutoff)
+        hydration = getattr(request.app.state, "public_hydration_runtime", None)
+        view["hydration"] = hydration.status() if isinstance(hydration, MarketHydrationRuntime) else {"state": "disabled", "enabled": False}
+        return view
+
+    @router.get("/hydration/status")
+    def public_hydration_status(request: Request, store: SQLiteStore = Depends(get_store)) -> dict[str, object]:
+        runtime = getattr(request.app.state, "public_hydration_runtime", None)
+        if isinstance(runtime, MarketHydrationRuntime):
+            result = runtime.status()
+        else:
+            result = {
+                "contract_version": HYDRATION_CONTRACT_VERSION,
+                "enabled": False,
+                "state": "disabled",
+                "worker_alive": False,
+                "last_error": "public hydration runtime is not configured",
+            }
+        result["last_durable_run"] = store.latest_public_hydration_run()
+        return result
+
+    @router.post("/hydration/refresh")
+    def refresh_public_hydration(request: Request) -> dict[str, object]:
+        runtime = getattr(request.app.state, "public_hydration_runtime", None)
+        if not isinstance(runtime, MarketHydrationRuntime):
+            raise APIError(503, "HYDRATION_UNAVAILABLE", "public hydration runtime is unavailable")
+        return runtime.refresh_now()
 
     @router.get("/daily-brief")
     def daily_brief(
@@ -2274,6 +2331,9 @@ def create_app(
     monitoring_runtime: MonitoringRuntime | None = None,
     monitoring_stream_factory: Callable[[tuple[str, ...]], object] | None = None,
     monitoring_poll_interval_seconds: float = 30.0,
+    market_hydration_runtime: MarketHydrationRuntime | None = None,
+    market_hydration_enabled: bool | None = None,
+    market_hydration_interval_seconds: float = 300.0,
 ):
     """Create an API app with optional service injections for isolated tests."""
 
@@ -2286,8 +2346,8 @@ def create_app(
     app = FastAPI(
         title="AI Market Analyst",
         version=API_VERSION,
-        description="Local-first V1.2 crypto monitoring API with deterministic point-in-time evidence, explicit opt-in monitoring, paper-only tracking, app-supplied charts and dual-tier local Qwen assistance.",
-        openapi_extra={"x-phase": API_PHASE, "x-product-baseline": "v1.2"},
+        description="Local-first V1.2.1 crypto monitoring API with sidecar-owned public cache hydration, deterministic point-in-time evidence, explicit opt-in monitoring, paper-only tracking, app-supplied charts and dual-tier local Qwen assistance.",
+        openapi_extra={"x-phase": API_PHASE, "x-product-baseline": "v1.2.1"},
     )
     app.state.api_phase = API_PHASE
     app.state.api_version = API_VERSION
@@ -2298,6 +2358,9 @@ def create_app(
     app.state.monitoring_poll_interval_seconds = max(0.05, min(float(monitoring_poll_interval_seconds), 900.0))
     app.state.monitoring_service = monitoring_service
     app.state.monitoring_runtime = monitoring_runtime
+    app.state.public_hydration_runtime = market_hydration_runtime
+    app.state.market_hydration_enabled = market_hydration_enabled
+    app.state.market_hydration_interval_seconds = max(30.0, min(float(market_hydration_interval_seconds), 3600.0))
     app.state.consult_service = _consult_service() if consult_service is _UNSET else consult_service
     app.add_middleware(
         CORSMiddleware,
@@ -2371,6 +2434,22 @@ def create_app(
                 max_symbols=app.state.monitoring_max_symbols,
                 poll_interval_seconds=app.state.monitoring_poll_interval_seconds,
             )
+        if app.state.public_hydration_runtime is None:
+            if market_hydration_enabled is None:
+                # Packaged sidecars opt in through their fixed launcher
+                # environment. Unit/API apps stay side-effect-free unless a
+                # test or operator explicitly enables the worker.
+                hydration_enabled = os.environ.get("AIMA_PACKAGED_SIDECAR", "0") == "1"
+            else:
+                hydration_enabled = bool(market_hydration_enabled)
+            stored_enabled = store.get_app_setting("market_hydration.enabled").get("value")
+            if type(stored_enabled) is bool:
+                hydration_enabled = hydration_enabled and stored_enabled
+            app.state.public_hydration_runtime = MarketHydrationRuntime(
+                store=store,
+                enabled=hydration_enabled,
+                interval_seconds=app.state.market_hydration_interval_seconds,
+            )
     if news_provider is not None:
         app.dependency_overrides[get_news_provider] = lambda: news_provider
         app.dependency_overrides[get_event_provider] = lambda: event_provider or NewsEventProviderAdapter(news_provider)
@@ -2416,6 +2495,12 @@ def create_app(
     app.state.scheduler_runtime = scheduler_runtime
 
     async def shutdown_scheduler() -> None:
+        hydration = getattr(app.state, "public_hydration_runtime", None)
+        if isinstance(hydration, MarketHydrationRuntime):
+            try:
+                hydration.stop()
+            except Exception:
+                pass
         monitoring = getattr(app.state, "monitoring_runtime", None)
         if isinstance(monitoring, MonitoringRuntime):
             try:
@@ -2455,6 +2540,23 @@ def create_app(
                 poll_interval_seconds=app.state.monitoring_poll_interval_seconds,
             )
             app.state.monitoring_runtime = runtime
+        hydration = getattr(app.state, "public_hydration_runtime", None)
+        if not isinstance(hydration, MarketHydrationRuntime):
+            selected_store = runtime.store
+            if market_hydration_enabled is None:
+                hydration_enabled = os.environ.get("AIMA_PACKAGED_SIDECAR", "0") == "1"
+            else:
+                hydration_enabled = bool(market_hydration_enabled)
+            stored_enabled = selected_store.get_app_setting("market_hydration.enabled").get("value")
+            if type(stored_enabled) is bool:
+                hydration_enabled = hydration_enabled and stored_enabled
+            hydration = MarketHydrationRuntime(
+                store=selected_store,
+                enabled=hydration_enabled,
+                interval_seconds=app.state.market_hydration_interval_seconds,
+            )
+            app.state.public_hydration_runtime = hydration
+        hydration.start()
         try:
             resume_setting = runtime.store.get_app_setting("monitoring.resume").get("value") is True
         except Exception:

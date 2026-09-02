@@ -85,7 +85,7 @@ class V11MarketIntelligenceTests(unittest.TestCase):
         self.assertEqual(route_model(routing, preference="fast", task="daily_brief").model_id, "qwen-fast")
 
     def test_v11_settings_and_brief_survive_restart(self) -> None:
-        self.assertEqual(self.store.schema_version(), 12)
+        self.assertEqual(self.store.schema_version(), 13)
         self.store.upsert_app_setting("ui.language", "zh-CN")
         self.store.upsert_app_setting("ai.response_language", "follow_ui")
         self.store.upsert_app_setting("notifications.language", "zh-CN")
