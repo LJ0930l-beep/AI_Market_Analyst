@@ -1,8 +1,8 @@
 {
   "contract": "v121_test_evidence_v1",
-  "generated_at": "2026-09-02T21:38:52+08:00",
+  "generated_at": "2026-09-03T19:56:18+08:00",
   "status": "developer_complete",
-  "acceptance": "pending_sol_independent_review",
+  "acceptance": "ready_for_final_signature",
   "versions": {
     "package_api": "1.2.1",
     "desktop": "desktop_backend_v1",
@@ -13,15 +13,15 @@
   "artifacts": {
     "installer": {
       "path": "D:\\RJ\\codex\\ai-market-analyst\\src-tauri\\target\\x86_64-pc-windows-gnu\\release\\bundle\\nsis\\AI Market Analyst_1.2.1_x64-setup.exe",
-      "bytes": 42553026,
-      "sha256": "A284FD70CB91E8D67955B1A9E367FE18C3FC4A60D2A74170018E5F8519C464C4"
+      "bytes": 42553612,
+      "sha256": "B94D80529BA4D49CE5FA3F2F2AA0FB9C3466915AE62D8257939D83216F2FD360"
     },
-    "release_executable_sha256": "0A84904079492238767E9F5F163525E2C00480D5B964E32B49B4CB358A856ABE",
-    "release_sidecar_sha256": "4E4077512206781C7459798587F5D9352E67D321206BCF28643EED7FC4303059",
-    "installed_executable_sha256": "D9F2399D63C6C5EBB8C1C7CE2D18D1FA3336912E54F833C15594733AB66CBE4D"
+    "release_executable_sha256": "7CC83A559D8D23688CD19F3AA32EB80B17403025A208BE2DE9061B87E40CF2A9",
+    "release_sidecar_sha256": "DC8D0293991E134DD924E510B597662D1B1E4104BAAE519EA5F30F4671825A92",
+    "installed_executable_sha256": "1FD7A9EA56F6F8D13841BB5981316F9ACD13FE18D7001DBFF0CAE60CB3B5F571"
   },
   "gates": {
-    "python_full": "PASS: 158 passed, 1 skipped, 1 warning in 36.37s",
+    "python_full": "PASS: 158 passed, 1 skipped, 1 warning in 42.69s",
     "python_v12_v121_focused": "PASS: 28 passed, 1 warning in 8.92s",
     "python_unittest": "PASS: Ran 132 tests in 30.596s; OK (skipped=1)",
     "python_compileall": "PASS",
@@ -30,9 +30,10 @@
       "PASS: npm run build; Vite 6.4.3, 75 modules",
       "PASS: npm run lint",
       "PASS: npm run typecheck",
-      "PASS: npm test -- --run; 18 files, 78 tests"
+      "PASS: npm test -- --run; 18 files, 82 tests"
     ],
-    "frontend_e2e": "PASS: Playwright 1.62.1; 13 passed in 1.0m; 15 routes, 30 axe scans, 30 overflow checks; deterministic fixture UI",
+    "frontend_e2e": "PASS: Playwright 1.62.1; 13 passed in 1.1m; 15 routes, 30 axe scans, 30 overflow checks; deterministic fixture UI",
+    "signals_empty_state": "PASS: 9 focused Signals tests cover zero Prediction rows with market/trigger evidence, explicit analysis entry, provider degradation, market/backend failure and no page-load analysis call",
     "npm_audit_full": "PASS: 0 vulnerabilities",
     "npm_audit_production": "PASS: 0 vulnerabilities",
     "tracked_secret_scan": "PASS: 0 findings",
@@ -40,7 +41,8 @@
     "tauri_production_build": "PASS: cargo +stable-x86_64-pc-windows-gnu tauri build --target x86_64-pc-windows-gnu from src-tauri",
     "packaged_sidecar_smoke": "PASS: API 1.2.1, desktop_backend_v1, schema 13, AppData, fixture fallback 0",
     "live_smoke": "PASS: docs/v1.2.1-live-smoke.json, fixture fallback false, required_failures empty",
-    "screenshots": "PASS: 2 V1.2.1 monitoring screenshots; historical V1.1 set regenerated"
+    "screenshots": "PASS: 5 live-installed Tauri-window captures plus 2 explicitly named deterministic fixtures",
+    "installed_live_ui": "PASS: docs/v1.2.1-installed-live-smoke.json; default port 18765; no fixture/mock/test-port override"
   },
   "live_summary": {
     "public_rest": "BTCUSDT, ETHUSDT, SOLUSDT; binance_public; 240 bars each; fresh",
@@ -66,7 +68,9 @@
     "inactive_close": "PASS: product exited and listener released with close_to_tray false",
     "uninstall_retention": "PASS: program/autostart removed; AppData database byte-for-byte retained",
     "upgrade_retention": "PASS: pre/post database SHA-256 unchanged",
-    "final_state": "installed app healthy; monitoring stopped; auto_start false; resume false"
+    "signals_zero_prediction": "PASS: 0 Prediction rows; real BTC/ETH/SOL market state and trigger_policy_v2 evidence; explicit analysis links; no Qwen call on load",
+    "live_installed_screenshots": "PASS: Dashboard, Settings, 240-bar Monitoring chart, running worker and deterministic Signals state captured from the installed Tauri window",
+    "final_state": "monitoring stopped; resume eligibility false; auto_start false; resume false; app exited; owned ports released"
   },
   "limits": [
     "Direct native Windows ordinary-toast click was not observable through the automation surface and is not claimed as observed.",

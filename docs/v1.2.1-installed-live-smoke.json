@@ -1,0 +1,176 @@
+{
+  "contract": "v121_installed_live_smoke_v1",
+  "status": "pass",
+  "capture_method": {
+    "application": "C:\\Users\\baicha\\AppData\\Local\\Programs\\AI Market Analyst\\ai-market-analyst.exe",
+    "installation": "current-user NSIS installation",
+    "ui": "direct Tauri WebView capture through Windows UI automation",
+    "backend": "desktop-owned packaged PyInstaller sidecar",
+    "base_url": "http://127.0.0.1:18765",
+    "default_port_selection": true,
+    "test_port_override": false,
+    "fixture_or_mock": false,
+    "provider_mode": "real"
+  },
+  "installed_sessions": [
+    {
+      "captured_local_range": "2026-09-02T23:16:44+08:00/2026-09-02T23:22:46+08:00",
+      "instance_id": "9f963732-e28c-49b6-aaa2-633c205e5ea4",
+      "port": 18765,
+      "api_version": "1.2.1",
+      "desktop_contract": "desktop_backend_v1",
+      "schema_version": 13,
+      "ownership_verified_in_desktop": true
+    },
+    {
+      "captured_local_range": "2026-09-03T19:35:06+08:00/2026-09-03T19:39:17+08:00",
+      "instance_id": "03499d45-f86d-4d3e-842f-d6a3e3f39331",
+      "port": 18765,
+      "api_version": "1.2.1",
+      "desktop_contract": "desktop_backend_v1",
+      "schema_version": 13,
+      "predictions": 0
+    }
+  ],
+  "dashboard": {
+    "status": "pass",
+    "captured_local": "2026-09-02T23:16:44+08:00",
+    "market": {
+      "real_providers": [
+        "binance_public",
+        "yfinance"
+      ],
+      "fresh_crypto_symbols": [
+        "BTCUSDT",
+        "ETHUSDT",
+        "SOLUSDT"
+      ],
+      "degraded_rows_are_labeled": true
+    },
+    "news": {
+      "status": "available",
+      "provider_route": "google_news_rss",
+      "real_provider": true
+    },
+    "calendar": {
+      "status": "available",
+      "real_provider_evidence": true
+    }
+  },
+  "settings": {
+    "status": "pass",
+    "captured_local": "2026-09-02T23:18:24+08:00",
+    "backend_ready": true,
+    "base_url": "http://127.0.0.1:18765",
+    "instance_id": "9f963732-e28c-49b6-aaa2-633c205e5ea4",
+    "api_version": "1.2.1",
+    "desktop_contract": "desktop_backend_v1",
+    "ownership_verified": true,
+    "provider_routes_real": true
+  },
+  "monitoring": {
+    "status": "pass",
+    "captured_local_range": "2026-09-02T23:21:05+08:00/2026-09-02T23:22:46+08:00",
+    "explicit_start": true,
+    "runtime_state": "running",
+    "worker_alive": true,
+    "active_symbols": [
+      "BTCUSDT"
+    ],
+    "public_ws": "connected",
+    "rest_cycles_visible": 3,
+    "chart": {
+      "symbol": "BTCUSDT",
+      "timeframe": "15m",
+      "bar_count": 240,
+      "provider": "binance_public",
+      "stale": false,
+      "library": "TradingView Lightweight Charts"
+    }
+  },
+  "signals": {
+    "status": "pass",
+    "captured_local": "2026-09-03T19:37:53+08:00",
+    "predictions": 0,
+    "market_state": [
+      {
+        "symbol": "BTCUSDT",
+        "price": 77919.46,
+        "status": "available",
+        "freshness": "fresh",
+        "provider": "binance_public"
+      },
+      {
+        "symbol": "ETHUSDT",
+        "price": 2405.53,
+        "status": "available",
+        "freshness": "fresh",
+        "provider": "binance_public"
+      },
+      {
+        "symbol": "SOLUSDT",
+        "price": 100.82,
+        "status": "available",
+        "freshness": "fresh",
+        "provider": "binance_public"
+      }
+    ],
+    "trigger_policy": "trigger_policy_v2",
+    "deterministic_trigger_visible": true,
+    "explicit_analysis_links_visible": true,
+    "llm_called_on_page_load": false,
+    "unavailable_or_degraded_is_transparent": true
+  },
+  "screenshots": [
+    {
+      "path": "docs/screenshots/v1.2.1/live-installed-dashboard-zh-CN.jpg",
+      "bytes": 117714,
+      "sha256": "89FFBE72D35C4187E51B85AAC9DDB1B64895C567B4551AEF28BFADFE4A784B59"
+    },
+    {
+      "path": "docs/screenshots/v1.2.1/live-installed-settings-owned-backend-zh-CN.jpg",
+      "bytes": 104587,
+      "sha256": "9F8A2FAFC552DE7343F5A10F04FD6198595CF4208C1DAF7F57ABF644794FCAE9"
+    },
+    {
+      "path": "docs/screenshots/v1.2.1/live-installed-monitoring-chart-240bars-zh-CN.jpg",
+      "bytes": 153336,
+      "sha256": "14975C2D9014A6E5C59DB7E99F1798163A3E9C2F108C88C515527C465D13C87B"
+    },
+    {
+      "path": "docs/screenshots/v1.2.1/live-installed-monitoring-worker-running-zh-CN.jpg",
+      "bytes": 127346,
+      "sha256": "DCCC7397031C3BC5C803DCF1E6763A2092D0E93A55803395B3C9A6A0A31616C2"
+    },
+    {
+      "path": "docs/screenshots/v1.2.1/live-installed-signals-deterministic-empty-state-zh-CN.jpg",
+      "bytes": 124295,
+      "sha256": "893AA1C414D1E2ADC558AB30613B19583EFFF69C92D4F66FE26AE469542CD0D6"
+    }
+  ],
+  "upgrade_retention": {
+    "installer_exit_code": 0,
+    "database_path": "C:\\Users\\baicha\\AppData\\Local\\AI Market Analyst\\data\\market_analyst.sqlite3",
+    "bytes_before": 1695744,
+    "sha256_before": "8F8AFB8D6C19B3A9ED539CA8089C171C8B7C5F019AB694026E2CB9E6B6560280",
+    "sha256_immediately_after": "8F8AFB8D6C19B3A9ED539CA8089C171C8B7C5F019AB694026E2CB9E6B6560280",
+    "byte_for_byte_retained": true
+  },
+  "final_safe_state": {
+    "verified_local": "2026-09-03T19:56:18+08:00",
+    "monitoring_state": "stopped",
+    "worker_alive": false,
+    "resume_eligible": false,
+    "desktop_auto_start_setting": false,
+    "resume_monitoring_setting": false,
+    "windows_run_entry": "absent",
+    "application_processes": 0,
+    "owned_sidecar_processes": 0,
+    "listeners_in_18765_18828": 0
+  },
+  "installer": {
+    "path": "D:\\RJ\\codex\\ai-market-analyst\\src-tauri\\target\\x86_64-pc-windows-gnu\\release\\bundle\\nsis\\AI Market Analyst_1.2.1_x64-setup.exe",
+    "bytes": 42553612,
+    "sha256": "B94D80529BA4D49CE5FA3F2F2AA0FB9C3466915AE62D8257939D83216F2FD360"
+  }
+}

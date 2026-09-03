@@ -1,12 +1,14 @@
 # Changelog
 
-## V1.2.1 Production Usability Repair — developer-complete, 2026-09-02
+## V1.2.1 Production Usability Repair — developer-complete, 2026-09-03
 
 - Made the documented Tauri GNU production command reproducible from `src-tauri`; it rebuilds the React assets, PyInstaller sidecar, desktop executable and NSIS installer without a production Node/Vite dependency.
 - Added a sidecar-owned, explicit-opt-in `monitoring_runtime_v1` with start/resume/pause/stop, enabled-policy-only REST/WS/backfill/freshness work, bounded retries/resources, 15-minute close exactly-once processing, durable Smart 9B opportunities and background alert events while the window is hidden.
 - Reworked the tray and close lifecycle around real runtime state: dynamic status, pause/resume, exact Settings routing, owned-backend restart/degraded handling, active-monitoring close-to-tray notice, safe inactive exit and single-instance activation.
 - Integrated the official Tauri Windows autostart plugin with OS-authoritative UI state, independent resume authorization and off-by-default behavior. Added exact owned-sidecar watchdog/restart and safe automatic selection across loopback ports `18765..18828` without taking over a foreign listener.
 - Removed WebView process-spawn capability, added the always-mounted deduped alert-to-native-notification bridge, additive schema 13 hydration audit evidence, numeric-guard month-name equivalence, and retained all no-account/no-secret/no-order safety boundaries.
+- Replaced the zero-Prediction Signals shell with deterministic market/freshness, monitoring, trigger and opportunity evidence plus explicit analysis links; page load remains model-free and unavailable/degraded sources are shown honestly in both languages.
+- Captured Dashboard, Settings, Monitoring chart/worker and Signals directly from the installed Tauri application and owned backend on its normal port. Live-installed JPEGs, deterministic fixture PNGs and their inventory are now unambiguously separated.
 - Re-ran Python/V1.1/V1.2 regressions, frontend build/lint/typecheck/Vitest/E2E/audits, Cargo check, official production packaging, packaged sidecar/live provider/model smoke, and installed Windows autostart/crash/restart/port-conflict/retention/single-instance/close lifecycle checks. Honest direct tray-popup and ordinary Windows toast-click observation limits remain recorded in the V1.2.1 evidence.
 
 ## V1.2 Crypto Smart Monitoring Windows desktop — developer-complete, 2026-08-31

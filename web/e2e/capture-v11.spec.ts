@@ -40,10 +40,10 @@ test("capture deterministic V1.2 monitoring surfaces", async ({ page }) => {
   await page.goto("/monitoring");
   await page.locator("#language-select").selectOption("zh-CN");
   await expect(page.getByRole("heading", { name: "智能盯盘", exact: true })).toBeVisible();
-  await page.screenshot({ path: path.join(v12OutputDirectory, "monitoring-zh-CN.png"), fullPage: true });
+  await page.screenshot({ path: path.join(v12OutputDirectory, "fixture-monitoring-zh-CN.png"), fullPage: true });
 
   await page.goto("/monitoring");
   await page.locator("#language-select").selectOption("en");
   await expect(page.getByRole("heading", { name: "Smart monitoring", exact: true })).toBeVisible();
-  await page.screenshot({ path: path.join(v12OutputDirectory, "monitoring-en.png"), fullPage: true });
+  await page.screenshot({ path: path.join(v12OutputDirectory, "fixture-monitoring-en.png"), fullPage: true });
 });

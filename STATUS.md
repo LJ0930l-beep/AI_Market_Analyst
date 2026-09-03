@@ -1,6 +1,6 @@
 # AI Market Analyst Status
 
-Updated: 2026-09-02
+Updated: 2026-09-03
 
 ## Current milestone
 
@@ -16,12 +16,13 @@ The repaired contract is API/package `1.2.1`, desktop contract `desktop_backend_
 - Official Tauri Windows autostart registration with OS-authoritative UI state; auto-start and independent resume authorization remain explicit and default off.
 - Restricted WebView capability with no shell spawn permission; Rust owns fixed executable/host/port/model arguments. No account, exchange secret, private key, broker, real order, funds or proprietary chart asset exists.
 - Always-mounted deduped alert bridge, Alert Center fallback, native-notification request path, bilingual typed routes, responsive/accessibility checks, schema-13 public hydration audit, 4B translation cache and strict numeric guard.
+- Signals zero-Prediction state now presents deterministic BTC/ETH/SOL/watchlist market evidence, monitoring and `trigger_policy_v2` status, transparent unavailable/degraded reasons, and explicit analysis links without calling Qwen on page load.
 
 ## Final developer Gate summary
 
 - Python: `158 passed, 1 skipped, 1 warning`; V1.2/V1.2.1 focus: `28 passed, 1 warning`; unittest: `Ran 132 tests`, `OK (skipped=1)`; compileall and `pip check` passed.
-- Frontend required order: build passed (Vite 6.4.3, 75 modules), lint passed, typecheck passed, Vitest passed (`18 files, 78 tests`).
-- Browser E2E: Playwright 1.62.1, `13 passed` in 1.0m, including 15 routes, 30 axe scans and 30 page-overflow checks. It uses deterministic fixtures and is not live proof.
+- Frontend required order: build passed (Vite 6.4.3, 75 modules), lint passed, typecheck passed, Vitest passed (`18 files, 82 tests`).
+- Browser E2E: Playwright 1.62.1, `13 passed` in 1.1m, including 15 routes, 30 axe scans and 30 page-overflow checks. It uses deterministic fixtures and is not live proof.
 - Security/dependencies: full and production npm audit both report zero vulnerabilities; tracked secret scan reports zero findings; `pip-audit` is unavailable and license inventory remains `review_required`.
 - Cargo GNU check passed. The exact official Tauri production command passed and produced the V1.2.1 NSIS installer.
 - Packaged live smoke passed with fixture fallback false: real Binance public BTC/ETH/SOL REST (240 bars each), WS, 15m/1h chart data (120 bars per symbol/timeframe), runtime lifecycle, bar-close exactly-once, qwen3.5:9b Smart analysis, 20 English RSS events, qwen3.5:4b Chinese translation and numeric guard.
@@ -29,15 +30,15 @@ The repaired contract is API/package `1.2.1`, desktop contract `desktop_backend_
 ## Release artifact
 
 - Installer: `D:\RJ\codex\ai-market-analyst\src-tauri\target\x86_64-pc-windows-gnu\release\bundle\nsis\AI Market Analyst_1.2.1_x64-setup.exe`
-- Size: `42,553,026` bytes
-- SHA-256: `A284FD70CB91E8D67955B1A9E367FE18C3FC4A60D2A74170018E5F8519C464C4`
-- Packaged sidecar SHA-256: `4E4077512206781C7459798587F5D9352E67D321206BCF28643EED7FC4303059`
+- Size: `42,553,612` bytes
+- SHA-256: `B94D80529BA4D49CE5FA3F2F2AA0FB9C3466915AE62D8257939D83216F2FD360`
+- Packaged sidecar SHA-256: `DC8D0293991E134DD924E510B597662D1B1E4104BAAE519EA5F30F4671825A92`
 
 ## Installed Windows acceptance
 
 The final installed package passed launch/backend-ready, single-instance, explicit monitoring start, hidden-window background worker, active-close-to-tray notice, stop, inactive X exit, relaunch, exact owned-sidecar exit, crash-to-degraded and owned-backend restart. A controlled foreign listener retained `127.0.0.1:18765` while the app safely selected `18766`. Enabling auto-start created the exact current-user Run entry; disabling removed it. Uninstall removed program files and autostart registry entries while preserving the AppData database byte-for-byte; reinstall/upgrade retained the database. Ollama remained alive throughout.
 
-The final installed runtime is left healthy on loopback with Monitoring stopped, auto-start false, resume false and AppData retained.
+The final installed UI was captured directly from the Tauri window on the normal owned port `18765` with no test-port override or fixture/mock: Dashboard real providers, Settings ownership identity, Monitoring 240-bar chart/running worker, and Signals zero-Prediction deterministic evidence all passed. The final runtime is safely stopped; resume eligibility is cleared, auto-start and resume are false, the app is exited, all owned listeners are released, and AppData is retained.
 
 ## Honest limitations
 

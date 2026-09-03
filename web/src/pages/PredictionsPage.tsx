@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { Link } from "react-router-dom";
 
 import { ApiError, type ApplicationShellApiClient } from "../api/client";
-import type { OutcomeStatus, Prediction, PredictionFilters, SourceType, Timeframe } from "../api/types";
+import type { MarketIntelligenceResponse, MarketPulseItem, OutcomeStatus, Prediction, PredictionFilters, SourceType, Timeframe, TriggerEvent } from "../api/types";
 import { AsyncPanel, type PanelState } from "../components/AsyncPanel";
 import { ResearchFacts, useResearchFormatters } from "../components/ResearchFacts";
 import type { AsyncResource } from "../hooks/useAsyncResource";
@@ -31,6 +31,7 @@ const timeframeOptions: Timeframe[] = ["5m", "15m", "1h", "4h", "1d"];
 const actionOptions: Array<NonNullable<Prediction["action"]>> = ["LONG", "SHORT", "WAIT"];
 const outcomeOptions: OutcomeStatus[] = ["TP1", "TP2", "STOP", "TIMEOUT", "INVALIDATED", "PENDING"];
 const pageLimits = [25, 50, 100];
+const defaultDiscoverySymbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
 
 const initialDraft: FilterDraft = {
   symbol: "",
@@ -95,6 +96,31 @@ function predictionStatus(prediction: Prediction, t: (key: TranslationKey) => st
     return t("predictions.activeValidity");
   }
   return prediction.signal_valid_until ? t("predictions.validityNotParseable") : t("predictions.unknownValidity");
+}
+
+function recordString(record: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = record?.[key];
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function discoveryItems(intelligence: MarketIntelligenceResponse | undefined): MarketPulseItem[] {
+  const pulse = new Map((intelligence?.pulse ?? []).map((item) => [item.symbol, item]));
+  const symbols = [...defaultDiscoverySymbols];
+  for (const item of intelligence?.watchlist ?? []) {
+    if (item.symbol && !symbols.includes(item.symbol)) symbols.push(item.symbol);
+  }
+  return symbols.slice(0, 6).map((symbol) => pulse.get(symbol) ?? {
+    symbol,
+    status: "unavailable",
+    price: null,
+    change_pct: null,
+    freshness: { status: "unavailable" },
+    missing_reasons: ["no_current_market_evidence"],
+  });
+}
+
+function latestTrigger(events: TriggerEvent[], symbol: string): TriggerEvent | undefined {
+  return events.find((event) => event.instrument_id === symbol);
 }
 
 interface PredictionDetailProps {
@@ -272,6 +298,16 @@ export function PredictionsPage({ apiClient, onProvenanceChange }: PredictionsPa
 
   const listLoader = useCallback((signal: AbortSignal) => apiClient.predictions(filters, signal), [apiClient, filters]);
   const predictions = useAsyncResource(listLoader);
+  const list = predictions.data ?? [];
+  const discoveryEnabled = predictions.status === "ready" && list.length === 0;
+  const intelligenceLoader = useCallback((signal: AbortSignal) => apiClient.marketIntelligence(signal), [apiClient]);
+  const runtimeLoader = useCallback((signal: AbortSignal) => apiClient.monitoringStatus(signal), [apiClient]);
+  const triggerLoader = useCallback((signal: AbortSignal) => apiClient.triggerEvents(undefined, 30, signal), [apiClient]);
+  const opportunityLoader = useCallback((signal: AbortSignal) => apiClient.monitoringOpportunities(undefined, 20, signal), [apiClient]);
+  const intelligence = useAsyncResource(intelligenceLoader, discoveryEnabled);
+  const runtime = useAsyncResource(runtimeLoader, discoveryEnabled);
+  const triggers = useAsyncResource(triggerLoader, discoveryEnabled);
+  const opportunities = useAsyncResource(opportunityLoader, discoveryEnabled);
   const detailLoader = useCallback(
     (signal: AbortSignal) => selectedId ? apiClient.prediction(selectedId, signal) : Promise.resolve(undefined),
     [apiClient, selectedId],
@@ -310,7 +346,9 @@ export function PredictionsPage({ apiClient, onProvenanceChange }: PredictionsPa
     followInFlight.current = false;
   }, []);
 
-  const list = predictions.data ?? [];
+  const marketItems = useMemo(() => discoveryItems(intelligence.data), [intelligence.data]);
+  const triggerItems = triggers.data?.events ?? [];
+  const opportunityItems = opportunities.data?.analyses ?? [];
   const detailState: PanelState = !selectedId
     ? "empty"
     : detail.status === "idle" || detail.status === "loading"
@@ -408,6 +446,84 @@ export function PredictionsPage({ apiClient, onProvenanceChange }: PredictionsPa
         </div>
         <button className="primary-button" type="submit">{t("common.applyFilters")}</button>
       </form>
+
+      {predictions.status === "unavailable" ? (
+        <section className="signal-discovery signal-discovery--unavailable" aria-labelledby="signal-discovery-title">
+          <div className="signal-discovery__head">
+            <div><p className="eyebrow">{t("predictions.discoveryEyebrow")}</p><h2 id="signal-discovery-title">{t("predictions.discoveryTitle")}</h2></div>
+            <span className="status-chip status-chip--negative">{t("common.unavailable")}</span>
+          </div>
+          <p role="alert">{t("predictions.backendUnavailable")}</p>
+          <p className="data-meta">{t("predictions.noFabrication")}</p>
+          <Link className="quiet-button" to="/settings">{t("predictions.openSettings")}</Link>
+        </section>
+      ) : discoveryEnabled ? (
+        <section className="signal-discovery" aria-labelledby="signal-discovery-title">
+          <div className="signal-discovery__head">
+            <div><p className="eyebrow">{t("predictions.discoveryEyebrow")}</p><h2 id="signal-discovery-title">{t("predictions.discoveryTitle")}</h2></div>
+            <span className="status-chip status-chip--neutral">{t("predictions.noSavedPrediction")}</span>
+          </div>
+          <p className="signal-discovery__description">{t("predictions.discoveryDescription")}</p>
+          <p className="page-boundary">{t("predictions.deterministicBoundary")}</p>
+          {intelligence.status === "loading" ? <p role="status">{t("predictions.marketLoading")}</p> : null}
+          {intelligence.status === "unavailable" ? (
+            <div className="signal-discovery__degraded" role="alert">
+              <strong>{t("predictions.marketUnavailable")}</strong>
+              <span>{t("predictions.noFabrication")}</span>
+              <Link className="quiet-button" to="/settings">{t("predictions.openSettings")}</Link>
+            </div>
+          ) : null}
+          {intelligence.data ? (
+            <>
+              <div className="signal-discovery__runtime">
+                <span><strong>{t("predictions.runtimeState")}</strong> {runtime.data ? text(runtime.data.state) : runtime.status === "unavailable" ? t("common.unavailable") : t("common.loading")}</span>
+                <span><strong>{t("predictions.triggerSource")}</strong> {triggers.data?.policy_version ?? t("common.unavailable")}</span>
+                <span><strong>{t("common.dataAsOf")}</strong> {timestampText(intelligence.data.as_of)}</span>
+              </div>
+              {(runtime.status === "unavailable" || triggers.status === "unavailable" || opportunities.status === "unavailable") ? (
+                <p className="signal-discovery__warning" role="status">{t("predictions.partialDegraded")}</p>
+              ) : null}
+              <div className="signal-discovery__grid">
+                {marketItems.map((item) => {
+                  const freshness = item.freshness as Record<string, unknown>;
+                  const trigger = latestTrigger(triggerItems, item.symbol);
+                  const opportunity = opportunityItems.find((entry) => entry.symbol === item.symbol);
+                  const provider = recordString(freshness, "provider") ?? t("common.notSupplied");
+                  const freshnessStatus = recordString(freshness, "status") ?? t("common.unavailable");
+                  const dataAsOf = recordString(freshness, "data_as_of");
+                  const reasons = item.missing_reasons.length > 0 ? item.missing_reasons.join(", ") : "";
+                  return (
+                    <article className={`signal-discovery-card signal-discovery-card--${item.status}`} key={item.symbol}>
+                      <div className="signal-discovery-card__head">
+                        <div><p className="eyebrow">{t("predictions.marketState")}</p><h3>{item.symbol}</h3></div>
+                        <span className={`status-chip status-chip--${item.status === "available" ? "positive" : item.status === "degraded" ? "warning" : "neutral"}`}>{text(item.status)}</span>
+                      </div>
+                      <div className="signal-discovery-card__quote">
+                        <strong>{numberText(item.price, 8)}</strong>
+                        <span>{t("predictions.change")}: {typeof item.change_pct === "number" ? `${numberText(item.change_pct, 3)}%` : t("common.notSupplied")}</span>
+                      </div>
+                      <dl className="signal-discovery-card__facts">
+                        <div><dt>{t("common.provider")}</dt><dd>{provider}</dd></div>
+                        <div><dt>{t("predictions.freshnessState")}</dt><dd>{text(freshnessStatus)}</dd></div>
+                        <div><dt>{t("common.dataAsOf")}</dt><dd>{timestampText(dataAsOf)}</dd></div>
+                      </dl>
+                      {reasons ? <p className="signal-discovery-card__reason"><strong>{t("predictions.missingReasons")}</strong> {reasons}</p> : null}
+                      <div className="signal-discovery-card__trigger">
+                        <span className="subsection-label">{t("predictions.triggerState")}</span>
+                        {trigger ? (
+                          <p><strong>{text(trigger.trigger_type)}</strong> · {t("common.score")} {numberText(trigger.trigger_score, 3)} · {text(trigger.status)} / {text(trigger.analysis_status)}<small>{timestampText(trigger.bar_end)}</small></p>
+                        ) : <p>{t("predictions.noTrigger")}</p>}
+                      </div>
+                      {opportunity ? <p className="signal-discovery-card__opportunity"><strong>{t("predictions.latestOpportunity")}</strong> {text(opportunity.bias)} · {opportunity.model_id} · {numberText(opportunity.confidence, 3)}</p> : <p className="signal-discovery-card__opportunity">{t("predictions.noOpportunity")}</p>}
+                      <Link className="primary-button signal-discovery-card__action" to={`/assets/${encodeURIComponent(item.symbol)}`}>{t("predictions.openAnalysis")}</Link>
+                    </article>
+                  );
+                })}
+              </div>
+            </>
+          ) : null}
+        </section>
+      ) : null}
 
       <div className="workflow-grid workflow-grid--records">
         <AsyncPanel

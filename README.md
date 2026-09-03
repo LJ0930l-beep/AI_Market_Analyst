@@ -19,6 +19,8 @@ ollama pull qwen3.5:9b
 
 Monitoring, auto-start and resume are all off by default. Enable an individual BTC/ETH/SOL policy in the Monitoring page, save it, and press Start monitoring when you explicitly want the sidecar worker to run. Run now remains a separate one-cycle action; there is no startup scan. The tray menu can show the terminal, pause/resume monitoring, restart the owned backend, open Settings or exit the application. Window close while monitoring is active always hides to the tray and explains that work continues; when inactive it follows the close-to-tray preference. Alert Center entries can request an optional local Windows native notification; the always-mounted desktop bridge also keeps a safe in-app route when native access is unavailable.
 
+Signals remains useful before the first AI Prediction exists: it shows deterministic public market/freshness evidence, Python trigger state and any validated monitoring opportunity for BTC/ETH/SOL plus watchlist symbols. Every card links to the explicit asset analysis workflow. Merely opening Signals does not invoke Qwen or create a Prediction, and backend/provider failures remain labeled instead of becoming fabricated signals.
+
 For repository development, the V1.1 command wrappers remain available, but V1.2 packaging and live evidence use `scripts\build-tauri.ps1`, `scripts\v12-sidecar-smoke.ps1` and `scripts\v12-live-smoke.py`. The reproducible Windows release command is run from `src-tauri` and builds the frontend, owned sidecar, Tauri shell and NSIS installer in one pass:
 
 ```powershell
@@ -192,6 +194,7 @@ The owned FastAPI sidecar is packaged by PyInstaller and launched by Tauri 2 wit
 - [V1.2.1 user guide](docs/v1.2.1-user-guide.md)
 - [V1.2.1 installer smoke](docs/v1.2.1-installer-smoke.md)
 - [V1.2.1 live smoke evidence](docs/v1.2.1-live-smoke.json)
+- [V1.2.1 installed live UI evidence](docs/v1.2.1-installed-live-smoke.json)
 - [V1.2.1 test evidence](docs/v1.2.1-test-evidence.json)
 - [V1.2.1 screenshot inventory](docs/v1.2.1-screenshot-inventory.md)
 - [V1.2.1 third-party notices](docs/THIRD-PARTY-NOTICES.md)
