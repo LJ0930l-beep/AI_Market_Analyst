@@ -378,22 +378,80 @@ export function V2WorkspacePage({
     <section className="terminal-panel">
       <h2>✦ {copy.decisions}</h2>
       {workspace?.decisions.length ? (
-        workspace.decisions.map((d) => (
-          <article className="v2-decision-card" key={d.decision_id}>
-            <div className="v2-decision-card__header">
-              <strong>{d.symbol}</strong>
-              <span className={`v2-badge ${d.status === "SIMULATED" || d.status === "FILLED" ? "v2-badge--bull" : "v2-badge--warning"}`}>
-                {text(d.status)}
-              </span>
-              <time className="v2-news-time">{d.created_at.slice(11, 19)}</time>
-            </div>
-            {d.reason && <p className="v2-decision-reason">{text(d.reason)}</p>}
-            <details className="v2-details">
-              <summary>{copy.details}</summary>
-              <pre>{JSON.stringify(d, null, 2)}</pre>
-            </details>
-          </article>
-        ))
+        workspace.decisions.map((d: any) => {
+          const proposal = d.proposal ?? {};
+          const facts = d.facts ?? {};
+          const symbol = d.symbol ?? proposal.symbol ?? "UNKNOWN";
+          const side = String(proposal.side ?? proposal.mode ?? "LONG").toUpperCase();
+          const isLong = side === "LONG";
+          const strategyId = String(proposal.strategy_id ?? "unknown");
+          const strategyName = copy[strategyId as keyof typeof copy] ?? strategyId;
+          const entry = proposal.entry != null ? Number(proposal.entry).toFixed(2) : "—";
+          const stop = proposal.stop != null ? Number(proposal.stop).toFixed(2) : "—";
+          const targets = Array.isArray(proposal.targets)
+            ? proposal.targets.map((t: number) => Number(t).toFixed(2)).join(" / ")
+            : "—";
+          const price = facts.price != null ? Number(facts.price).toFixed(2) : "—";
+          const time = typeof d.created_at === "string"
+            ? d.created_at.slice(11, 19)
+            : typeof proposal.generated_at === "string"
+            ? proposal.generated_at.slice(11, 19)
+            : "—";
+          const rationale = proposal.rationale || d.reason || "";
+          const verdict = d.verdict ?? "APPROVED";
+          const isApproved = verdict === "APPROVED";
+
+          return (
+            <article className="v2-decision-card" key={d.decision_id}>
+              <div className="v2-position-header">
+                <div className="v2-position-title">
+                  <strong>{symbol}</strong>
+                  <span className={`v2-badge ${isLong ? "v2-badge--bull" : "v2-badge--bear"}`}>
+                    {isLong ? "🟢 做多 (LONG)" : "🔴 做空 (SHORT)"}
+                  </span>
+                  <span className="v2-badge v2-badge--gold">
+                    {strategyName}
+                  </span>
+                  <span className={`v2-badge ${isApproved ? "v2-badge--bull" : "v2-badge--warning"}`}>
+                    {isApproved ? "🛡️ Qwen 9B 审查通过" : "⚠️ 审查未通过"}
+                  </span>
+                </div>
+                <time className="v2-news-time">{time}</time>
+              </div>
+
+              <div className="v2-position-grid">
+                <div className="v2-pos-col">
+                  <span className="v2-factor-label">{copy.planPrice}</span>
+                  <strong className="v2-pos-val">{entry}</strong>
+                </div>
+                <div className="v2-pos-col">
+                  <span className="v2-factor-label">{copy.currentStop}</span>
+                  <strong className="v2-pos-val v2-val--stop">{stop}</strong>
+                </div>
+                <div className="v2-pos-col">
+                  <span className="v2-factor-label">{copy.targetTp}</span>
+                  <strong className="v2-pos-val v2-val--tp">{targets}</strong>
+                </div>
+                <div className="v2-pos-col">
+                  <span className="v2-factor-label">{copy.currentPrice}</span>
+                  <strong className="v2-pos-val">{price}</strong>
+                </div>
+              </div>
+
+              {rationale && (
+                <div className="v2-decision-rationale">
+                  <span className="v2-decision-rationale__tag">{copy.planRationale}:</span>
+                  <p className="v2-decision-rationale__text">{rationale}</p>
+                </div>
+              )}
+
+              <details className="v2-details">
+                <summary>{copy.rawDiagnostics}</summary>
+                <pre className="v2-pre">{JSON.stringify(d, null, 2)}</pre>
+              </details>
+            </article>
+          );
+        })
       ) : (
         <p className="v2-note">{copy.noDecisions}</p>
       )}

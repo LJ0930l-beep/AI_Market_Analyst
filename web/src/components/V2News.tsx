@@ -45,15 +45,18 @@ export function V2News({
   const policyLabel = String(
     event.macro_policy_label || (policy === "BULLISH_POLICY" ? "利多政策" : policy === "BEARISH_POLICY" ? "利空政策" : policy === "CIRCUIT_BREAKER" ? "宏观熔断警戒" : "中性观望")
   );
-  const sourceName = String(event.source_display || event.source || "机构快讯");
+  let sourceDisplay = String(event.source_display || event.source || (zh ? "海外财经快讯" : "Financial Wire"));
+  if (sourceDisplay.includes(".com") || sourceDisplay.includes(".org") || sourceDisplay.includes(".net")) {
+    sourceDisplay = sourceDisplay.replace(/^www\./i, "").split("/")[0];
+  }
   const stars = Number(event.impact_stars) || (policy === "CIRCUIT_BREAKER" ? 3 : 2);
   const traderTake = typeof event.trader_take === "string" ? event.trader_take : null;
 
   return (
     <article className={`v2-news-card v2-news-card--${policy.toLowerCase()}`}>
       <div className="v2-news-header">
-        <span className="v2-source-tag">{sourceName}</span>
-        <span className={`v2-badge v2-badge--${policy === "BULLISH_POLICY" ? "bull" : policy === "BEARISH_POLICY" ? "bear" : policy === "CIRCUIT_BREAKER" ? "warning" : "neutral"}`}>
+        <span className="v2-source-tag">{sourceDisplay}</span>
+        <span className={`v2-badge ${policy === "BULLISH_POLICY" ? "v2-badge--bull" : policy === "BEARISH_POLICY" ? "v2-badge--bear" : policy === "CIRCUIT_BREAKER" ? "v2-badge--warning" : "v2-badge--neutral"}`}>
           {policy === "BULLISH_POLICY" ? "🟢 " : policy === "BEARISH_POLICY" ? "🔴 " : policy === "CIRCUIT_BREAKER" ? "⚠️ " : "⚪ "}
           {policyLabel}
         </span>
@@ -64,6 +67,11 @@ export function V2News({
       </div>
 
       <h3 className="v2-news-title">
+        {zh && !translated && (
+          <span className="v2-news-en-badge" title="海外一手英文快讯，可点击下方 Qwen 翻译">
+            [英文原文]
+          </span>
+        )}
         {zh && translated ? translated : String(event.title ?? "")}
       </h3>
 

@@ -503,6 +503,18 @@
   font-weight: 600;
 }
 
+.v2-news-en-badge {
+  font-size: 11px;
+  font-weight: 500;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
 .v2-news-footer {
   display: flex;
   align-items: center;
@@ -848,4 +860,83 @@
 .v2-val--bear {
   color: var(--bear);
 }
+
+/* Decision Cards & Plan Layout */
+.v2-decision-card {
+  background: #121620;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.v2-decision-rationale {
+  background: rgba(30, 41, 59, 0.4);
+  border-left: 3px solid #6366f1;
+  padding: 8px 12px;
+  border-radius: 0 4px 4px 0;
+  display: grid;
+  gap: 4px;
+}
+
+.v2-decision-rationale__tag {
+  font-size: 11px;
+  font-weight: 600;
+  color: #a5b4fc;
+}
+
+.v2-decision-rationale__text {
+  font-size: 12px;
+  color: #e2e8f0;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Collapsible Details & Raw Pre Block */
+.v2-details {
+  margin-top: 4px;
+  background: #090c13;
+  border: 1px solid #1e2638;
+  border-radius: 4px;
+  padding: 6px 10px;
+}
+
+.v2-details summary {
+  font-size: 11px;
+  color: #94a3b8;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: color 0.15s ease;
+}
+
+.v2-details summary:hover {
+  color: #f1f5f9;
+}
+
+.v2-details[open] summary {
+  margin-bottom: 8px;
+  border-bottom: 1px solid #1e2638;
+  padding-bottom: 6px;
+}
+
+.v2-pre {
+  font-family: var(--data), "Fira Code", monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #64748b;
+  background: #06080e;
+  border-radius: 4px;
+  padding: 8px;
+  overflow-x: auto;
+  max-height: 220px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 
