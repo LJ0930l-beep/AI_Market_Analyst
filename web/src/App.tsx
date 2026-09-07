@@ -5,7 +5,8 @@ import { apiClient as defaultApiClient, type ApplicationShellApiClient } from ".
 import type { HealthResponse } from "./api/types";
 import { HealthStatus, type BackendHealthState } from "./components/HealthStatus";
 import { TimeProvenanceRail } from "./components/TimeProvenanceRail";
-import { DashboardPage, emptyDashboardProvenance, type DashboardProvenance } from "./pages/DashboardPage";
+import { emptyDashboardProvenance, type DashboardProvenance } from "./pages/DashboardPage";
+import { V2WorkspacePage } from "./pages/V2WorkspacePage";
 import { I18nProvider, useI18n, type TranslationKey } from "./i18n";
 import {
   notifyDesktopAlert,
@@ -29,7 +30,7 @@ const PerformancePage = lazy(() => import("./pages/PerformancePage").then((m) =>
 const PredictionsPage = lazy(() => import("./pages/PredictionsPage").then((m) => ({ default: m.PredictionsPage })));
 const QwenConsultPage = lazy(() => import("./pages/QwenConsultPage").then((m) => ({ default: m.QwenConsultPage })));
 const ReplayLabPage = lazy(() => import("./pages/ReplayLabPage").then((m) => ({ default: m.ReplayLabPage })));
-const SettingsHealthPage = lazy(() => import("./pages/SettingsHealthPage").then((m) => ({ default: m.SettingsHealthPage })));
+const SettingsHealthPage = lazy(() => import("./pages/V2SettingsPage").then((m) => ({ default: m.V2SettingsPage })));
 const WatchlistPage = lazy(() => import("./pages/WatchlistPage").then((m) => ({ default: m.WatchlistPage })));
 const MarketIntelligencePage = lazy(() => import("./pages/MarketIntelligencePage").then((m) => ({ default: m.MarketIntelligencePage })));
 const MonitoringPage = lazy(() => import("./pages/MonitoringPage").then((m) => ({ default: m.MonitoringPage })));
@@ -44,16 +45,10 @@ interface NavigationItem {
 
 const navigationItems: NavigationItem[] = [
   { label: "nav.dashboard", secondary: "nav.dashboard", to: "/", icon: "⌂", end: true },
-  { label: "nav.signals", secondary: "nav.signals", to: "/predictions", icon: "⌁" },
-  { label: "nav.watchlist", secondary: "nav.watchlist", to: "/watchlist", icon: "◉" },
-  { label: "nav.monitoring", secondary: "nav.monitoring", to: "/monitoring", icon: "◌" },
-  { label: "nav.markets", secondary: "nav.markets", to: "/markets", icon: "▥" },
-  { label: "nav.calendar", secondary: "nav.calendar", to: "/calendar", icon: "□" },
-  { label: "nav.news", secondary: "nav.news", to: "/news", icon: "≡" },
-  { label: "nav.heatmap", secondary: "nav.heatmap", to: "/heatmap", icon: "▦" },
+  { label: "v2.monitor", secondary: "v2.monitor", to: "/monitor", icon: "◉" },
+  { label: "v2.strategies", secondary: "v2.strategies", to: "/strategies", icon: "⌁" },
+  { label: "v2.intel", secondary: "v2.intel", to: "/intel", icon: "≡" },
   { label: "nav.consult", secondary: "nav.consult", to: "/consult", icon: "✦" },
-  { label: "nav.backtest", secondary: "nav.backtest", to: "/replay", icon: "↻" },
-  { label: "nav.performance", secondary: "nav.performance", to: "/performance", icon: "⌁" },
   { label: "nav.settings", secondary: "nav.settings", to: "/settings", icon: "⚙" },
 ];
 
@@ -280,7 +275,11 @@ function WorkspaceRoutes({
   return (
     <Suspense fallback={<RouteFallback />}>
       <Routes>
-      <Route index element={<DashboardPage apiClient={apiClient} onProvenanceChange={onProvenanceChange} />} />
+      <Route index element={<V2WorkspacePage />} />
+      <Route path="monitor" element={<V2WorkspacePage surface="monitor" />} />
+      <Route path="strategies" element={<V2WorkspacePage surface="strategies" />} />
+      <Route path="intel" element={<V2WorkspacePage surface="intel" />} />
+      <Route path="simulation" element={<V2WorkspacePage surface="ledger" />} />
       <Route
         path="watchlist"
         element={<WatchlistPage apiClient={apiClient} />}

@@ -20,6 +20,7 @@ from .instruments import AssetType, Instrument, TradingHours, instrument_for
 from .news_engine import RSSNewsProvider
 from .providers import ProviderChain, ProviderError, build_default_provider, fetch_market_data
 from .providers.yfinance import YFinanceProvider
+from .providers.gateio_provider import GatePublicProvider
 from .storage import SQLiteStore
 
 
@@ -69,6 +70,7 @@ class MarketHydrationRuntime:
         news_symbols: tuple[str, ...] = DEFAULT_NEWS_SET,
     ) -> None:
         self.store = store
+        self._gate = None
         self.enabled = bool(enabled)
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.interval_seconds = max(30.0, min(float(interval_seconds), 3600.0))
@@ -177,7 +179,12 @@ class MarketHydrationRuntime:
 
     def _save_market(self, symbol: str, instrument: Instrument, *, now: datetime) -> tuple[bool, str | None]:
         try:
-            provider = YFinanceProvider(public_chart_only=True) if instrument.asset_type is AssetType.EQUITY else build_default_provider(instrument)
+            if instrument.asset_type is AssetType.EQUITY:
+                provider = YFinanceProvider(public_chart_only=True)
+            else:
+                if self._gate is None:
+                    self._gate = GatePublicProvider()
+                provider = self._gate
             timeframe = "15m" if instrument.asset_type is AssetType.CRYPTO else "1d"
             if isinstance(provider, ProviderChain):
                 bundle = provider.get_bundle(instrument, timeframe, 240)
@@ -199,8 +206,6 @@ class MarketHydrationRuntime:
                 now=now,
             )
             change_pct = bundle.quote.change_pct
-            if change_pct is None and len(bars) > 1 and bars[-2].close:
-                change_pct = ((bundle.quote.price / bars[-2].close) - 1.0) * 100.0
             age = max(0.0, (now - bundle.quote.timestamp.astimezone(timezone.utc)).total_seconds())
             self.store.save_realtime_state(
                 {
@@ -209,6 +214,7 @@ class MarketHydrationRuntime:
                     "provider": bundle.snapshot.provider,
                     "price": bundle.quote.price,
                     "change_pct": change_pct,
+                    "change_period": "24h" if instrument.asset_type is AssetType.CRYPTO else "session",
                     "volume": bundle.quote.volume,
                     "last_trade_at": bundle.quote.timestamp.astimezone(timezone.utc).isoformat(),
                     "data_as_of": bundle.snapshot.data_as_of.astimezone(timezone.utc).isoformat(),

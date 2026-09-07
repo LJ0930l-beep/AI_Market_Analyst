@@ -81,6 +81,8 @@ class MonitoringRuntime:
 
         self._lock = threading.RLock()
         self._stop_event = threading.Event()
+        if getattr(service, "strategy_mode", False):
+            service.cancel_event = self._stop_event
         self._wake_event = threading.Event()
         self._worker: threading.Thread | None = None
         self._stream: RuntimeStream | None = None
@@ -116,6 +118,9 @@ class MonitoringRuntime:
         self._persist_locked()
 
     def _default_stream_factory(self, symbols: tuple[str, ...]) -> RuntimeStream:
+        if getattr(self.service, "strategy_mode", False):
+            from .gate_stream import GateRealtimeStream
+            return GateRealtimeStream(symbols, self.service.gate)
         return BinanceRealtimeStream(symbols=symbols, timeframe="15m", max_symbols=self.max_symbols)
 
     @staticmethod
@@ -177,6 +182,8 @@ class MonitoringRuntime:
             result["active_symbols"] = list(self._status.get("active_symbols") or [])
             result["resource"] = dict(self._status.get("resource") or {})
             result["stream"] = dict(self._status.get("stream") or {})
+            if getattr(self.service, "strategy_mode", False):
+                result["stream"]["provider"] = "gate_public_ws"
             result["resume_eligible"] = self._resume_eligible
             result["worker_alive"] = bool(self._worker and self._worker.is_alive())
             result["active"] = self._active_state(str(result.get("state")))
@@ -272,6 +279,8 @@ class MonitoringRuntime:
             self._status["stream"] = stream_payload
 
     def _enabled_symbols(self) -> tuple[str, ...]:
+        if getattr(self.service, "strategy_mode", False):
+            return tuple(dict.fromkeys(s["symbol"] for s in self.store.list_strategy_subscriptions(True)))[:self.max_symbols]
         symbols: list[str] = []
         for row in self.store.list_monitoring_policies(enabled=True):
             value = str(row.get("instrument_id") or "").strip().upper()
@@ -309,7 +318,7 @@ class MonitoringRuntime:
                 normalized,
                 "15m",
                 [bar],
-                provider="binance_public_ws",
+                provider="gate_public_ws" if getattr(self.service,"strategy_mode",False) else "binance_public_ws",
                 data_as_of=bar.timestamp,
                 now=self.clock(),
             )
@@ -332,6 +341,12 @@ class MonitoringRuntime:
                 pass
         if previous_worker is not None and previous_worker is not threading.current_thread():
             previous_worker.join(timeout=self.stream_join_timeout_seconds)
+            if previous_worker.is_alive():
+                with self._lock:
+                    self._stream = previous
+                    self._stream_worker = previous_worker
+                self._set_status("degraded", reason="stream_still_stopping", error="waiting for previous owned stream before replacement")
+                return
         if not symbols:
             with self._lock:
                 self._status["stream"] = {"status": "stopped", "provider": "binance_public_ws", "symbols": [], "timeframe": "15m", "reconnect_count": 0, "last_message_at": None, "last_error": None, "public_only": True}

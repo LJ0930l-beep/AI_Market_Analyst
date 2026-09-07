@@ -5,6 +5,9 @@ export type Language = "en" | "zh-CN";
 export const LANGUAGE_STORAGE_KEY = "ai-market-analyst.language";
 
 const en = {
+  "v2.monitor": "Watch & monitor",
+  "v2.strategies": "Strategies",
+  "v2.intel": "News & macro",
   "language.label": "Language",
   "language.chinese": "Chinese",
   "language.english": "English",
@@ -1153,6 +1156,9 @@ const en = {
 export type TranslationKey = keyof typeof en;
 
 const zhCN: Record<TranslationKey, string> = {
+  "v2.monitor": "自选与盯盘",
+  "v2.strategies": "量化与策略库",
+  "v2.intel": "资讯与宏观",
   "language.label": "语言",
   "language.chinese": "中文",
   "language.english": "English",
@@ -2301,6 +2307,7 @@ const zhCN: Record<TranslationKey, string> = {
 const englishByText = new Map<string, TranslationKey>(Object.entries(en).map(([key, value]) => [value, key as TranslationKey]));
 const chineseByText = new Map<string, TranslationKey>(Object.entries(zhCN).map(([key, value]) => [value, key as TranslationKey]));
 const enumText: Record<string, TranslationKey> = {
+  fresh: "monitoring.fresh",
   LONG: "common.actionLong",
   SHORT: "common.actionShort",
   WAIT: "common.actionWait",

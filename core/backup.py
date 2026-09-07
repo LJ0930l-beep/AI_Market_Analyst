@@ -243,7 +243,7 @@ def _load_manifest(artifact: Path) -> tuple[dict[str, Any], Path]:
         raise BackupError("backup manifest must be a JSON object")
     if payload.get("format_version") != BACKUP_FORMAT_VERSION:
         raise BackupError("unsupported backup format version")
-    if not isinstance(payload.get("app_version"), str) or not payload["app_version"].startswith("1."):
+    if not isinstance(payload.get("app_version"), str) or not payload["app_version"].startswith(("1.", "2.")):
         raise BackupError("backup manifest has an incompatible application version")
     if payload.get("database_filename") != DATABASE_FILENAME:
         raise BackupError("backup manifest database filename is unsafe")

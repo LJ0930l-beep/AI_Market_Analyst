@@ -30,6 +30,11 @@ class Instrument:
     timezone: str
     trading_hours: TradingHours
     sector: str | None = None
+    contract_size: float = 1.0
+    tick_size: float = 0.01
+    step_size: float = 1.0
+    contract_type: str = "spot"
+    capabilities: tuple[str, ...] = ("trade", "market_data")
 
     def __post_init__(self) -> None:
         symbol = self.symbol.strip().upper()
@@ -38,6 +43,15 @@ class Instrument:
         object.__setattr__(self, "symbol", symbol)
         object.__setattr__(self, "exchange", self.exchange.strip().upper())
         object.__setattr__(self, "currency", self.currency.strip().upper())
+        object.__setattr__(self, "contract_type", str(self.contract_type).strip().lower())
+
+    @property
+    def instrument_id(self) -> str:
+        """Composite Instrument ID conforming to spec.md Section 4 & 19."""
+        venue = self.exchange.lower()
+        asset = self.asset_type.value
+        sym = self.symbol
+        return f"{asset}:{venue}:{sym}:{self.contract_type}:{self.currency.lower()}"
 
     @property
     def base(self) -> str:

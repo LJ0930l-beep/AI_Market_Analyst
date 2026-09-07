@@ -406,6 +406,10 @@ export class ApiClient implements MarketApiClient {
     return this.request<HealthResponse>("/health", { signal });
   }
 
+  v2<T>(path: string, method: "GET" | "POST" | "PUT" | "DELETE" = "GET", body?: unknown, signal?: AbortSignal): Promise<T> {
+    return this.request<T>(`/v2${path}`, { method, body, signal });
+  }
+
   releaseHealth(signal?: AbortSignal): Promise<ReleaseHealthResponse> {
     return this.request<ReleaseHealthResponse>("/health/release", { signal });
   }

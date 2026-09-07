@@ -1335,8 +1335,8 @@ summary:focus-visible,
 /* V1.1 premium terminal system ------------------------------------------------ */
 :root {
   color-scheme: dark;
-  --canvas: #070b13;
-  --surface: #0d1420;
+  --canvas: #0B0D13;
+  --surface: #12151E;
   --surface-strong: #111a29;
   --surface-raised: #151f31;
   --ink: #edf3ff;
@@ -1431,7 +1431,7 @@ body {
 .pulse-card__missing { margin: 1.15rem 0 0; color: var(--muted); font: 600 0.62rem var(--data); }
 .pulse-card--positive .pulse-card__change { color: var(--long); }
 .pulse-card--negative .pulse-card__change { color: var(--short); }
-.pulse-card__trace { position: absolute; right: -5%; bottom: -0.65rem; width: 68%; height: 2.5rem; border-top: 1px solid var(--rule-strong); transform: rotate(-7deg); opacity: .55; }
+.pulse-card__trace { display: none; } /* Decorative borders are not price histories. */
 .pulse-card--positive .pulse-card__trace { border-color: var(--long); box-shadow: 0 -9px 19px rgba(37,215,138,.12); }
 .pulse-card--negative .pulse-card__trace { border-color: var(--short); box-shadow: 0 -9px 19px rgba(255,83,104,.12); transform: rotate(8deg); }
 

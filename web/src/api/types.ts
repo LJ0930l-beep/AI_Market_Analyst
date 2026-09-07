@@ -161,6 +161,7 @@ export interface WatchlistDeleteResponse extends JsonRecord {
 }
 
 export type AppSettingKey =
+  | "simulation.allow_unknown_macro"
   | "scheduler.enabled"
   | "scheduler.interval_seconds"
   | "scheduler.concurrency"

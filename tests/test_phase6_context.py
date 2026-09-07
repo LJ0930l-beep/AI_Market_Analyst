@@ -146,7 +146,7 @@ class Phase6MigrationAndEvidenceTests(unittest.TestCase):
             path = Path(temp) / "phase6.sqlite3"
             store = SQLiteStore(path)
             store.initialize()
-            self.assertEqual(store.schema_version(), 13)
+            self.assertEqual(store.schema_version(), 14)
             self.assertEqual(store.get_benchmark_metadata("NVDA")["mapping_version"], "benchmark_mapping_v1")
             event = make_event("event-persist")
             store.save_event_context(
@@ -176,7 +176,7 @@ class Phase6MigrationAndEvidenceTests(unittest.TestCase):
             before = store.counts()
             reopened = SQLiteStore(path)
             reopened.initialize()
-            self.assertEqual(reopened.schema_version(), 13)
+            self.assertEqual(reopened.schema_version(), 14)
             self.assertEqual(reopened.counts()["phase6_events"], before["phase6_events"])
             self.assertEqual(reopened.counts()["phase6_event_clusters"], before["phase6_event_clusters"])
             self.assertEqual(reopened.counts()["market_memory_features"], before["market_memory_features"])

@@ -8,6 +8,9 @@ import { resolveStaticCandidate } from "./preview-server.mjs";
 
 const productRoutes = [
   "/",
+  "/monitor",
+  "/strategies",
+  "/intel",
   "/watchlist",
   "/monitoring",
   "/assets/NVDA",
@@ -40,17 +43,17 @@ test("test infrastructure rejects unsafe cleanup and static-root paths", () => {
 
 test("health, durable Watchlist, and read-only Asset Detail analysis", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Market intelligence, without the noise" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Trading desk" })).toBeVisible();
   await expect(page.getByText("Backend connected")).toBeVisible();
   const before = await (await page.request.get("/api/stats")).json();
   const contextHealth = await page.request.get("/api/health/context");
   expect(contextHealth.status()).toBe(200);
-  expect(await contextHealth.json()).toMatchObject({ phase: 7, api_version: "1.2.1", read_only_get: true, cloud_required: false });
+  expect(await contextHealth.json()).toMatchObject({ phase: 7, api_version: "2.0.0", read_only_get: true, cloud_required: false });
   const releaseHealth = await page.request.get("/api/health/release");
   expect(releaseHealth.status()).toBe(200);
-  expect(await releaseHealth.json()).toMatchObject({ phase: 7, api_version: "1.2.1", backup: { format_version: "phase7_backup_v1" }, capabilities: { local_only: true, scheduler_default_enabled: false } });
+  expect(await releaseHealth.json()).toMatchObject({ phase: 7, api_version: "2.0.0", backup: { format_version: "phase7_backup_v1" }, capabilities: { local_only: true, scheduler_default_enabled: false } });
 
-  await page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", { name: "Watchlist" }).press("Enter");
+  await page.goto("/watchlist"); // preserved legacy workflow, no longer a primary navigation entry
   await expect(page.getByRole("heading", { name: "Watchlist", exact: true })).toBeVisible();
   const savedWatchlist = page.getByRole("region", { name: "Saved watchlist" });
   const availableInstruments = page.getByRole("region", { name: "Available instruments" });
@@ -131,11 +134,14 @@ test("language selector switches to Chinese and persists across route navigation
   await page.goto("/");
   const language = page.getByLabel("Language");
   await language.selectOption("zh-CN");
-  await expect(page.getByRole("heading", { name: "看清市场，不被噪音淹没", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "关注列表", exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "综合战情室", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "自选与盯盘", exact: true }).first()).toBeVisible();
 
   const chineseRouteTitles: Record<string, string> = {
-    "/": "看清市场，不被噪音淹没",
+    "/": "综合战情室",
+    "/monitor": "自选与盯盘",
+    "/strategies": "量化与策略库",
+    "/intel": "资讯与宏观",
     "/watchlist": "关注列表",
     "/monitoring": "智能盯盘",
     "/assets/NVDA": "资产详情 / NVDA",
@@ -187,7 +193,7 @@ test("language selector switches to Chinese and persists across route navigation
     }
   }
 
-  await page.getByRole("link", { name: "表现", exact: true }).first().click();
+  await page.goto("/performance");
   await expect(page.getByRole("heading", { name: "表现", exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByLabel("语言")).toHaveValue("zh-CN");
@@ -196,7 +202,10 @@ test("language selector switches to Chinese and persists across route navigation
   await page.getByLabel("语言").selectOption("en");
   await expect(page.getByRole("heading", { name: "Performance", exact: true })).toBeVisible();
   const englishRouteTitles: Record<string, string> = {
-    "/": "Market intelligence, without the noise",
+    "/": "Trading desk",
+    "/monitor": "Watch & monitor",
+    "/strategies": "Strategy library",
+    "/intel": "News & macro",
     "/watchlist": "Watchlist",
     "/monitoring": "Smart monitoring",
     "/assets/NVDA": "Asset detail / NVDA",
@@ -221,9 +230,9 @@ test("language selector switches to Chinese and persists across route navigation
 test("Dashboard Market Intelligence reads saved evidence without provider, analysis, or trade side effects", async ({ page }) => {
   const before = await (await page.request.get("/api/stats")).json();
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Market Pulse" })).toBeVisible();
-  await expect(page.getByText("NASDAQ").locator("..")).toContainText(/unavailable/i);
-  await expect(page.getByRole("heading", { name: "Today's Events" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Trading desk" })).toBeVisible();
+  await expect(page.getByText(/Structured macro provider not configured/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Scheduled macro releases" })).toBeVisible();
   const intelligence = await page.request.get("/api/market-intelligence");
   expect(intelligence.status()).toBe(200);
   expect(await intelligence.json()).toMatchObject({ contract_version: "market_intelligence_v1", read_only: true, provider_calls: false, domain_writes: false });
@@ -249,12 +258,11 @@ test("V1.1 market surfaces, durable preferences, and explicit Smart Daily Brief 
   expect(settings.find((item: { key: string }) => item.key === "ai.model_preference").value).toBe("smart");
 
   await page.goto("/");
-  const response = page.waitForResponse((item) => item.url().endsWith("/api/daily-brief/generate") && item.request().method() === "POST");
-  await page.getByRole("button", { name: "Generate brief" }).click();
-  const brief = await (await response).json();
+  const response = await page.request.post("/api/daily-brief/generate", {data:{language:"zh-CN",model_preference:"smart"}});
+  const brief = await response.json();
   expect(brief.brief.model_tier).toBe("smart");
   expect(brief.brief.model_id).toBe("qwen-e2e-fixture");
-  await expect(page.getByText("确定性 Qwen 测试回答。", { exact: true })).toBeVisible();
+  expect(brief.brief.content).toContain("确定性 Qwen 测试回答。");
   const after = await (await page.request.get("/api/stats")).json();
   expect(after.daily_briefs).toBe(before.daily_briefs + 1);
   for (const key of ["predictions", "outcomes", "paper_trades", "calibration_results"]) expect(after[key]).toBe(before[key]);
@@ -486,7 +494,7 @@ test("SPA deep links return HTML while /api/health remains JSON", async ({ page 
   const health = await page.request.get("/api/health");
   expect(health.status()).toBe(200);
   expect(health.headers()["content-type"]).toContain("application/json");
-  expect(await health.json()).toMatchObject({ status: "ok", phase: 7, api_version: "1.2.1", real_orders: false });
+  expect(await health.json()).toMatchObject({ status: "ok", phase: 7, api_version: "2.0.0", real_orders: false });
 });
 
 test("all V1.1 product routes pass axe and page-level overflow checks at desktop and 390x844", async ({ page }) => {

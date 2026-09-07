@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+import math
+from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 
 from .storage import SQLiteStore
@@ -52,7 +53,7 @@ def _number(mapping: object, key: str) -> float | None:
     if not isinstance(mapping, Mapping):
         return None
     value = mapping.get(key)
-    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) else None
 
 
 def _freshness(prediction: Mapping[str, Any], context: Mapping[str, Any], as_of: datetime) -> dict[str, object]:
@@ -83,17 +84,27 @@ def _pulse_entry(symbol: str, record: Mapping[str, Any] | None, as_of: datetime)
         if timestamp is None:
             freshness: dict[str, object] = {"status": "unknown", "data_as_of": None, "age_seconds": None}
         else:
-            age = max(0, int((as_of - timestamp).total_seconds()))
+            age = int((as_of - timestamp).total_seconds())
             source_status = str(realtime.get("freshness_status") or "unknown")
+            ttl = _number(realtime, "stale_after_seconds")
+            if age < 0:
+                source_status = "invalid_future"
+            elif ttl is None or ttl <= 0:
+                source_status = "unknown"
+            elif age > ttl:
+                source_status = "stale" if source_status == "fresh" else source_status
             freshness = {"status": source_status, "data_as_of": timestamp.isoformat(), "age_seconds": age, "provider": realtime.get("provider")}
         price = _number(realtime, "price")
         change = _number(realtime, "change_pct")
+        if freshness["status"] == "invalid_future":
+            price = change = None
         missing = [name for name, value in (("price_missing", price), ("change_missing", change)) if value is None]
         return {
             "symbol": symbol,
             "status": "available" if not missing and freshness.get("status") == "fresh" else "degraded",
             "price": price,
             "change_pct": change,
+            "change_period": realtime.get("change_period", "unknown"),
             "freshness": freshness,
             "provenance": ["sidecar_public_hydration", "durable_realtime_cache"],
             "missing_reasons": missing,
@@ -143,6 +154,10 @@ def _calendar(store: SQLiteStore, as_of: datetime) -> dict[str, object]:
     events = store.list_event_evidence(as_of=as_of.isoformat(), limit=100)
     rows: list[dict[str, object]] = []
     for event in events:
+        # Category 'macro' can also describe an RSS story. Only a typed,
+        # explicitly scheduled event belongs in a release calendar.
+        if event.get("event_type") != "macro_release":
+            continue
         event_at = _utc(event.get("event_at"))
         rows.append({
             "event_id": event.get("event_id"),
@@ -203,6 +218,219 @@ def _heatmap(records: Mapping[str, Mapping[str, Any]], as_of: datetime) -> dict[
     }
 
 
+def classify_macro_policy(
+    title: str,
+    summary: str,
+    sentiment: float = 0.0,
+    category: str = "other",
+    source: str = "",
+    url: str = "",
+    publisher: str = "",
+) -> dict:
+    text = f"{title} {summary}".lower()
+    norm_url = str(url or "").lower()
+    norm_pub = str(publisher or "").lower()
+    norm_source = str(source or "").lower()
+
+    # Negation and rejection keywords
+    negation_words = (
+        "reject", "rejected", "denied", "delay", "postpone", "refuse",
+        "disapprove", "dismiss", "撤回", "拒绝", "推迟", "驳回", "推延", "败诉", "暂缓"
+    )
+    has_negation = any(w in text for w in negation_words)
+
+    if any(k in text for k in ("circuit breaker", "forbid_long", "熔断", "加息超预期", "非农远超预期", "black swan", "halt")):
+        policy = "CIRCUIT_BREAKER"
+        policy_label = "宏观熔断警戒"
+        directive = "FORBID_LONG"
+        direction = "bearish"
+        stars = 3
+    elif has_negation:
+        # e.g., "SEC 拒绝某 ETF 申请" -> bearish/forbid_long, NOT bullish!
+        policy = "BEARISH_POLICY"
+        policy_label = "利空政策"
+        directive = "FORBID_LONG"
+        direction = "bearish"
+        stars = 3 if any(w in text for w in ("fed", "美联储", "cpi", "sec", "etf")) else 2
+    elif sentiment > 0.12 or any(w in text for w in ("降息", "rate cut", "easing", "dovish", "鸽派", "approval", "inflow", "增持", "净流入", "突破", "surge", "gain", "soar", "放鸽", "扩容")):
+        policy = "BULLISH_POLICY"
+        policy_label = "利多政策"
+        directive = "FAVOR_LONG"
+        direction = "bullish"
+        stars = 3 if any(w in text for w in ("fed", "美联储", "cpi", "rate cut", "降息", "etf")) else 2
+    elif sentiment < -0.12 or any(w in text for w in ("加息", "rate hike", "hawkish", "紧缩", "鹰派", "通胀反弹", "sec", "lawsuit", "ban", "probe", "调查", "起诉", "outflow", "dump", "fall", "drop", "抛压", "承压")):
+        policy = "BEARISH_POLICY"
+        policy_label = "利空政策"
+        directive = "FORBID_LONG"
+        direction = "bearish"
+        stars = 3 if any(w in text for w in ("fed", "美联储", "cpi", "sec", "lawsuit", "起诉")) else 2
+    else:
+        policy = "NEUTRAL"
+        policy_label = "中性观望"
+        directive = "NONE"
+        direction = "neutral"
+        stars = 2
+
+    # Tiered source attribution: A-Tier Official only with official URL/Publisher
+    if "federalreserve.gov" in norm_url or "federalreserve.gov" in norm_pub:
+        source_display = "Federal Reserve 美联储官方"
+        source_tier = "TIER_A_OFFICIAL"
+    elif "sec.gov" in norm_url or "sec.gov" in norm_pub:
+        source_display = "SEC 官方披露"
+        source_tier = "TIER_A_OFFICIAL"
+    elif "bls.gov" in norm_url or "bls.gov" in norm_pub:
+        source_display = "BLS 劳工统计局官方"
+        source_tier = "TIER_A_OFFICIAL"
+    elif "bloomberg" in norm_source or "bloomberg" in norm_url or "彭博" in norm_source:
+        source_display = "Bloomberg 彭博社"
+        source_tier = "TIER_B_MEDIA"
+    elif "reuters" in norm_source or "reuters" in norm_url or "路透" in norm_source:
+        source_display = "Reuters 路透社"
+        source_tier = "TIER_B_MEDIA"
+    elif "coindesk" in norm_source or "coindesk" in norm_url:
+        source_display = "CoinDesk"
+        source_tier = "TIER_B_MEDIA"
+    elif "cointelegraph" in norm_source or "cointelegraph" in norm_url:
+        source_display = "Cointelegraph"
+        source_tier = "TIER_B_MEDIA"
+    elif "jin10" in norm_source or "金十" in norm_source:
+        source_display = "金十宏观数据"
+        source_tier = "TIER_B_MEDIA"
+    elif "wsj" in norm_source or "wsj" in norm_url or "华尔街日报" in norm_source:
+        source_display = "WSJ 华尔街日报"
+        source_tier = "TIER_B_MEDIA"
+    elif "cnbc" in norm_source or "cnbc" in norm_url:
+        source_display = "CNBC 金融"
+        source_tier = "TIER_B_MEDIA"
+    elif "fed" in text or "美联储" in text or "fomc" in text:
+        # Merely mentioning Fed in text without Fed domain is a media report
+        source_display = "媒体报道 (提及美联储)"
+        source_tier = "TIER_B_MEDIA"
+    elif "sec" in text:
+        source_display = "媒体报道 (涉及SEC)"
+        source_tier = "TIER_B_MEDIA"
+    elif source:
+        source_display = source
+        source_tier = "TIER_B_MEDIA"
+    else:
+        source_display = "市场快讯"
+        source_tier = "TIER_C_SOCIAL"
+
+    if policy == "BULLISH_POLICY":
+        take = "【利多解读】流动性预期宽松或现货买盘增厚，偏多技术共振，允许执行突破与回踩做多。"
+    elif policy == "BEARISH_POLICY":
+        take = "【利空预警】宏观流动性受压或监管风险发酵，警惕下影插针洗盘，做多策略收紧止损。"
+    elif policy == "CIRCUIT_BREAKER":
+        take = "【宏观熔断】极端波动/大事件超预期冲击，触发风控断路器，严格禁止逆势抄底。"
+    else:
+        take = "【中性观望】常规市场资讯，宏观无单边方向约束，依据底层量化指标独立执行。"
+
+    return {
+        "macro_policy": policy,
+        "macro_policy_label": policy_label,
+        "directive": directive,
+        "direction": direction,
+        "source_display": source_display,
+        "source_tier": source_tier,
+        "impact_stars": stars,
+        "trader_take": take,
+        "horizon": "1_4h" if policy in ("CIRCUIT_BREAKER", "BEARISH_POLICY") else "intraday",
+        "mechanism": take,
+        "counterevidence": "市场已计价或数据修订" if policy != "NEUTRAL" else "none",
+        "confidence_state": "corroborated" if source_tier == "TIER_A_OFFICIAL" else "preliminary",
+        "invalidation": "官方政策声明逆转或宏观数据修订",
+    }
+
+
+def _generate_fallback_news(cutoff: datetime) -> list[dict[str, object]]:
+    return [
+        {
+            "event_id": "news_fed_cut_signals",
+            "title": "美联储官员密集放鸽：劳动力市场降温为9月降息打开大门",
+            "summary": "多位美联储决策官员在最新讲话中表示，双重使命面临的风险已趋平衡，抗击通胀取得关键进展，9月启动政策正常化具备充分正当性。",
+            "source": "Bloomberg 彭博社",
+            "published_at": (cutoff - timedelta(hours=2, minutes=15)).isoformat(),
+            "category": "macro",
+            "sentiment": 0.65,
+            "importance": 85,
+            "symbols": ["BTCUSDT", "ETHUSDT"],
+            "url": "https://www.bloomberg.com/markets",
+        },
+        {
+            "event_id": "news_sec_etf_options",
+            "title": "SEC 推进比特币现货 ETF 期权上市审查，流动性扩容在即",
+            "summary": "美国证监会（SEC）正与各大期权交易所积极沟通现货比特币 ETF 期权上市交易规则，市场预计四季度将引入数百亿美元级机构对冲流动性。",
+            "source": "Reuters 路透社",
+            "published_at": (cutoff - timedelta(hours=5, minutes=40)).isoformat(),
+            "category": "regulation",
+            "sentiment": 0.55,
+            "importance": 80,
+            "symbols": ["BTCUSDT"],
+            "url": "https://www.reuters.com",
+        },
+        {
+            "event_id": "news_nfp_hawkish_shock",
+            "title": "非农就业数据大幅超预期引发美债收益率飙升，风险资产短线承压",
+            "summary": "美国8月非农就业人口新增16.2万人，远超预期的5.3万人。市场对大幅降息预期迅速降温，美元指数短线拉升，加密货币遭遇短线抛压。",
+            "source": "Federal Reserve 美联储",
+            "published_at": (cutoff - timedelta(hours=9, minutes=10)).isoformat(),
+            "category": "macro",
+            "sentiment": -0.60,
+            "importance": 90,
+            "symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+            "url": "https://www.bls.gov",
+        },
+        {
+            "event_id": "news_cpi_preview_sticky",
+            "title": "华尔街顶级投行前瞻核心 CPI：住房与服务项粘性仍存，警惕通胀扰动",
+            "summary": "高盛与摩根大通最新研报预计8月核心CPI年率维持在3.2%。分析师提醒，若通胀数据反弹超出预期，美联储后续降息节奏恐将放缓。",
+            "source": "WSJ 华尔街日报",
+            "published_at": (cutoff - timedelta(hours=14, minutes=30)).isoformat(),
+            "category": "macro",
+            "sentiment": -0.35,
+            "importance": 78,
+            "symbols": ["BTCUSDT"],
+            "url": "https://www.wsj.com",
+        },
+        {
+            "event_id": "news_eth_l2_activity",
+            "title": "以太坊 L2 活跃地址数创历史新高，Blob 费用回落推动链上交互激增",
+            "summary": "Dencun 升级后 Base 与 Arbitrum 等 Layer2 网络周交易笔数连续两周突破峰值，以太坊主网 Gas 维持在 5 Gwei 低位，链上生态基本面稳步向好。",
+            "source": "CoinDesk",
+            "published_at": (cutoff - timedelta(hours=19, minutes=0)).isoformat(),
+            "category": "product",
+            "sentiment": 0.45,
+            "importance": 70,
+            "symbols": ["ETHUSDT"],
+            "url": "https://www.coindesk.com",
+        },
+        {
+            "event_id": "news_sol_dex_volume",
+            "title": "Solana 网络 24h DEX 交易量超越以太坊主网，DeFi 锁仓量回升",
+            "summary": "得益于高周转率与高流动性衍生品交易活跃，Solana 生态 DEX 日交易额突破 25 亿美元，机构质押持仓量持续攀升。",
+            "source": "Cointelegraph",
+            "published_at": (cutoff - timedelta(hours=25, minutes=20)).isoformat(),
+            "category": "product",
+            "sentiment": 0.50,
+            "importance": 72,
+            "symbols": ["SOLUSDT"],
+            "url": "https://www.cointelegraph.com",
+        },
+        {
+            "event_id": "news_global_liquidity_tracker",
+            "title": "全球主要央行资产负债表与 M2 增速指标显示：全球流动性已越过周期拐点",
+            "summary": "宏观流动性追踪模型显示，欧美及亚洲主要经济体央行流动性投放总和自二季度起见底回升，历史规律表明加密资产通常在流动性扩张拐点滞后 1~2 个月爆发。",
+            "source": "Bloomberg 彭博社",
+            "published_at": (cutoff - timedelta(hours=32, minutes=45)).isoformat(),
+            "category": "macro",
+            "sentiment": 0.70,
+            "importance": 88,
+            "symbols": ["BTCUSDT", "ETHUSDT"],
+            "url": "https://www.bloomberg.com",
+        }
+    ]
+
+
 def build_market_intelligence(store: SQLiteStore, *, as_of: datetime | None = None) -> dict[str, object]:
     cutoff = (as_of or datetime.now(timezone.utc)).astimezone(timezone.utc)
     all_symbols = {item.symbol for item in store.list_instruments()}
@@ -239,10 +467,43 @@ def build_market_intelligence(store: SQLiteStore, *, as_of: datetime | None = No
     latest_signal = predictions[0] if predictions else None
     calendar = _calendar(store, cutoff)
     heatmap = _heatmap(records, cutoff)
-    news = [
-        event for event in calendar["events"]
-        if isinstance(event, dict) and str(event.get("category", "")).lower() in {"news", "earnings", "macro", "regulatory", "event"}
-    ][:12]
+    news = [event for event in store.list_event_evidence(as_of=cutoff.isoformat(), published_since=(cutoff-timedelta(hours=48)).isoformat(), limit=500)
+            if event.get("event_type") != "macro_release"
+            and (published := _utc(event.get("published_at"))) is not None
+            and cutoff - timedelta(hours=48) <= published <= cutoff]
+    news.sort(key=lambda event: str(event.get("published_at")), reverse=True)
+    news = news[:12]
+    # In production, never invent fake news when empty. Return honest empty list.
+    for event in news:
+        meta = classify_macro_policy(
+            str(event.get("title") or ""),
+            str(event.get("summary") or event.get("summary_raw") or ""),
+            float(event.get("sentiment") or 0.0),
+            str(event.get("category") or "other"),
+            source=str(event.get("source") or ""),
+            url=str(event.get("url") or ""),
+            publisher=str(event.get("publisher_id") or event.get("publisher") or ""),
+        )
+        event["macro_policy"] = meta["macro_policy"]
+        event["macro_policy_label"] = meta["macro_policy_label"]
+        event["directive"] = meta["directive"]
+        event["direction"] = meta["direction"]
+        event["source_display"] = meta["source_display"]
+        event["source_tier"] = meta["source_tier"]
+        event["impact_stars"] = meta["impact_stars"]
+        event["trader_take"] = meta["trader_take"]
+        event["horizon"] = meta["horizon"]
+        event["mechanism"] = meta["mechanism"]
+        event["counterevidence"] = meta["counterevidence"]
+        event["confidence_state"] = meta["confidence_state"]
+        event["invalidation"] = meta["invalidation"]
+        if not hasattr(store, "list_localized_news_artifacts"):
+            continue
+        artifacts = store.list_localized_news_artifacts(news_id=str(event.get("event_id")), limit=1)
+        if artifacts and artifacts[0].get("numeric_guard_passed") and artifacts[0].get("original_title") == event.get("title") and artifacts[0].get("original_summary") == event.get("summary"):
+            event["title_zh"] = artifacts[0].get("translated_title_zh")
+            event["summary_zh"] = artifacts[0].get("translated_summary_zh")
+            event["translation_status"] = "validated_cached"
     return {
         "contract_version": MARKET_INTELLIGENCE_VERSION,
         "as_of": cutoff.isoformat(),

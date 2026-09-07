@@ -56,6 +56,7 @@ from core.market_hydration import HYDRATION_CONTRACT_VERSION, MarketHydrationRun
 from core.model_routing import DEFAULT_FAST_MODEL, ModelRoutingConfig
 from core.monitoring import MonitoringPolicy, MonitoringService, SUPPORTED_TRIGGER_TYPES
 from core.monitoring_runtime import MonitoringRuntime
+from core.strategy_monitoring import StrategyMonitoringService
 from core.news_engine import NewsEngine, RSSNewsProvider
 from core.news_translation import NewsTranslationService
 from core.outcomes import OutcomeStatus
@@ -283,7 +284,7 @@ if FastAPI is not None:
         if not callable(provider_factory):
             provider_factory = build_default_provider
         clock = getattr(request.app.state, "monitoring_clock", None)
-        service = MonitoringService(store=store, provider_factory=provider_factory, llm_provider=llm_provider, clock=clock)
+        service = StrategyMonitoringService(store=store, provider_factory=provider_factory, llm_provider=llm_provider, clock=clock)
         request.app.state.monitoring_service = service
         return service
 
@@ -1849,6 +1850,9 @@ if FastAPI is not None:
 
     def _v12_provider_factory(request: Request) -> Callable[[Instrument], object] | None:
         factory = getattr(request.app.state, "monitoring_provider_factory", None)
+        service = getattr(request.app.state, "monitoring_service", None)
+        if not callable(factory) and isinstance(service, StrategyMonitoringService):
+            return service.provider_factory
         return factory if callable(factory) else None
 
     def _v12_cached_bundle(
@@ -2413,6 +2417,8 @@ def create_app(
 
     assert router is not None
     app.include_router(router)
+    from apps.api.v2 import router_for
+    app.include_router(router_for(get_store, get_monitoring_runtime, get_news_translation_service))
 
     if store is not None:
         store.initialize()
@@ -2523,7 +2529,7 @@ def create_app(
         if not isinstance(service, MonitoringService):
             selected_store = store if store is not None else _store()
             selected_llm = _llm_provider() if llm_provider is _UNSET else llm_provider
-            service = MonitoringService(
+            service = StrategyMonitoringService(
                 store=selected_store,
                 provider_factory=monitoring_provider_factory or build_default_provider,
                 llm_provider=selected_llm,

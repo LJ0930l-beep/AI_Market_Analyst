@@ -8,7 +8,7 @@ import os
 import re
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
@@ -29,16 +29,16 @@ def _clean_text(value: str | None, max_chars: int = 800) -> str:
     return _SPACE_RE.sub(" ", text).strip()[:max_chars]
 
 
-def _parse_date(value: str | None) -> datetime:
+def _parse_date(value: str | None) -> datetime | None:
     if value:
         try:
             parsed = parsedate_to_datetime(value)
             if parsed.tzinfo is None:
-                parsed = parsed.replace(tzinfo=timezone.utc)
+                return None
             return parsed.astimezone(timezone.utc)
         except (TypeError, ValueError, IndexError):
             pass
-    return datetime.now(timezone.utc)
+    return None
 
 
 def _classify(title: str, summary: str) -> tuple[str, float, int, int, str]:
@@ -175,16 +175,18 @@ class RSSNewsProvider(NewsProvider):
         raise RuntimeError(f"RSS fetch failed: {last_error}") from last_error
 
     def get_events(self, instrument: Instrument, limit: int = 20) -> list[NewsEvent]:
-        query = quote_plus(f"{instrument.symbol} {instrument.sector or ''}".strip())
+        topic = {"BTCUSDT":"Bitcoin cryptocurrency", "ETHUSDT":"Ethereum cryptocurrency", "SOLUSDT":"Solana cryptocurrency", "NVDA":"NVIDIA earnings"}.get(instrument.symbol, instrument.symbol)
+        query = quote_plus(f"{topic} when:2d -site:tradingview.com")
         root = ElementTree.fromstring(self._fetch_xml(self.feed_template.format(query=query)))
         events: list[NewsEvent] = []
-        for item in root.findall(".//item")[: max(1, min(limit, 50))]:
+        cutoff = datetime.now(timezone.utc)
+        for item in root.findall(".//item")[:50]:
             title = _clean_text(item.findtext("title"), 240)
             url = _clean_text(item.findtext("link"), 500) or None
             summary = _clean_text(item.findtext("description"), 800)
             source = _clean_text(item.findtext("source"), 120) or self.provider_name
             published_at = _parse_date(item.findtext("pubDate"))
-            if not title:
+            if not title or published_at is None or not cutoff - timedelta(hours=48) <= published_at <= cutoff:
                 continue
             category, sentiment, importance, credibility, horizon = _classify(title, summary)
             event_id = hashlib.sha256(f"{title.lower()}|{url or ''}|{published_at.date()}".encode("utf-8")).hexdigest()[:24]

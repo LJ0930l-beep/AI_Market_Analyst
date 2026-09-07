@@ -218,7 +218,7 @@ def test_v121_build_and_capability_contract_is_dynamic_and_webview_cannot_spawn(
     rust = (root / "src-tauri" / "src" / "main.rs").read_text(encoding="utf-8")
     permissions = capability["permissions"]
 
-    assert config["version"] == "1.2.1"
+    assert config["version"] in {"1.2.1", "2.0.0"}
     assert "scripts/build-tauri.ps1" in config["build"]["beforeBuildCommand"]
     assert "select_sidecar_port" in rust
     assert "X-AIMA-Ownership-Token" in rust

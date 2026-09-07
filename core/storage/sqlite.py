@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Iterator
@@ -16,6 +16,7 @@ from ..outcomes.engine import Outcome
 from ..providers.news import NewsEvent
 from ..providers.runtime import ProviderSnapshot
 from ..signals.schema import SignalProposal
+from ..v2_store import V2Store, migrate as migrate_v2
 
 
 _MONITORING_TRIGGER_ALIASES = {
@@ -56,6 +57,10 @@ def _parse_utc_timestamp(value: object) -> datetime | None:
 
 
 APP_SETTING_DEFINITIONS: dict[str, dict[str, object]] = {
+    "simulation.allow_unknown_macro": {
+        "default": False, "value_type": "boolean",
+        "description": "Explicit simulation-only permission to proceed when macro evidence is unavailable; never overrides an active directional block.",
+    },
     "scheduler.enabled": {
         "default": False,
         "value_type": "boolean",
@@ -161,7 +166,7 @@ def validate_app_setting_value(key: str, value: Any) -> Any:
     return value
 
 
-class SQLiteStore:
+class SQLiteStore(V2Store):
     def __init__(self, path: str | Path = "data/market_analyst.sqlite3") -> None:
         self.path = Path(path)
         self._memory_connection: sqlite3.Connection | None = None
@@ -189,6 +194,15 @@ class SQLiteStore:
             connection.close()
 
     def initialize(self) -> None:
+        # Preserve a consistent pre-V2 image before additive schema changes.
+        if str(self.path) != ":memory:" and self.path.exists():
+            with self._connect() as source:
+                exists = source.execute("SELECT 1 FROM sqlite_master WHERE name='schema_migrations'").fetchone()
+                version = source.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] if exists else 0
+                backup = self.path.with_name(self.path.name + ".pre-v2.bak")
+                if (version or 0) < 14 and not backup.exists():
+                    with closing(sqlite3.connect(str(backup))) as destination:
+                        source.backup(destination)
         with self._connect() as db:
             db.executescript(
                 """
@@ -314,6 +328,7 @@ class SQLiteStore:
                 "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                 (13, datetime.now(timezone.utc).isoformat()),
             )
+            migrate_v2(db)
 
     @staticmethod
     def _ensure_v11_tables(db: sqlite3.Connection) -> None:
@@ -926,6 +941,7 @@ class SQLiteStore:
         canonical_symbol = self.resolve_instrument(symbol).symbol
         with self._connect() as db:
             result = db.execute("DELETE FROM watchlist_entries WHERE symbol = ?", (canonical_symbol,))
+            db.execute("UPDATE strategy_subscriptions SET enabled=0 WHERE symbol=?", (canonical_symbol,))
         return result.rowcount > 0
 
     @staticmethod
@@ -1473,13 +1489,17 @@ class SQLiteStore:
         *,
         symbol: str | None = None,
         as_of: str | None = None,
+        published_since: str | None = None,
         limit: int = 100,
     ) -> list[dict[str, object]]:
         bounded_limit = max(1, min(int(limit), 500))
         with self._connect() as db:
             rows = db.execute(
-                "SELECT payload_json FROM phase6_events ORDER BY event_at DESC, event_id ASC LIMIT ?",
-                (max(bounded_limit * 5, bounded_limit),),
+                """SELECT payload_json FROM phase6_events
+                WHERE (? IS NULL OR julianday(published_at) >= julianday(?))
+                  AND (? IS NULL OR julianday(published_at) <= julianday(?))
+                ORDER BY CASE WHEN ? IS NULL THEN event_at ELSE published_at END DESC, event_id ASC LIMIT ?""",
+                (published_since, published_since, published_since, as_of, published_since, max(bounded_limit * 5, bounded_limit)),
             ).fetchall()
         cutoff = _parse_utc_timestamp(as_of) if as_of is not None else None
         if as_of is not None and cutoff is None:

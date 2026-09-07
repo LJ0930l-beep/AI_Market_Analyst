@@ -75,7 +75,7 @@ export function OhlcvChart({ symbol, timeframe, bars, annotations = [] }: OhlcvC
         autoSize: true,
         height: 360,
         layout: {
-          background: { type: ColorType.Solid, color: "#10201f" },
+          background: { type: ColorType.Solid, color: "#12151E" },
           textColor: "#a9beb9",
           fontFamily: "IBM Plex Mono, ui-monospace, monospace",
           attributionLogo: false,

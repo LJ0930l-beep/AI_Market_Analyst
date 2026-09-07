@@ -81,7 +81,7 @@ def test_explicit_legacy_import_and_owned_process_fingerprint(tmp_path: Path) ->
     connection.close()
     report = import_legacy_database(source=source, destination=destination)
     assert report.imported is True
-    assert SQLiteStore(destination).schema_version() == 13
+    assert SQLiteStore(destination).schema_version() == 14
     connection = sqlite3.connect(destination)
     assert connection.execute("SELECT value FROM legacy_marker").fetchone()[0] == "v11"
     connection.close()

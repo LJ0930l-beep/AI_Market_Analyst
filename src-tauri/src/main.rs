@@ -21,7 +21,7 @@ use uuid::Uuid;
 
 const DEFAULT_SIDECAR_PORT: u16 = 18_765;
 const MAX_PORT_PROBES: u16 = 64;
-const API_VERSION: &str = "1.2.1";
+const API_VERSION: &str = "2.0.0";
 const DESKTOP_CONTRACT_VERSION: &str = "desktop_backend_v1";
 const BACKEND_EVENT: &str = "aima://backend-state";
 const CLOSE_TO_TRAY_EVENT: &str = "aima://monitoring-close-to-tray";
