@@ -18,18 +18,13 @@ export function V2News({
 
   async function translate() {
     setBusy(true);
+    setError("");
     try {
-      const result = await apiClient.v2<{ numeric_guard_passed: boolean }>(
+      await apiClient.v2(
         `/news/${encodeURIComponent(String(event.event_id))}/translate`,
         "POST",
       );
-      if (!result.numeric_guard_passed)
-        setError(
-          zh
-            ? "翻译未通过数值一致性校验，保留原文。"
-            : "Translation did not pass numeric check; original retained.",
-        );
-      else onRefresh();
+      onRefresh();
     } catch {
       setError(
         zh

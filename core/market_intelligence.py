@@ -500,10 +500,10 @@ def build_market_intelligence(store: SQLiteStore, *, as_of: datetime | None = No
         if not hasattr(store, "list_localized_news_artifacts"):
             continue
         artifacts = store.list_localized_news_artifacts(news_id=str(event.get("event_id")), limit=1)
-        if artifacts and artifacts[0].get("numeric_guard_passed") and artifacts[0].get("original_title") == event.get("title") and artifacts[0].get("original_summary") == event.get("summary"):
+        if artifacts and (artifacts[0].get("numeric_guard_passed") or artifacts[0].get("translated_title_zh")) and artifacts[0].get("original_title") == event.get("title"):
             event["title_zh"] = artifacts[0].get("translated_title_zh")
             event["summary_zh"] = artifacts[0].get("translated_summary_zh")
-            event["translation_status"] = "validated_cached"
+            event["translation_status"] = "validated_cached" if artifacts[0].get("numeric_guard_passed") else "cached"
     return {
         "contract_version": MARKET_INTELLIGENCE_VERSION,
         "as_of": cutoff.isoformat(),

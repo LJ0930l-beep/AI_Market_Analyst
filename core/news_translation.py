@@ -24,7 +24,7 @@ _TAG_RE = re.compile(r"<[^>]+>")
 _SPACE_RE = re.compile(r"\s+")
 _DATE_RE = re.compile(r"(?<![A-Za-z0-9])\d{4}[-/]\d{1,2}[-/]\d{1,2}(?![A-Za-z0-9])")
 _NUMBER_RE = re.compile(
-    r"(?<![A-Za-z0-9])[-+]?\d{1,3}(?:,\d{3})*(?:\.\d+)?(?:\s?(?:%|percent|bps|bp|USD|USDT|BTC|ETH|SOL))?(?![A-Za-z0-9])",
+    r"(?<![A-Za-z0-9])[-+]?\d{1,3}(?:,\d{3})*(?:\.\d+)?(?:\s?(?:%|percent|bps|bp|USD|USDT|BTC|ETH|SOL|[mbkMBK]|million|billion))?(?![A-Za-z0-9])",
     re.IGNORECASE,
 )
 _TICKER_RE = re.compile(r"(?<![A-Za-z0-9])[A-Z][A-Z0-9]{1,11}(?:USDT|USD)?(?![A-Za-z0-9])")
@@ -113,7 +113,7 @@ def _token_key(token: str) -> tuple[str, str] | None:
     number = _NUMBER_RE.fullmatch(value)
     if number:
         match = re.fullmatch(
-            r"(?P<number>[-+]?\d{1,3}(?:,\d{3})*(?:\.\d+)?|[-+]?\d+(?:\.\d+)?)(?:\s?(?P<unit>%|percent|bps|bp|USD|USDT|BTC|ETH|SOL))?",
+            r"(?P<number>[-+]?\d{1,3}(?:,\d{3})*(?:\.\d+)?|[-+]?\d+(?:\.\d+)?)(?:\s?(?P<unit>%|percent|bps|bp|USD|USDT|BTC|ETH|SOL|[mbkMBK]|million|billion))?",
             value,
             flags=re.IGNORECASE,
         )
@@ -148,21 +148,70 @@ def numeric_guard(original: object, translated: object) -> NumericGuardResult:
             # token the strict parser intentionally does not classify.
             if _token_in_text(token, translated_text):
                 continue
+            ticker_equivs = {
+                "NVIDIA": ("英伟达", "NVDA"),
+                "BITCOIN": ("比特币", "BTC"),
+                "ETHEREUM": ("以太坊", "ETH"),
+                "SOLANA": ("SOL",),
+                "BINANCE": ("币安",),
+            }
+            if key is not None and key[0] == "ticker" and any(eq in translated_text for eq in ticker_equivs.get(token.upper(), ())):
+                continue
             missing.append(token)
         else:
             unmatched.pop(match_index)
     # Translating an English month name to the conventional Chinese numeric
     # month form is value-preserving (for example, "Aug. 14" -> "8月14日").
-    # Permit only those exact month numbers; every other added numeric token
-    # remains a guard failure.
     month_equivalent_keys = {
         ("number", f"{Decimal(_ENGLISH_MONTH_NUMBERS[match.group(0).lower().rstrip('.')])}|")
         for match in _ENGLISH_MONTH_RE.finditer(original_text)
     }
+    # Check for magnitude scale equivalence (e.g. $240M -> 2.4亿, $12.93B -> 129.3亿, $500K -> 50万)
+    remaining_missing = []
+    scale_matched_keys = set()
+    for token in missing:
+        key = _token_key(token)
+        matched_scale = False
+        if key is not None and key[0] == "number":
+            raw_n, u = key[1].split("|")
+            try:
+                num1 = Decimal(raw_n)
+                mult1 = (
+                    Decimal("1000000")
+                    if u in ("M", "MILLION")
+                    else (
+                        Decimal("1000000000")
+                        if u in ("B", "BILLION")
+                        else (Decimal("1000") if u in ("K",) else Decimal("1"))
+                    )
+                )
+                for u_idx, u_key in enumerate(unmatched):
+                    if u_key is not None and u_key[0] == "number":
+                        num2 = Decimal(u_key[1].split("|")[0])
+                        if (
+                            ("亿" in translated_text and num1 * mult1 == num2 * Decimal("100000000"))
+                            or ("万" in translated_text and num1 * mult1 == num2 * Decimal("10000"))
+                            or (num1 * mult1 == num2)
+                        ):
+                            scale_matched_keys.add(u_key)
+                            unmatched.pop(u_idx)
+                            matched_scale = True
+                            break
+            except Exception:
+                pass
+        if not matched_scale:
+            remaining_missing.append(token)
+    missing = remaining_missing
+
     required_keys = {_token_key(required_token) for required_token in required}
     unexpected = tuple(
-        token for token, key in zip(translated_tokens, translated_keys)
-        if key is not None and key not in required_keys and key not in month_equivalent_keys
+        token
+        for token, key in zip(translated_tokens, translated_keys)
+        if key is not None
+        and key not in required_keys
+        and key not in month_equivalent_keys
+        and key not in scale_matched_keys
+        and key in unmatched
     )
     return NumericGuardResult(not missing and not unexpected, required, tuple(missing), unexpected)
 

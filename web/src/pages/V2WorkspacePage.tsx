@@ -159,6 +159,36 @@ export function V2WorkspacePage({
     return true;
   });
 
+  const [translatingAll, setTranslatingAll] = useState(false);
+
+  // Background auto-translation for top untranslated news when zh-CN is active
+  useEffect(() => {
+    if (!zh || !newsItems.length) return;
+    const untranslated = newsItems.filter((n) => !n.title_zh && n.event_id).slice(0, 10);
+    if (!untranslated.length) return;
+
+    let active = true;
+    (async () => {
+      let anyTranslated = false;
+      for (const item of untranslated) {
+        if (!active) break;
+        try {
+          await apiClient.v2(`/news/${encodeURIComponent(String(item.event_id))}/translate`, "POST");
+          anyTranslated = true;
+        } catch {
+          // ignore
+        }
+      }
+      if (active && anyTranslated) {
+        void refresh();
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [zh, newsItems.length, refresh]);
+
   const chart = (
     <section className="terminal-panel">
       <header className="terminal-panel__head">
@@ -331,7 +361,32 @@ export function V2WorkspacePage({
   const newsFeed = (
     <section className="terminal-panel">
       <header className="v2-panel-header">
-        <h2>📰 {copy.news}</h2>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+          <h2>📰 {copy.news}</h2>
+          {zh && (
+            <button
+              className="v2-btn-inline"
+              style={{ background: "#1e293b", border: "1px solid #3b82f6", color: "#60a5fa", cursor: "pointer" }}
+              disabled={translatingAll}
+              onClick={async () => {
+                setTranslatingAll(true);
+                try {
+                  const untranslated = newsItems.filter((n) => !n.title_zh && n.event_id);
+                  for (const item of untranslated) {
+                    try {
+                      await apiClient.v2(`/news/${encodeURIComponent(String(item.event_id))}/translate`, "POST");
+                    } catch {}
+                  }
+                  await refresh();
+                } finally {
+                  setTranslatingAll(false);
+                }
+              }}
+            >
+              {translatingAll ? "⚡ 正在批量翻译中…" : "⚡ 全部一键中文化"}
+            </button>
+          )}
+        </div>
         <div className="v2-filter-group">
           <button
             className={`v2-filter-btn ${newsFilter === "all" ? "v2-filter-btn--active" : ""}`}
