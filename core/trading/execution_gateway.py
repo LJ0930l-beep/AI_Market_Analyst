@@ -798,6 +798,126 @@ class ExecutionGateway:
             raise GatewayError("REDUCE_ONLY_EXCEEDS_POSITION", "Reduce-only quantity exceeds the scoped position remainder.", 422)
 
     @staticmethod
+    def _gate_symbol_key(value: Any) -> str:
+        """Compare Gate symbols without confusing CCXT and native spellings."""
+
+        return "".join(character for character in str(value or "").upper() if character.isalnum())
+
+    @classmethod
+    def _gate_remote_positions_for_risk(
+        cls,
+        truth: Dict[str, Any],
+        account_id: str,
+    ) -> list[Dict[str, Any]]:
+        """Project observed Gate positions into the risk engine's read shape.
+
+        These records are an in-memory projection of the latest private API
+        response.  They are deliberately never written to ``simulated_positions``.
+        Missing entry/stop facts remain missing (represented as zero for the
+        existing risk arithmetic), rather than being filled from a local quote.
+        """
+
+        positions = truth.get("positions") if isinstance(truth.get("positions"), list) else []
+        pending_orders = truth.get("pending_orders") if isinstance(truth.get("pending_orders"), list) else []
+        result: list[Dict[str, Any]] = []
+
+        def positive(value: Any, default: Decimal = Decimal("0")) -> Decimal:
+            try:
+                parsed = Decimal(str(value))
+            except (InvalidOperation, TypeError, ValueError):
+                return default
+            return parsed if parsed.is_finite() and parsed > 0 else default
+
+        for raw in positions:
+            if not isinstance(raw, dict):
+                continue
+            contracts = positive(raw.get("contracts", raw.get("size")))
+            side = str(raw.get("side") or "").upper()
+            if contracts <= 0 or side not in {"LONG", "SHORT"}:
+                continue
+            symbol = str(raw.get("symbol") or "").replace("/", "").replace(":USDT", "").upper()
+            close_side = "SELL" if side == "LONG" else "BUY"
+            protected = any(
+                isinstance(order, dict)
+                and bool(order.get("reduce_only"))
+                and str(order.get("side") or "").upper() == close_side
+                and positive(order.get("stop_price")) > 0
+                and cls._gate_symbol_key(order.get("symbol")) == cls._gate_symbol_key(symbol)
+                for order in pending_orders
+            )
+            entry = positive(raw.get("entry_price", raw.get("entry")))
+            mark = positive(raw.get("mark_price", raw.get("mark")), entry)
+            contract_size = positive(raw.get("contract_size"), Decimal("1"))
+            leverage = positive(raw.get("leverage"), Decimal("1"))
+            stop = positive(raw.get("stop_price", raw.get("stop_loss", raw.get("stop"))))
+            result.append(
+                {
+                    "account_id": account_id,
+                    "venue": "gate",
+                    "mode": "TESTNET",
+                    "symbol": symbol,
+                    "instrument_id": symbol,
+                    "side": side,
+                    "contracts": str(contracts),
+                    "remaining_contracts": str(contracts),
+                    "entry": str(entry),
+                    "entry_price": str(entry),
+                    "mark_price": str(mark),
+                    "stop": str(stop),
+                    "stop_loss": str(stop),
+                    "contract_size": str(contract_size),
+                    "leverage": str(leverage),
+                    "position_id": raw.get("position_id"),
+                    "protection_status": "ACTIVE" if protected else "UNKNOWN",
+                    "legacy_unverified": 0,
+                    "local_mirror": False,
+                    "source": "GATE_REMOTE_PRIVATE_API",
+                }
+            )
+        return result
+
+    def _validate_gate_remote_reduce_only(self, intent: OrderIntent, truth: Dict[str, Any]) -> None:
+        """Validate a Gate TestNet reduction against current remote positions."""
+
+        side = str(intent.side or "").upper()
+        target_side = "LONG" if side in {"SELL", "CLOSE"} else "SHORT" if side == "BUY" else None
+        if target_side is None:
+            raise GatewayError("REDUCE_ONLY_DIRECTION_INVALID", "Reduce-only orders must use SELL for LONG or BUY for SHORT.", 422)
+        if str(truth.get("status") or "").upper() != "AVAILABLE":
+            raise GatewayError(
+                "REMOTE_ACCOUNT_TRUTH_UNAVAILABLE",
+                "Gate TestNet 远端持仓事实不可用，未提交平仓单。",
+                422,
+            )
+        positions = self._gate_remote_positions_for_risk(truth, intent.account_id)
+        symbol_key = self._gate_symbol_key(intent.instrument_id)
+        matching = [
+            position
+            for position in positions
+            if self._gate_symbol_key(position.get("symbol")) == symbol_key
+            and str(position.get("side") or "").upper() == target_side
+            and (
+                not intent.position_id
+                or str(position.get("position_id") or "") == str(intent.position_id)
+            )
+        ]
+        available = sum(
+            (Decimal(str(item.get("remaining_contracts", item.get("contracts", 0)))) for item in matching),
+            Decimal("0"),
+        )
+        requested = Decimal(str(intent.quantity))
+        if not matching:
+            raise GatewayError("REDUCE_ONLY_POSITION_NOT_FOUND", "Gate 远端没有匹配的账户/标的/方向仓位。", 422)
+        if not intent.position_id and len(matching) > 1:
+            raise GatewayError(
+                "REDUCE_ONLY_POSITION_ID_REQUIRED",
+                "Gate 远端同一标的存在多个匹配仓位时，平仓单必须带 position_id。",
+                422,
+            )
+        if requested > available:
+            raise GatewayError("REDUCE_ONLY_EXCEEDS_POSITION", "平仓张数超过 Gate 远端仓位剩余张数。", 422)
+
+    @staticmethod
     def _market_amount_rules(market_snapshot: Dict[str, Any]) -> tuple[Decimal, Decimal, Optional[Decimal]]:
         """Resolve executable amount rules without silently rounding an order.
 
@@ -1442,16 +1562,15 @@ class ExecutionGateway:
                     }
                 else:
                     raise
-            if intent.reduce_only:
-                self._validate_reduce_only(intent)
-
-            # A managed Gate TestNet opening is not allowed to size against
-            # the local ledger.  Persist a read of the remote account first;
-            # the reservation below then consumes that same authoritative
-            # snapshot.  Reduce-only recovery deliberately skips this gate so
-            # a degraded private endpoint cannot strand an existing position.
+            # Managed Gate TestNet orders use one remote-account read for both
+            # opening risk sizing and reduce-only position validation.  The
+            # local simulated ledger is never a substitute for this fact.  A
+            # degraded private endpoint therefore blocks a normal close with
+            # an explicit error instead of falsely claiming that no position
+            # exists; the dedicated recovery path remains available for an
+            # already-known remote order when this gateway is unavailable.
             remote_account_truth: Dict[str, Any] | None = None
-            if managed_gate_testnet and mode == TradingMode.TESTNET and not intent.reduce_only:
+            if managed_gate_testnet and mode == TradingMode.TESTNET:
                 from .gate_account_truth import GateAccountTruthService
 
                 if trader_client is None:
@@ -1465,14 +1584,22 @@ class ExecutionGateway:
                     trader_client,
                     include_trades=False,
                 )
-                if str(remote_account_truth.get("status") or "").upper() != "AVAILABLE" or any(
-                    remote_account_truth.get(field) is None for field in ("equity", "available_margin")
-                ):
+                if str(remote_account_truth.get("status") or "").upper() != "AVAILABLE":
+                    raise GatewayError(
+                        "REMOTE_ACCOUNT_TRUTH_UNAVAILABLE",
+                        "Gate TestNet 账户/持仓事实未完整取得，未提交订单。",
+                        422,
+                    )
+                if intent.reduce_only:
+                    self._validate_gate_remote_reduce_only(intent, remote_account_truth)
+                elif any(remote_account_truth.get(field) is None for field in ("equity", "available_margin")):
                     raise GatewayError(
                         "REMOTE_ACCOUNT_TRUTH_UNAVAILABLE",
                         "Gate TestNet 账户余额/可用保证金未取得完整远端事实，未提交订单。",
                         422,
                     )
+            elif intent.reduce_only:
+                self._validate_reduce_only(intent)
 
             risk_decision = None
             reservation_id = None
@@ -1495,6 +1622,11 @@ class ExecutionGateway:
                     intent,
                     fresh_market,
                     now=clock,
+                    open_positions=(
+                        self._gate_remote_positions_for_risk(remote_account_truth, intent.account_id)
+                        if remote_account_truth is not None
+                        else None
+                    ),
                     max_single_risk_fraction=auth_risk_limit,
                     max_portfolio_risk_fraction=auth_portfolio_limit,
                     max_cluster_risk_fraction=auth_cluster_limit,
@@ -1799,6 +1931,7 @@ class ExecutionGateway:
         venue = str(intent.venue or "gate")
         raw_fills = response.get("fills") if isinstance(response.get("fills"), list) else []
         fill_reports: list[tuple[str, Decimal, Decimal, Decimal, str, Optional[Decimal], Decimal, Optional[datetime]]] = []
+        known_fill = False
 
         def parse_decimal(value: Any) -> Optional[Decimal]:
             try:
@@ -1845,6 +1978,7 @@ class ExecutionGateway:
         contract_evidence_observed = response_contract is not None
         response_contract = response_contract or Decimal("1")
         response_event_at = parse_event_at(response.get("event_at") or response.get("timestamp") or response.get("created_at"))
+        remote_authoritative = venue.strip().lower() == "gate" and mode == "TESTNET"
 
         if raw_fills:
             parsed_items: list[tuple[str, Decimal, Decimal, Decimal | None, Decimal, str, Optional[Decimal], Optional[datetime]]] = []
@@ -1948,7 +2082,13 @@ class ExecutionGateway:
                 position_id=intent.position_id,
                 stop_price=float(intent.protection_plan.stop_price) if intent.protection_plan else None,
                 take_profit=float(intent.protection_plan.take_profit) if intent.protection_plan and intent.protection_plan.take_profit else None,
-                protection_status=ProtectionStatus.PENDING.value,
+                protection_status=(
+                    ProtectionStatus.ACTIVE.value
+                    if response.get("protection_verified") and not intent.reduce_only
+                    else ProtectionStatus.UNKNOWN.value
+                    if intent.reduce_only
+                    else ProtectionStatus.PENDING.value
+                ),
                 fee_currency=fill_fee_currency,
                 fx_rate=fill_fx_rate,
                 contract_size=fill_contract_size,
@@ -1966,9 +2106,27 @@ class ExecutionGateway:
             )
             known_fill = True
 
-        protection_status = ProtectionStatus.UNKNOWN.value if intent.reduce_only else ProtectionStatus.PENDING.value
+        if remote_authoritative and known_fill and last_record is None:
+            # A cumulative exchange retry may contain no new trade row.  It is
+            # still a concrete, already-recorded remote fill and must not be
+            # downgraded to UNKNOWN merely because there is no local position
+            # row to replay.
+            last_record = {
+                "status": "RECORDED",
+                "position_id": intent.position_id,
+                "remote_order_id": remote_order_id,
+                "replayed": True,
+                "local_mirror": False,
+                "source": "GATE_REMOTE_PRIVATE_API_AUDIT",
+            }
+
+        protection_status = ProtectionStatus.UNKNOWN.value if intent.reduce_only else (
+            ProtectionStatus.ACTIVE.value
+            if remote_authoritative and response.get("protection_verified")
+            else ProtectionStatus.PENDING.value
+        )
         protection_evidence = None
-        if response.get("protection_verified") and not intent.reduce_only and last_record is None and known_fill:
+        if response.get("protection_verified") and not intent.reduce_only and not remote_authoritative and last_record is None and known_fill:
             # A later reconciliation may repeat the same cumulative fill with
             # newly verified conditional protection.  No new trade row is
             # expected in that case, but the existing position must still be
@@ -1996,7 +2154,15 @@ class ExecutionGateway:
                     "position_id": existing_position.get("position_id"),
                     "replayed": True,
                 }
-        if response.get("protection_verified") and not intent.reduce_only and last_record and last_record.get("position_id"):
+        if response.get("protection_verified") and not intent.reduce_only and remote_authoritative and last_record:
+            protection_evidence = {
+                "source": "execution_adapter_response",
+                "observed_at": datetime.now(timezone.utc).isoformat(),
+                "remote_order_id": response.get("order_id") or response.get("id"),
+                "protection_verified": True,
+                "local_mirror": False,
+            }
+        elif response.get("protection_verified") and not intent.reduce_only and last_record and last_record.get("position_id"):
             protection_evidence = {
                 "source": "execution_adapter_response",
                 "observed_at": datetime.now(timezone.utc).isoformat(),

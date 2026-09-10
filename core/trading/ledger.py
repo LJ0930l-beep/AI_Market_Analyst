@@ -230,7 +230,7 @@ class AccountLedger:
                 """SELECT status, observed_at, equity, available_margin
                    FROM gate_remote_account_snapshots
                    WHERE account_id=?
-                   ORDER BY observed_at DESC, snapshot_id DESC LIMIT 1""",
+                   ORDER BY observed_at DESC, created_at DESC, snapshot_id DESC LIMIT 1""",
                 (account_id,),
             ).fetchone()
         except sqlite3.Error:
@@ -813,6 +813,7 @@ class AccountLedger:
                     account_config = json.loads(acct[2] or "{}")
                 except (TypeError, ValueError, json.JSONDecodeError):
                     account_config = {}
+                is_gate_testnet = str(account_config.get("account_type") or "").upper() == "GATE_TESTNET"
                 expected_venue = str(
                     (scope or {}).get("venue")
                     or account_config.get("venue")
@@ -837,7 +838,7 @@ class AccountLedger:
                 protection_table = conn.execute(
                     "SELECT 1 FROM sqlite_master WHERE type='table' AND name='simulated_positions'"
                 ).fetchone()
-                if protection_table:
+                if protection_table and not is_gate_testnet:
                     protection_rows = conn.execute(
                         """SELECT payload_json, protection_status, account_id, venue, mode, legacy_unverified
                            FROM simulated_positions
@@ -956,7 +957,7 @@ class AccountLedger:
                         """SELECT status, equity, available_margin
                            FROM gate_remote_account_snapshots
                            WHERE account_id=?
-                           ORDER BY observed_at DESC, snapshot_id DESC LIMIT 1""",
+                           ORDER BY observed_at DESC, created_at DESC, snapshot_id DESC LIMIT 1""",
                         (account_id,),
                     ).fetchone()
                     if remote_row is None or str(remote_row["status"] or "").upper() != "AVAILABLE":
@@ -1036,7 +1037,7 @@ class AccountLedger:
                 position_table = conn.execute(
                     "SELECT 1 FROM sqlite_master WHERE type='table' AND name='simulated_positions'"
                 ).fetchone()
-                if position_table:
+                if position_table and not is_gate_testnet:
                     position_rows = conn.execute(
                         """SELECT payload_json, account_id, venue, mode, legacy_unverified
                            FROM simulated_positions
@@ -1095,7 +1096,7 @@ class AccountLedger:
                 # pending order holds its margin, while committed positions
                 # consume margin until their remaining quantity is zero.
                 allocated_margin = Decimal("0")
-                if position_table:
+                if position_table and not is_gate_testnet:
                     position_rows = conn.execute(
                         """SELECT payload_json, account_id, venue, mode, legacy_unverified
                            FROM simulated_positions
@@ -1269,7 +1270,8 @@ class AccountLedger:
             ).fetchall()
             reserved_risk = sum((Decimal(r[0]) for r in res_rows), Decimal("0"))
 
-            if open_positions is None:
+            is_gate_testnet = str(account_config.get("account_type") or "").upper() == "GATE_TESTNET"
+            if open_positions is None and not is_gate_testnet:
                 has_sim_table = conn.execute(
                     "SELECT 1 FROM sqlite_master WHERE type='table' AND name='simulated_positions'"
                 ).fetchone()
@@ -1296,6 +1298,11 @@ class AccountLedger:
                         open_positions.append(item)
                 else:
                     open_positions = []
+            elif open_positions is None:
+                # Gate TestNet positions are remote facts.  Historical local
+                # rows remain available for audit but are never projected into
+                # the unified account snapshot.
+                open_positions = []
 
             # Callers may provide a preloaded position list, but that list is
             # not an authority boundary.  Re-apply account and environment
@@ -1369,7 +1376,7 @@ class AccountLedger:
                                   realized_pnl
                            FROM gate_remote_account_snapshots
                            WHERE account_id=?
-                           ORDER BY observed_at DESC, snapshot_id DESC LIMIT 1""",
+                           ORDER BY observed_at DESC, created_at DESC, snapshot_id DESC LIMIT 1""",
                         (account_id,),
                     ).fetchone()
                 except sqlite3.Error:
@@ -1462,6 +1469,12 @@ class AccountLedger:
         if self._store is not None:
             scope = resolve_account_scope(self._store, account_id)
             if scope is not None:
+                if str(scope.get("account_type") or "").upper() == "GATE_TESTNET":
+                    # The exchange private API, not the compatibility table,
+                    # owns Gate TestNet positions.  Keep old rows intact for
+                    # audit/recovery inspection without exposing them as live
+                    # positions to callers.
+                    return []
                 if venue is None:
                     venue = scope["venue"]
                 if mode is None:
@@ -1671,10 +1684,39 @@ class AccountLedger:
                 if expected_mode != mode_clean:
                     raise ValueError("ACCOUNT_MODE_MISMATCH")
                 exit_request = bool(reduce_only or side_clean == "CLOSE")
+                remote_only = account_type == "GATE_TESTNET" and mode_clean == "TESTNET" and venue_clean == "gate"
                 if qty_dec <= 0 or price_dec <= 0 or contract_dec <= 0 or leverage_dec <= 0:
                     raise ValueError("INVALID_FILL_PARAMETERS")
 
-                if exit_request:
+                if remote_only:
+                    # Gate's private API is the authority for this account's
+                    # position state.  Keep the normalized fill and economic
+                    # events as an audit trail, but never create or mutate a
+                    # row in the local simulated-position table.
+                    result = {
+                        "status": "RECORDED",
+                        "fill_id": fill_key,
+                        "instrument_id": instrument_id,
+                        "side": side_clean,
+                        "position_id": position_id,
+                        "quantity": str(qty_dec),
+                        "cumulative_quantity": str(qty_dec),
+                        "remaining_contracts": "0" if exit_request else str(qty_dec),
+                        "closed_quantity": str(qty_dec) if exit_request else None,
+                        "reduce_only": bool(reduce_only),
+                        "protection_status": str(protection_status or "UNKNOWN").upper(),
+                        "account_id": account_id,
+                        "venue": venue_clean,
+                        "mode": mode_clean,
+                        "order_id": order_id,
+                        "trade_id": external_fill_key,
+                        "event_at": event_iso,
+                        "trade_plan_id": trade_plan_id,
+                        "leverage": str(leverage_dec),
+                        "local_mirror": False,
+                        "source": "GATE_REMOTE_PRIVATE_API_AUDIT",
+                    }
+                elif exit_request:
                     target_side = "LONG" if side_clean in ("SELL", "CLOSE") else "SHORT" if side_clean == "BUY" else None
                     if target_side is None:
                         raise ValueError("REDUCE_ONLY_DIRECTION_INVALID")

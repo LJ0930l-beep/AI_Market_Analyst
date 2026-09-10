@@ -5,16 +5,30 @@
 ## 当前 main 的实施与验证结论
 
 - 本轮保留工作区中已有的用户改动；没有 `reset`、`checkout`、`clean`，也没有运行 `scripts/direct_install.ps1`。按用户后续明确要求，当前交付清单已随实现提交 `5b2bef62471f640a72da26965eb92f7fd1e8b5ff` 推送到 `origin/main`，未覆盖未知文件。
-- Gate 账户底座已收口为 `gate_testnet` 唯一托管 TestNet 账户；`gate_paper` 仅作为输入兼容别名，不能再创建本地假成交账户。`gate_live` 独立保留，默认 `LOCKED`。远端权益、保证金、持仓、挂单与成交读取经 `GateAccountTruthService` 入库为镜像，不写 `trade_fills`，本地镜像不能反向冒充 Gate 事实。
-- 已接通账户作用域的凭证验证、只读连接测试、Gate TestNet 远端 adapter、订单回执/撤单/保护与独立 TestNet E2E 验收服务；E2E 必须显式确认、使用幂等键，且不复用 AI 授权或模型调用。真实私有 Gate 验证和下单本轮未访问。
+- Gate 账户底座已收口为 `gate_testnet` 唯一托管 TestNet 账户；`gate_paper` 仅作为输入兼容别名，不能再创建本地假成交账户。`gate_live` 独立保留，默认 `LOCKED`。远端权益、保证金、持仓、挂单与成交读取经 `GateAccountTruthService` 持久化为审计快照；不创建或更新 Gate 的本地 `simulated_positions`，历史旧行仅保留追溯，不能反向冒充 Gate 事实。
+- 已接通账户作用域的凭证验证、只读连接测试、Gate TestNet 远端 adapter、订单回执/撤单/保护与独立 TestNet E2E 验收服务；E2E 必须显式确认、使用幂等键，且不复用 AI 授权或模型调用。本轮已使用用户提供的 TestNet 凭证完成一次真实 `ETHUSDT` 1 张开仓、保护单确认、reduce-only 平仓并确认远端仓位归零；未访问 Live、未触碰既有 BTC 仓位。
 - AI 链路保存系统阻断与模型 WAIT 的不同来源、阶段流水、授权/租约/账户快照、真实模型响应、延迟、量化与 digest。发现本机 Ollama/Qwen3.5 的复杂 Schema grammar 兼容问题后，新增了“仅服务端明确拒绝 grammar 才降级为 JSON mode + 本地严格业务校验”的窄兼容路径；普通模型/网络错误仍失败关闭并保留原因。
 - 页面新增远端账户事实卡、策略候选/阶段证据、按账户 Gate 凭证只读连接测试，以及带 `role=region`、键盘焦点和内部滚动的宏观日历框，长栏不再把整页无限推低。
+
+### 真实 Gate TestNet 开平回归（2026-09-10）
+
+在隔离临时 SQLite 和独立幂等键下，选取远端没有已有仓位的 `ETHUSDT`，按 Gate 合约张数自动取最小可交易数量 `1`：
+
+| 阶段 | 结果 | 事实边界 |
+|---|---|---|
+| 账户凭证/余额读取 | `VERIFIED_READ_ONLY` / `AVAILABLE` | 只使用 Gate 官方 TestNet 私有 API；凭证未写入代码、文档或日志 |
+| 多单开仓 | `FILLED`，成交 `1` 张 | 真实 TestNet 订单；未写本地 `simulated_positions` |
+| 止盈/止损保护 | `PROTECTED` | Gate 远端保护单已被接受并纳入回执复核 |
+| reduce-only 平仓 | `FILLED`，成交 `1` 张 | 修复了清理单传输字段长度和错误码映射问题 |
+| 平仓后对账 | 远端 `ETHUSDT` 仓位 `0`、挂单 `0` | 本次临时仓位已清理；账户中既有 BTC 仓位未触碰 |
+
+该结果是 TestNet 真实私有 API/订单证据，不等于 Live 可用或策略收益证明；Live 仍保持发布锁定。
 
 ### 本轮实测结果
 
 | 检查 | 实测结果 | 证据边界 |
 |---|---|---|
-| 后端完整 pytest | `370 passed, 1 skipped, 1 warning`，242.34s | warning 为 Starlette/httpx 弃用提示 |
+| 后端完整 pytest | `374 passed, 1 skipped, 1 warning`，268.94s | warning 为 Starlette/httpx 弃用提示 |
 | 定向 Gate/AI/证据/Ollama 集 | `22 passed, 1 warning` | 隔离 SQLite、确定性 adapter；不等于私有账户可用 |
 | `python -m compileall -q apps core scripts tests` | PASS | 当前 Python 源码可编译 |
 | `python scripts/institutional_acceptance.py` | `4/4 PASS` | disposable SQLite；不是公开 HTTP/Qwen/交易证明 |
@@ -38,9 +52,9 @@
 | R06 指标/反事实 | `core/trading/ledger.py`、`core/analysis/ai_trade_analytics.py`、`core/trading/institutional_risk.py` | partial-exit、SHORT MAE/MFE、费用压力与 outbox 回归 | `PASS_ISOLATED`；真实成本/深度/资金费仍按可用性标记 |
 | R07 统一账本/页面 | `core/trading/ai_led_engine.py`、`apps/api/v2.py`、`web/src/components/AITraderPanel.tsx`、`V2WorkspacePage.tsx` | `test_ai_system_block_is_not_persisted_as_model_wait`、98 frontend tests | `PASS_ISOLATED_UI`；GET 无副作用与账户作用域已覆盖 |
 | R08 数据中心/研究资格 | `apps/api/v3.py`、`apps/api/v2.py`、`core/storage/sqlite.py` | `test_research_cancel_uses_authoritative_scope_and_does_not_500`、full pytest | `PASS_ISOLATED`；DSR/PBO 仍需足量真实试验输入 |
-| R09 组合/执行风险 | `core/trading/execution_gateway.py`、`position_guardian.py`、`gate_account_truth.py`、`gate_testnet_e2e.py` | `test_gate_remote_truth_required_for_new_risk_but_not_reduce_only_boundary`、`test_gate_testnet_e2e_uses_remote_fill_and_cleans_without_local_fill`、RT01–RT16 | `PASS_ISOLATED`；真实 Gate 私有订单本轮 `NOT_ATTEMPTED` |
+| R09 组合/执行风险 | `core/trading/execution_gateway.py`、`position_guardian.py`、`gate_account_truth.py`、`gate_testnet_e2e.py` | `test_gate_remote_truth_required_for_new_risk_but_not_reduce_only_boundary`、`test_gate_gateway_open_and_reduce_only_use_remote_position_without_local_mirror`、真实 TestNet E2E、RT01–RT16 | `PASS_ISOLATED_WITH_REAL_TESTNET_CYCLE`；Live 私有 API 未访问 |
 | R10 AI 证据/治理 | `core/evidence.py`、`core/ai/ollama.py`、`core/trading/ai_session_coordinator.py`、`ai_cycle_trace.py` | `test_model_digest_is_selected_for_requested_smart_model`、Ollama provider contract tests、真实 Qwen smoke | `PASS_LOCAL_WITH_REAL_SMOKE`；无影子账户/评测集，不宣称交易效果 |
-| R11 运维/安全 | `core/trading/institutional_schema.py`、`core/security/local_guard.py`、outbox、Tauri build scripts | full pytest、compileall、ruff F821、cargo check、MSVC NSIS、current-user install、`git diff --check` | `PASS_LOCAL_WITH_MSVC_BUILD`；生产/真实 TestNet 运维未运行，LIVE 仍锁定 |
+| R11 运维/安全 | `core/trading/institutional_schema.py`、`core/security/local_guard.py`、outbox、Tauri build scripts | full pytest、compileall、ruff F821、cargo check、MSVC NSIS、current-user install、`git diff --check` | `PASS_LOCAL_WITH_MSVC_BUILD`；本轮真实 TestNet 仅做一次隔离开平验收，生产运维未运行，LIVE 仍锁定 |
 
 详细旧运行快照、历史基线和 Sol 独立签收要求继续保留在下文，但不得覆盖本节的当前结论。
 
@@ -84,7 +98,7 @@
 
 `web/src/pages/V2WorkspacePage.tsx` 将宏观日历列表标成可聚焦的 `role=region`，`web/src/v2.css` 为其增加响应式 `max-height`、内部 `overflow-y` 滚动、边框背景、滚动条留槽、overscroll 隔离和 `:focus-visible` 样式；长列表因此限制在信息框内，不再把整页无限向下推。组件回归覆盖区域语义、键盘焦点和事件可见性。
 
-本轮只更新源码、测试和交付证据；没有重启当前安装版、没有改业务数据库/用户配置/私有授权，也没有下单。源代码修复须在下一次用户确认退出后的构建包中激活。
+本轮只更新源码、测试和交付证据，没有重启当前安装版、没有改业务数据库或用户配置；在用户明确授权的 Gate TestNet 模拟账户上完成了一次隔离真实开平，未访问 Live。源代码修复须在下一次构建包中激活。
 
 ## A. 事实、策略与量化计算修复
 
@@ -146,7 +160,7 @@
 
 `core/security/credentials.py` 增加按 `account_id` 隔离的加密凭证表。Gate API 的 `POST /v2/gate/accounts/{account_id}/credentials`（兼容旧客户端）和显式 `/credentials/verify` 都先用该账户明确的环境做只读余额鉴权，只有 `valid=true` 才保存候选凭证；失败或网络不可用时保留旧凭证。未带 `account_id` 的 `/gate/config` 拒绝重新写入旧全局凭证槽。`apps/api/v2.py` 提供账户列表、默认双账户幂等注册、账户详情、凭证写入和验证；账户读取与交易读取按账户 scope 分流，Gate TestNet 读取官方 TestNet，LIVE 不自动访问私有接口。
 
-交易计划、AI/Guardian 和恢复路径共用 `core/trading/execution_gateway.py` 的 account-scoped adapter 解析：已注册 Gate TESTNET 账户只解析自身凭证，缺失时失败关闭且不会退回旧全局 adapter；只有显式非 Gate `simulated/PAPER` 计划进入本地 `trade_fills`/ledger，Gate TestNet 计划保持远端订单/回执/对账语义，LIVE 计划在发布锁处停止并不创建订单。`web/src/pages/V2WorkspacePage.tsx` 的 `/gate-live` 页面展示两个账户、环境、脱敏凭证状态和 LIVE 锁定状态，输入后以“验证并保存”触发上述只读检查，并显示验证结果。真实 Gate 私有 API、Testnet 下单/成交和实盘账户读取本轮均未访问。
+交易计划、AI/Guardian 和恢复路径共用 `core/trading/execution_gateway.py` 的 account-scoped adapter 解析：已注册 Gate TESTNET 账户只解析自身凭证，缺失时失败关闭且不会退回旧全局 adapter；只有显式非 Gate `simulated/PAPER` 计划进入本地持仓撮合，Gate TestNet 计划保持远端订单/回执/对账语义，成交审计不创建本地 Gate 持仓镜像，LIVE 计划在发布锁处停止并不创建订单。`web/src/pages/V2WorkspacePage.tsx` 的 `/gate-live` 页面展示两个账户、环境、脱敏凭证状态和 LIVE 锁定状态，输入后以“验证并保存”触发上述只读检查，并显示验证结果。本轮已完成一次真实 Gate TestNet 私有验证、开仓、保护、reduce-only 平仓和远端归零；Live 未访问。
 
 ### Gate 公网只读抽测（2026-09-09）
 
@@ -172,7 +186,7 @@ AI 自主做单仍保留在同一 `ExecutionGateway` 和现有授权、租约、
 - `web/src/api/client.ts` 增加 v3 typed 请求入口；现有中文/英文 UI、策略/监控/账本/分析页面继续使用同一 account-scoped client。
 - `core/security/local_guard.py` 与 v3 router 精确校验 local Origin；相似域名和异常端口被拒绝。
 - `core/manifest.py`、`core/diagnostics.py`、`core/ai/ollama.py` 形成实例、版本、schema、数据根、模型 digest、租约/保护/待对账状态的可核对路径；诊断导出保持用户显式触发和脱敏。
-- 默认 `LIVE` 仍为 `LOCKED`，由 `scripts/institutional_acceptance.py` 提供隔离自检。没有访问私有交易账户，没有发真实订单，没有执行生产迁移；当前安装包仅完成用户级程序覆盖和快捷方式核验。
+- 默认 `LIVE` 仍为 `LOCKED`，由 `scripts/institutional_acceptance.py` 提供隔离自检。本轮仅访问用户明确授权的 Gate TestNet 模拟账户并完成一次开平；没有执行生产迁移，当前安装包仅完成用户级程序覆盖和快捷方式核验。
 
 ## R01–R11 实施对照
 
@@ -188,7 +202,7 @@ AI 自主做单仍保留在同一 `ExecutionGateway` 和现有授权、租约、
 | R08 数据中心与研究资格接口 | `apps/api/v3.py`, `core/storage/sqlite.py`, `web/src/components/InstitutionalEvidencePanel.tsx` | `test_institutional_v3_api.py` 全部；`test_gate_account_chain.py::test_research_cancel_uses_authoritative_scope_and_does_not_500`; `test_spec_at24_at30.py::test_at30_manifest_evidence_completeness`; `test_spec_rt17_rt26.py::test_rt24_manifest_junit_driven_transitions` | 数据持久化/幂等/查询与取消状态转换 PASS_AFTER_REPAIR；真实补数与 DSR/PBO 统计因外部数据/样本不足为 PARTIAL/NOT_CONFIGURED。 |
 | R09 组合和执行风险 | `core/trading/institutional_risk.py`, `core/trading/execution_gateway.py`, `core/trading/gate_accounts.py`, `core/trading/ledger.py` | `test_institutional_evidence_risk.py` risk/TCA/outbox 三项；`test_spec_at08_at14.py::test_at12_atomic_risk_reservation_and_daily_loss_persistence`; `test_spec_rt01_rt16.py` risk/concurrency/TCA tests; `test_gate_account_chain.py::test_gate_remote_adapter_resolution_is_account_scoped_and_never_falls_back`; `tests/test_institutional_gate_testnet.py::test_gate_testnet_remote_receipt_reconcile_cancel_and_symbol_mapping` | Decimal、原子预留、cluster fallback、TCA/outbox、账户级 adapter 解析和已有仓位路径 PASS_AFTER_REPAIR；真实盘口深度/容量 NOT_CONFIGURED。 |
 | R10 AI 证据与模型治理 | `core/evidence.py`, `core/trading/ai_session_coordinator.py`, `core/ai/ollama.py`, `core/trading/ai_led_engine.py` | `test_institutional_evidence_risk.py::test_evidence_bundle_is_frozen_idempotent_and_digest_does_not_hash_model_name`; `test_repair_v12_luna.py::test_production_ai_coordinator_uses_qwen9b_and_persists_cycles`; `test_spec_rt17_rt26.py` RT17–RT20 | Evidence/digest 规则与 fixture coordinator PASS；真实 Qwen 权重/前瞻影子账户 NOT_CONFIGURED。 |
-| R11 运维与安全 | `core/manifest.py`, `core/diagnostics.py`, `core/security/local_guard.py`, `core/security/credentials.py`, `core/trading/gate_accounts.py`, `core/trading/gate_live_client.py`, `core/trading/execution_gateway.py`, `core/trading/ledger.py`, `apps/api/v2.py`, `scripts/institutional_acceptance.py` | `test_institutional_v3_api.py::test_v3_rejects_spoofed_origin`; `test_spec_at01_at07.py::test_at07_credentials_zero_leakage_and_cross_origin_blocked`; `test_gate_account_chain.py::test_gate_credentials_are_encrypted_and_scoped_per_account`; `test_gate_account_chain.py::test_gate_credential_verify_is_read_only_before_scoped_persist`; `test_gate_account_chain.py::test_gate_credential_verify_failure_does_not_replace_existing_slot_or_leak_secret`; `tests/test_institutional_gate_testnet.py` TestNet schema/receipt/dashboard cases; Live-lock/cancel/scale-in cases; `test_institutional_evidence_risk.py::test_ledger_events_and_fills_publish_one_transactional_outbox_event_each`; isolated acceptance 4 checks | 本地服务控制、账户级加密凭证、只读验证后持久化、失败保留、脱敏、TestNet 远端 fixture、LIVE lock、事务 outbox、取消和已有仓位加仓 PASS_AFTER_REPAIR；生产迁移、真实私有 TestNet 和安装版重启未运行。 |
+| R11 运维与安全 | `core/manifest.py`, `core/diagnostics.py`, `core/security/local_guard.py`, `core/security/credentials.py`, `core/trading/gate_accounts.py`, `core/trading/gate_live_client.py`, `core/trading/execution_gateway.py`, `core/trading/ledger.py`, `apps/api/v2.py`, `scripts/institutional_acceptance.py` | `test_institutional_v3_api.py::test_v3_rejects_spoofed_origin`; `test_spec_at01_at07.py::test_at07_credentials_zero_leakage_and_cross_origin_blocked`; `test_gate_account_chain.py::test_gate_credentials_are_encrypted_and_scoped_per_account`; `test_gate_account_chain.py::test_gate_credential_verify_is_read_only_before_scoped_persist`; `test_gate_account_chain.py::test_gate_credential_verify_failure_does_not_replace_existing_slot_or_leak_secret`; `tests/test_institutional_gate_testnet.py` TestNet schema/receipt/dashboard cases; Live-lock/cancel/scale-in cases; `test_institutional_evidence_risk.py::test_ledger_events_and_fills_publish_one_transactional_outbox_event_each`; isolated acceptance 4 checks; `REAL_GATE_TESTNET_ETHUSDT_OPEN_PROTECTED_CLOSE` | 本地服务控制、账户级加密凭证、只读验证后持久化、失败保留、脱敏、TestNet 远端 fixture、LIVE lock、事务 outbox、取消和已有仓位加仓 PASS_AFTER_REPAIR；真实 TestNet 一次开平 PASS，生产迁移和安装版重启未运行。 |
 
 ## 兼容与迁移说明
 
@@ -213,13 +227,13 @@ AI 自主做单仍保留在同一 `ExecutionGateway` 和现有授权、租约、
 - 启动后只读验收：`/health` 为 `200/ready`、`api_version=2.0.0`、`real_orders=false`、`private_keys=false`；`/hydration/status` 为 `ready`；监控 `stopped/active=false`；AI session `IDLE/active=false`；Gate 账户列表为空；没有创建订单或成交。
 - 安全边界：3 个此前遗留的同名无窗口进程因 Windows 拒绝终止而未强杀；没有按模糊进程名清理，也没有触碰其他进程。当前新安装窗口和其自有 sidecar 已由快捷方式启动，仅用于上述健康检查。
 
-最终安装只证明程序包、快捷方式和本地只读启动链路可用；Gate 私有凭证/TestNet 真实订单、Ollama Qwen 权重 digest、生产库迁移和 Live 仍分别是 `NOT_ACCESSED`、`NOT_ATTEMPTED`、`NOT_CONFIGURED` 或 `LOCKED`，不在本次安装中虚构为通过。
+最终安装只证明程序包、快捷方式和本地只读启动链路可用；本轮另行完成了一次用户授权的 Gate TestNet 真实开平，但它不扩大为生产库迁移、Live 权限或策略收益证明；Ollama Qwen 权重 digest、生产库迁移和 Live 仍分别受各自 `NOT_CONFIGURED`、`NOT_RUN` 或 `LOCKED` 边界约束。
 
 ## 隔离门禁结果摘要（2026-09-10）
 
 - 当前版本核对为 `2.0.0` / `v2.0.0`，没有改版本号；V1.7 只完成过参考核对。
 - `python -m pytest -q`：`362 passed, 1 skipped, 1 warning`（219.01s）；唯一 warning 是 Starlette/httpx TestClient 弃用提示。监控流清理竞态已加防护，`test_rt05_stale_market_data_degrades_and_blocks_opening` 单测通过且无未处理线程异常。
-- Gate TestNet 相关隔离回归：`15 passed`；覆盖官方 TestNet URL/响应 schema、符号 canonicalization、远端回执/撤单、账户凭证验证失败保留、账户级 adapter 和 dashboard GET 无副作用。没有真实私有 key、TestNet 订单或成交。
+- Gate TestNet 相关隔离回归：`15 passed`；覆盖官方 TestNet URL/响应 schema、符号 canonicalization、远端回执/撤单、账户凭证验证失败保留、账户级 adapter 和 dashboard GET 无副作用；另有一次真实 `ETHUSDT` 1 张开仓、保护、reduce-only 平仓并远端归零。
 - `web`：`22` 个测试文件、`96` 项通过；`npm run build`（86 modules）、`npm run typecheck`、`npm run lint` 和 `cargo check` 均通过。
 - 公开网络抽测只使用无凭证 GET：TestNet `https://api-testnet.gateapi.io/api/v4/futures/usdt/contracts` 与 Live `https://api.gateio.ws/api/v4/futures/usdt/contracts` 均 HTTP 200。它们不证明私有鉴权、余额、下单或成交。
 - 正式包激活前的安装版只读观察到 AI `STOPPED`、session `IDLE`、执行阻断且订单/持仓/成交为 0，因此不能声称正在做单；随后已按本节完成最终包覆盖与启动复验。`LIVE` 继续默认锁定。

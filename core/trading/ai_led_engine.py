@@ -558,11 +558,22 @@ class AILedDecisionEngine:
             )
 
         mode_scope = context.mode.value if isinstance(context.mode, TradingMode) else str(context.mode)
-        open_positions = self.ledger.get_open_positions(
-            context.account_id,
-            venue=context.venue,
-            mode=mode_scope,
-        )
+        if (
+            str(mode_scope).upper() == TradingMode.TESTNET.value
+            and str(context.venue or "").lower() == "gate"
+            and isinstance(context.account_truth, dict)
+            and context.account_truth
+        ):
+            open_positions = ExecutionGateway._gate_remote_positions_for_risk(
+                context.account_truth,
+                context.account_id,
+            )
+        else:
+            open_positions = self.ledger.get_open_positions(
+                context.account_id,
+                venue=context.venue,
+                mode=mode_scope,
+            )
         existing_positions = [
             position
             for position in open_positions

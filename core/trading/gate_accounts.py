@@ -104,6 +104,7 @@ def _default_profile_config(account_id: str, mode: str) -> Dict[str, Any]:
         "remote_private_read": "EXPLICIT_ONLY",
         "remote_orders": "TESTNET_ONLY" if is_testnet else "LIVE_LOCKED",
         "local_simulator": False,
+        "local_capital_authority": "DISABLED_REMOTE_ONLY" if is_testnet else "RELEASE_LOCKED",
         "live_execution": "LOCKED_BY_RELEASE_POLICY" if mode_clean == "LIVE" else "TESTNET_ONLY",
         "release_policy": LIVE_RELEASE_LOCK if mode_clean == "LIVE" else None,
         "legacy_aliases": [LEGACY_GATE_PAPER_ACCOUNT_ID] if is_testnet else [],
@@ -167,6 +168,7 @@ def _ensure_gate_account(
         "gate_market_type", "settle_currency", "gate_api_environment",
         "gate_api_base_url", "execution_adapter", "credential_scope",
         "remote_private_read", "remote_orders", "local_simulator",
+        "local_capital_authority",
         "live_execution", "release_policy",
         "legacy_aliases", "canonical_account_id",
     }
@@ -227,6 +229,7 @@ def get_gate_account_profile(store, account_id: str) -> Dict[str, Any]:
             "account_type", "provider", "environment", "execution_mode",
             "gate_account_kind", "gate_api_environment", "gate_api_base_url",
             "execution_adapter", "remote_orders", "local_simulator", "live_execution",
+            "local_capital_authority",
         ):
             if key not in config or (key == "execution_adapter" and config.get(key) == "LOCAL_PAPER_SIMULATOR"):
                 config[key] = defaults[key]
@@ -249,6 +252,7 @@ def get_gate_account_profile(store, account_id: str) -> Dict[str, Any]:
         "execution_adapter": config.get("execution_adapter", defaults["execution_adapter"]),
         "remote_orders": config.get("remote_orders", defaults["remote_orders"]),
         "local_simulator": bool(config.get("local_simulator", defaults["local_simulator"])),
+        "local_capital_authority": config.get("local_capital_authority", defaults["local_capital_authority"]),
         "credential_scope": config.get("credential_scope", clean_id),
         "remote_private_read": config.get("remote_private_read", "EXPLICIT_ONLY"),
         "live_execution": config.get("live_execution", defaults["live_execution"]),

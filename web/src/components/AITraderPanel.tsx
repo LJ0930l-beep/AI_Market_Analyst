@@ -116,8 +116,11 @@ interface GateRemoteAccount {
   observed_at?: string | null;
   source?: string | null;
   equity?: number | null;
+  equity_basis?: string | null;
   available_margin?: number | null;
+  available_margin_basis?: string | null;
   used_margin?: number | null;
+  used_margin_basis?: string | null;
   unrealized_pnl?: number | null;
   realized_pnl?: number | null;
   balance?: { total?: number | null; free?: number | null; used?: number | null };
@@ -194,6 +197,23 @@ function stageLabel(stage: string | undefined): string {
     RECONCILIATION: '远端对账',
   };
   return labels[String(stage || '')] || String(stage || 'UNKNOWN');
+}
+
+function humanizeCode(value: unknown): string {
+  const code = String(value || 'UNKNOWN').trim().toUpperCase();
+  const labels: Record<string, string> = {
+    SYSTEM_BLOCKED: '系统阻断',
+    SESSION_NOT_RUNNING: '会话未运行',
+    SMART_MODEL_UNAVAILABLE: '模型不可用',
+    AUTHORIZATION_REQUIRED: '缺少交易授权',
+    RUNTIME_EXECUTION_BLOCKED: '运行时未放行',
+    REMOTE_ACCOUNT_TRUTH_UNAVAILABLE: '远端账户事实不可用',
+    WAIT: '观望',
+    NOT_RUN: '未调用',
+    MODEL_DECISION: '模型已决策',
+    UNKNOWN: '未知',
+  };
+  return `${labels[code] || code} (${code})`;
 }
 
 export const AITraderPanel: React.FC<AITraderPanelProps> = ({
@@ -427,7 +447,12 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
       (recentCycle.model_called === false && (recentCycle.model_result === 'NOT_RUN' || Boolean(recentCycle.block_stage)))
     ),
   );
-  const cycleActionLabel = isSystemBlocked ? 'SYSTEM_BLOCKED · AI 未运行' : (recentCycle?.action || 'UNKNOWN');
+  const modelWasCalled = recentCycle?.model_called === true;
+  const cycleActionLabel = isSystemBlocked
+    ? 'SYSTEM_BLOCKED · AI 未运行'
+    : modelWasCalled
+      ? `AI 已调用 · ${humanizeCode(recentCycle?.model_result || recentCycle?.action)}`
+      : 'AI 调用状态未确认';
   const cycleActionColor = isSystemBlocked ? '#f85149' : recentCycle?.action === 'WAIT' ? '#e3b341' : '#3fb950';
   const stageTrace = Array.isArray(recentCycle?.stage_trace) ? recentCycle.stage_trace : [];
   const remoteStatus = String(gateRemoteAccount?.data_status || gateRemoteAccount?.capability_status || 'UNKNOWN');
@@ -708,16 +733,16 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
         <div className="v2-ai-section-header">
           <div>
             <h3>Gate TestNet 账户事实</h3>
-            <p>权益、保证金、持仓和待成交只显示 Gate 远端回执；本地 SQLite 仅作镜像与审计。</p>
+            <p>权益、保证金、持仓和待成交只显示 Gate 远端回执；本地仅保留远端快照审计缓存，不作为账户事实。</p>
           </div>
           <span className={`v2-badge ${remoteIsAvailable ? 'v2-badge--bull' : remoteStatus.includes('NOT_CONFIGURED') ? 'v2-badge--warning' : 'v2-badge--neutral'}`}>
             {remoteStatus}
           </span>
         </div>
         <div className="v2-ai-remote-grid">
-          <div><span>账户权益</span><strong>{displayNumber(gateRemoteAccount?.equity ?? gateRemoteAccount?.balance?.total, ' USDT')}</strong></div>
-          <div><span>可用保证金</span><strong>{displayNumber(gateRemoteAccount?.available_margin ?? gateRemoteAccount?.balance?.free, ' USDT')}</strong></div>
-          <div><span>已用保证金</span><strong>{displayNumber(gateRemoteAccount?.used_margin ?? gateRemoteAccount?.balance?.used, ' USDT')}</strong></div>
+          <div><span>账户权益</span><strong>{displayNumber(gateRemoteAccount?.equity, ' USDT')}</strong><small>{gateRemoteAccount?.equity_basis || 'UNKNOWN_BASIS'}</small></div>
+          <div><span>可用保证金</span><strong>{displayNumber(gateRemoteAccount?.available_margin, ' USDT')}</strong><small>{gateRemoteAccount?.available_margin_basis || 'UNKNOWN_BASIS'}</small></div>
+          <div><span>已用保证金</span><strong>{displayNumber(gateRemoteAccount?.used_margin, ' USDT')}</strong><small>{gateRemoteAccount?.used_margin_basis || 'UNKNOWN_BASIS'}</small></div>
           <div><span>远端持仓 / 待单</span><strong>{remoteIsAvailable ? `${gateRemoteAccount?.positions?.length ?? 0} / ${gateRemoteAccount?.pending_orders?.length ?? 0}` : 'UNKNOWN'}</strong></div>
         </div>
         <div className="v2-ai-remote-meta">
@@ -846,15 +871,25 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
               <h3>最近一次 AI 运行结果 · {recentCycle.cycle_id || 'UNKNOWN'}</h3>
               <p>{recentCycle.timestamp || 'UNKNOWN'} · 延迟 {displayNumber(recentCycle.latency_ms, ' ms')}</p>
             </div>
-            <span className={`v2-badge ${isSystemBlocked ? 'v2-badge--bear' : recentCycle.action === 'WAIT' ? 'v2-badge--gold' : 'v2-badge--bull'}`}>
+           <span className={`v2-badge ${isSystemBlocked ? 'v2-badge--bear' : recentCycle.action === 'WAIT' ? 'v2-badge--gold' : 'v2-badge--bull'}`}>
               {cycleActionLabel}
             </span>
           </div>
+          <div className={`v2-ai-cycle-verdict ${isSystemBlocked ? 'v2-ai-cycle-verdict--blocked' : modelWasCalled ? 'v2-ai-cycle-verdict--model' : ''}`}>
+            <strong>{isSystemBlocked ? '系统未放行，AI 未被调用' : modelWasCalled ? 'AI 已调用，以下为模型结论' : 'AI 调用状态未确认'}</strong>
+            <span>
+              {isSystemBlocked
+                ? `${stageLabel(recentCycle.block_stage || undefined)} · ${humanizeCode(recentCycle.reason || recentCycle.rejection_code)}`
+                : modelWasCalled
+                  ? `${recentCycle.model_id || '模型身份未记录'} · ${humanizeCode(recentCycle.model_result || recentCycle.action)}`
+                  : '没有可核验的模型调用回执，不能把系统状态当成模型决策。'}
+            </span>
+          </div>
           <div className="v2-ai-cycle-summary">
-            <div><span>决策来源</span><strong>{isSystemBlocked ? 'SYSTEM · 系统阻断' : 'MODEL · Qwen3.5-9B'}</strong></div>
+            <div><span>决策来源</span><strong>{isSystemBlocked ? 'SYSTEM · 系统阻断' : modelWasCalled ? `MODEL · ${recentCycle.model_id || '已记录模型'}` : 'UNKNOWN · 未确认'}</strong></div>
             <div><span>模型调用</span><strong>{recentCycle.model_called ? '已调用' : '未调用'}</strong></div>
-            <div><span>模型结果</span><strong>{recentCycle.model_result || (isSystemBlocked ? 'NOT_RUN' : recentCycle.action || 'UNKNOWN')}</strong></div>
-            <div><span>运行状态</span><strong>{recentCycle.operational_state || (isSystemBlocked ? 'SYSTEM_BLOCKED' : 'MODEL_DECISION')}</strong></div>
+            <div><span>模型结果</span><strong>{humanizeCode(recentCycle.model_result || (isSystemBlocked ? 'NOT_RUN' : recentCycle.action))}</strong></div>
+            <div><span>运行状态</span><strong>{humanizeCode(recentCycle.operational_state || (isSystemBlocked ? 'SYSTEM_BLOCKED' : 'MODEL_DECISION'))}</strong></div>
           </div>
           <div className="v2-ai-cycle-reason" style={{ borderColor: cycleActionColor }}>
             <span>{isSystemBlocked ? `阻断阶段：${stageLabel(recentCycle.block_stage || undefined)}` : '最终判断理由'}</span>

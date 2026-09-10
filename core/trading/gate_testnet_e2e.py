@@ -185,6 +185,53 @@ class GateTestnetE2EService:
                     return {**position, "contracts": str(contracts)}
         return None
 
+    @staticmethod
+    def _position_contracts(position: Dict[str, Any] | None) -> Decimal | None:
+        if not isinstance(position, dict):
+            return None
+        return _finite(position.get("contracts", position.get("size")), positive=True)
+
+    @classmethod
+    def _new_remote_position(
+        cls,
+        before: Dict[str, Any],
+        after: Dict[str, Any],
+        symbol: str,
+        side: str,
+    ) -> Dict[str, Any] | None:
+        """Find only the contracts added by this run.
+
+        Gate dual-mode accounts can already contain a position in the same
+        symbol/direction.  Cleanup must remove the delta created by this test,
+        not demand that the user's pre-existing position disappears.
+        """
+
+        before_items = [
+            item for item in before.get("positions") or []
+            if isinstance(item, dict)
+            and _symbol(item.get("symbol")) == _symbol(symbol)
+            and str(item.get("side") or "").upper() in {side, "BUY" if side == "LONG" else "SELL"}
+        ]
+        after_items = [
+            item for item in after.get("positions") or []
+            if isinstance(item, dict)
+            and _symbol(item.get("symbol")) == _symbol(symbol)
+            and str(item.get("side") or "").upper() in {side, "BUY" if side == "LONG" else "SELL"}
+        ]
+        before_ids = {str(item.get("position_id") or item.get("id")) for item in before_items}
+        for item in after_items:
+            if str(item.get("position_id") or item.get("id")) not in before_ids:
+                contracts = cls._position_contracts(item)
+                if contracts is not None:
+                    return {**item, "contracts": str(contracts), "new_contracts": str(contracts)}
+        before_total = sum((cls._position_contracts(item) or Decimal("0") for item in before_items), Decimal("0"))
+        after_total = sum((cls._position_contracts(item) or Decimal("0") for item in after_items), Decimal("0"))
+        delta = after_total - before_total
+        if delta <= 0 or not after_items:
+            return None
+        selected = max(after_items, key=lambda item: cls._position_contracts(item) or Decimal("0"))
+        return {**selected, "contracts": str(delta), "new_contracts": str(delta), "observed_contracts": str(after_total)}
+
     def run(self, request: Dict[str, Any], trader: Any) -> Dict[str, Any]:
         from .gate_accounts import GATE_TESTNET_ACCOUNT_TYPE, get_gate_account_profile
 
@@ -208,7 +255,7 @@ class GateTestnetE2EService:
         idem = str(request.get("idempotency_key") or "").strip()[:160]
         if not idem:
             raise GateE2EError("IDEMPOTENCY_KEY_REQUIRED", "TestNet 验收必须提供幂等键，避免重复下单。")
-        request_for_hash = {key: request.get(key) for key in ("account_id", "symbol", "side", "stop_type", "stop_value", "take_profit_type", "take_profit_value", "leverage", "cleanup")}
+        request_for_hash = {key: request.get(key) for key in ("account_id", "symbol", "side", "amount", "stop_type", "stop_value", "take_profit_type", "take_profit_value", "leverage", "cleanup")}
         request_hash = hashlib.sha256(_text(request_for_hash).encode("utf-8")).hexdigest()
         previous = self._existing(account_id, idem, request_hash)
         if previous is not None:
@@ -250,7 +297,11 @@ class GateTestnetE2EService:
                 fee_rate = None
             if not tick or not step or not minimum or not maximum or not contract_size or fee_rate is None:
                 raise GateE2EError("GATE_MARKET_METADATA_INCOMPLETE", "Gate TestNet 未返回完整的合约单位、数量步长、上下限和费率。")
-            amount = (minimum / step).quantize(Decimal("1"), rounding=ROUND_UP) * step
+            requested_amount = _finite(request.get("amount"), positive=True) if request.get("amount") is not None else None
+            amount = requested_amount or ((minimum / step).quantize(Decimal("1"), rounding=ROUND_UP) * step)
+            step_units = amount / step
+            if step_units != step_units.to_integral_value() or amount < minimum or amount > maximum:
+                raise GateE2EError("GATE_TESTNET_AMOUNT_STEP_INVALID", "Gate TestNet 下单数量必须按远端合约步长填写，并处于最小/最大数量范围内。")
             if amount < minimum or amount > maximum:
                 raise GateE2EError("GATE_TESTNET_MINIMUM_SIZE_INVALID", "Gate TestNet 最小可下单数量无法按步长表示。")
             result["metadata"] = {key: _safe_json(value) for key, value in market.items() if key != "raw"}
@@ -308,6 +359,15 @@ class GateTestnetE2EService:
                 raise GateE2EError(str((lev_result or {}).get("error_code") or "GATE_LEVERAGE_REJECTED"), "Gate TestNet 杠杆设置未确认，未发送订单。")
             result["stages"].append(self._stage("LEVERAGE", "COMPLETED", message_zh="Gate TestNet 杠杆设置已确认。", evidence={"leverage": leverage}))
 
+            pre_entry_truth = trader.get_account_truth(include_trades=True)
+            if not isinstance(pre_entry_truth, dict) or str(pre_entry_truth.get("status") or "").upper() != "AVAILABLE":
+                raise GateE2EError("REMOTE_ACCOUNT_TRUTH_UNAVAILABLE", "下单前无法取得完整 Gate TestNet 账户/持仓事实，已阻止测试订单。")
+            result["pre_entry_truth"] = {
+                key: _safe_json(pre_entry_truth.get(key))
+                for key in ("status", "observed_at", "equity", "available_margin", "positions", "pending_orders")
+            }
+            baseline_position = self._remote_position(pre_entry_truth, symbol, side)
+
             client_order_id = f"t-e2e-{hashlib.sha256((account_id + idem).encode()).hexdigest()[:20]}"
             entry_side = side
             receipt = trader.place_order(symbol=symbol, side=entry_side, amount=float(amount), order_type="market", stop_loss=float(stop), take_profit=float(take_profit), leverage=leverage, reduce_only=False, client_order_id=client_order_id)
@@ -336,7 +396,7 @@ class GateTestnetE2EService:
             if not isinstance(truth, dict) or str(truth.get("status") or "").upper() != "AVAILABLE":
                 raise GateE2EError("REMOTE_ACCOUNT_TRUTH_UNAVAILABLE", "入场后无法取得完整 Gate TestNet 账户/持仓事实，未盲目清理。")
             result["post_entry_truth"] = {key: _safe_json(truth.get(key)) for key in ("status", "observed_at", "equity", "available_margin", "positions", "pending_orders", "fills")}
-            position = self._remote_position(truth, symbol, side)
+            position = self._new_remote_position(pre_entry_truth, truth, symbol, side)
             if position is None:
                 raise GateE2EError("REMOTE_POSITION_NOT_RECONCILED", "Gate TestNet 成交已返回，但远端持仓尚未对账确认。")
             result["remote_position"] = _safe_json(position)
@@ -350,7 +410,11 @@ class GateTestnetE2EService:
             if cleanup:
                 cleanup_side = "SHORT" if side == "LONG" else "LONG"
                 cleanup_id = f"{client_order_id}-close"
-                cleanup_receipt = trader.place_order(symbol=symbol, side=cleanup_side, amount=float(_finite(position.get("contracts"), positive=True) or amount), order_type="market", leverage=leverage, reduce_only=True, client_order_id=cleanup_id)
+                # Leverage was already confirmed before entry.  Gate can
+                # reject a second leverage mutation while the new position
+                # and trigger legs are settling; reduce-only cleanup must
+                # only submit the close order and never change leverage.
+                cleanup_receipt = trader.place_order(symbol=symbol, side=cleanup_side, amount=float(_finite(position.get("contracts"), positive=True) or amount), order_type="market", leverage=None, reduce_only=True, client_order_id=cleanup_id)
                 result["orders_sent"] = int(result.get("orders_sent", 0)) + 1
                 result["cleanup_order"] = _safe_json(cleanup_receipt)
                 cleanup_status = str((cleanup_receipt or {}).get("status") or "").upper()
@@ -359,7 +423,13 @@ class GateTestnetE2EService:
                 post_cleanup = trader.get_account_truth(include_trades=True)
                 result["post_cleanup_truth"] = {key: _safe_json(post_cleanup.get(key)) for key in ("status", "observed_at", "equity", "available_margin", "positions", "pending_orders", "fills")}
                 remaining = self._remote_position(post_cleanup, symbol, side) if isinstance(post_cleanup, dict) else None
-                if remaining is not None:
+                baseline_contracts = self._position_contracts(baseline_position)
+                remaining_contracts = self._position_contracts(remaining)
+                if (
+                    remaining is not None
+                    and remaining_contracts is not None
+                    and (baseline_contracts is None or remaining_contracts > baseline_contracts)
+                ):
                     raise GateE2EError("CLEANUP_NOT_RECONCILED", "Gate TestNet 清理后仍有远端持仓，必须人工继续对账。")
                 for leg in receipt.get("protection_orders") or []:
                     if isinstance(leg, dict) and leg.get("order_id") and callable(getattr(trader, "cancel_order", None)):

@@ -58,6 +58,9 @@ _ACTIVE_ORDER_STATUSES = {
     "SUBMITTED",
     "SUBMITTING",
     "CANCEL_PENDING",
+    "OPEN",
+    "NEW",
+    "ACTIVE",
 }
 
 
@@ -147,6 +150,109 @@ def _decimal(value: Any, default: str = "0") -> Decimal:
     except (InvalidOperation, TypeError, ValueError):
         return Decimal(default)
     return result if result.is_finite() else Decimal(default)
+
+
+def _gate_symbol(value: Any) -> str:
+    return (
+        str(value or "")
+        .strip()
+        .upper()
+        .replace("/", "")
+        .replace(":USDT", "")
+        .replace("_", "")
+        .replace("-", "")
+    )
+
+
+def _gate_remote_position(account_id: str, raw: Any, pending_orders: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Project a Gate position into the risk model without local estimates."""
+
+    if not isinstance(raw, dict):
+        return None
+    contracts = _number(raw.get("contracts", raw.get("size")), positive=True)
+    symbol = _gate_symbol(raw.get("symbol"))
+    side_raw = str(raw.get("side") or "").upper()
+    side = "LONG" if side_raw in {"LONG", "BUY", "1"} else "SHORT" if side_raw in {"SHORT", "SELL", "-1"} else None
+    if contracts is None or not symbol or side is None:
+        return None
+    protected = any(
+        isinstance(order, dict)
+        and bool(order.get("reduce_only"))
+        and _gate_symbol(order.get("symbol")) in {"", symbol}
+        and (
+            order.get("stop_price") is not None
+            or str(order.get("type") or "").lower() in {"stop", "stop_market", "take_profit", "trigger"}
+        )
+        for order in pending_orders
+    )
+    entry = _number(raw.get("entry_price", raw.get("entryPrice")), positive=True)
+    mark = _number(raw.get("mark_price", raw.get("markPrice")), positive=True)
+    contract_size = _number(raw.get("contract_size", raw.get("contractSize")), positive=True)
+    return {
+        "account_id": account_id,
+        "venue": "gate",
+        "mode": "TESTNET",
+        "environment": "testnet",
+        "provider": "gate",
+        "symbol": symbol,
+        "instrument_id": symbol,
+        "side": side,
+        "contracts": contracts,
+        "remaining_contracts": contracts,
+        "quantity": contracts,
+        "entry": entry,
+        "entry_price": entry,
+        "mark_price": mark,
+        "unrealized_pnl": _number(raw.get("unrealized_pnl", raw.get("unrealizedPnl"))),
+        "realized_pnl": _number(raw.get("realized_pnl", raw.get("realizedPnl"))),
+        "leverage": _number(raw.get("leverage")),
+        "liquidation_price": _number(raw.get("liquidation_price", raw.get("liquidationPrice")), positive=True),
+        "initial_margin": _number(raw.get("initial_margin", raw.get("initialMargin")), positive=True),
+        "contract_size": contract_size,
+        "position_id": raw.get("position_id") or raw.get("id"),
+        "remote_truth": True,
+        "local_mirror": False,
+        "protection_status": "ACTIVE" if protected else UNKNOWN,
+        "protected": protected,
+        "protection_evidence": {
+            "status": "ACTIVE" if protected else UNKNOWN,
+            "source": "GATE_TESTNET_PRIVATE_API_PENDING_ORDERS",
+        },
+    }
+
+
+def _gate_remote_order(account_id: str, raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, dict) or not raw.get("order_id"):
+        return None
+    amount = _number(raw.get("amount", raw.get("quantity")), positive=True)
+    return {
+        "intent_id": None,
+        "order_id": str(raw.get("order_id")),
+        "account_id": account_id,
+        "venue": "gate",
+        "mode": "TESTNET",
+        "environment": "testnet",
+        "scope_status": "SCOPED",
+        "symbol": _gate_symbol(raw.get("symbol")),
+        "side": str(raw.get("side") or "UNKNOWN").upper(),
+        "order_type": str(raw.get("type") or "UNKNOWN").upper(),
+        "order_type_raw": raw.get("type"),
+        "quantity": amount,
+        "amount": amount,
+        "filled": _number(raw.get("filled")),
+        "remaining": _number(raw.get("remaining")),
+        "price": _number(raw.get("price"), positive=True),
+        "stop_price": _number(raw.get("stop_price"), positive=True),
+        "status": str(raw.get("status") or "UNKNOWN").upper(),
+        "reduce_only": bool(raw.get("reduce_only")),
+        "client_order_id": raw.get("client_order_id"),
+        "created_at": raw.get("datetime") or raw.get("timestamp"),
+        "updated_at": raw.get("datetime") or raw.get("timestamp"),
+        "execution_evidence": {
+            "source": "GATE_TESTNET_PRIVATE_API",
+            "observed_at": raw.get("datetime"),
+        },
+    }
 
 
 class TraderCapabilityService:
@@ -279,6 +385,9 @@ class TraderCapabilityService:
             "mode": effective_mode_value,
             "venue": account_venue,
             "currency": str(row["currency"] or "USDT").upper(),
+            "provider": str(resolved.get("provider") or account_venue).lower(),
+            "environment": str(resolved.get("environment") or effective_mode_value.lower()).lower(),
+            "account_type": str(resolved.get("account_type") or "").upper(),
         }
 
     @staticmethod
@@ -443,15 +552,26 @@ class TraderCapabilityService:
 
         scope = self._scope(account_id)
         now = _now(self.clock)
+        is_gate_testnet = (
+            scope["mode"] == "TESTNET"
+            and str(scope.get("account_type") or "").upper() == "GATE_TESTNET"
+        )
         ledger = AccountLedger(store=self.store)
         marks: dict[str, float] = {}
         mark_evidence: dict[str, Any] = {}
-        try:
-            positions = ledger.get_open_positions(
-                account_id, venue=scope["venue"], mode=scope["mode"]
-            )
-        except Exception as exc:
-            raise TraderCapabilityError("LEDGER_UNAVAILABLE", str(exc), 503) from exc
+        if is_gate_testnet:
+            ledger_positions = []
+        else:
+            try:
+                ledger_positions = ledger.get_open_positions(
+                    account_id, venue=scope["venue"], mode=scope["mode"]
+                )
+            except Exception as exc:
+                raise TraderCapabilityError("LEDGER_UNAVAILABLE", str(exc), 503) from exc
+        # Managed Gate TestNet has no local position authority.  Historical
+        # mirror rows are deliberately ignored; only the persisted remote
+        # snapshot below can populate the cockpit.
+        positions = [] if is_gate_testnet else ledger_positions
         for position in positions:
             symbol = str(position.get("symbol") or position.get("instrument_id") or "").upper()
             if not symbol:
@@ -460,15 +580,23 @@ class TraderCapabilityService:
             mark_evidence[symbol] = evidence
             if price is not None:
                 marks[symbol] = price
-        snapshot = ledger.get_snapshot(account_id, mark_prices=marks, now=now)
-        risk = RiskEngine(ledger).get_risk_summary(account_id, now=now)
-        orders = self._orders(scope)
-        reservations = self._reservations(scope)
-        is_gate_testnet = (
-            scope["mode"] == "TESTNET"
-            and str(scope.get("account_type") or "").upper() == "GATE_TESTNET"
+        snapshot = ledger.get_snapshot(
+            account_id,
+            open_positions=[] if is_gate_testnet else None,
+            mark_prices=marks,
+            now=now,
         )
+        risk = RiskEngine(ledger).get_risk_summary(
+            account_id,
+            now=now,
+            open_positions=[] if is_gate_testnet else None,
+        )
+        local_orders = self._orders(scope)
+        orders = local_orders
+        reservations = self._reservations(scope)
         remote_account: dict[str, Any] | None = None
+        remote_facts_available = False
+        remote_pending_orders: list[dict[str, Any]] = []
         if is_gate_testnet:
             latest = GateAccountTruthService(self.store, clock=self.clock).latest(account_id)
             if latest is not None:
@@ -486,6 +614,10 @@ class TraderCapabilityService:
                     "positions": latest.get("positions") if isinstance(latest.get("positions"), list) else [],
                     "pending_orders": latest.get("pending_orders") if isinstance(latest.get("pending_orders"), list) else [],
                     "fills": latest.get("fills") if isinstance(latest.get("fills"), list) else [],
+                    "balance": latest.get("balance") if isinstance(latest.get("balance"), dict) else {},
+                    "equity_basis": (latest.get("balance") or {}).get("equity_basis") if isinstance(latest.get("balance"), dict) else None,
+                    "available_margin_basis": (latest.get("balance") or {}).get("available_margin_basis") if isinstance(latest.get("balance"), dict) else None,
+                    "used_margin_basis": (latest.get("balance") or {}).get("used_margin_basis") if isinstance(latest.get("balance"), dict) else None,
                     "error_code": latest.get("error_code"),
                     "message_zh": latest.get("message_zh"),
                     "authority": "REMOTE_GATE_TESTNET_PRIVATE_API",
@@ -505,14 +637,73 @@ class TraderCapabilityService:
                     "positions": [],
                     "pending_orders": [],
                     "fills": [],
+                    "balance": {},
+                    "equity_basis": None,
+                    "available_margin_basis": None,
+                    "used_margin_basis": None,
                     "error_code": "REMOTE_ACCOUNT_TRUTH_NOT_READ",
                     "message_zh": "尚未读取 Gate TestNet 账户事实；本地账本不作为余额替代。",
                     "authority": "REMOTE_GATE_TESTNET_PRIVATE_API",
                 }
 
+            remote_facts_available = bool(
+                remote_account.get("status") == "AVAILABLE"
+                and remote_account.get("equity") is not None
+                and remote_account.get("available_margin") is not None
+                and remote_account.get("used_margin") is not None
+            )
+            if remote_facts_available:
+                remote_pending_orders = [
+                    projected
+                    for projected in (
+                        _gate_remote_order(account_id, item)
+                        for item in remote_account.get("pending_orders") or []
+                    )
+                    if projected is not None
+                ]
+                remote_positions = [
+                    projected
+                    for projected in (
+                        _gate_remote_position(account_id, item, remote_pending_orders)
+                        for item in remote_account.get("positions") or []
+                    )
+                    if projected is not None
+                ]
+                # A complete private snapshot is the authority for managed
+                # Gate accounts.  The local mirror can lag or still contain
+                # an old compatibility seed, so it must not drive this view.
+                positions = remote_positions
+                orders = remote_pending_orders
+                for position in positions:
+                    symbol = str(position.get("symbol") or "").upper()
+                    mark = _number(position.get("mark_price"), positive=True)
+                    if symbol and mark is not None:
+                        marks[symbol] = mark
+                        mark_evidence[symbol] = {
+                            "status": "OBSERVED_REMOTE",
+                            "source": "GATE_TESTNET_PRIVATE_API_POSITION_MARK",
+                            "observed_at": remote_account.get("observed_at"),
+                        }
+
         protections: list[dict[str, Any]] = []
         known_position_risk = Decimal("0")
         unknown_risk_items: list[dict[str, Any]] = []
+        if is_gate_testnet and remote_facts_available:
+            remote_order_ids = {str(item.get("order_id")) for item in orders if item.get("order_id")}
+            for local_order in local_orders:
+                local_status = str(local_order.get("status") or "").upper()
+                execution_evidence = local_order.get("execution_evidence") or {}
+                local_remote_id = execution_evidence.get("order_id") or local_order.get("order_id")
+                if local_status in {"UNKNOWN", "SUBMITTING", "CANCEL_PENDING", "ACKNOWLEDGED", "PARTIALLY_FILLED"} and str(local_remote_id or "") not in remote_order_ids:
+                    unknown_risk_items.append(
+                        {
+                            "type": "LOCAL_ORDER_REMOTE_RECONCILIATION",
+                            "intent_id": local_order.get("intent_id"),
+                            "symbol": local_order.get("symbol"),
+                            "status": local_status or UNKNOWN,
+                            "reason": "LOCAL_EXECUTION_INTENT_NOT_PRESENT_IN_LATEST_REMOTE_PENDING_ORDER_SNAPSHOT",
+                        }
+                    )
         for position in positions:
             status = str(position.get("protection_status") or UNKNOWN).upper()
             remaining = _decimal(position.get("remaining_contracts", position.get("quantity", 0)))
@@ -624,7 +815,8 @@ class TraderCapabilityService:
             order for order in orders
             if str(order.get("status") or "").upper() in _ACTIVE_ORDER_STATUSES
         ]
-        for order in active_orders:
+        exposure_orders = [order for order in active_orders if not bool(order.get("reduce_only"))]
+        for order in exposure_orders:
             quantity = _decimal(order.get("quantity"))
             price = _decimal(order.get("price"))
             add_exposure(
@@ -670,7 +862,7 @@ class TraderCapabilityService:
             "strategy_competition": {
                 "status": UNKNOWN if active_orders or reservations else "NOT_APPLICABLE",
                 "source": "ORDER_AND_RESERVATION_STRATEGY_OWNERSHIP_NOT_COMPLETE",
-                "active_order_count": len(active_orders),
+                "active_order_count": len(exposure_orders),
             },
         }
         if len(exposure_symbols) > 1:
@@ -694,7 +886,11 @@ class TraderCapabilityService:
                 }
             )
 
-        legacy = self._legacy_position_counts(account_id)
+        # Gate TestNet has no local position authority.  In particular, rows
+        # written by older builds with ``local_mirror=1`` must not re-enter
+        # risk as legacy exposure or as a recovery blocker.  They remain
+        # untouched for audit/rollback safety, but are outside this view.
+        legacy = {"account_scoped": 0, "unassigned": 0} if is_gate_testnet else self._legacy_position_counts(account_id)
         if legacy["account_scoped"] or legacy["unassigned"]:
             unknown_risk_items.append(
                 {
@@ -765,12 +961,12 @@ class TraderCapabilityService:
                         reconciliation_times.append((str(row["created_at"]), "paper_ledger"))
         if is_gate_testnet and remote_account is not None and remote_account.get("observed_at"):
             remote_status = str(remote_account.get("status") or "UNKNOWN").upper()
-            if remote_status == "AVAILABLE":
+            if remote_facts_available:
                 reconciliation_times.append((str(remote_account["observed_at"]), "gate_testnet_remote_snapshot"))
         reconciliation_times.sort(reverse=True)
         if is_gate_testnet and remote_account is not None:
             remote_status = str(remote_account.get("status") or "UNKNOWN").upper()
-            if remote_status == "AVAILABLE":
+            if remote_facts_available:
                 reconciliation = {
                     "status": "SYNCED",
                     "last_reconciled_at": remote_account.get("observed_at"),
@@ -778,7 +974,7 @@ class TraderCapabilityService:
                     "snapshot_id": remote_account.get("snapshot_id"),
                     "authority": "REMOTE_GATE_TESTNET_PRIVATE_API",
                 }
-            elif remote_status == "DEGRADED":
+            elif remote_status in {"DEGRADED", "AVAILABLE"}:
                 reconciliation = {
                     "status": "DEGRADED",
                     "last_reconciled_at": remote_account.get("observed_at"),
@@ -807,15 +1003,26 @@ class TraderCapabilityService:
                 "source": "NO_RECONCILIATION_EVIDENCE",
             }
 
-        max_portfolio = _decimal(risk.get("max_portfolio_risk_budget"))
+        remote_equity_decimal = (
+            _decimal(remote_account.get("equity"))
+            if remote_facts_available and remote_account is not None
+            else None
+        )
+        remote_max_portfolio = (
+            remote_equity_decimal * RiskEngine.MAX_PORTFOLIO_RISK
+            if remote_equity_decimal is not None
+            else None
+        )
+        max_portfolio = remote_max_portfolio if remote_max_portfolio is not None else _decimal(risk.get("max_portfolio_risk_budget"))
         reserved = _decimal(snapshot.reserved_risk)
         unknown_capacity = bool(unknown_risk_items or snapshot.unverified_protection_count)
         if unknown_capacity:
             single_available: Any = UNKNOWN
             portfolio_available: Any = UNKNOWN
         else:
+            effective_equity = remote_equity_decimal if remote_equity_decimal is not None else snapshot.net_equity
             single_available = str(
-                max(Decimal("0"), snapshot.net_equity * RiskEngine.TREND_RISK_FRACTION)
+                max(Decimal("0"), effective_equity * RiskEngine.TREND_RISK_FRACTION)
             )
             portfolio_available = str(max(Decimal("0"), max_portfolio - reserved - known_position_risk))
         blocked_reasons = list(risk.get("new_risk_block_reasons") or [])
@@ -825,22 +1032,31 @@ class TraderCapabilityService:
             blocked_reasons.append("RUNTIME_EXECUTION_BLOCKED")
         if scope["mode"] in {"TESTNET", "LIVE"} and reconciliation["status"] == UNKNOWN:
             blocked_reasons.append("REMOTE_RECONCILIATION_UNKNOWN")
-        if is_gate_testnet and (remote_account is None or remote_account.get("status") != "AVAILABLE"):
+        if is_gate_testnet and not remote_facts_available:
             blocked_reasons.append("REMOTE_ACCOUNT_TRUTH_UNAVAILABLE")
         if is_gate_testnet:
-            if remote_account and remote_account.get("status") == "AVAILABLE" and remote_account.get("equity") is not None:
+            if remote_account and remote_facts_available:
                 remote_equity = float(remote_account["equity"])
                 risk["net_equity"] = remote_equity
-                risk["max_portfolio_risk_budget"] = round(remote_equity * RiskEngine.MAX_PORTFOLIO_RISK, 4)
+                risk["max_portfolio_risk_budget"] = round(float(remote_equity_decimal * RiskEngine.MAX_PORTFOLIO_RISK), 4)
                 risk["cash"] = str(remote_account.get("available_margin")) if remote_account.get("available_margin") is not None else UNKNOWN
+                risk["allocated_margin"] = str(remote_account.get("used_margin")) if remote_account.get("used_margin") is not None else UNKNOWN
+                risk["max_portfolio_risk"] = str(remote_equity_decimal * RiskEngine.MAX_PORTFOLIO_RISK)
                 risk["account_truth_basis"] = "REMOTE_GATE_TESTNET_PRIVATE_API"
+                if remote_equity <= 0:
+                    blocked_reasons.append("REMOTE_EQUITY_NON_POSITIVE")
             else:
                 for key in ("net_equity", "max_portfolio_risk_budget", "cash", "max_portfolio_risk"):
                     risk[key] = None
                 risk["account_truth_basis"] = "REMOTE_GATE_TESTNET_PRIVATE_API_UNAVAILABLE"
         ledger_payload = snapshot.to_dict()
-        ledger_payload["role"] = "LOCAL_MIRROR_AUDIT_ONLY" if is_gate_testnet else "LOCAL_ACCOUNT_LEDGER_AUTHORITY"
-        if is_gate_testnet and (remote_account is None or remote_account.get("status") != "AVAILABLE" or remote_account.get("equity") is None):
+        ledger_payload["role"] = "REMOTE_FACTS_AUDIT_CACHE_ONLY" if is_gate_testnet else "LOCAL_ACCOUNT_LEDGER_AUTHORITY"
+        if is_gate_testnet:
+            ledger_payload["authority"] = "REMOTE_GATE_TESTNET_PRIVATE_API"
+            ledger_payload["remote_balance_basis"] = remote_account.get("equity_basis") if remote_account else None
+            ledger_payload["remote_available_margin_basis"] = remote_account.get("available_margin_basis") if remote_account else None
+            ledger_payload["remote_used_margin_basis"] = remote_account.get("used_margin_basis") if remote_account else None
+        if is_gate_testnet and not remote_facts_available:
             # Do not expose the canonical TestNet row's zero/local baseline as
             # if it were Gate equity.  The local fields remain available in
             # the database for audit, but the cockpit's authority is UNKNOWN.
@@ -866,11 +1082,13 @@ class TraderCapabilityService:
                 "reserved_risk": str(reserved),
                 "unknown_risk_items": unknown_risk_items,
                 "status": UNKNOWN if unknown_capacity else "CALCULATED_FROM_LEDGER",
-                "basis": "ACCOUNT_LEDGER_AND_SCOPED_RESERVATIONS",
+                "basis": "REMOTE_GATE_TESTNET_PRIVATE_API_PLUS_SCOPED_RESERVATIONS" if is_gate_testnet else "ACCOUNT_LEDGER_AND_SCOPED_RESERVATIONS",
             },
             "concentration": concentration,
             "positions": positions,
             "orders": orders,
+            "local_order_intents": local_orders,
+            "remote_pending_orders": remote_pending_orders,
             "reservations": reservations,
             "protections": protections,
             "market_data": {

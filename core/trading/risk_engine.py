@@ -719,6 +719,7 @@ class RiskEngine:
         market_snapshot: Dict[str, Any],
         *,
         now: Optional[datetime] = None,
+        open_positions: Optional[List[Dict[str, Any]]] = None,
         max_single_risk_fraction: Optional[Any] = None,
         max_portfolio_risk_fraction: Optional[Any] = None,
         max_cluster_risk_fraction: Optional[Any] = None,
@@ -882,6 +883,7 @@ class RiskEngine:
             market=market,
             now=now,
             is_trend=True,
+            open_positions=open_positions,
             user_max_leverage=Decimal(str(getattr(intent, "leverage", None) or 100)),
             requested_contracts=getattr(intent, "quantity", None),
             max_single_risk_fraction=max_single_risk_fraction,
@@ -897,9 +899,15 @@ class RiskEngine:
             return replace(decision, approved=False, reason_code="RISK_BUDGET_EXCEEDED", contracts=Decimal("0"), risk_amount=Decimal("0"), notional=Decimal("0"), allocated_margin=Decimal("0"), reservation_id=None)
         return decision
 
-    def get_risk_summary(self, account_id: str, now: Optional[datetime] = None) -> Dict[str, Any]:
+    def get_risk_summary(
+        self,
+        account_id: str,
+        now: Optional[datetime] = None,
+        *,
+        open_positions: Optional[list[dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
         """Produce a comprehensive summary of account risk limits and utilization."""
-        snapshot = self.ledger.get_snapshot(account_id, now=now)
+        snapshot = self.ledger.get_snapshot(account_id, open_positions=open_positions, now=now)
         max_budget = round(snapshot.net_equity * self.MAX_PORTFOLIO_RISK, 4)
         return {
             "account_id": account_id,

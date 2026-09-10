@@ -27,6 +27,7 @@ from core.trading.gate_accounts import (
     provision_default_gate_accounts,
     save_gate_account_credentials,
 )
+from core.trading.gate_account_truth import GateAccountTruthService
 from core.trading.ledger import AccountLedger
 from core.trading.trader_capabilities import TraderCapabilityError, TraderCapabilityService
 
@@ -134,6 +135,72 @@ def test_gate_default_accounts_are_distinct_and_api_provision_is_idempotent(tmp_
                 (GATE_PAPER_ACCOUNT_ID,),
             ).fetchone()[0]
         ) == 1
+
+
+def test_gate_workspace_and_positions_ignore_historical_local_mirror(tmp_path):
+    store = SQLiteStore(tmp_path / "gate-remote-read-model.db")
+    store.initialize()
+    provision_default_gate_accounts(store)
+    now = datetime(2030, 1, 2, 12, 0, tzinfo=timezone.utc)
+
+    with store._connect() as db:
+        db.execute(
+            """INSERT INTO simulated_positions
+               (position_id, symbol, status, payload_json, updated_at, account_id, venue, mode,
+                position_version, protection_status, legacy_unverified)
+               VALUES (?, ?, 'OPEN', ?, ?, ?, 'gate', 'TESTNET', 0, 'ACTIVE', 0)""",
+            (
+                "legacy-gate-mirror",
+                "BTCUSDT",
+                json.dumps({"position_id": "legacy-gate-mirror", "symbol": "BTCUSDT", "side": "LONG", "entry": 1}),
+                now.isoformat(),
+                GATE_PAPER_ACCOUNT_ID,
+            ),
+        )
+
+    class RemoteTruth:
+        def get_account_truth(self, *, include_trades=False):
+            return {
+                "status": "AVAILABLE",
+                "observed_at": now.isoformat(),
+                "equity": 500.0,
+                "available_margin": 490.0,
+                "used_margin": 10.0,
+                "balance": {"total": 500.0, "free": 490.0, "used": 10.0},
+                "positions": [{
+                    "symbol": "ETH/USDT:USDT",
+                    "side": "LONG",
+                    "contracts": 1,
+                    "entry_price": 100.0,
+                    "mark_price": 101.0,
+                    "contract_size": 1.0,
+                }],
+                "pending_orders": [{
+                    "symbol": "ETHUSDT",
+                    "side": "SELL",
+                    "reduce_only": True,
+                    "stop_price": 99.0,
+                }],
+                "fills": [],
+            }
+
+    GateAccountTruthService(store, clock=lambda: now).refresh(GATE_PAPER_ACCOUNT_ID, RemoteTruth())
+    client = _v2_client(store)
+
+    workspace = client.get(f"/v2/workspace?account_id={GATE_PAPER_ACCOUNT_ID}")
+    assert workspace.status_code == 200, workspace.text
+    body = workspace.json()
+    assert body["positions_source"] == "GATE_REMOTE_PRIVATE_API_SNAPSHOT"
+    assert body["positions_data_status"] == "AVAILABLE"
+    assert [position["symbol"] for position in body["positions"]] == ["ETHUSDT"]
+    assert body["positions"][0]["protected"] is True
+    assert body["positions"][0]["local_mirror"] is False
+
+    positions = client.get(f"/v2/positions?account_id={GATE_PAPER_ACCOUNT_ID}")
+    assert positions.status_code == 200, positions.text
+    position_body = positions.json()
+    assert position_body["positions_source"] == "GATE_REMOTE_PRIVATE_API_SNAPSHOT"
+    assert [position["symbol"] for position in position_body["positions"]] == ["ETHUSDT"]
 
 
 def test_gate_credentials_are_encrypted_and_scoped_per_account(tmp_path, monkeypatch):
@@ -426,14 +493,20 @@ def test_gate_testnet_trade_plan_stays_remote_and_preserves_scope(tmp_path):
     assert result["reason"] == "EXTERNAL_EXECUTION_REQUIRES_SEPARATE_AUTHORIZATION_AND_ADAPTER"
     assert result["mode"] == "TESTNET"
     assert result["venue"] == "gate"
+    # Gate TestNet positions are owned by the remote private API.  The fill is
+    # retained as an audit record, but must not create a local position mirror.
     assert AccountLedger(store).get_open_positions(
         GATE_PAPER_ACCOUNT_ID, venue="gate", mode="TESTNET"
-    )
+    ) == []
     with store._connect() as db:
         assert db.execute(
             "SELECT COUNT(*) FROM trade_fills WHERE account_id=? AND mode=? AND venue=?",
             (GATE_PAPER_ACCOUNT_ID, "TESTNET", "gate"),
         ).fetchone()[0] == 1
+        assert db.execute(
+            "SELECT COUNT(*) FROM simulated_positions WHERE account_id=? AND mode=? AND venue=?",
+            (GATE_PAPER_ACCOUNT_ID, "TESTNET", "gate"),
+        ).fetchone()[0] == 0
 
     # The persisted plan is not addressable through the other Gate account.
     with pytest.raises(TraderCapabilityError) as error:

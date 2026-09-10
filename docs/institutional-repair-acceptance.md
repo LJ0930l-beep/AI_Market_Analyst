@@ -1,14 +1,14 @@
 # AI Market Analyst 机构量化审计修复验收记录
 
-> **当前 main 权威复核（2026-09-10）**：本节优先于本文保留的历史验收快照。审验基线 HEAD 为 `3700bc63d4e35df1f0e2b2ec86beeb5d889a2889`，实现提交 `5b2bef62471f640a72da26965eb92f7fd1e8b5ff` 已推送到 `origin/main`；四个版本来源均为 `2.0.0`。V1.7 仅被核对，没有改版本号。
+> **当前 main 权威复核（2026-09-10）**：本节优先于本文保留的历史验收快照。源码复核基于 `97b1b94228e62d24530a75348e352c4b0d2305c1` 及其后的未提交修复工作树；四个版本来源均为 `2.0.0`。V1.7 仅被核对，没有改版本号。
 
 ## 本轮复核摘要
 
-本轮以当前 `main` 的源码和工作区为基线直接复核，保留用户既有改动，不做 reset/checkout/clean，不运行 `scripts/direct_install.ps1`；在原程序已停止的前提下，用当前 MSVC NSIS 包完成 current-user 安装，并按用户后续明确要求将交付清单提交/推送到 `origin/main`（实现提交 `5b2bef62471f640a72da26965eb92f7fd1e8b5ff`）。未访问业务数据库、私有 Gate 凭证或真实订单；安装后仅完成只读健康核验。
+本轮以当前 `main` 的源码和工作区为基线直接复核，保留用户既有改动，不做 reset/checkout/clean，不运行 `scripts/direct_install.ps1`；已在隔离临时 SQLite 上使用用户明确授权的 Gate TestNet 凭证完成一次真实开平，未访问业务数据库或 Live 账户。当前安装版只做过只读健康核验，未宣称已激活本轮源代码修复。
 
 | 项目 | 结果 |
 |---|---|
-| 后端完整 pytest | `370 passed, 1 skipped, 1 warning` |
+| 后端完整 pytest | `374 passed, 1 skipped, 1 warning` |
 | 前端 | `22 files / 98 tests`、typecheck/lint/build 全部 PASS |
 | 隔离机构验收脚本 | `4/4 PASS` |
 | Gate 公共 HTTP | TestNet 200/63 contracts；Live 200/977 contracts；只读公开接口 |
@@ -20,8 +20,8 @@
 ### 当前验收边界
 
 - `gate_testnet` 是唯一权威 Gate TestNet 账户；`gate_paper` 只接受为历史输入别名，不再指向本地 PAPER 撮合。`gate_live` 独立保存元数据，发布锁保持 `LOCKED`。
-- Gate 远端余额/保证金/持仓/挂单/成交由账户作用域 adapter 和 `GateAccountTruthService` 读取、记录、镜像；镜像不生成 `trade_fills`，不把本地初始资金当成远端权益。
-- 独立 TestNet E2E 已实现“确认→真实 entry→远端回执→持仓/保护→可选 reduce-only 清理→远端归零→撤保护”的步骤、超时、幂等与故障关闭，但因没有用户凭证，本轮只通过隔离 fake adapter，真实私有端点和真实订单为 `NOT_ATTEMPTED`。
+- Gate 远端余额/保证金/持仓/挂单/成交由账户作用域 adapter 和 `GateAccountTruthService` 读取并记录为审计快照；不创建或更新 Gate 的本地 `simulated_positions`，不把本地初始资金当成远端权益。
+- 独立 TestNet E2E 已实现“确认→真实 entry→远端回执→持仓/保护→reduce-only 清理→远端归零→撤保护”的步骤、超时、幂等与故障关闭。本轮已用用户明确提供的 TestNet 凭证完成 `ETHUSDT` 1 张真实开平；既有 BTC 仓位未触碰，Live 未访问。
 - AI 运行阶段区分 `SYSTEM_BLOCKED`、`MODEL WAIT`、风险拒绝和执行结果；真实 Ollama 9B digest/响应/延迟可被保存。Qwen smoke 不是固定评测集、影子账户或真实交易表现证明。
 - Ollama 兼容修复只对服务端明确 `failed to parse grammar` 的 Schema 拒绝使用 JSON mode + 本地严格校验；普通错误仍失败关闭，证据带 `schema_enforcement`。
 
@@ -37,9 +37,23 @@
 | R06 | `PASS_ISOLATED` | TradeLifecycle、SHORT MAE/MFE、费用守恒、反事实 | 真实深度/资金费/费用源按字段标记 |
 | R07 | `PASS_ISOLATED_UI` | 统一账本投影、AI stage trace、GET 纯读、98 前端测试 | UI 已构建，未安装到当前用户程序 |
 | R08 | `PASS_ISOLATED` | v3 research cancel、资格与持久化全量回归 | 未接入付费数据不阻断其他实现 |
-| R09 | `PASS_ISOLATED` | Decimal/Guardian/租约/风险预留、TestNet E2E fake chain | 私有 Gate 凭证缺失，真实订单未尝试 |
+| R09 | `PASS_ISOLATED_WITH_REAL_TESTNET_CYCLE` | Decimal/Guardian/租约/风险预留、远端仓位投影、TestNet E2E 与真实 ETHUSDT 开平 | Live 私有 API 未访问；真实成交仅证明 TestNet 链路，不证明策略表现 |
 | R10 | `PASS_LOCAL_WITH_REAL_SMOKE` | digest 目标选择、Ollama grammar fallback、stage/model provenance | 未做固定 eval、forward shadow、效果结论 |
-| R11 | `PASS_LOCAL_WITH_MSVC_BUILD` | 脱敏、Origin、outbox、compileall、ruff F821、cargo check、MSVC NSIS、current-user install | 生产/真实 TestNet 运维未运行；LIVE 仍锁定 |
+| R11 | `PASS_LOCAL_WITH_MSVC_BUILD` | 脱敏、Origin、outbox、compileall、ruff F821、cargo check、MSVC NSIS、current-user install、真实 TestNet 清理验收 | 生产运维未运行；LIVE 仍锁定 |
+
+### 真实 Gate TestNet 开平证据
+
+本次真实回归使用账户作用域 `gate_testnet`、隔离临时 SQLite 和一次性幂等键，选取远端无本次测试仓位的 `ETHUSDT`，自动采用 Gate 最小可交易数量 `1` 张。结果如下：
+
+| 阶段 | 结果 |
+|---|---|
+| 只读凭证/账户事实 | `VERIFIED_READ_ONLY`，远端状态 `AVAILABLE` |
+| 多单开仓 | `FILLED`，1 张 |
+| 远端止盈止损 | `PROTECTED` |
+| reduce-only 平仓 | `FILLED`，1 张 |
+| 最终对账 | `ETHUSDT` 远端仓位 `0`、挂单 `0` |
+
+本次只使用 TestNet；凭证未写入源码、文档、证据或日志。本地旧 `simulated_positions` 历史行未删除，但不再作为 Gate TestNet 的活动事实源；本次测试没有触碰账户原有 BTC 仓位。该证据不扩大为 Live 授权、生产运维或收益保证。
 
 Sol 仍需独立复核并决定里程碑签收；本文件不把开发者验证写成生产发布批准。
 

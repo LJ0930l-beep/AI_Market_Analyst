@@ -391,13 +391,15 @@ def build_institutional_dashboard(
         if not account_rows:
             raise ValueError(f"ACCOUNT_NOT_FOUND: Account '{account_id}' is not registered")
         account_row = account_rows[0]
+        account_config = _json(account_row.get("config_json"))
+        is_gate_testnet = str(account_config.get("account_type") or "").upper() == "GATE_TESTNET"
         fill_source_rows = _rows(db, "trade_fills", "SELECT * FROM trade_fills WHERE account_id=? ORDER BY COALESCE(event_at, created_at), fill_id", (account_id,))
         order_source_rows = _rows(db, "order_intents", "SELECT * FROM order_intents WHERE account_id=? ORDER BY created_at, intent_id", (account_id,))
         # Read legacy rows with a plain nullable-account predicate first.  A
         # malformed legacy payload must become an excluded/unknown row below,
         # never a SQLite JSON1 exception that turns a read-only dashboard GET
         # into HTTP 500.
-        position_source_rows = _rows(db, "simulated_positions", "SELECT * FROM simulated_positions WHERE account_id=? OR account_id IS NULL ORDER BY updated_at, position_id", (account_id,))
+        position_source_rows = [] if is_gate_testnet else _rows(db, "simulated_positions", "SELECT * FROM simulated_positions WHERE account_id=? OR account_id IS NULL ORDER BY updated_at, position_id", (account_id,))
         candidate_source_rows = _rows(db, "ai_strategy_candidates", "SELECT * FROM ai_strategy_candidates WHERE account_id=? ORDER BY closed_15m_bar, candidate_id", (account_id,))
         cycle_source_rows = _rows(db, "ai_led_cycles", "SELECT * FROM ai_led_cycles WHERE account_id=? ORDER BY COALESCE(scheduled_at, created_at), cycle_id", (account_id,))
         memory_source_rows = _rows(db, "ai_decision_memory", "SELECT * FROM ai_decision_memory WHERE account_id=? ORDER BY decision_at, memory_id", (account_id,))

@@ -1682,6 +1682,36 @@
   overflow-wrap: anywhere;
 }
 
+.v2-ai-remote-grid small {
+  color: var(--text-muted);
+  font: 10px var(--data);
+  overflow-wrap: anywhere;
+}
+
+.v2-ai-cycle-verdict {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--warning);
+  border-radius: 6px;
+  background: rgba(6, 8, 14, 0.52);
+}
+
+.v2-ai-cycle-verdict--blocked { border-left-color: var(--short); }
+.v2-ai-cycle-verdict--model { border-left-color: var(--long); }
+
+.v2-ai-cycle-verdict strong {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.v2-ai-cycle-verdict span {
+  color: var(--text-muted);
+  font: 11px/1.45 var(--data);
+  overflow-wrap: anywhere;
+}
+
 .v2-ai-remote-meta {
   justify-content: flex-start;
   line-height: 1.5;

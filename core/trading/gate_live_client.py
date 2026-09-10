@@ -43,8 +43,14 @@ def _map_gate_error(exc: BaseException) -> Dict[str, str]:
         return {"code": "GATE_NETWORK_TIMEOUT", "message_zh": "Gate 请求超时，未确认账户状态；请稍后重试。"}
     if "network" in name or "connection" in message or "dns" in message or "tls" in message or "ssl" in message or "unreachable" in message:
         return {"code": "GATE_NETWORK_UNAVAILABLE", "message_zh": "无法连接 Gate 当前环境，请检查网络、DNS 或 TLS 后重试。"}
-    if "badrequest" in name or "environment" in message or "testnet" in message and "live" in message:
+    # Do not turn every Gate/CCXT 400 into an environment mismatch.  Gate
+    # uses BadRequest for ordinary parameter errors too (for example an
+    # overlong client ``text``), and that false diagnosis makes a valid
+    # TestNet credential look unusable.
+    if "environment" in message or "sandbox" in message or ("testnet" in message and "live" in message):
         return {"code": "GATE_ENVIRONMENT_MISMATCH", "message_zh": "Gate 凭证与请求环境不匹配；TestNet 与 Live Key 不能互用。"}
+    if "badrequest" in name or "invalid_param" in message or "invalid parameter" in message:
+        return {"code": "GATE_REMOTE_BAD_REQUEST", "message_zh": "Gate 拒绝了请求参数，请按远端合约规则修正后重试。"}
     return {"code": "GATE_REMOTE_ERROR", "message_zh": "Gate 返回了未识别的错误，请查看环境、权限和接口类型后重试。"}
 
 
@@ -263,7 +269,12 @@ class GateLiveTrader:
                     "api_environment": self.api_environment,
                     "endpoint": endpoint,
                 }
-            values = {key: _optional_float(usdt_info.get(key)) for key in ("total", "free", "used")}
+            normalized = self._normalize_futures_balance(balance, usdt_info)
+            values = {
+                "total": normalized.get("total"),
+                "free": normalized.get("free"),
+                "used": normalized.get("used"),
+            }
             return {
                 "valid": True,
                 "status": "VERIFIED_READ_ONLY",
@@ -300,35 +311,13 @@ class GateLiveTrader:
             observed_at = datetime.now(timezone.utc).isoformat()
             if not isinstance(usdt, dict):
                 raise ValueError("GATE_BALANCE_SCHEMA_INVALID")
-            account_info = balance.get("info") if isinstance(balance.get("info"), dict) else {}
-            history = account_info.get("history") if isinstance(account_info.get("history"), dict) else {}
-
-            def first_number(*values: Any) -> Optional[float]:
-                for value in values:
-                    parsed = _optional_float(value)
-                    if parsed is not None:
-                        return parsed
-                return None
-
-            total = first_number(usdt.get("total"), account_info.get("total"), balance.get("total"))
-            free = first_number(usdt.get("free"), account_info.get("available"), account_info.get("free"), balance.get("free"))
-            used = first_number(usdt.get("used"), account_info.get("used"), balance.get("used"))
-            if used is None and total is not None and free is not None:
-                used = total - free
-            unrealized = first_number(
-                account_info.get("unrealized_pnl"),
-                account_info.get("unrealised_pnl"),
-                usdt.get("unrealized_pnl"),
-                usdt.get("unrealised_pnl"),
-            )
-            realized = first_number(
-                account_info.get("realized_pnl"),
-                account_info.get("realised_pnl"),
-                history.get("pnl"),
-            )
-            equity = first_number(account_info.get("equity"), usdt.get("equity"), balance.get("equity"))
-            if equity is None and total is not None and unrealized is not None:
-                equity = total + unrealized
+            normalized = self._normalize_futures_balance(balance, usdt)
+            total = normalized.get("total")
+            free = normalized.get("free")
+            used = normalized.get("used")
+            unrealized = normalized.get("unrealized_pnl")
+            realized = normalized.get("realized_pnl")
+            equity = normalized.get("equity")
             values = {"total": total, "free": free, "used": used}
             return {
                 "configured": True,
@@ -339,6 +328,11 @@ class GateLiveTrader:
                 "equity": equity,
                 "unrealized_pnl": unrealized,
                 "realized_pnl": realized,
+                "position_margin": normalized.get("position_margin"),
+                "order_margin": normalized.get("order_margin"),
+                "equity_basis": normalized.get("equity_basis"),
+                "available_margin_basis": normalized.get("available_margin_basis"),
+                "used_margin_basis": normalized.get("used_margin_basis"),
                 "source": "gate_futures_account_balance",
             }
         except Exception as exc:
@@ -354,6 +348,110 @@ class GateLiveTrader:
                 "free": None,
                 "used": None,
             }
+
+    @staticmethod
+    def _normalize_futures_balance(balance: Dict[str, Any], usdt: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize Gate's native futures account response without CCXT inference.
+
+        Gate's futures response is returned by CCXT in ``info`` as a one-item
+        list.  The common CCXT balance parser intentionally maps ``used`` from
+        ``freeze``/``locked``; those fields are absent on Gate futures and can
+        therefore produce a nonsensical negative ``total - free`` value.  The
+        native margin fields are the authority here.
+        """
+
+        raw = balance.get("info")
+        account_info: Dict[str, Any] = {}
+        if isinstance(raw, dict):
+            account_info = raw
+        elif isinstance(raw, list):
+            candidates = [item for item in raw if isinstance(item, dict)]
+            account_info = next(
+                (item for item in candidates if str(item.get("currency") or "").upper() == "USDT"),
+                candidates[0] if candidates else {},
+            )
+
+        def first_number(*values: Any) -> Optional[float]:
+            for value in values:
+                parsed = _optional_float(value)
+                if parsed is not None:
+                    return parsed
+            return None
+
+        total = first_number(account_info.get("total"), usdt.get("total"), balance.get("total"))
+        free = first_number(
+            account_info.get("available"),
+            account_info.get("cross_available"),
+            account_info.get("total_available_margin"),
+            usdt.get("free"),
+            balance.get("free"),
+        )
+        unrealized = first_number(
+            account_info.get("unrealized_pnl"),
+            account_info.get("unrealised_pnl"),
+            usdt.get("unrealized_pnl"),
+            usdt.get("unrealised_pnl"),
+        )
+        history = account_info.get("history") if isinstance(account_info.get("history"), dict) else {}
+        realized = first_number(
+            account_info.get("realized_pnl"),
+            account_info.get("realised_pnl"),
+            history.get("pnl"),
+        )
+
+        position_margin = first_number(
+            account_info.get("position_margin"),
+            account_info.get("cross_initial_margin"),
+            account_info.get("init_margin"),
+        )
+        order_margin = first_number(account_info.get("order_margin"))
+        if order_margin is None:
+            bid_margin = first_number(account_info.get("bid_order_margin"))
+            ask_margin = first_number(account_info.get("ask_order_margin"))
+            if bid_margin is not None or ask_margin is not None:
+                order_margin = (bid_margin or 0.0) + (ask_margin or 0.0)
+        margin_components = [value for value in (position_margin, order_margin) if value is not None]
+        if margin_components:
+            # Margin is a non-negative reserved quantity.  Do not let a
+            # malformed provider sign turn used margin into a negative risk.
+            used = sum(max(0.0, value) for value in margin_components)
+            used_basis = "GATE_NATIVE_POSITION_PLUS_ORDER_MARGIN"
+        else:
+            native_used = first_number(account_info.get("used"), account_info.get("margin_used"), usdt.get("used"), balance.get("used"))
+            used = native_used if native_used is not None and native_used >= 0 else None
+            used_basis = "GATE_NATIVE_USED" if used is not None else "UNKNOWN_NATIVE_MARGIN"
+
+        explicit_equity = first_number(
+            account_info.get("equity"),
+            account_info.get("cross_margin_balance"),
+            account_info.get("total_margin_balance"),
+            account_info.get("unified_account_total_equity"),
+        )
+        if explicit_equity is not None:
+            equity = explicit_equity
+            equity_basis = "GATE_NATIVE_EQUITY"
+        elif total is not None and unrealized is not None:
+            # Gate documents ``total`` as historical/account balance and
+            # exposes current unrealised PNL separately.
+            equity = total + unrealized
+            equity_basis = "GATE_TOTAL_PLUS_UNREALISED_PNL"
+        else:
+            equity = total
+            equity_basis = "GATE_TOTAL_ONLY" if total is not None else "UNKNOWN_EQUITY"
+
+        return {
+            "total": total,
+            "free": free,
+            "used": used,
+            "equity": equity,
+            "unrealized_pnl": unrealized,
+            "realized_pnl": realized,
+            "position_margin": position_margin,
+            "order_margin": order_margin,
+            "equity_basis": equity_basis,
+            "available_margin_basis": "GATE_NATIVE_AVAILABLE" if free is not None else "UNKNOWN_AVAILABLE_MARGIN",
+            "used_margin_basis": used_basis,
+        }
 
     def get_positions(self) -> List[Dict[str, Any]]:
         """Retrieve real open futures positions."""
@@ -531,13 +629,24 @@ class GateLiveTrader:
         precision = dict(market.get("precision") or {})
         limits = dict(market.get("limits") or {})
         amount_limits = dict(limits.get("amount") or {})
+        raw_info = market.get("info") if isinstance(market.get("info"), dict) else {}
         contract_size = _optional_float(market.get("contractSize"))
-        amount_step = _optional_float(precision.get("amount") or amount_limits.get("step"))
-        amount_min = _optional_float(amount_limits.get("min"))
-        amount_max = _optional_float(amount_limits.get("max"))
+        # Gate futures amounts are contract counts.  In CCXT's Gate market
+        # map ``precision.amount`` is a tick size (BTC/USDT:USDT is 1), not a
+        # number of decimal places.  Prefer an explicit limit step, then the
+        # native Gate order-size bounds, and only then the CCXT precision.
+        amount_step = _optional_float(
+            amount_limits.get("step")
+            or raw_info.get("order_size_min")
+            or precision.get("amount")
+        )
+        amount_min = _optional_float(amount_limits.get("min") or raw_info.get("order_size_min"))
+        amount_max = _optional_float(amount_limits.get("max") or raw_info.get("order_size_max"))
         price_tick = _optional_float(precision.get("price"))
         if contract_size is None or amount_step is None or amount_min is None or amount_max is None or price_tick is None:
             raise ValueError("GATE_MARKET_METADATA_INCOMPLETE")
+        if amount_step <= 0 or amount_min <= 0 or amount_max < amount_min:
+            raise ValueError("GATE_MARKET_METADATA_INVALID")
         return {
             "symbol": str(symbol).strip().upper(),
             "native_symbol": str(market.get("id") or exchange_symbol),
@@ -547,6 +656,8 @@ class GateLiveTrader:
             "contractSize": contract_size,
             "precision": {"amount": amount_step, "price": price_tick},
             "limits": {"amount": {"step": amount_step, "min": amount_min, "max": amount_max}},
+            "amount_unit": "CONTRACTS",
+            "amount_semantics": "Gate futures order amount is an integer/step contract count, not base-asset quantity.",
             "taker": _optional_float(market.get("taker")) if market.get("taker") is not None else None,
             "maker": _optional_float(market.get("maker")) if market.get("maker") is not None else None,
             "active": bool(market.get("active", True)),
@@ -694,11 +805,11 @@ class GateLiveTrader:
             "api_environment": self.api_environment,
             "endpoint": self.api_base_url,
             "observed_at": balance.get("observed_at") or datetime.now(timezone.utc).isoformat(),
-             "equity": balance.get("equity") if balance.get("equity") is not None else balance.get("total"),
+            "equity": balance.get("equity"),
             "available_margin": balance.get("free"),
             "used_margin": balance.get("used"),
-             "unrealized_pnl": balance.get("unrealized_pnl") if balance.get("unrealized_pnl") is not None else unrealized,
-             "realized_pnl": balance.get("realized_pnl"),
+            "unrealized_pnl": balance.get("unrealized_pnl") if balance.get("unrealized_pnl") is not None else unrealized,
+            "realized_pnl": balance.get("realized_pnl"),
             "balance": balance,
             "positions": positions,
             "pending_orders": pending_orders,
@@ -851,7 +962,11 @@ class GateLiveTrader:
             if client_order_id:
                 # Gate futures calls the client correlation field ``text``;
                 # keep the local intent id in a Gate-compatible namespace.
-                params["text"] = client_order_id if str(client_order_id).startswith("t-") else f"t-{client_order_id}"
+                gate_text = client_order_id if str(client_order_id).startswith("t-") else f"t-{client_order_id}"
+                # Gate v4 limits the client text field to 28 characters.
+                # Truncate only this transport correlation value; the full
+                # id remains in the local receipt/audit record.
+                params["text"] = str(gate_text)[:28]
             if reduce_only:
                 # CCXT's unified field is translated to Gate's native
                 # ``reduce_only`` request field by gate.create_order_request.

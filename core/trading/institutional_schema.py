@@ -100,6 +100,7 @@ def ensure_institutional_trader_schema(db: sqlite3.Connection) -> None:
             used_margin TEXT,
             unrealized_pnl TEXT,
             realized_pnl TEXT,
+            balance_json TEXT NOT NULL DEFAULT '{}',
             positions_json TEXT NOT NULL DEFAULT '[]',
             pending_orders_json TEXT NOT NULL DEFAULT '[]',
             fills_json TEXT NOT NULL DEFAULT '[]',

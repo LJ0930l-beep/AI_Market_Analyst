@@ -125,6 +125,9 @@ class GateTestnetE2EBody(BaseModel):
     account_id: str = Field(min_length=1, max_length=100)
     symbol: str = Field(min_length=1, max_length=40)
     side: str = Field(pattern="^(LONG|SHORT)$")
+    # Gate futures use contract counts.  Omit to use the exchange-reported
+    # minimum; when supplied it is checked against the remote contract step.
+    amount: float | None = Field(default=None, gt=0)
     stop_type: str = Field(default="PRICE", pattern="^(PRICE|PERCENT|ATR)$")
     stop_value: float | None = None
     take_profit_type: str = Field(default="PRICE", pattern="^(PRICE|PERCENT|ATR)$")
@@ -363,6 +366,104 @@ def router_for(get_store, get_runtime, get_translation):
             venue = "gate"
         return mode, venue
 
+    def gate_remote_position_records(store, account_id: str) -> tuple[list[dict[str, Any]], str]:
+        """Project the latest Gate snapshot for read-only API consumers.
+
+        Managed Gate TestNet positions are exchange facts.  Historical
+        ``simulated_positions`` rows remain available for audit, but they must
+        never be returned as active workspace positions after the account was
+        switched to remote authority.  A missing or unavailable snapshot is
+        reported as a status so callers can render UNKNOWN instead of an
+        invented empty account.
+        """
+
+        latest = GateAccountTruthService(store).latest(account_id)
+        if latest is None:
+            return [], "NOT_READ"
+        status = str(latest.get("status") or "UNKNOWN").upper()
+        if status != "AVAILABLE":
+            return [], status
+        raw_positions = latest.get("positions") if isinstance(latest.get("positions"), list) else []
+        pending_orders = latest.get("pending_orders") if isinstance(latest.get("pending_orders"), list) else []
+        result: list[dict[str, Any]] = []
+
+        def compact_symbol(value: Any) -> str:
+            compact = "".join(character for character in str(value or "").upper() if character.isalnum())
+            # CCXT renders linear Gate contracts as ``BASE/USDT:USDT``;
+            # the second USDT is the settlement suffix, not part of the
+            # user-facing instrument symbol.
+            return compact[:-4] if compact.endswith("USDTUSDT") else compact
+
+        def positive(value: Any) -> float | None:
+            try:
+                parsed = Decimal(str(value))
+            except (TypeError, ValueError):
+                return None
+            if not parsed.is_finite() or parsed <= 0:
+                return None
+            return float(parsed)
+
+        for raw in raw_positions:
+            if not isinstance(raw, dict):
+                continue
+            contracts = positive(raw.get("contracts", raw.get("size")))
+            side = str(raw.get("side") or "").upper()
+            symbol = compact_symbol(raw.get("symbol"))
+            if contracts is None or side not in {"LONG", "SHORT"} or not symbol:
+                continue
+            close_side = "SELL" if side == "LONG" else "BUY"
+            protection_order = next(
+                (
+                    order
+                    for order in pending_orders
+                    if isinstance(order, dict)
+                    and bool(order.get("reduce_only"))
+                    and str(order.get("side") or "").upper() == close_side
+                    and positive(order.get("stop_price")) is not None
+                    and compact_symbol(order.get("symbol")) == symbol
+                ),
+                None,
+            )
+            stop = raw.get("stop_price") or raw.get("stop_loss")
+            if stop is None and isinstance(protection_order, dict):
+                stop = protection_order.get("stop_price")
+            position_id = raw.get("position_id")
+            if not position_id:
+                # This is a stable UI/read-model key, not a fabricated
+                # exchange position id.  Close requests use the reconciled
+                # symbol/side/amount from the current remote account read.
+                position_id = f"remote:{account_id}:{symbol}:{side}"
+            result.append(
+                {
+                    "account_id": account_id,
+                    "venue": "gate",
+                    "mode": "TESTNET",
+                    "symbol": symbol,
+                    "status": "OPEN",
+                    "position_id": position_id,
+                    "position_id_source": "GATE_REMOTE" if raw.get("position_id") else "DERIVED_READ_MODEL_KEY",
+                    "side": side,
+                    "entry": raw.get("entry_price"),
+                    "entry_price": raw.get("entry_price"),
+                    "stop": stop,
+                    "stop_loss": stop,
+                    "targets": raw.get("targets") if isinstance(raw.get("targets"), list) else [],
+                    "remaining_contracts": contracts,
+                    "filled_contracts": contracts,
+                    "realized_pnl": raw.get("realized_pnl"),
+                    "unrealized_pnl": raw.get("unrealized_pnl"),
+                    "mark_price": raw.get("mark_price"),
+                    "contract_size": raw.get("contract_size"),
+                    "protected": protection_order is not None,
+                    "protection_status": "ACTIVE" if protection_order is not None else "UNKNOWN",
+                    "local_mirror": False,
+                    "remote_truth": True,
+                    "source": "GATE_REMOTE_PRIVATE_API_SNAPSHOT",
+                    "observed_at": latest.get("observed_at"),
+                }
+            )
+        return result, status
+
     def trader_capabilities(store, runtime=None) -> TraderCapabilityService:
         """Construct the durable trader product facade for this request.
 
@@ -521,7 +622,16 @@ def router_for(get_store, get_runtime, get_translation):
                 result.append(payload)
             return result
 
-        scoped_positions = scoped_records("simulated_positions")
+        gate_remote_scope = False
+        if account_id and is_managed_gate_account(store, account_id):
+            gate_remote_scope = get_gate_account_profile(store, account_id)["mode"] == TradingMode.TESTNET.value
+        if gate_remote_scope:
+            scoped_positions, positions_data_status = gate_remote_position_records(store, account_id)
+            positions_source = "GATE_REMOTE_PRIVATE_API_SNAPSHOT"
+        else:
+            scoped_positions = scoped_records("simulated_positions")
+            positions_data_status = "AVAILABLE"
+            positions_source = "LOCAL_LEDGER"
         scoped_position_ids = {item.get("position_id") for item in scoped_positions}
         scoped_events = scoped_records("simulation_events", scoped_position_ids)
         subscriptions = store.list_strategy_subscriptions()
@@ -575,6 +685,9 @@ def router_for(get_store, get_runtime, get_translation):
             "runtime": runtime_status,
             "decisions": scoped_records("agent_trade_decisions"),
             "positions": scoped_positions,
+            "positions_source": positions_source,
+            "positions_data_status": positions_data_status,
+            "positions_remote_truth": gate_remote_scope and positions_data_status == "AVAILABLE",
             "execution_events": scoped_events,
             "risk_cockpit": risk_cockpit,
             "account_id": account_id,
@@ -1573,6 +1686,57 @@ def router_for(get_store, get_runtime, get_translation):
         if body.dry_run is True and trader is not None:
             trader.live_trading_enabled = False
 
+        # The normal Gate order endpoint must carry a fresh executable quote
+        # into the same gateway as the dedicated TestNet acceptance path.
+        # Without this read, the UI's real order/close button reached the
+        # gateway with no market snapshot and was rejected before the adapter
+        # could act.  Metadata is advisory for reduce-only recovery but is
+        # required by the gateway before sizing a new remote exposure.
+        market_snapshot = None
+        if trader is not None and mode in (TradingMode.TESTNET, TradingMode.LIVE):
+            try:
+                ticker = trader.get_ticker(body.symbol)
+                if isinstance(ticker, dict) and ticker.get("status") == "AVAILABLE":
+                    last = float(ticker.get("last"))
+                    if math.isfinite(last) and last > 0:
+                        metadata = {}
+                        try:
+                            candidate_metadata = trader.get_market_metadata(body.symbol)
+                            if isinstance(candidate_metadata, dict):
+                                metadata = candidate_metadata
+                        except Exception:
+                            # The remote adapter remains the final authority
+                            # for a reduction; openings fail closed below if
+                            # the required contract/cost facts are absent.
+                            metadata = {}
+                        bid = ticker.get("bid")
+                        ask = ticker.get("ask")
+                        spread_parts = []
+                        try:
+                            if bid is not None and float(bid) > 0:
+                                spread_parts.append(abs(last - float(bid)) / last)
+                            if ask is not None and float(ask) > 0:
+                                spread_parts.append(abs(float(ask) - last) / last)
+                        except (TypeError, ValueError, OverflowError):
+                            spread_parts = []
+                        market_snapshot = {
+                            "price": last,
+                            "last": last,
+                            "bid": float(bid) if bid is not None else None,
+                            "ask": float(ask) if ask is not None else None,
+                            "data_as_of": ticker.get("observed_at") or datetime.now(timezone.utc).isoformat(),
+                            "received_at": datetime.now(timezone.utc).isoformat(),
+                            "fresh": True,
+                            "executable": True,
+                            "freshness_status": "FRESH",
+                            "stale_after_seconds": 120,
+                            "slippage": max(spread_parts) if spread_parts else None,
+                            "market": metadata,
+                            "source": "gate_private_ticker_and_market_metadata",
+                        }
+            except Exception:
+                market_snapshot = None
+
         gateway = getattr(runtime, "execution_gateway", None) if runtime is not None else ExecutionGateway(store)
         if not body.reduce_only:
             if runtime is None:
@@ -1582,7 +1746,7 @@ def router_for(get_store, get_runtime, get_translation):
             if runtime_account != body.account_id or not runtime_status.get("active") or runtime_status.get("execution_blocked") or not (runtime_status.get("lease") or {}).get("valid", False):
                 raise HTTPException(status_code=409, detail="RUNTIME_EXECUTION_BLOCKED: start the requested account session before submitting new external risk")
         try:
-            return gateway.submit_intent(intent, trader_client=trader)
+            return gateway.submit_intent(intent, trader_client=trader, market_snapshot=market_snapshot)
         except GatewayError as gw_err:
             raise HTTPException(
                 status_code=gw_err.status_code,
@@ -2167,9 +2331,16 @@ def router_for(get_store, get_runtime, get_translation):
                         except Exception:
                             config = {}
                         account_type = str(config.get("account_type") or "").upper()
+                        initial_deposit_source = "LOCAL_ACCOUNT_LEDGER"
                         if account_type == GATE_TESTNET_ACCOUNT_TYPE:
                             mode = "TESTNET"
                             venue = "gate"
+                            # The persisted compatibility row may contain an
+                            # old local seed (for example 10000).  It is not
+                            # an exchange fact and must never be displayed as
+                            # TestNet equity or starting capital.
+                            deposit = None
+                            initial_deposit_source = "REMOTE_GATE_TESTNET_PRIVATE_API"
                         elif account_type == "GATE_LIVE":
                             mode = "LIVE"
                             venue = "gate"
@@ -2204,6 +2375,7 @@ def router_for(get_store, get_runtime, get_translation):
                             "account_type": account_type or None,
                             "currency": curr,
                             "initial_deposit": deposit,
+                            "initial_deposit_source": initial_deposit_source,
                             "status": status,
                             "capabilities": caps,
                             "checked_at": datetime.now(timezone.utc).isoformat(),
@@ -2622,6 +2794,25 @@ def router_for(get_store, get_runtime, get_translation):
             return {"positions": [], "count": 0, "scope_required": True}
         account_id = require_registered_account(store, account_id)
         expected_mode, expected_venue = account_execution_scope(store, account_id)
+        if is_managed_gate_account(store, account_id):
+            profile = get_gate_account_profile(store, account_id)
+            if profile["mode"] == TradingMode.TESTNET.value:
+                remote_positions, data_status = gate_remote_position_records(store, account_id)
+                if status:
+                    remote_positions = [
+                        position
+                        for position in remote_positions
+                        if str(position.get("status") or "").upper() == status.upper()
+                    ]
+                return {
+                    "positions": remote_positions,
+                    "count": len(remote_positions),
+                    "account_id": account_id,
+                    "scope_required": False,
+                    "data_status": data_status,
+                    "positions_source": "GATE_REMOTE_PRIVATE_API_SNAPSHOT",
+                    "remote_truth": data_status == "AVAILABLE",
+                }
         positions = []
         if hasattr(store, "_connect"):
             with store._connect() as db:

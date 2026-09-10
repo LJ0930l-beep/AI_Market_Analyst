@@ -12,7 +12,8 @@ from typing import Any
 from core.storage import SQLiteStore
 from core.trading.account_aliases import GATE_TESTNET_ACCOUNT_ID
 from core.trading.ai_led_engine import AICycleContext, AIActionOutput, AILedDecisionEngine
-from core.trading.execution_gateway import ExecutionGateway
+from core.trading.authorization import AuthorizationManager, ConfirmationSource
+from core.trading.execution_gateway import ExecutionGateway, OrderIntent, ProtectionPlan, TradingMode, DecisionPath
 from core.trading.gate_account_truth import GateAccountTruthService
 from core.trading.gate_live_client import GateLiveTrader
 from core.trading.gate_testnet_e2e import GateTestnetE2EService
@@ -20,6 +21,7 @@ from core.trading.gate_accounts import provision_default_gate_accounts
 from core.trading.ledger import AccountLedger
 from core.trading.position_guardian import PositionGuardian
 from core.trading.risk_engine import RiskEngine
+from core.trading.trader_capabilities import TraderCapabilityService
 
 
 def _store(tmp_path):
@@ -61,7 +63,7 @@ class _RemoteTruthTrader:
         return dict(self.truth)
 
 
-def test_gate_remote_truth_is_authoritative_and_mirror_is_not_a_fill(tmp_path):
+def test_gate_remote_truth_is_authoritative_and_no_local_mirror_is_written(tmp_path):
     store = _store(tmp_path)
     provision_default_gate_accounts(store)
     ledger = AccountLedger(store)
@@ -83,9 +85,31 @@ def test_gate_remote_truth_is_authoritative_and_mirror_is_not_a_fill(tmp_path):
     assert snapshot.remote_truth_status == "AVAILABLE"
     assert snapshot.net_equity == Decimal("50000.25")
     assert snapshot.available_margin == Decimal("48000.25")
-    assert ledger.get_open_positions(GATE_TESTNET_ACCOUNT_ID, venue="gate", mode="TESTNET")
+    assert ledger.get_open_positions(GATE_TESTNET_ACCOUNT_ID, venue="gate", mode="TESTNET") == []
     with store._connect() as db:
         assert db.execute("SELECT COUNT(*) FROM trade_fills").fetchone()[0] == 0
+        assert db.execute(
+            "SELECT COUNT(*) FROM simulated_positions WHERE account_id=? AND venue='gate' AND mode='TESTNET'",
+            (GATE_TESTNET_ACCOUNT_ID,),
+        ).fetchone()[0] == 0
+
+
+def test_gate_risk_cockpit_projects_latest_remote_equity_and_positions(tmp_path):
+    store = _store(tmp_path)
+    provision_default_gate_accounts(store)
+    now = datetime(2030, 1, 2, 12, 0, tzinfo=timezone.utc)
+    trader = _RemoteTruthTrader()
+    trader.truth["observed_at"] = now.isoformat()
+    GateAccountTruthService(store, clock=lambda: now).refresh(GATE_TESTNET_ACCOUNT_ID, trader)
+
+    cockpit = TraderCapabilityService(store, clock=lambda: now).risk_snapshot(GATE_TESTNET_ACCOUNT_ID)
+
+    assert cockpit["account_truth_authority"] == "REMOTE_GATE_TESTNET_PRIVATE_API"
+    assert cockpit["risk"]["net_equity"] == 50000.25
+    assert cockpit["ledger_snapshot"]["net_equity"] == "50000.25"
+    assert cockpit["positions"][0]["symbol"] == "BTCUSDT"
+    assert cockpit["positions"][0]["remote_truth"] is True
+    assert cockpit["capacity"]["basis"].startswith("REMOTE_GATE_TESTNET_PRIVATE_API")
 
 
 def test_gate_remote_truth_required_for_new_risk_but_not_reduce_only_boundary(tmp_path):
@@ -124,6 +148,142 @@ def test_gate_remote_truth_required_for_new_risk_but_not_reduce_only_boundary(tm
         max_portfolio_risk_fraction=Decimal("0.01"),
         max_cluster_risk_fraction=Decimal("0.01"),
     )
+
+
+def test_gate_gateway_open_and_reduce_only_use_remote_position_without_local_mirror(tmp_path, monkeypatch):
+    store = _store(tmp_path)
+    provision_default_gate_accounts(store)
+    ledger = AccountLedger(store)
+    now = datetime(2030, 1, 2, 12, 0, tzinfo=timezone.utc)
+
+    class RemoteOrderTrader:
+        testnet = True
+        live_trading_enabled = True
+
+        def __init__(self):
+            self.open = False
+
+        def get_market_metadata(self, symbol):
+            return {
+                "symbol": symbol,
+                "precision": {"amount": 1, "price": 0.5},
+                "limits": {"amount": {"step": 1, "min": 1, "max": 100}},
+                "contractSize": 1,
+                "taker": 0.0005,
+            }
+
+        def get_account_truth(self, *, include_trades=False):
+            return {
+                "status": "AVAILABLE",
+                "observed_at": now.isoformat(),
+                "equity": 1000.0,
+                "available_margin": 990.0 if self.open else 1000.0,
+                "used_margin": 10.0 if self.open else 0.0,
+                "positions": ([{
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "contracts": "1",
+                    "entry_price": "100",
+                    "mark_price": "100",
+                    "contract_size": "1",
+                    "position_id": "remote-gateway-pos",
+                }] if self.open else []),
+                "pending_orders": ([{
+                    "symbol": "BTCUSDT",
+                    "side": "SELL",
+                    "reduce_only": True,
+                    "stop_price": 99,
+                }] if self.open else []),
+                "fills": [],
+            }
+
+        def place_order(self, **kwargs):
+            if kwargs.get("reduce_only"):
+                self.open = False
+                return {"status": "FILLED", "order_id": "remote-close", "filled": kwargs["amount"], "amount": kwargs["amount"], "average_price": 101.0, "fee": 0.01, "contract_size": 1}
+            self.open = True
+            return {"status": "FILLED", "order_id": "remote-open", "filled": kwargs["amount"], "amount": kwargs["amount"], "average_price": 100.0, "fee": 0.01, "contract_size": 1, "protection_verified": True}
+
+    trader = RemoteOrderTrader()
+    monkeypatch.setattr("core.trading.gate_accounts.build_gate_trader", lambda _store, _account_id: trader)
+    auth = AuthorizationManager(store).grant_authorization(
+        account_id=GATE_TESTNET_ACCOUNT_ID,
+        venue="gate",
+        mode=TradingMode.TESTNET,
+        decision_path=DecisionPath.STRATEGY_DRIVEN,
+        allowed_instruments=["BTCUSDT"],
+        allowed_sides=["LONG"],
+        max_risk_fraction=Decimal("0.0025"),
+        max_leverage=2,
+        duration_seconds=3600,
+        confirmed_by=ConfirmationSource.LOCAL_USER_WIZARD,
+    )
+    market = {
+        "price": 100.0,
+        "data_as_of": now.isoformat(),
+        "received_at": now.isoformat(),
+        "fresh": True,
+        "executable": True,
+        "freshness_status": "FRESH",
+        "stale_after_seconds": 120,
+        "slippage": 0.001,
+        "market": trader.get_market_metadata("BTCUSDT"),
+    }
+    gateway = ExecutionGateway(store, ledger=ledger)
+    opened = gateway.submit_intent(
+        OrderIntent(
+            intent_id="remote-gateway-open",
+            idempotency_key="remote-gateway-open-idem",
+            account_id=GATE_TESTNET_ACCOUNT_ID,
+            mode=TradingMode.TESTNET,
+            environment="TESTNET",
+            venue="gate",
+            instrument_id="BTCUSDT",
+            side="LONG",
+            order_type="market",
+            quantity=1,
+            leverage=1,
+            protection_plan=ProtectionPlan(stop_price=99, take_profit=101),
+            authorization_id=auth.authorization_id,
+            authorization_version=auth.version,
+        ),
+        trader_client=trader,
+        market_snapshot=market,
+        now=now,
+    )
+    assert opened["status"] == "FILLED"
+    assert opened["protection_status"] == "ACTIVE"
+
+    closed = gateway.submit_intent(
+        OrderIntent(
+            intent_id="remote-gateway-close",
+            idempotency_key="remote-gateway-close-idem",
+            account_id=GATE_TESTNET_ACCOUNT_ID,
+            mode=TradingMode.TESTNET,
+            environment="TESTNET",
+            venue="gate",
+            instrument_id="BTCUSDT",
+            side="SELL",
+            order_type="market",
+            quantity=1,
+            reduce_only=True,
+            position_id="remote-gateway-pos",
+        ),
+        trader_client=trader,
+        market_snapshot=market,
+        now=now,
+    )
+    assert closed["status"] == "FILLED"
+    assert ledger.get_open_positions(GATE_TESTNET_ACCOUNT_ID, venue="gate", mode="TESTNET") == []
+    with store._connect() as db:
+        assert db.execute(
+            "SELECT COUNT(*) FROM simulated_positions WHERE account_id=? AND venue='gate' AND mode='TESTNET'",
+            (GATE_TESTNET_ACCOUNT_ID,),
+        ).fetchone()[0] == 0
+        assert db.execute(
+            "SELECT COUNT(*) FROM trade_fills WHERE account_id=? AND venue='gate' AND mode='TESTNET'",
+            (GATE_TESTNET_ACCOUNT_ID,),
+        ).fetchone()[0] == 2
 
 
 def test_ai_system_block_is_not_persisted_as_model_wait(tmp_path):
@@ -202,6 +362,36 @@ class _ReadOnlyExchange:
     def create_order(self, *args, **kwargs):
         self.create_order_calls += 1
         raise AssertionError("read-only connection test must never create an order")
+
+
+def test_gate_futures_balance_uses_native_margin_and_unrealised_pnl_fields():
+    class Exchange:
+        def fetch_balance(self):
+            return {
+                "USDT": {"total": 0.0, "free": 50153.16, "used": -50153.16},
+                "info": [{
+                    "currency": "USDT",
+                    "total": "1000",
+                    "available": "970",
+                    "position_margin": "25",
+                    "order_margin": "5",
+                    "unrealised_pnl": "-12.5",
+                    "history": {"pnl": "7.25"},
+                }],
+            }
+
+    trader = GateLiveTrader("key", "secret", testnet=True, exchange=Exchange(), live_trading_enabled=False)
+    balance = trader.get_account_balance()
+
+    assert balance["data_status"] == "AVAILABLE"
+    assert balance["total"] == 1000.0
+    assert balance["free"] == 970.0
+    assert balance["used"] == 30.0
+    assert balance["used"] >= 0
+    assert balance["equity"] == 987.5
+    assert balance["unrealized_pnl"] == -12.5
+    assert balance["realized_pnl"] == 7.25
+    assert balance["equity_basis"] == "GATE_TOTAL_PLUS_UNREALISED_PNL"
 
 
 def test_connection_test_is_read_only_and_does_not_create_authorization(tmp_path):
@@ -295,6 +485,7 @@ def test_gate_testnet_e2e_uses_remote_fill_and_cleans_without_local_fill(tmp_pat
     assert result["local_fill_created"] is False
     assert len(trader.calls) == 2
     assert trader.calls[1]["reduce_only"] is True
+    assert trader.calls[1]["leverage"] is None
     assert trader.canceled == ["sl-tp-1"]
     with store._connect() as db:
         assert db.execute("SELECT COUNT(*) FROM trade_fills").fetchone()[0] == 0

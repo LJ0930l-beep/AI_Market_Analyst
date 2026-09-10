@@ -257,6 +257,11 @@ class PositionGuardian:
                 if account_row is None:
                     return []
                 scope = resolve_account_scope(self.store, account_id) or {}
+                if str(scope.get("account_type") or "").upper() == "GATE_TESTNET":
+                    # Gate TestNet protection is observed and submitted by the
+                    # remote adapter.  This local Guardian only owns PAPER
+                    # positions and must not act on historical Gate mirrors.
+                    return []
                 expected_mode = str(scope.get("mode") or account_row["mode"]).upper()
                 expected_venue = str(
                     scope.get("venue")
@@ -345,6 +350,8 @@ class PositionGuardian:
         if account_row is None:
             return []
         scope = resolve_account_scope(self.store, account_id) or {}
+        if str(scope.get("account_type") or "").upper() == "GATE_TESTNET":
+            return []
         expected_mode = str(scope.get("mode") or account_row["mode"]).upper()
         expected_venue = str(
             scope.get("venue")
@@ -777,6 +784,8 @@ class PositionGuardian:
             if account_row is None:
                 return exits_executed
             scope = resolve_account_scope(self.store, scoped_account_id) or {}
+            if str(scope.get("account_type") or "").upper() == "GATE_TESTNET":
+                return exits_executed
             expected_mode = str(scope.get("mode") or account_row["mode"]).upper()
             expected_venue = str(
                 scope.get("venue")
@@ -1746,6 +1755,17 @@ class PositionGuardian:
                 ).fetchone()
                 if account_row is not None:
                     scope = resolve_account_scope(self.store, account_id) or {}
+                    if str(scope.get("account_type") or "").upper() == "GATE_TESTNET":
+                        return {
+                            "status": status,
+                            "last_heartbeat": last_hb.isoformat() if last_hb else None,
+                            "open_positions_count": 0,
+                            "unprotected_count": 0,
+                            "degraded_protection_count": 0,
+                            "protection_scope": self.account_id,
+                            "degraded_reason": degraded_reason,
+                            "checked_at": now.isoformat(),
+                        }
                     expected_mode = str(scope.get("mode") or account_row["mode"]).upper()
                     expected_venue = str(
                         scope.get("venue")

@@ -92,6 +92,9 @@ interface Workspace {
   runtime: MonitoringRuntimeStatus;
   decisions: DecisionRecord[];
   positions: PositionRecord[];
+  positions_source?: string;
+  positions_data_status?: string;
+  positions_remote_truth?: boolean;
   allow_unknown_macro: boolean;
   risk_cockpit?: RiskCockpit;
 }
@@ -481,6 +484,9 @@ interface GateAccountResponse {
   equity?: number | null;
   available_margin?: number | null;
   used_margin?: number | null;
+  equity_basis?: string | null;
+  available_margin_basis?: string | null;
+  used_margin_basis?: string | null;
   unrealized_pnl?: number | null;
   realized_pnl?: number | null;
   positions_status?: string;
@@ -510,11 +516,13 @@ interface GateTestnetE2EResponse {
   run_id?: string;
   account_id?: string;
   symbol?: string;
-  stages?: { stage?: string; status?: string; reason?: string; evidence?: Record<string, unknown> }[];
+  stages?: { stage?: string; status?: string; reason?: string; reason_code?: string; message_zh?: string; evidence?: Record<string, unknown> }[];
   orders_sent?: number;
   local_fill_created?: boolean;
   error_code?: string;
   message_zh?: string;
+  amount?: string | number;
+  entry_order?: { order_id?: string; status?: string; protection_status?: string };
 }
 
 function formatHktTime(val?: string | null): string {
@@ -632,6 +640,7 @@ export function V2WorkspacePage({
   const [gateVerification, setGateVerification] = useState<GateCredentialValidation | null>(null);
   const [gateConnectionTest, setGateConnectionTest] = useState<GateConnectionTestResponse | null>(null);
   const [gateVerificationBusy, setGateVerificationBusy] = useState(false);
+  const [gateRefreshBusy, setGateRefreshBusy] = useState(false);
   const [marketSearch, setMarketSearch] = useState("");
   const [tradingAccounts, setTradingAccounts] = useState<TradingAccountSummary[]>([]);
   const [selectedTradingAccount, setSelectedTradingAccount] = useState(readTradingAccount);
@@ -654,6 +663,7 @@ export function V2WorkspacePage({
   const [orderTakeProfit, setOrderTakeProfit] = useState("");
   const [orderFeedback, setOrderFeedback] = useState<string | null>(null);
   const [e2eStopType, setE2eStopType] = useState<"PRICE" | "PERCENT" | "ATR">("PRICE");
+  const [e2eAmount, setE2eAmount] = useState("");
   const [e2eStopValue, setE2eStopValue] = useState("");
   const [e2eTakeProfitType, setE2eTakeProfitType] = useState<"PRICE" | "PERCENT" | "ATR">("PRICE");
   const [e2eTakeProfitValue, setE2eTakeProfitValue] = useState("");
@@ -963,6 +973,22 @@ export function V2WorkspacePage({
             type: "err",
           });
         }
+        if (res.validation.valid && res.saved && selectedProfile.api_environment === "TESTNET") {
+          try {
+            await apiClient.v2(
+              `/gate/account/refresh?account_id=${encodeURIComponent(selectedProfile.account_id)}`,
+              "POST",
+            );
+            await refresh();
+          } catch (refreshError: unknown) {
+            setGateNotice({
+              msg: zh
+                ? `凭证已保存，但远端账户尚未完成对账：${errorMessage(refreshError, "UNKNOWN")}`
+                : `Credentials were saved, but remote reconciliation is not complete: ${errorMessage(refreshError, "UNKNOWN")}`,
+              type: "err",
+            });
+          }
+        }
         await fetchGateData();
         return;
       }
@@ -1125,7 +1151,9 @@ export function V2WorkspacePage({
     const stopValue = Number(e2eStopValue.trim());
     const takeProfitValue = Number(e2eTakeProfitValue.trim());
     const leverage = Number(e2eLeverage.trim());
-    if (![stopValue, takeProfitValue].every((value) => Number.isFinite(value) && value > 0) || !Number.isInteger(leverage) || leverage < 1 || leverage > 100) {
+    const amountText = e2eAmount.trim();
+    const amount = amountText ? Number(amountText) : undefined;
+    if (![stopValue, takeProfitValue].every((value) => Number.isFinite(value) && value > 0) || !Number.isInteger(leverage) || leverage < 1 || leverage > 100 || (amount !== undefined && (!Number.isInteger(amount) || amount <= 0))) {
       setOrderFeedback(zh ? "止损、止盈和杠杆必须是有限正数；杠杆必须为 1-100 的整数。" : "Stop, take-profit, and leverage must be finite positive values; leverage must be an integer from 1 to 100.");
       return;
     }
@@ -1138,9 +1166,10 @@ export function V2WorkspacePage({
         side: orderSide === "BUY" ? "LONG" : "SHORT",
         stop_type: e2eStopType,
         stop_value: stopValue,
-        take_profit_type: e2eTakeProfitType,
-        take_profit_value: takeProfitValue,
-        leverage,
+         take_profit_type: e2eTakeProfitType,
+         take_profit_value: takeProfitValue,
+         amount,
+         leverage,
         cleanup: e2eCleanup,
         confirm_testnet: true,
         idempotency_key: `gate-e2e-${selectedAccount.account_id}-${orderSymbol.toUpperCase()}-${Date.now()}`,
@@ -1242,6 +1271,32 @@ export function V2WorkspacePage({
     },
     [selected, timeframe, selectedTradingAccount],
   );
+
+  const refreshGateRemote = useCallback(async () => {
+    if (!selectedTradingAccount) return;
+    setGateRefreshBusy(true);
+    setGateNotice(null);
+    try {
+      await apiClient.v2(
+        `/gate/account/refresh?account_id=${encodeURIComponent(selectedTradingAccount)}`,
+        "POST",
+      );
+      await Promise.all([fetchGateData(), refresh()]);
+      setGateNotice({
+        msg: zh
+          ? "已读取并持久化当前 Gate TestNet 远端账户事实；风险面板现在使用这次对账结果。"
+          : "The current Gate TestNet account facts were read and persisted; risk now uses this reconciliation.",
+        type: "ok",
+      });
+    } catch (err: unknown) {
+      setGateNotice({
+        msg: errorMessage(err, zh ? "远端账户刷新失败" : "Remote account refresh failed"),
+        type: "err",
+      });
+    } finally {
+      setGateRefreshBusy(false);
+    }
+  }, [fetchGateData, refresh, selectedTradingAccount, zh]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -2280,6 +2335,12 @@ export function V2WorkspacePage({
                   </article>
                 );
               })
+            ) : workspace?.positions_source === "GATE_REMOTE_PRIVATE_API_SNAPSHOT" && workspace.positions_data_status !== "AVAILABLE" ? (
+              <p className="v2-note">
+                {zh
+                  ? `Gate 远端持仓事实当前不可用（${workspace.positions_data_status ?? "UNKNOWN"}），未使用本地历史镜像替代。`
+                  : `Gate remote position facts are unavailable (${workspace.positions_data_status ?? "UNKNOWN"}); historical local mirrors are not used.`}
+              </p>
             ) : (
               <p className="v2-note">{copy.noPositions}</p>
             )}
@@ -2956,10 +3017,10 @@ export function V2WorkspacePage({
               <article className="v2-kpi-card">
                 <span className="v2-kpi-label">{zh ? "Gate TestNet 账户权益" : "Gate TestNet Equity"}</span>
                 <strong className="v2-kpi-value">
-                  ${gateMetric(gateAccount?.equity ?? gateAccount?.balance?.total)}
+                  {gateMetric(gateAccount?.equity)}
                 </strong>
                 <small className="v2-kpi-sub">
-                  USDT · {gateAccount?.data_status === "AVAILABLE" ? (zh ? "Gate 远端已核对" : "Gate remote reconciled") : (zh ? "远端数据未知" : "remote data unknown")}
+                  USDT · {gateAccount?.equity_basis || (gateAccount?.data_status === "AVAILABLE" ? (zh ? "Gate 远端已核对" : "Gate remote reconciled") : (zh ? "远端数据未知" : "remote data unknown"))}
                   {gateAccount?.observed_at ? ` · ${formatHktDateTime(gateAccount.observed_at)} HKT` : ""}
                 </small>
               </article>
@@ -2967,17 +3028,17 @@ export function V2WorkspacePage({
               <article className="v2-kpi-card">
                 <span className="v2-kpi-label">{zh ? "可用保证金" : "Available Margin"}</span>
                 <strong className="v2-kpi-value v2-val--bull">
-                  ${gateMetric(gateAccount?.available_margin ?? gateAccount?.balance?.free)}
+                  {gateMetric(gateAccount?.available_margin)}
                 </strong>
-                <small className="v2-kpi-sub">USDT · {zh ? "仅显示当前所选 TestNet 账户" : "scoped to the selected TestNet account"}</small>
+                <small className="v2-kpi-sub">USDT · {gateAccount?.available_margin_basis || (zh ? "Gate 原生 available" : "Gate native available")}</small>
               </article>
 
               <article className="v2-kpi-card">
                 <span className="v2-kpi-label">{zh ? "已用保证金" : "Used Margin"}</span>
                 <strong className="v2-kpi-value">
-                  ${gateMetric(gateAccount?.used_margin ?? gateAccount?.balance?.used)}
+                  {gateMetric(gateAccount?.used_margin)}
                 </strong>
-                <small className="v2-kpi-sub">USDT · {zh ? "远端风险敞口" : "remote risk exposure"}</small>
+                <small className="v2-kpi-sub">USDT · {gateAccount?.used_margin_basis || (zh ? "Gate 原生 position + order margin" : "Gate native position + order margin")}</small>
               </article>
 
               <article className="v2-kpi-card">
@@ -2989,10 +3050,10 @@ export function V2WorkspacePage({
               </article>
             </div>
             <div className="v2-gate-remote-meta">
-              <span>Remote status: {gateAccount?.data_status || "UNKNOWN"}</span>
-              <span>Source: {gateAccount?.source || "NOT_OBSERVED"}</span>
-              <span>Unrealized PnL: {gateAccount?.unrealized_pnl == null ? "UNKNOWN" : `${gateAccount.unrealized_pnl} USDT`}</span>
-              <span>Realized PnL: {gateAccount?.realized_pnl == null ? "UNKNOWN" : `${gateAccount.realized_pnl} USDT`}</span>
+              <span>{zh ? "远端状态" : "Remote status"}: {gateAccount?.data_status || "UNKNOWN"}</span>
+              <span>{zh ? "来源" : "Source"}: {gateAccount?.source || "NOT_OBSERVED"}</span>
+              <span>{zh ? "未实现盈亏" : "Unrealized PnL"}: {gateAccount?.unrealized_pnl == null ? "UNKNOWN" : `${gateAccount.unrealized_pnl} USDT`}</span>
+              <span>{zh ? "已实现盈亏" : "Realized PnL"}: {gateAccount?.realized_pnl == null ? "UNKNOWN" : `${gateAccount.realized_pnl} USDT`}</span>
               {gateAccount?.error_code ? <span className="v2-val--stop">{gateAccount.error_code}</span> : null}
             </div>
           </section>
@@ -3069,10 +3130,11 @@ export function V2WorkspacePage({
                   <button
                     type="button"
                     className="v2-btn-secondary"
-                    disabled={busy || gateVerificationBusy}
-                    onClick={() => void fetchGateData()}
+                    onClick={() => void refreshGateRemote()}
+                    data-testid="gate-remote-refresh"
+                    disabled={busy || gateVerificationBusy || gateRefreshBusy || !selectedTradingAccount}
                   >
-                    🔄 {zh ? "刷新账户与交易" : "Refresh"}
+                    {gateRefreshBusy ? "⏳ " : "🔄 "}{zh ? "刷新并对账远端账户" : "Refresh & reconcile remote account"}
                   </button>
                 </div>
 
@@ -3180,18 +3242,19 @@ export function V2WorkspacePage({
 
                 <div className="v2-form-row">
                   <div className="v2-form-group">
-                    <label htmlFor="gate-order-amount" className="v2-field-label">{zh ? "下单张数/数量" : "Amount"}:</label>
+                    <label htmlFor="gate-order-amount" className="v2-field-label">{gateTestnetSelected ? (zh ? "Gate 合约张数" : "Gate contracts") : (zh ? "下单张数/数量" : "Amount")}:</label>
                     <input
                       id="gate-order-amount"
                       type="number"
-                      step="0.001"
-                      min="0.001"
+                      step={gateTestnetSelected ? "1" : "0.001"}
+                      min={gateTestnetSelected ? "1" : "0.001"}
                       required
                       className="v2-input"
                       placeholder={zh ? "必填，不使用隐含默认值" : "Required; no implicit default"}
                       value={orderAmount}
                       onChange={(e) => setOrderAmount(e.target.value)}
                     />
+                    {gateTestnetSelected && <small className="v2-field-sub">Gate 永续合约按 contracts 计数；1 张不是 0.001 BTC。后台以交易所返回的最小张数/步长为准。</small>}
                   </div>
 
                   <div className="v2-form-group">
@@ -3295,11 +3358,16 @@ export function V2WorkspacePage({
                     <option value="SELL">SHORT</option>
                   </select>
                 </div>
-                <div className="v2-form-group">
-                  <label htmlFor="gate-e2e-leverage" className="v2-field-label">杠杆（整数）</label>
-                  <input id="gate-e2e-leverage" type="number" min="1" max="100" step="1" className="v2-input" value={e2eLeverage} onChange={(event) => setE2eLeverage(event.target.value)} required />
+                  <div className="v2-form-group">
+                    <label htmlFor="gate-e2e-leverage" className="v2-field-label">杠杆（整数）</label>
+                    <input id="gate-e2e-leverage" type="number" min="1" max="100" step="1" className="v2-input" value={e2eLeverage} onChange={(event) => setE2eLeverage(event.target.value)} required />
+                  </div>
+                  <div className="v2-form-group">
+                    <label htmlFor="gate-e2e-amount" className="v2-field-label">数量（Gate contracts，可留空）</label>
+                    <input id="gate-e2e-amount" type="number" min="1" step="1" className="v2-input" value={e2eAmount} onChange={(event) => setE2eAmount(event.target.value)} placeholder="留空=远端最小张数" />
+                    <small className="v2-field-sub">不填写时读取 Gate 市场元数据的最小可成交张数。</small>
+                  </div>
                 </div>
-              </div>
               <div className="v2-form-row">
                 <div className="v2-form-group">
                   <label htmlFor="gate-e2e-stop-type" className="v2-field-label">止损类型</label>
@@ -3349,8 +3417,8 @@ export function V2WorkspacePage({
                   {e2eFeedback.stages?.length ? (
                     <div className="v2-gate-e2e-stages">
                       {e2eFeedback.stages.map((stage, index) => (
-                        <span key={`${stage.stage || "stage"}-${index}`} className={stage.status === "PASS" ? "v2-val--bull" : "v2-val--stop"}>
-                          {stage.stage || "UNKNOWN"}: {stage.status || "UNKNOWN"}{stage.reason ? ` · ${stage.reason}` : ""}
+                        <span key={`${stage.stage || "stage"}-${index}`} className={["COMPLETED", "PASS", "FILLED"].includes(String(stage.status || "").toUpperCase()) ? "v2-val--bull" : "v2-val--stop"}>
+                          {stage.stage || "UNKNOWN"}: {stage.status || "UNKNOWN"}{stage.message_zh || stage.reason ? ` · ${stage.message_zh || stage.reason}` : ""}{stage.reason_code ? ` (${stage.reason_code})` : ""}
                         </span>
                       ))}
                     </div>
