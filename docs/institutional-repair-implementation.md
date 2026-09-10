@@ -1,10 +1,10 @@
 # AI Market Analyst 机构量化审计修复实施记录
 
-> **当前 main 权威复核（2026-09-10）**：本节及其后的“当前复核”内容优先于本文保留的历史快照。审验基线 HEAD 为 `3700bc63d4e35df1f0e2b2ec86beeb5d889a2889`，实现提交 `5b2bef62471f640a72da26965eb92f7fd1e8b5ff` 已推送到 `origin/main`；仓库版本为 `2.0.0`（`pyproject.toml`、`core/config.py`、`web/package.json`、`src-tauri/tauri.conf.json` 一致）。V1.7 只做了版本核对，没有改版本元数据。
+> **当前 main 权威复核（2026-09-10）**：本节及其后的“当前复核”内容优先于本文保留的历史快照。源码实现提交为 `9c9fa36`（完整 SHA 见 Git 历史），已推送到 `origin/main`；仓库版本为 `2.0.0`（`pyproject.toml`、`core/config.py`、`web/package.json`、`src-tauri/tauri.conf.json` 一致）。V1.7 只做了版本核对，没有改版本元数据。
 
 ## 当前 main 的实施与验证结论
 
-- 本轮保留工作区中已有的用户改动；没有 `reset`、`checkout`、`clean`，也没有运行 `scripts/direct_install.ps1`。按用户后续明确要求，当前交付清单已随实现提交 `5b2bef62471f640a72da26965eb92f7fd1e8b5ff` 推送到 `origin/main`，未覆盖未知文件。
+- 本轮保留工作区中已有的用户改动；没有 `reset`、`checkout`、`clean`，也没有运行 `scripts/direct_install.ps1`。按用户后续明确要求，当前交付清单已随实现提交 `9c9fa36` 推送到 `origin/main`，未覆盖未知文件。
 - Gate 账户底座已收口为 `gate_testnet` 唯一托管 TestNet 账户；`gate_paper` 仅作为输入兼容别名，不能再创建本地假成交账户。`gate_live` 独立保留，默认 `LOCKED`。远端权益、保证金、持仓、挂单与成交读取经 `GateAccountTruthService` 持久化为审计快照；不创建或更新 Gate 的本地 `simulated_positions`，历史旧行仅保留追溯，不能反向冒充 Gate 事实。
 - 已接通账户作用域的凭证验证、只读连接测试、Gate TestNet 远端 adapter、订单回执/撤单/保护与独立 TestNet E2E 验收服务；E2E 必须显式确认、使用幂等键，且不复用 AI 授权或模型调用。本轮已使用用户提供的 TestNet 凭证完成一次真实 `ETHUSDT` 1 张开仓、保护单确认、reduce-only 平仓并确认远端仓位归零；未访问 Live、未触碰既有 BTC 仓位。
 - AI 链路保存系统阻断与模型 WAIT 的不同来源、阶段流水、授权/租约/账户快照、真实模型响应、延迟、量化与 digest。发现本机 Ollama/Qwen3.5 的复杂 Schema grammar 兼容问题后，新增了“仅服务端明确拒绝 grammar 才降级为 JSON mode + 本地严格业务校验”的窄兼容路径；普通模型/网络错误仍失败关闭并保留原因。
