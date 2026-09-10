@@ -1,5 +1,51 @@
 # AI Market Analyst 机构量化审计修复实施记录
 
+> **当前 main 权威复核（2026-09-10）**：本节及其后的“当前复核”内容优先于本文保留的历史快照。当前 HEAD 为 `3700bc63d4e35df1f0e2b2ec86beeb5d889a2889`（`main` 与 `origin/main` 同步），仓库版本为 `2.0.0`（`pyproject.toml`、`core/config.py`、`web/package.json`、`src-tauri/tauri.conf.json` 一致）。V1.7 只做了版本核对，没有改版本元数据。
+
+## 当前 main 的实施与验证结论
+
+- 本轮保留工作区中已有的用户改动；没有 `reset`、`checkout`、`clean`，也没有运行 `scripts/direct_install.ps1`。按用户后续明确要求，当前交付清单将随本次实现提交并推送到 `origin/main`，未覆盖未知文件。
+- Gate 账户底座已收口为 `gate_testnet` 唯一托管 TestNet 账户；`gate_paper` 仅作为输入兼容别名，不能再创建本地假成交账户。`gate_live` 独立保留，默认 `LOCKED`。远端权益、保证金、持仓、挂单与成交读取经 `GateAccountTruthService` 入库为镜像，不写 `trade_fills`，本地镜像不能反向冒充 Gate 事实。
+- 已接通账户作用域的凭证验证、只读连接测试、Gate TestNet 远端 adapter、订单回执/撤单/保护与独立 TestNet E2E 验收服务；E2E 必须显式确认、使用幂等键，且不复用 AI 授权或模型调用。真实私有 Gate 验证和下单本轮未访问。
+- AI 链路保存系统阻断与模型 WAIT 的不同来源、阶段流水、授权/租约/账户快照、真实模型响应、延迟、量化与 digest。发现本机 Ollama/Qwen3.5 的复杂 Schema grammar 兼容问题后，新增了“仅服务端明确拒绝 grammar 才降级为 JSON mode + 本地严格业务校验”的窄兼容路径；普通模型/网络错误仍失败关闭并保留原因。
+- 页面新增远端账户事实卡、策略候选/阶段证据、按账户 Gate 凭证只读连接测试，以及带 `role=region`、键盘焦点和内部滚动的宏观日历框，长栏不再把整页无限推低。
+
+### 本轮实测结果
+
+| 检查 | 实测结果 | 证据边界 |
+|---|---|---|
+| 后端完整 pytest | `370 passed, 1 skipped, 1 warning`，242.34s | warning 为 Starlette/httpx 弃用提示 |
+| 定向 Gate/AI/证据/Ollama 集 | `22 passed, 1 warning` | 隔离 SQLite、确定性 adapter；不等于私有账户可用 |
+| `python -m compileall -q apps core scripts tests` | PASS | 当前 Python 源码可编译 |
+| `python scripts/institutional_acceptance.py` | `4/4 PASS` | disposable SQLite；不是公开 HTTP/Qwen/交易证明 |
+| 前端 | `22 files / 98 tests`、typecheck PASS、lint PASS、Vite build PASS（86 modules） | 当前 React 源码与页面回归 |
+| Tauri Rust | `cargo check --manifest-path src-tauri/Cargo.toml` PASS | 只代表 Rust 检查通过 |
+| sidecar 构建 | `scripts/build-tauri.ps1` PASS，PyInstaller 6.21.0 生成新 sidecar，并随当前 NSIS 包安装 | 安装后未启动应用 |
+| Tauri NSIS | PASS：使用 MSVC 目标生成当前 `2.0.0` 用户级安装器并成功安装 | 安装后未启动应用；未做业务库迁移、私有账户访问或下单 |
+| Gate 公共只读 HTTP | TestNet `/api/v4/futures/usdt/contracts`=`200`、63；Live=`200`、977；TestNet 样本字段完整 | 公共接口，不含私有鉴权、余额、订单或成交 |
+| Ollama/Qwen | `qwen3.5:9b` health 可用，digest=`6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7`；真实 JSON smoke 返回 `WAIT`，schema 标记 `json_mode_local_validation` | 仅无账户无交易 smoke；未运行前瞻影子账户、固定评测集或交易效果评估 |
+| 当前安装版 | current-user 安装成功，版本 `2.0.0`、桌面快捷方式和 sidecar 哈希已核对；`127.0.0.1:18765` 未启动 | 安装后未启动应用；没有改用户配置、业务库或私有账户 |
+
+### R01–R11 当前对应矩阵
+
+| 合同 | 当前实现路径 | 回归/验收 ID | 当前结果与外部依赖 |
+|---|---|---|---|
+| R01 数据身份/迁移 | `core/storage/sqlite.py`、`core/instruments.py`、`core/trading/account_aliases.py`、Gate account scope | `test_latest_bars_limit_one_returns_newest_and_cross_venue_identity_is_kept`、`test_gate_default_accounts_are_distinct_and_api_provision_is_idempotent` | `PASS_ISOLATED`；生产活动库迁移未执行 |
+| R02 时间语义/查询 | `core/storage/sqlite.py` latest/range/PIT、closed-bar 传递 | `AT-DATA-IDENTITY-LATEST`、`test_v14_d03_closed_bar_replay_and_real_parameter_perturbation` | `PASS_ISOLATED`；真实历史可知性仍按数据源标记 |
+| R03 六策略合同 | `core/quant/strategies`、`core/trading/candidate_scanner.py`、策略监控调用方 | full pytest、`test_v14_d02_api_round_trip_preserves_typed_conditions_and_protection_contract` | `PASS_FIXTURE`；未声称参数已优化或真实止损/资金费可见 |
+| R04 新闻/宏观事实 | `core/events.py`、`core/news_revision.py`、`core/macro_calendar.py`、来源 registry | `test_source_registry_does_not_trust_path_or_source_text`、`test_news_negation_changes_direction` | `PARTIAL_EXTERNAL`；本轮未用私有/付费新闻源补数，缺失值保持未知 |
+| R05 研究回放 | `core/analysis/strategy_replay.py`、`core/trading/trader_capabilities.py` | `test_v14_d03_closed_bar_replay_and_real_parameter_perturbation`、AT24–AT30 | `PASS_SCOPED`；不足数据不会伪装为零交易 EVALUATED |
+| R06 指标/反事实 | `core/trading/ledger.py`、`core/analysis/ai_trade_analytics.py`、`core/trading/institutional_risk.py` | partial-exit、SHORT MAE/MFE、费用压力与 outbox 回归 | `PASS_ISOLATED`；真实成本/深度/资金费仍按可用性标记 |
+| R07 统一账本/页面 | `core/trading/ai_led_engine.py`、`apps/api/v2.py`、`web/src/components/AITraderPanel.tsx`、`V2WorkspacePage.tsx` | `test_ai_system_block_is_not_persisted_as_model_wait`、98 frontend tests | `PASS_ISOLATED_UI`；GET 无副作用与账户作用域已覆盖 |
+| R08 数据中心/研究资格 | `apps/api/v3.py`、`apps/api/v2.py`、`core/storage/sqlite.py` | `test_research_cancel_uses_authoritative_scope_and_does_not_500`、full pytest | `PASS_ISOLATED`；DSR/PBO 仍需足量真实试验输入 |
+| R09 组合/执行风险 | `core/trading/execution_gateway.py`、`position_guardian.py`、`gate_account_truth.py`、`gate_testnet_e2e.py` | `test_gate_remote_truth_required_for_new_risk_but_not_reduce_only_boundary`、`test_gate_testnet_e2e_uses_remote_fill_and_cleans_without_local_fill`、RT01–RT16 | `PASS_ISOLATED`；真实 Gate 私有订单本轮 `NOT_ATTEMPTED` |
+| R10 AI 证据/治理 | `core/evidence.py`、`core/ai/ollama.py`、`core/trading/ai_session_coordinator.py`、`ai_cycle_trace.py` | `test_model_digest_is_selected_for_requested_smart_model`、Ollama provider contract tests、真实 Qwen smoke | `PASS_LOCAL_WITH_REAL_SMOKE`；无影子账户/评测集，不宣称交易效果 |
+| R11 运维/安全 | `core/trading/institutional_schema.py`、`core/security/local_guard.py`、outbox、Tauri build scripts | full pytest、compileall、ruff F821、cargo check、MSVC NSIS、current-user install、`git diff --check` | `PASS_LOCAL_WITH_MSVC_BUILD`；生产/真实 TestNet 运维未运行，LIVE 仍锁定 |
+
+详细旧运行快照、历史基线和 Sol 独立签收要求继续保留在下文，但不得覆盖本节的当前结论。
+
+> **以下为历史快照**：从“交付边界”开始的旧执行记录用于追溯，可能包含先前运行、安装或测试环境的结果；若与本文开头“当前 main 的实施与验证结论”冲突，以当前 main 复核和 `evidence/institutional-repair-result.json` 的 `current_main_revalidation` 为准。
+
 ## 交付边界
 
 - 项目：`D:/RJ/codex/ai-market-analyst`

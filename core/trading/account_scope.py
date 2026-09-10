@@ -12,6 +12,8 @@ import json
 import sqlite3
 from typing import Any
 
+from .account_aliases import canonical_account_id
+
 
 def _config(row: Any) -> dict[str, Any]:
     value = row["config_json"] if hasattr(row, "keys") and "config_json" in row.keys() else None
@@ -27,6 +29,7 @@ def resolve_account_scope(store: Any, account_id: str) -> dict[str, str] | None:
 
     if not account_id or not hasattr(store, "_connect"):
         return None
+    resolved_account_id = canonical_account_id(store, str(account_id))
     try:
         with store._connect() as db:
             table = db.execute(
@@ -36,7 +39,7 @@ def resolve_account_scope(store: Any, account_id: str) -> dict[str, str] | None:
                 return None
             row = db.execute(
                 "SELECT account_id, mode, config_json FROM accounts WHERE account_id=?",
-                (str(account_id),),
+                (resolved_account_id,),
             ).fetchone()
     except sqlite3.OperationalError:
         # Read-only projections also serve pre-ledger/legacy stores where the

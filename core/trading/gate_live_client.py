@@ -72,6 +72,23 @@ def _optional_float(value: Any) -> Optional[float]:
     return number if math.isfinite(number) else None
 
 
+def _optional_bool(value: Any) -> Optional[bool]:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and math.isfinite(float(value)):
+        return bool(value)
+    text = str(value or "").strip().lower()
+    if text in {"true", "1", "yes", "y", "on"}:
+        return True
+    if text in {"false", "0", "no", "n", "off"}:
+        return False
+    return None
+
+
+def _symbol_compact(value: Any) -> str:
+    return str(value or "").upper().replace("/", "").replace(":USDT", "").replace("_", "").replace("-", "")
+
+
 class GateLiveTrader:
     """Client for Gate.io private API and quantitative order execution."""
 
@@ -98,8 +115,10 @@ class GateLiveTrader:
         self._exchange = exchange
         self.last_positions_status = "NOT_CHECKED"
         self.last_trades_status = "NOT_CHECKED"
+        self.last_open_orders_status = "NOT_CHECKED"
         self.last_positions_error_code: Optional[str] = None
         self.last_trades_error_code: Optional[str] = None
+        self.last_open_orders_error_code: Optional[str] = None
 
     @property
     def is_configured(self) -> bool:
@@ -281,13 +300,46 @@ class GateLiveTrader:
             observed_at = datetime.now(timezone.utc).isoformat()
             if not isinstance(usdt, dict):
                 raise ValueError("GATE_BALANCE_SCHEMA_INVALID")
-            values = {key: _optional_float(usdt.get(key)) for key in ("total", "free", "used")}
+            account_info = balance.get("info") if isinstance(balance.get("info"), dict) else {}
+            history = account_info.get("history") if isinstance(account_info.get("history"), dict) else {}
+
+            def first_number(*values: Any) -> Optional[float]:
+                for value in values:
+                    parsed = _optional_float(value)
+                    if parsed is not None:
+                        return parsed
+                return None
+
+            total = first_number(usdt.get("total"), account_info.get("total"), balance.get("total"))
+            free = first_number(usdt.get("free"), account_info.get("available"), account_info.get("free"), balance.get("free"))
+            used = first_number(usdt.get("used"), account_info.get("used"), balance.get("used"))
+            if used is None and total is not None and free is not None:
+                used = total - free
+            unrealized = first_number(
+                account_info.get("unrealized_pnl"),
+                account_info.get("unrealised_pnl"),
+                usdt.get("unrealized_pnl"),
+                usdt.get("unrealised_pnl"),
+            )
+            realized = first_number(
+                account_info.get("realized_pnl"),
+                account_info.get("realised_pnl"),
+                history.get("pnl"),
+            )
+            equity = first_number(account_info.get("equity"), usdt.get("equity"), balance.get("equity"))
+            if equity is None and total is not None and unrealized is not None:
+                equity = total + unrealized
+            values = {"total": total, "free": free, "used": used}
             return {
                 "configured": True,
                 "data_status": "AVAILABLE" if all(value is not None for value in values.values()) else "DEGRADED",
                 "observed_at": observed_at,
                 **({} if all(value is not None for value in values.values()) else {"error_code": "GATE_BALANCE_FIELDS_MISSING"}),
                 **values,
+                "equity": equity,
+                "unrealized_pnl": unrealized,
+                "realized_pnl": realized,
+                "source": "gate_futures_account_balance",
             }
         except Exception as exc:
             mapped = _map_gate_error(exc)
@@ -309,41 +361,83 @@ class GateLiveTrader:
             self.last_positions_status = "NOT_CONFIGURED"
             self.last_positions_error_code = "GATE_CREDENTIALS_REQUIRED"
             return []
+
         self.last_positions_error_code = None
         try:
             ex = self._get_exchange()
             raw_positions = ex.fetch_positions()
             if not isinstance(raw_positions, list):
                 raise ValueError("GATE_RESPONSE_SCHEMA_INVALID")
+            try:
+                markets = ex.load_markets()
+            except Exception:
+                markets = {}
             results = []
             degraded = False
-            for p in raw_positions:
-                if not isinstance(p, dict):
+            for position in raw_positions:
+                if not isinstance(position, dict):
                     degraded = True
                     continue
-                raw_size = p.get("contracts", p.get("size"))
+                info = position.get("info") if isinstance(position.get("info"), dict) else {}
+                raw_size = position.get("contracts")
+                if raw_size is None:
+                    raw_size = position.get("size", info.get("size"))
                 size = _optional_float(raw_size)
                 if size is None:
                     degraded = True
                     results.append({
-                        "symbol": p.get("symbol"),
-                        "side": str(p.get("side") or "UNKNOWN").upper(),
+                        "symbol": position.get("symbol"),
+                        "side": str(position.get("side") or "UNKNOWN").upper(),
                         "contracts": None,
                         "position_status": "UNKNOWN_SIZE",
                     })
                     continue
-                if abs(size) > 0:
-                    results.append({
-                        "symbol": p.get("symbol"),
-                        "side": str(p.get("side") or "UNKNOWN").upper(),
-                        "contracts": size,
-                        "entry_price": _optional_float(p.get("entryPrice")),
-                        "mark_price": _optional_float(p.get("markPrice")),
-                        "unrealized_pnl": _optional_float(p.get("unrealizedPnl")),
-                        "leverage": _optional_float(p.get("leverage")),
-                        "liquidation_price": _optional_float(p.get("liquidationPrice")),
-                        "initial_margin": _optional_float(p.get("initialMargin")),
-                    })
+                if abs(size) <= 0:
+                    continue
+                raw_side = str(position.get("side") or info.get("side") or "").strip().upper()
+                if raw_side in {"BUY", "LONG"}:
+                    normalized_side = "LONG"
+                elif raw_side in {"SELL", "SHORT"}:
+                    normalized_side = "SHORT"
+                elif size < 0:
+                    normalized_side = "SHORT"
+                else:
+                    normalized_side = "LONG"
+                size = abs(size)
+                market = markets.get(position.get("symbol")) if isinstance(markets, dict) else None
+                if not isinstance(market, dict) and isinstance(markets, dict):
+                    compact = _symbol_compact(position.get("symbol"))
+                    market = next(
+                        (
+                            item for item in markets.values()
+                            if isinstance(item, dict) and _symbol_compact(item.get("symbol") or item.get("id")) == compact
+                        ),
+                        {},
+                    )
+                contract_size = _optional_float(
+                    position.get("contractSize")
+                    or position.get("contract_size")
+                    or info.get("contractSize")
+                    or (market or {}).get("contractSize")
+                )
+                results.append({
+                    "symbol": position.get("symbol"),
+                    "side": normalized_side,
+                    "contracts": size,
+                    "entry_price": _optional_float(position.get("entryPrice", position.get("entry_price", info.get("entry_price")))),
+                    "mark_price": _optional_float(position.get("markPrice", position.get("mark_price", info.get("mark_price")))),
+                    "unrealized_pnl": _optional_float(position.get("unrealizedPnl", position.get("unrealized_pnl", position.get("unrealisedPnl", info.get("unrealised_pnl"))))),
+                    "realized_pnl": _optional_float(position.get("realizedPnl", position.get("realized_pnl", position.get("realisedPnl", info.get("realised_pnl"))))),
+                    "leverage": _optional_float(position.get("leverage", info.get("leverage"))),
+                    "liquidation_price": _optional_float(position.get("liquidationPrice", position.get("liquidation_price", info.get("liq_price")))),
+                    "initial_margin": _optional_float(position.get("initialMargin", position.get("initial_margin", info.get("initial_margin")))),
+                    "contract_size": contract_size,
+                    "position_id": position.get("id") or (
+                        info.get("id")
+                        if isinstance(info, dict)
+                        else None
+                    ),
+                })
             self.last_positions_status = "DEGRADED" if degraded else "AVAILABLE"
             return results
         except Exception as exc:
@@ -352,6 +446,269 @@ class GateLiveTrader:
             self.last_positions_status = "UNAVAILABLE"
             self.last_positions_error_code = mapped["code"]
             return []
+
+    def get_open_orders(self, symbol: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
+        """Retrieve the account's currently pending Gate futures orders.
+
+        An absent/unsupported endpoint is deliberately reported as degraded,
+        not as an empty order list.  Empty and unavailable are different
+        account facts for risk and reconciliation.
+        """
+        if not self.is_configured:
+            self.last_open_orders_status = "NOT_CONFIGURED"
+            self.last_open_orders_error_code = "GATE_CREDENTIALS_REQUIRED"
+            return []
+        self.last_open_orders_error_code = None
+        try:
+            ex = self._get_exchange()
+            fetcher = getattr(ex, "fetch_open_orders", None)
+            if not callable(fetcher):
+                self.last_open_orders_status = "UNSUPPORTED"
+                self.last_open_orders_error_code = "GATE_OPEN_ORDERS_UNSUPPORTED"
+                return []
+            target_symbol = self._exchange_symbol(ex, symbol) if symbol else None
+            raw_orders = fetcher(target_symbol, limit=max(1, min(int(limit), 100)))
+            if not isinstance(raw_orders, list):
+                raise ValueError("GATE_OPEN_ORDERS_RESPONSE_SCHEMA_INVALID")
+            results: list[dict[str, Any]] = []
+            degraded = False
+            for order in raw_orders:
+                if not isinstance(order, dict):
+                    degraded = True
+                    continue
+                order_id = order.get("id")
+                if not order_id:
+                    degraded = True
+                    continue
+                results.append(
+                    {
+                        "order_id": str(order_id),
+                        "client_order_id": order.get("clientOrderId"),
+                        "symbol": str(order.get("symbol") or "").replace("/", "").replace(":USDT", "") or None,
+                        "side": str(order.get("side") or "UNKNOWN").upper(),
+                        "type": str(order.get("type") or "UNKNOWN").lower(),
+                        "status": str(order.get("status") or "open").upper(),
+                        "amount": _optional_float(order.get("amount")),
+                        "filled": _optional_float(order.get("filled")),
+                        "remaining": _optional_float(order.get("remaining")),
+                        "price": _optional_float(order.get("price")),
+                        "stop_price": _optional_float(order.get("triggerPrice") or order.get("stopPrice")),
+                        "timestamp": order.get("timestamp"),
+                        "datetime": order.get("datetime"),
+                        "reduce_only": _optional_bool(
+                            order.get("reduceOnly")
+                            if order.get("reduceOnly") is not None
+                            else ((order.get("info") or {}).get("reduce_only") if isinstance(order.get("info"), dict) else None)
+                        ) is True,
+                    }
+                )
+            self.last_open_orders_status = "DEGRADED" if degraded else "AVAILABLE"
+            return results
+        except Exception as exc:
+            mapped = _map_gate_error(exc)
+            logger.warning("Failed to fetch Gate %s open orders (%s)", self.api_environment, mapped["code"])
+            self.last_open_orders_status = "UNAVAILABLE"
+            self.last_open_orders_error_code = mapped["code"]
+            return []
+
+    def get_market_metadata(self, symbol: str) -> Dict[str, Any]:
+        """Return explicit Gate contract metadata for remote sizing."""
+        ex = self._get_exchange()
+        markets = ex.load_markets()
+        if not isinstance(markets, dict):
+            raise ValueError("GATE_MARKETS_RESPONSE_SCHEMA_INVALID")
+        exchange_symbol = self._exchange_symbol(ex, symbol)
+        market = markets.get(exchange_symbol)
+        if not isinstance(market, dict):
+            for value in markets.values():
+                if isinstance(value, dict) and str(value.get("symbol") or "") == exchange_symbol:
+                    market = value
+                    break
+        if not isinstance(market, dict):
+            raise ValueError("GATE_MARKET_NOT_FOUND")
+        if not (market.get("swap") and market.get("linear") and str(market.get("settle") or "").upper() == "USDT"):
+            raise ValueError("GATE_MARKET_NOT_LINEAR_USDT_PERPETUAL")
+        precision = dict(market.get("precision") or {})
+        limits = dict(market.get("limits") or {})
+        amount_limits = dict(limits.get("amount") or {})
+        contract_size = _optional_float(market.get("contractSize"))
+        amount_step = _optional_float(precision.get("amount") or amount_limits.get("step"))
+        amount_min = _optional_float(amount_limits.get("min"))
+        amount_max = _optional_float(amount_limits.get("max"))
+        price_tick = _optional_float(precision.get("price"))
+        if contract_size is None or amount_step is None or amount_min is None or amount_max is None or price_tick is None:
+            raise ValueError("GATE_MARKET_METADATA_INCOMPLETE")
+        return {
+            "symbol": str(symbol).strip().upper(),
+            "native_symbol": str(market.get("id") or exchange_symbol),
+            "ccxt_symbol": exchange_symbol,
+            "market_type": "perpetual",
+            "contract_type": "perpetual",
+            "contractSize": contract_size,
+            "precision": {"amount": amount_step, "price": price_tick},
+            "limits": {"amount": {"step": amount_step, "min": amount_min, "max": amount_max}},
+            "taker": _optional_float(market.get("taker")) if market.get("taker") is not None else None,
+            "maker": _optional_float(market.get("maker")) if market.get("maker") is not None else None,
+            "active": bool(market.get("active", True)),
+            "source": "gate_ccxt_private_market_metadata",
+            "raw": {key: value for key, value in market.items() if key not in {"info"}},
+        }
+
+    def get_ticker(self, symbol: str) -> Dict[str, Any]:
+        """Read one current Gate ticker for the explicit TestNet order test."""
+
+        if not self.is_configured:
+            return {
+                "status": "NOT_CONFIGURED",
+                "error_code": "GATE_CREDENTIALS_REQUIRED",
+                "symbol": symbol,
+                "last": None,
+                "bid": None,
+                "ask": None,
+                "observed_at": None,
+            }
+        try:
+            ex = self._get_exchange()
+            fetcher = getattr(ex, "fetch_ticker", None)
+            if not callable(fetcher):
+                return {"status": "UNSUPPORTED", "error_code": "GATE_TICKER_UNSUPPORTED", "symbol": symbol, "last": None}
+            exchange_symbol = self._exchange_symbol(ex, symbol)
+            ticker = fetcher(exchange_symbol)
+            if not isinstance(ticker, dict):
+                raise ValueError("GATE_TICKER_RESPONSE_SCHEMA_INVALID")
+            last = _optional_float(ticker.get("last") or ticker.get("close"))
+            bid = _optional_float(ticker.get("bid"))
+            ask = _optional_float(ticker.get("ask"))
+            if last is None or last <= 0:
+                raise ValueError("GATE_TICKER_LAST_MISSING")
+            timestamp = ticker.get("timestamp")
+            observed_at = (
+                datetime.fromtimestamp(float(timestamp) / 1000.0, timezone.utc).isoformat()
+                if timestamp is not None
+                else datetime.now(timezone.utc).isoformat()
+            )
+            return {
+                "status": "AVAILABLE",
+                "symbol": str(symbol).strip().upper(),
+                "native_symbol": exchange_symbol,
+                "last": last,
+                "bid": bid,
+                "ask": ask,
+                "observed_at": observed_at,
+                "source": "gate_testnet_private_exchange_ticker",
+            }
+        except Exception as exc:
+            mapped = _map_gate_error(exc)
+            return {
+                "status": "UNAVAILABLE",
+                "error_code": mapped["code"],
+                "message_zh": mapped["message_zh"],
+                "symbol": symbol,
+                "last": None,
+            }
+
+    def get_ohlcv(self, symbol: str, timeframe: str = "15m", limit: int = 64) -> list[list[Any]]:
+        """Read OHLCV only for explicit E2E ATR derivation; no local fallback."""
+
+        if not self.is_configured:
+            raise ValueError("GATE_CREDENTIALS_REQUIRED")
+        ex = self._get_exchange()
+        fetcher = getattr(ex, "fetch_ohlcv", None)
+        if not callable(fetcher):
+            raise ValueError("GATE_OHLCV_UNSUPPORTED")
+        result = fetcher(self._exchange_symbol(ex, symbol), timeframe, None, max(2, min(int(limit), 200)))
+        if not isinstance(result, list) or len(result) < 2:
+            raise ValueError("GATE_OHLCV_INSUFFICIENT")
+        return result
+
+    def connection_test(self) -> Dict[str, Any]:
+        """Perform bounded, read-only account and endpoint verification."""
+        validation = self.validate_credentials()
+        if validation.get("valid") is not True:
+            return {
+                **validation,
+                "read_only": True,
+                "orders_sent": 0,
+                "model_called": False,
+                "authorization_created": False,
+                "positions": [],
+                "pending_orders": [],
+                "markets": {"status": "NOT_RUN"},
+            }
+        balance = self.get_account_balance()
+        positions = self.get_positions()
+        pending_orders = self.get_open_orders(limit=100)
+        markets_status: dict[str, Any] = {"status": "UNKNOWN", "count": None}
+        try:
+            markets = self._get_exchange().load_markets()
+            if isinstance(markets, dict):
+                markets_status = {
+                    "status": "AVAILABLE",
+                    "count": sum(1 for item in markets.values() if isinstance(item, dict) and item.get("swap") and item.get("linear")),
+                }
+        except Exception as exc:
+            mapped = _map_gate_error(exc)
+            markets_status = {"status": "UNAVAILABLE", "error_code": mapped["code"], "message_zh": mapped["message_zh"]}
+        component_statuses = {
+            "balance": balance.get("data_status"),
+            "positions": self.last_positions_status,
+            "pending_orders": self.last_open_orders_status,
+            "markets": markets_status.get("status"),
+        }
+        all_available = all(value == "AVAILABLE" for value in component_statuses.values())
+        return {
+            "valid": True,
+            "status": "VERIFIED_READ_ONLY" if all_available else "VERIFIED_READ_ONLY_DEGRADED",
+            "code": "GATE_CONNECTION_VERIFIED" if all_available else "GATE_CONNECTION_DEGRADED",
+            "message_zh": "Gate 只读连接、账户、持仓和挂单查询成功。" if all_available else "Gate 凭证有效，但部分只读账户事实未能完整读取。",
+            "api_environment": self.api_environment,
+            "endpoint": self.api_base_url,
+            "read_only": True,
+            "balance": balance,
+            "positions": positions,
+            "pending_orders": pending_orders,
+            "markets": markets_status,
+            "component_statuses": component_statuses,
+            "permissions": {"orders": "UNKNOWN_NOT_PROBED", "reason": "connection_test_never_submits_or_modifies_orders"},
+            "orders_sent": 0,
+            "model_called": False,
+            "authorization_created": False,
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    def get_account_truth(self, *, include_trades: bool = False) -> Dict[str, Any]:
+        """Fetch the remote account facts used by risk and UI projections."""
+        balance = self.get_account_balance()
+        positions = self.get_positions()
+        pending_orders = self.get_open_orders(limit=100)
+        fills = self.get_trades(limit=100) if include_trades else []
+        values = [item.get("unrealized_pnl") for item in positions]
+        unrealized = sum((float(value) for value in values if _optional_float(value) is not None), 0.0) if values and all(_optional_float(value) is not None for value in values) else None
+        statuses = [str(balance.get("data_status") or "UNKNOWN"), self.last_positions_status, self.last_open_orders_status]
+        if include_trades:
+            statuses.append(self.last_trades_status)
+        status = "AVAILABLE" if all(value == "AVAILABLE" for value in statuses) else ("DEGRADED" if any(value in {"AVAILABLE", "DEGRADED"} for value in statuses) else "UNAVAILABLE")
+        return {
+            "status": status,
+            "source": f"Gate.io v4 {self.api_environment} Private API",
+            "api_environment": self.api_environment,
+            "endpoint": self.api_base_url,
+            "observed_at": balance.get("observed_at") or datetime.now(timezone.utc).isoformat(),
+             "equity": balance.get("equity") if balance.get("equity") is not None else balance.get("total"),
+            "available_margin": balance.get("free"),
+            "used_margin": balance.get("used"),
+             "unrealized_pnl": balance.get("unrealized_pnl") if balance.get("unrealized_pnl") is not None else unrealized,
+             "realized_pnl": balance.get("realized_pnl"),
+            "balance": balance,
+            "positions": positions,
+            "pending_orders": pending_orders,
+            "fills": fills,
+            "positions_status": self.last_positions_status,
+            "pending_orders_status": self.last_open_orders_status,
+            "fills_status": self.last_trades_status if include_trades else "NOT_REQUESTED",
+            "error_code": next((getattr(self, attr, None) for attr in ("last_positions_error_code", "last_open_orders_error_code", "last_trades_error_code") if getattr(self, attr, None)), None),
+            "remote_truth": True,
+        }
 
     def get_trades(self, symbol: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
         """Retrieve real account filled trade history."""

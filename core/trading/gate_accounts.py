@@ -6,9 +6,9 @@ rest of the product already treated ``account_id`` as the execution scope.
 This module is the single profile boundary for the two supported Gate
 accounts:
 
-* ``gate_paper``: compatibility account id for the Gate official TestNet
-  account.  It is remote, account-scoped, and never backed by a local fill
-  simulator.
+* ``gate_testnet``: canonical Gate official TestNet account.  It is remote,
+  account-scoped, and never backed by a local fill simulator.
+* ``gate_paper``: input-only compatibility alias retained for old clients.
 * ``gate_live``: LIVE account metadata and encrypted credentials, still
   subject to the existing release-policy lock in ``ExecutionGateway``.
 
@@ -25,18 +25,28 @@ from typing import Any, Dict, Iterable, Optional, Tuple
 
 from core.security.credentials import CredentialVault
 from core.trading.ledger import AccountLedger
+from core.trading.account_aliases import (
+    GATE_TESTNET_ACCOUNT_ID,
+    LEGACY_GATE_PAPER_ACCOUNT_ID,
+    canonical_account_id,
+)
 
 
 GATE_VENUE = "gate"
 GATE_MARKET_TYPE = "perpetual"
 GATE_SETTLE_CURRENCY = "USDT"
-GATE_PAPER_ACCOUNT_ID = "gate_paper"
+# Kept as a Python compatibility constant for existing callers.  Its value is
+# canonical so new code importing the historical name cannot create a second
+# account or accidentally enter the local PAPER matcher.
+GATE_PAPER_ACCOUNT_ID = GATE_TESTNET_ACCOUNT_ID
 GATE_LIVE_ACCOUNT_ID = "gate_live"
 
 # Gate API v4 futures-compatible base URLs.  They are persisted as explicit
 # account metadata so an adapter cannot silently route a TestNet account to the
 # live host.  ``gate_paper`` keeps its legacy PAPER row label, but its
 # authoritative execution environment is the remote Gate official TestNet.
+# ``gate_paper`` is input-only and resolves to ``gate_testnet``; it is not a
+# second local PAPER account.
 GATE_PAPER_API_BASE_URL = "https://api-testnet.gateapi.io/api/v4"
 GATE_LIVE_API_BASE_URL = "https://api.gateio.ws/api/v4"
 GATE_PROFILE_VERSION = "gate-account-v1"
@@ -61,7 +71,7 @@ def _json_config(value: Any) -> Dict[str, Any]:
 
 
 def _account_row(store, account_id: str):
-    clean = _clean_account_id(account_id)
+    clean = canonical_account_id(store, _clean_account_id(account_id))
     with store._connect() as db:
         row = db.execute(
             "SELECT * FROM accounts WHERE account_id=?",
@@ -76,12 +86,7 @@ def _default_profile_config(account_id: str, mode: str) -> Dict[str, Any]:
     mode_clean = str(mode).upper().strip()
     if mode_clean not in {"PAPER", "TESTNET", "LIVE"}:
         raise ValueError("GATE_ACCOUNT_MODE_UNSUPPORTED")
-    # ``PAPER`` is retained in the normalized ledger row for compatibility
-    # with existing UI/account records.  For the two managed Gate profiles the
-    # authoritative execution environment is explicit and remote: the paper
-    # account is Gate TestNet, while live is Gate Live.  No account-id string
-    # guessing is used by the routing layer; these are persisted discriminants.
-    is_testnet = mode_clean in {"PAPER", "TESTNET"}
+    is_testnet = mode_clean == "TESTNET"
     return {
         "venue": GATE_VENUE,
         "gate_account_profile": GATE_PROFILE_VERSION,
@@ -101,6 +106,8 @@ def _default_profile_config(account_id: str, mode: str) -> Dict[str, Any]:
         "local_simulator": False,
         "live_execution": "LOCKED_BY_RELEASE_POLICY" if mode_clean == "LIVE" else "TESTNET_ONLY",
         "release_policy": LIVE_RELEASE_LOCK if mode_clean == "LIVE" else None,
+        "legacy_aliases": [LEGACY_GATE_PAPER_ACCOUNT_ID] if is_testnet else [],
+        "canonical_account_id": GATE_TESTNET_ACCOUNT_ID if is_testnet else account_id,
     }
 
 
@@ -161,6 +168,7 @@ def _ensure_gate_account(
         "gate_api_base_url", "execution_adapter", "credential_scope",
         "remote_private_read", "remote_orders", "local_simulator",
         "live_execution", "release_policy",
+        "legacy_aliases", "canonical_account_id",
     }
     for key, value in expected.items():
         if key in authoritative_keys or key not in merged or (key == "credential_scope" and not merged[key]):
@@ -176,18 +184,20 @@ def _ensure_gate_account(
 def provision_default_gate_accounts(
     store,
     *,
-    paper_initial_deposit: Decimal = Decimal("10000"),
+    paper_initial_deposit: Decimal = Decimal("0"),
     live_initial_deposit: Decimal = Decimal("0"),
 ) -> list[Dict[str, Any]]:
-    """Create or reconcile the distinct Gate PAPER and LIVE account rows."""
+    """Create or reconcile the distinct Gate TestNet and LIVE account rows."""
     # SQLiteStore's market schema is independent from the trading ledger;
     # initialize the ledger tables before the first account lookup.
     AccountLedger(store)
     _ensure_gate_account(
         store,
-        account_id=GATE_PAPER_ACCOUNT_ID,
-        mode="PAPER",
-        initial_deposit=paper_initial_deposit,
+        account_id=GATE_TESTNET_ACCOUNT_ID,
+        mode="TESTNET",
+        # The argument is retained for API compatibility, but TestNet equity
+        # comes only from Gate's private API.  Never seed local capital for it.
+        initial_deposit=Decimal("0"),
     )
     _ensure_gate_account(
         store,
@@ -280,13 +290,22 @@ def list_gate_account_profiles(store) -> list[Dict[str, Any]]:
     with store._connect() as db:
         rows = db.execute(
             """
-            SELECT account_id FROM accounts
-            WHERE config_json LIKE ?
+            SELECT account_id, config_json FROM accounts
             ORDER BY account_id ASC
-            """,
-            (f'%"gate_account_profile": "{GATE_PROFILE_VERSION}"%',),
+            """
         ).fetchall()
-    return [public_gate_account(store, str(row["account_id"])) for row in rows]
+    # SQLite stores both compact and pretty JSON depending on the caller. A
+    # formatting change must not make a managed account disappear from the
+    # account selector, so inspect the parsed object instead of using LIKE.
+    account_ids = []
+    for row in rows:
+        try:
+            config = _json_config(row["config_json"])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if config.get("gate_account_profile") == GATE_PROFILE_VERSION:
+            account_ids.append(str(row["account_id"]))
+    return [public_gate_account(store, account_id) for account_id in account_ids]
 
 
 def save_gate_account_credentials(
@@ -535,6 +554,8 @@ def local_gate_fills(store, account_id: str, symbol: Optional[str] = None, limit
 
 
 __all__ = [
+    "GATE_TESTNET_ACCOUNT_ID",
+    "LEGACY_GATE_PAPER_ACCOUNT_ID",
     "GATE_LIVE_ACCOUNT_ID",
     "GATE_LIVE_ACCOUNT_TYPE",
     "GATE_LIVE_API_BASE_URL",

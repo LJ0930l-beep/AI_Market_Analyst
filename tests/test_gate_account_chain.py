@@ -73,7 +73,9 @@ def test_gate_default_accounts_are_distinct_and_api_provision_is_idempotent(tmp_
     assert listed.status_code == 200, listed.text
     accounts = {item["account_id"]: item for item in listed.json()["accounts"]}
     assert set(accounts) == {GATE_PAPER_ACCOUNT_ID, GATE_LIVE_ACCOUNT_ID}
-    assert accounts[GATE_PAPER_ACCOUNT_ID]["mode"] == "PAPER"
+    # The historical constant is an input alias; the persisted account is now
+    # the canonical Gate TestNet profile.
+    assert accounts[GATE_PAPER_ACCOUNT_ID]["mode"] == "TESTNET"
     assert accounts[GATE_LIVE_ACCOUNT_ID]["mode"] == "LIVE"
     assert accounts[GATE_PAPER_ACCOUNT_ID]["venue"] == accounts[GATE_LIVE_ACCOUNT_ID]["venue"] == "gate"
     assert accounts[GATE_PAPER_ACCOUNT_ID]["api_environment"] == "TESTNET"
@@ -81,6 +83,28 @@ def test_gate_default_accounts_are_distinct_and_api_provision_is_idempotent(tmp_
     assert accounts[GATE_PAPER_ACCOUNT_ID]["api_base_url"] != accounts[GATE_LIVE_ACCOUNT_ID]["api_base_url"]
     assert accounts[GATE_LIVE_ACCOUNT_ID]["live_status"] == "LOCKED"
     assert accounts[GATE_PAPER_ACCOUNT_ID]["private_api_access"] == "NOT_ATTEMPTED"
+    # Account discovery must not depend on whether a caller persisted compact
+    # or pretty JSON in the profile row.
+    with store._connect() as db:
+        compact_config = json.dumps(
+            json.loads(
+                db.execute(
+                    "SELECT config_json FROM accounts WHERE account_id=?",
+                    (GATE_PAPER_ACCOUNT_ID,),
+                ).fetchone()["config_json"]
+            ),
+            separators=(",", ":"),
+        )
+        db.execute(
+            "UPDATE accounts SET config_json=? WHERE account_id=?",
+            (compact_config, GATE_PAPER_ACCOUNT_ID),
+        )
+    compact_list = client.get("/v2/gate/accounts")
+    assert compact_list.status_code == 200
+    assert {item["account_id"] for item in compact_list.json()["accounts"]} == {
+        GATE_PAPER_ACCOUNT_ID,
+        GATE_LIVE_ACCOUNT_ID,
+    }
     scoped_config = client.get(f"/v2/gate/config?account_id={GATE_LIVE_ACCOUNT_ID}")
     assert scoped_config.status_code == 200
     assert scoped_config.json()["account_id"] == GATE_LIVE_ACCOUNT_ID
@@ -99,9 +123,10 @@ def test_gate_default_accounts_are_distinct_and_api_provision_is_idempotent(tmp_
             (GATE_PAPER_ACCOUNT_ID, GATE_LIVE_ACCOUNT_ID),
         ).fetchall()
     assert {row["account_id"] for row in rows} == {GATE_PAPER_ACCOUNT_ID, GATE_LIVE_ACCOUNT_ID}
-    assert {row["mode"] for row in rows} == {"PAPER", "LIVE"}
+    assert {row["mode"] for row in rows} == {"TESTNET", "LIVE"}
     # Repeating provisioning does not reset the local ledger capital or add a
-    # second initial-deposit event.
+    # second initial-deposit event.  TestNet provisioning never seeds local
+    # capital; remote equity is populated only by an explicit private read.
     with store._connect() as db:
         assert int(
             db.execute(

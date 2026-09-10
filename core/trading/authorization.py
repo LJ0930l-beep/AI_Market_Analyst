@@ -17,6 +17,8 @@ import threading
 from typing import Any, Dict, List, Optional
 import uuid
 
+from .account_aliases import canonical_account_id
+
 
 class AuthorizationStatus(str, Enum):
     ACTIVE = "ACTIVE"
@@ -204,6 +206,7 @@ class AuthorizationManager:
         emergency_policy: Any = EmergencyPolicy.MAINTAIN_PROTECTIONS_WAIT_MANUAL.value,
     ) -> TradingAuthorization:
         """Helper adapter supporting AT36 & AT40 test signatures."""
+        account_id = canonical_account_id(self.store, str(account_id))
         now_dt = datetime.now(timezone.utc)
         valid_from = now_dt.isoformat()
         expires_at = (now_dt + timedelta(seconds=duration_seconds)).isoformat()
@@ -258,6 +261,7 @@ class AuthorizationManager:
         confirmed_by: str = "LOCAL_USER_WIZARD",
         confirmation_token: Optional[str] = None,
     ) -> TradingAuthorization:
+        account_id = canonical_account_id(self.store, str(account_id))
         # AT40: AI cannot self-grant or update limits!
         invalid_confirmers = {"AI", "AI_AGENT", "MODEL", "QWEN", "LLM", "SYSTEM_AUTO", "MODEL_LLM_OUTPUT"}
         conf_upper = str(confirmed_by).upper()
@@ -355,6 +359,7 @@ class AuthorizationManager:
             return TradingAuthorization.from_dict(data) if data else None
 
     def list_authorizations(self, account_id: str) -> List[TradingAuthorization]:
+        account_id = canonical_account_id(self.store, str(account_id))
         if hasattr(self.store, "_connect"):
             with self.store._connect() as db:
                 rows = db.execute(
@@ -375,6 +380,7 @@ class AuthorizationManager:
         mode: Optional[Any] = None,
         as_of: Optional[datetime] = None,
     ) -> Optional[TradingAuthorization]:
+        account_id = canonical_account_id(self.store, str(account_id))
         now_dt = as_of or datetime.now(timezone.utc)
         now_iso = now_dt.isoformat()
         mode_val = mode.value if hasattr(mode, "value") else (str(mode) if mode is not None else None)
@@ -435,7 +441,7 @@ class AuthorizationManager:
         """Enforces all authorization bounds on an OrderIntent (AT36)."""
         now_dt = as_of or datetime.now(timezone.utc)
         mode_str = intent.mode.value if hasattr(intent.mode, "value") else str(intent.mode)
-        account_id = getattr(intent, "account_id", "default_account")
+        account_id = canonical_account_id(self.store, str(getattr(intent, "account_id", "default_account")))
 
         target_auth = auth
         if not target_auth:

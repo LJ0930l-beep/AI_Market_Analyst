@@ -21,8 +21,9 @@
     "required_next_step": "Sol independently reviews the repaired package and decides milestone acceptance; no production release claim is made here."
   },
   "runtime_ui_follow_up": {
+    "authority": "HISTORICAL_SNAPSHOT_SUPERSEDED_BY_current_main_revalidation",
     "performed_at": "2026-09-10",
-    "status": "SOURCE_REPAIR_UI_AND_INSTALLED_ACTIVATION_PASS_WITH_EXTERNAL_WARNINGS",
+    "status": "HISTORICAL_RUNTIME_SNAPSHOT_NOT_CURRENT_ACCEPTANCE",
     "live_runtime_read_only": {
       "api_version": "2.0.0",
       "health": "READY_LOCAL_ONLY",
@@ -80,26 +81,26 @@
       {"command": "python -m pytest -q tests/test_institutional_repair_regressions.py::test_strategy_monitoring_persists_gate_native_identity_without_degrading", "status": "PASS_AFTER_FIX", "result": "1 passed in 1.27s"},
       {"command": "isolated GatePublicProvider StrategyMonitoringService cycle with temporary SQLite", "status": "PASS_READ_ONLY_PUBLIC_DATA", "result": "COMPLETED; BTCUSDT=UNSUPPORTED, ETHUSDT=NO_TRIGGER, SOLUSDT=NO_TRIGGER; 240 bars per symbol"},
       {"command": "python -m pytest -q tests/test_gate_account_chain.py tests/test_institutional_v3_api.py tests/test_institutional_repair_regressions.py", "status": "PASS", "result": "26 passed, 1 warning in 9.84s"},
-      {"command": "python -m pytest -q", "status": "PASS", "result": "362 passed, 1 skipped, 1 warning in 219.01s (0:03:39); only Starlette/httpx deprecation warning"},
+      {"command": "python -m pytest -q", "status": "PASS", "result": "370 passed, 1 skipped, 1 warning in 242.34s; only Starlette/httpx deprecation warning"},
       {"command": "python scripts/institutional_acceptance.py", "status": "PASS", "result": "4 of 4 isolated deterministic checks passed"},
       {"command": "python -m compileall -q core apps scripts/institutional_acceptance.py tests/test_gate_account_chain.py tests/test_institutional_repair_regressions.py", "status": "PASS", "result": "exit 0"},
       {"command": "ruff check core apps tests scripts/institutional_acceptance.py --select F821", "status": "PASS", "result": "All checks passed"},
       {"command": "cd web; npx vitest run src/pages/V2WorkspacePage.test.tsx", "status": "PASS", "result": "1 file, 7 tests passed in 2.78s"},
-      {"command": "cd web; npm test -- --run", "status": "PASS", "result": "22 test files, 96 tests passed in 33.12s"},
+      {"command": "cd web; npm test -- --run", "status": "PASS", "result": "22 test files, 98 tests passed in 33.04s"},
       {"command": "cd web; npm run build", "status": "PASS", "result": "Vite production build; 86 modules transformed"},
       {"command": "cd web; npm run typecheck", "status": "PASS", "result": "exit 0"},
       {"command": "cd web; npm run lint", "status": "PASS", "result": "eslint --max-warnings=0; exit 0"}
     ],
-    "installed_package_activation": "PASS_CURRENT_NSIS_REBUILD_AND_DESKTOP_START"
+    "installed_package_activation": "HISTORICAL_ONLY_NOT_PART_OF_CURRENT_MAIN_REVALIDATION"
   },
   "gate_account_chain": {
     "status": "PASS_ISOLATED_FIXTURE_WITH_READ_ONLY_VERIFY_PATH",
     "profiles": [
-      {"account_id": "gate_paper", "venue": "gate", "mode": "PAPER", "effective_mode": "TESTNET", "account_type": "GATE_TESTNET", "api_environment": "TESTNET", "api_base_url": "https://api-testnet.gateapi.io/api/v4", "private_api_access": "NOT_ATTEMPTED"},
+      {"account_id": "gate_testnet", "venue": "gate", "mode": "TESTNET", "effective_mode": "TESTNET", "account_type": "GATE_TESTNET", "api_environment": "TESTNET", "api_base_url": "https://api-testnet.gateapi.io/api/v4", "private_api_access": "NOT_ATTEMPTED", "legacy_input_alias": "gate_paper"},
       {"account_id": "gate_live", "venue": "gate", "mode": "LIVE", "api_environment": "LIVE", "api_base_url": "https://api.gateio.ws/api/v4", "private_api_access": "NOT_ATTEMPTED", "release_status": "LOCKED"}
     ],
-    "routes": ["GET /v2/gate/accounts", "POST /v2/gate/accounts/provision-defaults", "GET /v2/gate/accounts/{account_id}", "POST /v2/gate/accounts/{account_id}/credentials", "POST /v2/gate/accounts/{account_id}/credentials/verify"],
-    "account_scoped_execution": "gate_paper legacy PAPER row is authoritative GATE_TESTNET/TESTNET and uses its account-specific remote adapter; only non-Gate simulated/PAPER uses a local ledger; LIVE is release-locked before adapter resolution",
+    "routes": ["GET /v2/gate/accounts", "POST /v2/gate/accounts/provision-defaults", "GET /v2/gate/accounts/{account_id}", "POST /v2/gate/accounts/{account_id}/credentials", "POST /v2/gate/accounts/{account_id}/credentials/verify", "POST /v2/gate/accounts/{account_id}/connection-test", "POST /v2/gate/testnet/order-test"],
+    "account_scoped_execution": "gate_testnet is the canonical GATE_TESTNET/TESTNET account; gate_paper is input-only and resolves to it; only non-Gate simulated/PAPER uses a local ledger; LIVE is release-locked before adapter resolution",
     "credential_verification": "The /credentials/verify path performs an account-scoped read-only balance validation first, persists only valid candidates, redacts candidate values, and preserves the prior encrypted slot on invalid or unavailable validation.",
     "tests": ["tests/test_gate_account_chain.py::test_gate_default_accounts_are_distinct_and_api_provision_is_idempotent", "tests/test_gate_account_chain.py::test_gate_credentials_are_encrypted_and_scoped_per_account", "tests/test_gate_account_chain.py::test_gate_credential_verify_is_read_only_before_scoped_persist", "tests/test_gate_account_chain.py::test_gate_credential_verify_failure_does_not_replace_existing_slot_or_leak_secret", "tests/test_gate_account_chain.py::test_gate_testnet_trade_plan_stays_remote_and_preserves_scope", "tests/test_gate_account_chain.py::test_gate_live_trade_plan_reports_release_lock_without_creating_an_order", "tests/test_gate_account_chain.py::test_gate_remote_adapter_resolution_is_account_scoped_and_never_falls_back", "tests/test_institutional_gate_testnet.py::test_gate_adapter_constructs_the_explicit_testnet_endpoint_and_maps_schema", "tests/test_institutional_gate_testnet.py::test_gate_testnet_remote_receipt_reconcile_cancel_and_symbol_mapping", "tests/test_institutional_gate_testnet.py::test_gate_credentials_are_verified_before_direct_compatibility_write", "tests/test_institutional_gate_testnet.py::test_gate_dashboard_is_read_only_and_uses_testnet_scope"],
     "private_api_access": "NOT_ACCESSED",
@@ -110,11 +111,129 @@
   "version_check": {
     "pyproject_version": "2.0.0",
     "web_package_version": "2.0.0",
-    "git_head": "32596a3f1431a6646e3c5cb853a213fcc69a067c",
-    "git_tag_at_head": "v2.0.0",
+    "git_head": "3700bc63d4e35df1f0e2b2ec86beeb5d889a2889",
+    "git_tag_at_head": null,
     "v1_7_reference_checked": true,
     "version_metadata_changed": false,
-    "note": "V1.7 was treated as the user's reference-version question only; no version file was changed."
+    "note": "V1.7 was treated as the user's reference-version question only; no version file was changed. main and origin/main were equal at the current HEAD; no tag points directly at this commit."
+  },
+  "current_main_revalidation": {
+    "authority": "AUTHORITATIVE_CURRENT_MAIN_REVALIDATION",
+    "performed_at": "2026-09-10",
+    "git_head": "3700bc63d4e35df1f0e2b2ec86beeb5d889a2889",
+    "branch": "main",
+    "origin_sync": "main...origin/main 0 ahead, 0 behind",
+    "version": {
+      "pyproject": "2.0.0",
+      "core_config": "2.0.0",
+      "web_package": "2.0.0",
+      "tauri_config": "2.0.0",
+      "v1_7_changed": false
+    },
+    "scope_and_safety": {
+      "dirty_worktree_preserved": true,
+      "reset_checkout_clean_commit_push": "RESET_CHECKOUT_CLEAN_NOT_USED; COMMIT_PUSH_PERFORMED_PER_EXPLICIT_USER_REQUEST",
+      "direct_install_script": "NOT_RUN",
+      "current_installation": "CURRENT_USER_INSTALL_COMPLETED; APP_NOT_STARTED_AFTER_INSTALL",
+      "business_database": "NOT_TOUCHED",
+      "production_migration": "NOT_RUN",
+      "private_gate_credentials": "NOT_ACCESSED",
+      "real_orders": "NOT_ATTEMPTED"
+    },
+    "implementation": {
+      "canonical_gate_testnet_account": "gate_testnet",
+      "legacy_gate_paper": "INPUT_ONLY_ALIAS_TO_GATE_TESTNET",
+      "gate_live": "SEPARATE_AND_RELEASE_LOCKED",
+      "remote_truth": "ACCOUNT_SCOPED_REMOTE_SNAPSHOT_MIRROR; NO_LOCAL_GATE_FILLS",
+      "ai_stage_trace": "SYSTEM_BLOCKED_DISTINCT_FROM_MODEL_WAIT",
+      "model_provenance": "REAL_RESPONSE_LATENCY_QUANTIZATION_DIGEST_AND_SCHEMA_ENFORCEMENT",
+      "ui": "REMOTE_ACCOUNT_FACTS_SCOPED_CONNECTION_TEST_AND_BOUNDED_MACRO_REGION",
+      "ollama_compatibility": "EXPLICIT_GRAMMAR_REJECTION_ONLY_JSON_MODE_FALLBACK_WITH_LOCAL_VALIDATION"
+    },
+    "verification": [
+      {"command": "python -m pytest -q", "status": "PASS", "result": "370 passed, 1 skipped, 1 warning in 242.34s", "warning": "Starlette/httpx deprecation only"},
+      {"command": "targeted Gate/AI/evidence/Ollama tests", "status": "PASS", "result": "22 passed, 1 warning"},
+      {"command": "python -m compileall -q apps core scripts tests", "status": "PASS", "result": "exit 0"},
+      {"command": "python scripts/institutional_acceptance.py", "status": "PASS", "result": "4 of 4 isolated deterministic checks"},
+      {"command": "cd web && npm test -- --run", "status": "PASS", "result": "22 files, 98 tests"},
+      {"command": "cd web && npm run typecheck", "status": "PASS", "result": "tsc --noEmit exit 0"},
+      {"command": "cd web && npm run lint", "status": "PASS", "result": "eslint --max-warnings=0 exit 0"},
+      {"command": "cd web && npm run build", "status": "PASS", "result": "Vite 6.4.3, 86 modules"},
+      {"command": "cargo check --manifest-path src-tauri/Cargo.toml", "status": "PASS", "result": "Finished dev profile"},
+      {"command": "cargo tauri build --target x86_64-pc-windows-msvc --config '{\"build\":{\"beforeBuildCommand\":\"\"}}' --bundles nsis", "status": "PASS", "result": "Current 2.0.0 MSVC NSIS installer generated at src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/AI Market Analyst_2.0.0_x64-setup.exe"},
+      {"command": "Current NSIS installer /S current-user install", "status": "PASS", "result": "Exit code 0; installed app version 2.0.0, desktop shortcut target verified, installed sidecar SHA-256 matches source sidecar; app was not started after installation."},
+      {"command": "ruff check apps core scripts/institutional_acceptance.py tests --select F821", "status": "PASS", "result": "All checks passed"},
+      {"command": "git diff --check", "status": "PASS", "result": "exit 0; only LF-to-CRLF conversion notices"}
+    ],
+    "external_checks": {
+      "gate_testnet_public_contracts": {"status": "PASS_READ_ONLY", "status_code": 200, "count": 63, "required_fields": ["name", "quanto_multiplier", "order_price_round", "order_size_min"]},
+      "gate_live_public_contracts": {"status": "PASS_READ_ONLY", "status_code": 200, "count": 977},
+      "ollama": {"status": "AVAILABLE", "version": "0.33.3", "model": "qwen3.5:9b", "digest": "6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7", "quantization": "Q4_K_M", "inference_settings": {"temperature": 0.2, "context_length": 8192, "max_tokens": 700, "think": false}},
+      "real_qwen_smoke": {"status": "PASS", "action": "WAIT", "schema_enforcement": "json_mode_local_validation", "latency_ms": 11791.205, "raw_response_sha256": "bcb7de71de5239d54afef09cd73f04e0e186c8ada247d471d64cc6adea146447"},
+      "current_installation_health": {"status": "NOT_RUNNING_AFTER_INSTALL", "url": "http://127.0.0.1:18765/health", "reason": "current-user installation verified; app was not started during verification"}
+    },
+    "packaging": {
+      "sidecar": "PASS_GENERATED_ONLY",
+      "tauri_nsis": "PASS_MSVC",
+      "installer": "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/AI Market Analyst_2.0.0_x64-setup.exe",
+      "installer_sha256": "548B45CC63B8143767D8EDE85D3670F3D896FF8169D2213C30469A5B9257BF4D",
+      "installation": "PASS_CURRENT_USER; APP_NOT_STARTED_AFTER_INSTALL"
+    },
+    "contracts": [
+      {"id": "R01", "result": "PASS_ISOLATED", "paths": ["core/storage/sqlite.py", "core/instruments.py", "core/trading/account_aliases.py"], "tests": ["test_latest_bars_limit_one_returns_newest_and_cross_venue_identity_is_kept", "test_gate_default_accounts_are_distinct_and_api_provision_is_idempotent"], "dependency": "production migration not run"},
+      {"id": "R02", "result": "PASS_ISOLATED", "paths": ["core/storage/sqlite.py", "core/analysis/strategy_replay.py"], "tests": ["AT-DATA-IDENTITY-LATEST", "test_v14_d03_closed_bar_replay_and_real_parameter_perturbation"], "dependency": "historical PIT depends on source evidence"},
+      {"id": "R03", "result": "PASS_FIXTURE", "paths": ["core/quant/strategies", "core/trading/candidate_scanner.py"], "tests": ["full pytest", "test_v14_d02_api_round_trip_preserves_typed_conditions_and_protection_contract"], "dependency": "no claim of optimized parameters"},
+      {"id": "R04", "result": "PARTIAL_EXTERNAL", "paths": ["core/events.py", "core/news_revision.py", "core/macro_calendar.py"], "tests": ["test_source_registry_does_not_trust_path_or_source_text", "test_news_negation_changes_direction"], "dependency": "paid/private news and FF actual not configured"},
+      {"id": "R05", "result": "PASS_SCOPED", "paths": ["core/analysis/strategy_replay.py", "core/trading/trader_capabilities.py"], "tests": ["test_v14_d03_closed_bar_replay_and_real_parameter_perturbation", "AT24-AT30"], "dependency": "DSR/PBO need sufficient real trials"},
+      {"id": "R06", "result": "PASS_ISOLATED", "paths": ["core/trading/ledger.py", "core/analysis/ai_trade_analytics.py", "core/trading/institutional_risk.py"], "tests": ["test_partial_exit_with_remaining_quantity_is_not_closed_trade", "test_short_mae_uses_high_and_mfe_uses_low", "test_counterfactual_stress_recomputes_costs_and_unreviewed_is_not_pass"], "dependency": "real depth/fee/funding fields remain explicit"},
+      {"id": "R07", "result": "PASS_ISOLATED_UI", "paths": ["core/trading/ai_led_engine.py", "apps/api/v2.py", "web/src/components/AITraderPanel.tsx", "web/src/pages/V2WorkspacePage.tsx"], "tests": ["test_ai_system_block_is_not_persisted_as_model_wait", "98 frontend tests"], "dependency": "current installation not replaced"},
+      {"id": "R08", "result": "PASS_ISOLATED", "paths": ["apps/api/v3.py", "apps/api/v2.py", "core/storage/sqlite.py"], "tests": ["test_research_cancel_uses_authoritative_scope_and_does_not_500", "full pytest"], "dependency": "unconfigured paid data remains unavailable"},
+      {"id": "R09", "result": "PASS_ISOLATED", "paths": ["core/trading/execution_gateway.py", "core/trading/position_guardian.py", "core/trading/gate_testnet_e2e.py"], "tests": ["test_gate_remote_truth_required_for_new_risk_but_not_reduce_only_boundary", "test_gate_testnet_e2e_uses_remote_fill_and_cleans_without_local_fill", "RT01-RT16"], "dependency": "real Gate private order not attempted"},
+      {"id": "R10", "result": "PASS_LOCAL_WITH_REAL_SMOKE", "paths": ["core/evidence.py", "core/ai/ollama.py", "core/trading/ai_session_coordinator.py", "core/trading/ai_cycle_trace.py"], "tests": ["test_model_digest_is_selected_for_requested_smart_model", "test_generate_json_falls_back_only_after_explicit_schema_grammar_rejection", "real_qwen_smoke"], "dependency": "no fixed eval or forward shadow run"},
+      {"id": "R11", "result": "PASS_LOCAL_WITH_MSVC_BUILD", "paths": ["core/trading/institutional_schema.py", "core/security/local_guard.py", "scripts/build-tauri.ps1"], "tests": ["compileall", "ruff F821", "cargo check", "cargo tauri build (MSVC)", "current-user install", "git diff --check"], "dependency": "production and real TestNet operations not run; LIVE locked"}
+    ],
+    "sha256": {
+      "algorithm": "SHA-256",
+      "note": "Current worktree hashes; evidence/institutional-repair-result.json is excluded to avoid self-reference.",
+      "files": {
+        "apps/api/v2.py": "4185D720071D75D37BC8BBA81EF649890973A3C4FFB699D629FBBC124B361FC1",
+        "core/ai/contracts.py": "A2A49A775B10595B1C5387657448118DADAB951607A6E113390FD565D0175306",
+        "core/ai/ollama.py": "FF65C1CD4D7AC86505C516B2F7D824E6C878DE28E1D8C2B2FBF9EB2F9F4EA068",
+        "core/evidence.py": "F644E4623E5E84D325503437A6428EBB50CBC6DF9CE87AC1BF593124B170902C",
+        "core/storage/sqlite.py": "79245EA5ECB70966234CBC28F40311EB2A5E987A512129C5815B14938FAB0111",
+        "core/trading/account_aliases.py": "65E0ACA807FD2BA5337C2B18CAAAF102DF73D5290552E6EDBCB0E5977A47A86A",
+        "core/trading/account_scope.py": "2B2784BF5F6B3D836055DED1F7734CC4DCC067D3CA569E4464CA3A32A0B2F8C2",
+        "core/trading/ai_calibration.py": "F4C41247E0A0C18D0B04CB672E1199B879BFB8E41A32AAA73C56C1BD44B8961E",
+        "core/trading/ai_cycle_trace.py": "6053A15F2889B150231A52D3E743E1339BED395E69222FD7E005FFB5E7187772",
+        "core/trading/ai_led_engine.py": "0BC46ED96EF5B17E08DD84E9BAB869890A43CA1E29DAA790A0E22318A90E5061",
+        "core/trading/ai_session_coordinator.py": "615DB7ADE13F9FF3AB351BD2309A2EE3DAF43707F204EECBB4FEB6BCB91A52B7",
+        "core/trading/authorization.py": "5CA1258B4DB61E34D46478F4787E7015A4039D7D99942843817720B7C5716DE6",
+        "core/trading/candidate_scanner.py": "3002DDA4EE4F5A50354508F58D742A6D58DA8FBAB9BC48803698AC1C6CF7357F",
+        "core/trading/execution_gateway.py": "B1888A96E510F63ED9D0C629751299BDCFE2B96738754194C335EDD0D05C061B",
+        "core/trading/gate_account_truth.py": "CCA7D8ADC7D9EBF89F4C23F8474BC1625373B83B818232E30E47A6BC7B51044C",
+        "core/trading/gate_accounts.py": "6F5CA8DA03DD94BC478C83D9FCA881BCB01658F36889A13C3C31CB77AED6F010",
+        "core/trading/gate_live_client.py": "F90625C520679058F8CB779FB9CF5B5EB772A14E30DECE006ECC7A9906227508",
+        "core/trading/gate_testnet_e2e.py": "298EEDC356BBD63C76F4B00BAB060B4F12C7A71C15A4EBE99647244431575F3C",
+        "core/trading/institutional_schema.py": "2CAA9C469BD9332DD3A9CFEDB359ADE2C51A5BFA222782BCB29D015375E524D5",
+        "core/trading/ledger.py": "7077A84CC2251FBEDA915DEF53A5182511B017F582CEC43506055F70650D9567",
+        "core/trading/model_schemas.py": "D1BABD9D4E879F6A935309763A8C64C121D6D513C3CEE5FBE6C8FA7F7A1E3994",
+        "core/trading/trader_capabilities.py": "9689BFCF1791F107B8250E29B71069D962957B6BC657694C31D7BCF521EF97F6",
+        "docs/institutional-repair-acceptance.md": "20C204DE9C1C51472140EC2B4CBBE519525CEC6308DD5228A16D536D0C466376",
+        "docs/institutional-repair-implementation.md": "782CA45E6C529D0227A24C666F4A6A464F19CE067761516C708394CAD167D7F7",
+        "evidence/manifest.json": "73DA456764AD66BB0153F3F256E088DBFF7AC3C0CA190BDC42334ECCD4E8DDF5",
+        "tests/test_gate_account_chain.py": "66FA83D013CEA7EA2FC75A4D102108455C15444BCD694F22E853F4C9BFBA1CC7",
+        "tests/test_gate_testnet_ai_chain.py": "EA54D16E5D12399180EA1BCFE15D20564E3B7321D36AAF8D29136D58E8AD669C",
+        "tests/test_institutional_evidence_risk.py": "CE00A9F6B0D26A3BE29040B98C1163DEBDCA794E3576FAA66A63D8B5C7499C7F",
+        "tests/test_ollama_provider_contract.py": "51131B7CE40B87F3DD482A934359AB2549B7FDC5B13F795B45EC6B2D4E124DBC",
+        "web/src/components/AITraderPanel.test.tsx": "576525F2A573FC5D5C15A7CD3504B034416D08A64A2AB58B96A912BC1867194B",
+        "web/src/components/AITraderPanel.tsx": "EF3F23985B4F0D4A67F10C4168A2859014CF09CE4C20BA327039C8C163AC5C0F",
+        "web/src/pages/V2WorkspacePage.test.tsx": "489FF46EFC1567505DE1AD3336E5C557FF142AE8AA3ACD6B23A1483C435C894F",
+        "web/src/pages/V2WorkspacePage.tsx": "FD32DC178B7DF394A6CEC22AD9C5DA12F897A3B23F85FE3290014DCBDE5DFFEF",
+        "web/src/v2.css": "480D1B886587726F582F0D84D96D0E4D4573023E4513158FF07D1DD77D982E81"
+      }
+    },
+    "fixture_boundary": "Deterministic fixtures and the real no-trade Qwen smoke do not prove private Gate permissions, real order/fill, shadow performance, or production release readiness.",
+    "uncompleted_items": ["real Gate TestNet private credential verification and order/fill", "fixed evaluation set and forward shadow account", "production database migration", "post-install runtime health check (app was intentionally not started in this turn)", "paid/private news and consensus data", "DSR/PBO with sufficient real trials", "Sol independent acceptance"]
   },
   "public_network_validation": {
     "performed_at": "2026-09-10",
@@ -122,14 +241,15 @@
     "status": "PASS_CONFIGURED_PUBLIC_ENDPOINTS",
     "official_documentation": "https://www.gate.com/docs/developers/apiv4/en/",
     "checks": [
-      {"label": "paper_testnet_futures_contracts", "url": "https://api-testnet.gateapi.io/api/v4/futures/usdt/contracts", "status_code": 200, "json_array": true, "item_count": 63, "required_fields_present": ["name", "quanto_multiplier"]},
-      {"label": "live_futures_contracts", "url": "https://api.gateio.ws/api/v4/futures/usdt/contracts", "status_code": 200, "json_array": true, "item_count": 973, "required_fields_present": ["name", "quanto_multiplier"]}
+      {"label": "paper_testnet_futures_contracts", "url": "https://api-testnet.gateapi.io/api/v4/futures/usdt/contracts", "status_code": 200, "json_array": true, "item_count": 63, "required_fields_present": ["name", "quanto_multiplier", "order_price_round", "order_size_min"]},
+      {"label": "live_futures_contracts", "url": "https://api.gateio.ws/api/v4/futures/usdt/contracts", "status_code": 200, "json_array": true, "item_count": 977, "required_fields_present": ["name", "quanto_multiplier", "order_price_round", "order_size_min"]}
     ],
     "negative_probe": {"url": "https://fx-api-testnet.gateio.ws/api/v4/futures/usdt/contracts", "status_code": 502, "selected": false, "interpretation": "Historical rejected candidate from the 2026-09-09 probe; it is not a configured base and is not used by the current source."},
     "last_revalidated_at": "2026-09-10",
     "scope_limit": "Public endpoint reachability and response shape only; this does not prove private key permissions, account balance, signature authentication, order, fill, or private API behavior."
   },
   "safety_boundary": {
+    "authority": "HISTORICAL_SNAPSHOT_SUPERSEDED_BY_current_main_revalidation",
     "initial_branch_status": "main...origin/main [ahead 4] with tracked modifications and untracked files already present",
     "final_read_only_status_entry_count": 102,
     "final_status_check_performed_at": "2026-09-10",
@@ -137,7 +257,7 @@
     "dirty_worktree_preserved": true,
     "reset_checkout_clean_commit_push": "NOT_USED",
     "direct_install_script": "NOT_RUN",
-    "running_installation_or_business_database": "USER_LEVEL_INSTALL_UPDATED_AFTER_EXPLICIT_EXIT; BUSINESS_DATABASE_NOT_TOUCHED",
+    "running_installation_or_business_database": "CURRENT_INSTALLATION_NOT_TOUCHED_AND_CURRENTLY_STOPPED; BUSINESS_DATABASE_NOT_TOUCHED",
     "production_migration": "NOT_RUN",
     "private_account": "NOT_ACCESSED",
     "real_order": "NOT_ATTEMPTED"
@@ -185,7 +305,7 @@
     "summary": {"passed": 4, "total": 4}
   },
   "verification": [
-    {"command": "python -m pytest -q", "status": "PASS", "result": "362 passed, 1 skipped, 1 warning in 219.01s (0:03:39); only Starlette/httpx deprecation warning"},
+    {"command": "python -m pytest -q", "status": "PASS", "result": "370 passed, 1 skipped, 1 warning in 242.34s; only Starlette/httpx deprecation warning"},
     {"command": "python -m pytest -q tests/test_institutional_repair_regressions.py", "status": "PASS_AFTER_FIX", "result": "10 failed before repair; final regression cases pass and are included in full suite"},
     {"command": "python -m pytest -q tests/test_institutional_repair_regressions.py tests/test_spec_at24_at30.py tests/test_trader_reliability_v14.py::test_v14_d03_closed_bar_replay_and_real_parameter_perturbation", "status": "PASS", "result": "18 passed, 1 warning"},
     {"command": "python -m pytest -q tests/test_institutional_v3_api.py tests/test_institutional_evidence_risk.py tests/test_institutional_repair_regressions.py", "status": "PASS", "result": "14 passed, 1 warning"},
@@ -194,22 +314,23 @@
       {"command": "python -m pytest -q tests/test_gate_account_chain.py tests/test_institutional_gate_testnet.py", "status": "PASS", "result": "15 passed, 1 warning in 9.51s; only Starlette/httpx deprecation warning"},
     {"command": "python -m compileall -q core apps scripts/institutional_acceptance.py tests/test_gate_account_chain.py tests/test_institutional_gate_testnet.py tests/test_institutional_repair_regressions.py", "status": "PASS", "result": "exit 0"},
     {"command": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-tauri.ps1", "status": "PASS", "result": "Current React production assets and PyInstaller sidecar rebuilt from source."},
-    {"command": "cargo +stable-x86_64-pc-windows-gnu tauri build --target x86_64-pc-windows-gnu --config '{\"build\":{\"beforeBuildCommand\":\"\"}}'", "status": "PASS", "result": "Current 2.0.0 NSIS installer generated; inline override bypassed the existing relative beforeBuildCommand path issue without editing user-owned config."},
-    {"command": "Current NSIS installer /S current-user install", "status": "PASS", "result": "Installer exit code 0; installed main executable reports 2.0.0, installed sidecar SHA-256 matches the freshly rebuilt source sidecar, desktop shortcut points to the verified install directory, and the installed shortcut was started for a read-only health check."},
+    {"command": "cargo +stable-x86_64-pc-windows-gnu tauri build --target x86_64-pc-windows-gnu --config '{\"build\":{\"beforeBuildCommand\":\"\"}}'", "status": "HISTORICAL_SNAPSHOT_SUPERSEDED_BY_current_main_revalidation", "result": "An earlier environment generated a 2.0.0 NSIS installer; the current main revalidation could not reproduce the package because the local GNU linker/system-library environment is now blocked."},
+    {"command": "Current NSIS installer /S current-user install", "status": "HISTORICAL_SNAPSHOT_SUPERSEDED_BY_current_main_revalidation", "result": "An earlier user-confirmed installation was observed; it is not evidence for the current main revalidation, which did not install or restart the current user program."},
     {"command": "isolated TestClient research-cancellation reproducer", "status": "PASS_AFTER_REPAIR", "result": "Temporary SQLite research creation and POST /v3/research/runs/{run_id}/cancel both completed without the prior 500; covered by tests/test_gate_account_chain.py::test_research_cancel_uses_authoritative_scope_and_does_not_500."},
     {"command": "isolated AccountLedger existing-position-fill reproducer", "status": "PASS_AFTER_REPAIR", "result": "First and second fills for the same position_id completed without the prior ProtectionStatus NameError; covered by tests/test_gate_account_chain.py::test_scale_in_existing_position_preserves_active_protection_without_name_error."},
     {"command": "ruff check apps core scripts/institutional_acceptance.py tests/test_gate_account_chain.py --select F821", "status": "PASS", "result": "No undefined-name violations."},
-    {"command": "PowerShell Invoke-WebRequest configured Gate public futures contracts endpoints", "status": "PASS_READ_ONLY", "result": "TestNet 200 / JSON array / 63 contracts; Live futures 200 / JSON array / 973 contracts; no credentials or private endpoint used."},
+    {"command": "PowerShell Invoke-WebRequest configured Gate public futures contracts endpoints", "status": "PASS_READ_ONLY", "result": "TestNet 200 / JSON array / 63 contracts; Live futures 200 / JSON array / 977 contracts; no credentials or private endpoint used."},
     {"command": "cd web; npm run build", "status": "PASS", "result": "Vite production build; 86 modules transformed"},
     {"command": "cd web; npx vitest run src/pages/V2WorkspacePage.test.tsx", "status": "PASS", "result": "1 file, 7 tests passed in 2.78s; includes macro calendar scroll-region semantics."},
-    {"command": "cd web; npm test -- --run", "status": "PASS", "result": "22 test files, 96 tests passed; 33.12s"},
+    {"command": "cd web; npm test -- --run", "status": "PASS", "result": "22 test files, 98 tests passed; 33.04s"},
     {"command": "cd web; npm run typecheck", "status": "PASS", "result": "exit 0"},
     {"command": "cd web; npm run lint", "status": "PASS", "result": "eslint --max-warnings=0; exit 0"},
     {"command": "python -m pytest -q tests/test_spec_rt01_rt16.py::test_rt05_stale_market_data_degrades_and_blocks_opening", "status": "PASS", "result": "1 passed in 0.89s; no unhandled teardown thread exception"},
     {"command": "cargo check --manifest-path src-tauri/Cargo.toml", "status": "PASS", "result": "Finished dev profile; exit 0"},
-    {"command": "git diff --check", "status": "KNOWN_PREEXISTING_DIRTY_WARNING", "result": "exit 1 due pre-existing core/providers/gateio_provider.py:144 blank line at EOF plus CRLF conversion warnings; unrelated user whitespace was not changed"}
+    {"command": "git diff --check", "status": "PASS", "result": "exit 0; Git emitted only LF-to-CRLF conversion notices for modified files"}
   ],
   "external_dependencies": {
+    "authority": "HISTORICAL_SNAPSHOT_SUPERSEDED_BY_current_main_revalidation",
     "public_http_spot_check": "PASS_GATE_PUBLIC_CONTRACTS_ONLY",
     "public_http_other_providers": "NOT_CONFIGURED_NOT_RUN",
     "public_provider_backfill": "NOT_CONFIGURED",
@@ -225,6 +346,7 @@
     "docx_render_recheck": "NOT_CONFIGURED: soffice.exe unavailable in current environment"
   },
   "desktop_installation": {
+    "authority": "HISTORICAL_SNAPSHOT_SUPERSEDED_BY_current_main_revalidation",
     "status": "PASS_USER_LEVEL_OVERWRITE_AFTER_USER_CONFIRMED_EXIT",
     "installer_path": "D:/RJ/codex/ai-market-analyst/src-tauri/target/release/bundle/nsis/AI Market Analyst_2.0.0_x64-setup.exe",
     "installer_sha256": "C155D7F0BB8AA1A2EC2342FA43962A281BACD4082973BEA8EA289E39E0ED41BC",
@@ -241,6 +363,7 @@
     "scope": "Program directory and desktop shortcut only; no business database migration, private account access, order, fill, or LIVE unlock."
   },
   "final_current_revalidation": {
+    "authority": "HISTORICAL_SNAPSHOT_SUPERSEDED_BY_current_main_revalidation",
     "performed_at": "2026-09-10T12:57:00+08:00",
     "source_app_sha256": "19CF5B6ECB23C72DF9F22ED63C7FD64B3DABEB0C52303AF2B0650B472B00BAFE",
     "installed_app_sha256": "102B1B9B00680710F6BDD38456B8FB4C3BD7C34953421DDF2695077FDA6BA1F1",
@@ -263,7 +386,7 @@
   "uncompleted_items": [
     "Gate public futures-contract GETs were verified for the configured TestNet and Live bases; other public market/news/consensus HTTP and provider backfill require configuration and separate read-only spot checks.",
     "Gate private credential verification is wired to /gate-live but was not accessed in this run; the user must enter credentials in the selected account slot to run the explicit read-only balance check. No private credential is present in this evidence.",
-    "Real Ollama qwen3.5:9b manifest digest, fixed evaluation set, and forward shadow account were not run.",
+    "Fixed evaluation set and forward shadow account were not run; current_main_revalidation observed the real qwen3.5:9b manifest digest and completed only a no-trade smoke.",
     "DSR/PBO require sufficient real experiment trials, OOS returns matrix, sample length, skewness, and kurtosis; no demo statistic was inserted.",
     "Production activity database migration was not performed; use backup/rollback and independent operations review.",
     "The packaged build used an inline beforeBuildCommand override because the configured relative path fails when Tauri launches from src-tauri; no user-owned config was changed during this install.",

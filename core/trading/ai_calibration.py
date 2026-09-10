@@ -15,6 +15,7 @@ import uuid
 from typing import Any, Callable
 
 from ..evidence import model_weight_digest
+from ..model_routing import DEFAULT_SMART_MODEL
 from .institutional_schema import ensure_institutional_trader_schema
 from .model_schemas import CALIBRATION_PROFILE_SCHEMA
 
@@ -192,7 +193,7 @@ class AICalibrationService:
         if model_provider is None or not callable(getattr(model_provider, "generate_json", None)):
             return self._finish(run_id, account_id, environment, status="NOT_READY", error_code="SMART_MODEL_UNAVAILABLE", result={"required_bars": requested, "used_bars": len(bars)})
 
-        digest, digest_status = model_weight_digest(model_provider)
+        digest, digest_status = model_weight_digest(model_provider, model_name=DEFAULT_SMART_MODEL)
         if not digest:
             return self._finish(run_id, account_id, environment, status="NOT_READY", error_code="MODEL_DIGEST_UNAVAILABLE", result={"required_bars": requested, "used_bars": len(bars), "digest_status": digest_status})
 
@@ -202,7 +203,10 @@ class AICalibrationService:
             {"role": "system", "content": "Return JSON only. Produce an operation profile from the supplied closed-bar replay. Do not produce chain-of-thought."},
             {"role": "user", "content": json.dumps({"prompt_version": CALIBRATION_PROMPT_VERSION, "input_hash": input_hash, "replay": summary}, sort_keys=True)},
         ]
-        model_id = str(getattr(model_provider, "default_model", None) or getattr(model_provider, "model_name", None) or "qwen3.5:9b")
+        # Calibration is part of an AI-led session gate.  It must use the same
+        # Smart model as the final action decision; a provider's fast-model
+        # default is never an implicit fallback.
+        model_id = DEFAULT_SMART_MODEL
         raw_response: str | None = None
         parse_phase = "INITIAL"
         latency_ms: float | None = None

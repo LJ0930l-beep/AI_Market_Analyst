@@ -42,6 +42,14 @@ EventType = LedgerEventType
 PROTECTION_ACTIVE = "ACTIVE"
 
 
+def _decimal_or_none(value: Any) -> Optional[Decimal]:
+    try:
+        parsed = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return parsed if parsed.is_finite() else None
+
+
 @dataclass
 class LedgerEvent:
     event_id: str
@@ -80,6 +88,13 @@ class AccountSnapshot:
     # Open non-PAPER positions whose protection is not durably ACTIVE.  This
     # is a risk-blocking fact, not an estimate of loss.
     unverified_protection_count: int = 0
+    # Managed Gate accounts expose the remote account snapshot as the
+    # authority.  The local ledger remains visible only as an audit/mirror
+    # projection when this status is unavailable.
+    source: str = "LOCAL_LEDGER"
+    remote_truth_status: str = "NOT_AVAILABLE"
+    remote_observed_at: Optional[str] = None
+    remote_snapshot_id: Optional[str] = None
 
     @property
     def equity(self) -> Decimal:
@@ -112,6 +127,10 @@ class AccountSnapshot:
             "daily_loss_limit_reached": self.daily_loss_limit_reached,
             "unvalued_fee_events": self.unvalued_fee_events,
             "unverified_protection_count": self.unverified_protection_count,
+            "source": self.source,
+            "remote_truth_status": self.remote_truth_status,
+            "remote_observed_at": self.remote_observed_at,
+            "remote_snapshot_id": self.remote_snapshot_id,
             "as_of": self.as_of.isoformat(),
             "snapshot_id": self.snapshot_id,
         }
@@ -182,6 +201,51 @@ class AccountLedger:
         self._conn = sqlite3.connect(self._db_path or ":memory:", timeout=30.0, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         return self._conn
+
+    def _canonical_account_id(self, account_id: str) -> str:
+        """Resolve the durable Gate alias for every ledger boundary."""
+
+        clean = str(account_id or "").strip()
+        if self._store is not None:
+            try:
+                from .account_aliases import canonical_account_id
+                return canonical_account_id(self._store, clean)
+            except Exception:
+                return clean
+        try:
+            row = self._get_conn().execute(
+                "SELECT canonical_account_id FROM account_aliases WHERE alias_account_id=?",
+                (clean,),
+            ).fetchone()
+            return str(row[0]) if row else clean
+        except sqlite3.Error:
+            return clean
+
+    @staticmethod
+    def _remote_truth_ready(conn: sqlite3.Connection, account_id: str, now: datetime) -> bool:
+        """Require a recent complete Gate account snapshot before new risk."""
+
+        try:
+            row = conn.execute(
+                """SELECT status, observed_at, equity, available_margin
+                   FROM gate_remote_account_snapshots
+                   WHERE account_id=?
+                   ORDER BY observed_at DESC, snapshot_id DESC LIMIT 1""",
+                (account_id,),
+            ).fetchone()
+        except sqlite3.Error:
+            return False
+        if row is None or str(row["status"] or "").upper() != "AVAILABLE":
+            return False
+        if _decimal_or_none(row["equity"]) is None or _decimal_or_none(row["available_margin"]) is None:
+            return False
+        try:
+            observed = datetime.fromisoformat(str(row["observed_at"]).replace("Z", "+00:00"))
+            observed = observed.replace(tzinfo=timezone.utc) if observed.tzinfo is None else observed.astimezone(timezone.utc)
+        except (TypeError, ValueError):
+            return False
+        age = (now - observed).total_seconds()
+        return -5.0 <= age <= 120.0
 
     def _ensure_tables(self) -> None:
         with self._lock:
@@ -324,6 +388,11 @@ class AccountLedger:
             conn.execute("UPDATE trade_fills SET fee_amount=fee WHERE fee_amount IS NULL OR fee_amount='0' AND fee!='0'")
             from .institutional_schema import ensure_institutional_trader_schema
             ensure_institutional_trader_schema(conn)
+            # Canonicalize the old Gate TestNet account after every ledger
+            # schema creation.  This is additive/idempotent and keeps the
+            # alias resolver available to all request-scoped ledger objects.
+            from .account_aliases import ensure_account_alias_migration
+            ensure_account_alias_migration(conn)
             conn.commit()
 
     def create_account(
@@ -337,6 +406,7 @@ class AccountLedger:
         now: Optional[datetime] = None,
     ) -> Dict[str, Any]:
         """Explicitly register an account with a defined initial capital (no hidden 1000 vs 10000)."""
+        account_id = self._canonical_account_id(account_id)
         now = now or datetime.now(timezone.utc)
         now_iso = now.isoformat()
         config_json = json.dumps(config or {}, allow_nan=False)
@@ -416,7 +486,7 @@ class AccountLedger:
         now_ts = now or datetime.now(timezone.utc)
         if isinstance(event_or_account_id, LedgerEvent):
             evt = event_or_account_id
-            target_account_id = evt.account_id
+            target_account_id = self._canonical_account_id(evt.account_id)
             event_type = evt.event_type
             amount_dec = Decimal(str(evt.amount))
             currency = evt.currency or "USDT"
@@ -424,7 +494,7 @@ class AccountLedger:
             occurred = evt.occurred_at or now_ts
             evt_id = evt.event_id or f"evt_{occurred.timestamp()}_{event_type}_{target_account_id}"
         else:
-            target_account_id = str(account_id if account_id is not None else event_or_account_id)
+            target_account_id = self._canonical_account_id(str(account_id if account_id is not None else event_or_account_id))
             event_type = str(event_type)
             amount_dec = Decimal(str(amount))
             currency = currency or kwargs.get("currency", "USDT")
@@ -546,6 +616,7 @@ class AccountLedger:
 
     def get_events(self, account_id: str) -> List[LedgerEvent]:
         """Retrieve all ledger events for an account in chronological order."""
+        account_id = self._canonical_account_id(account_id)
         with self._lock:
             conn = self._get_conn()
             rows = conn.execute(
@@ -678,12 +749,18 @@ class AccountLedger:
         budget boundary.
         """
         now = now or datetime.now(timezone.utc)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+        else:
+            now = now.astimezone(timezone.utc)
         expires_at = expires_at or (now + timedelta(minutes=15))
         risk_dec = Decimal(str(amount_risk))
         margin_dec = Decimal(str(amount_margin))
 
         if risk_dec <= 0 or margin_dec < 0:
             return False
+
+        account_id = self._canonical_account_id(account_id)
 
         with self._lock:
             conn = self._get_conn()
@@ -741,6 +818,16 @@ class AccountLedger:
                     or account_config.get("venue")
                     or ("simulated" if account_mode == "PAPER" else "gate")
                 ).strip().lower()
+
+                # Gate TestNet has no local capital base.  A reservation may
+                # be created only after a recent complete remote account
+                # snapshot has been persisted.  Reduce-only recovery does
+                # not call this method and therefore remains available when
+                # the private endpoint is degraded.
+                if str(account_config.get("account_type") or "").upper() == "GATE_TESTNET":
+                    if not self._remote_truth_ready(conn, account_id, now):
+                        conn.rollback()
+                        return False
 
                 # An open position with unknown/degraded protection is still
                 # live risk.  Refuse every new reservation in this account
@@ -858,6 +945,29 @@ class AccountLedger:
                     elif event["event_type"] in (LedgerEventType.FUNDING_FEE, LedgerEventType.FUNDING_PAYMENT):
                         funding += amount
                 wallet = initial + realized - fees + funding
+                remote_available_margin: Optional[Decimal] = None
+                if str(account_config.get("account_type") or "").upper() == "GATE_TESTNET":
+                    # ``_remote_truth_ready`` above only checks freshness and
+                    # presence.  Re-read the same append-only fact inside the
+                    # transaction so the atomic reservation uses Gate's
+                    # equity/free-margin values rather than the zero local
+                    # seed used by the canonical account row.
+                    remote_row = conn.execute(
+                        """SELECT status, equity, available_margin
+                           FROM gate_remote_account_snapshots
+                           WHERE account_id=?
+                           ORDER BY observed_at DESC, snapshot_id DESC LIMIT 1""",
+                        (account_id,),
+                    ).fetchone()
+                    if remote_row is None or str(remote_row["status"] or "").upper() != "AVAILABLE":
+                        conn.rollback()
+                        return False
+                    remote_equity = _decimal_or_none(remote_row["equity"])
+                    remote_available_margin = _decimal_or_none(remote_row["available_margin"])
+                    if remote_equity is None or remote_available_margin is None:
+                        conn.rollback()
+                        return False
+                    wallet = remote_equity
                 account_meta = conn.execute(
                     "SELECT timezone FROM accounts WHERE account_id=?",
                     (account_id,),
@@ -1011,7 +1121,12 @@ class AccountLedger:
                         leverage = Decimal(str(position.get("leverage", 1)))
                         if remaining > 0 and contract_size > 0 and entry_price > 0 and leverage > 0:
                             allocated_margin += remaining * contract_size * entry_price / leverage
-                if wallet - allocated_margin - existing_reserved_margin < margin_dec:
+                margin_base = (
+                    remote_available_margin
+                    if remote_available_margin is not None
+                    else wallet - allocated_margin
+                )
+                if margin_base - existing_reserved_margin < margin_dec:
                     conn.rollback()
                     return False
                 conn.execute(
@@ -1041,6 +1156,7 @@ class AccountLedger:
 
     def release_risk(self, account_id: str, reservation_id: str) -> bool:
         """Release a pending risk reservation on cancellation, rejection, or fill."""
+        account_id = self._canonical_account_id(account_id)
         with self._lock:
             conn = self._get_conn()
             cur = conn.execute(
@@ -1052,6 +1168,7 @@ class AccountLedger:
 
     def commit_risk(self, account_id: str, reservation_id: str) -> bool:
         """Mark reservation as committed upon successful fill."""
+        account_id = self._canonical_account_id(account_id)
         with self._lock:
             conn = self._get_conn()
             cur = conn.execute(
@@ -1070,7 +1187,12 @@ class AccountLedger:
     ) -> AccountSnapshot:
         """Compute the unified account snapshot (Single Source of Truth, R06)."""
         now = now or datetime.now(timezone.utc)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+        else:
+            now = now.astimezone(timezone.utc)
         mark_prices = mark_prices or {}
+        account_id = self._canonical_account_id(account_id)
 
         with self._lock:
             conn = self._get_conn()
@@ -1219,13 +1341,70 @@ class AccountLedger:
                 if rem_contracts > 0 and entry_price > 0:
                     pos_pnl = (mark - entry_price) * sign * rem_contracts * contract_size
                     unrealized_pnl += pos_pnl
-                    lev = Decimal(str(pos.get("leverage", 1.0)))
+                    # Remote Gate positions may omit leverage.  Preserve the
+                    # position fact and let the remote ``used_margin`` field
+                    # override this provisional calculation below; never let
+                    # a JSON null crash the account snapshot.
+                    lev = _decimal_or_none(pos.get("leverage", 1.0)) or Decimal("1")
                     notional = rem_contracts * contract_size * mark
                     allocated_margin += notional / lev if lev > 0 else notional
 
             wallet_balance = initial_deposit + realized_pnl - cumulative_fees + cumulative_funding
             cash = wallet_balance - allocated_margin
             net_equity = wallet_balance + unrealized_pnl
+
+            # Managed Gate TestNet economics come from the most recent
+            # authoritative private snapshot.  The local event projection is
+            # intentionally retained for audit/debugging, but it must never
+            # be used as a fallback balance for a remote account.
+            source = "LOCAL_LEDGER"
+            remote_truth_status = "NOT_AVAILABLE"
+            remote_observed_at: Optional[str] = None
+            remote_snapshot_id: Optional[str] = None
+            if str((scope or {}).get("account_type") or "").upper() == "GATE_TESTNET":
+                try:
+                    remote_row = conn.execute(
+                        """SELECT snapshot_id, observed_at, status, equity,
+                                  available_margin, used_margin, unrealized_pnl,
+                                  realized_pnl
+                           FROM gate_remote_account_snapshots
+                           WHERE account_id=?
+                           ORDER BY observed_at DESC, snapshot_id DESC LIMIT 1""",
+                        (account_id,),
+                    ).fetchone()
+                except sqlite3.Error:
+                    remote_row = None
+                if remote_row is not None:
+                    remote_truth_status = str(remote_row["status"] or "UNAVAILABLE").upper()
+                    remote_observed_at = str(remote_row["observed_at"] or "") or None
+                    remote_snapshot_id = str(remote_row["snapshot_id"] or "") or None
+                    if remote_truth_status == "AVAILABLE":
+                        remote_equity = _decimal_or_none(remote_row["equity"])
+                        remote_available = _decimal_or_none(remote_row["available_margin"])
+                        remote_used = _decimal_or_none(remote_row["used_margin"])
+                        remote_unrealized = _decimal_or_none(remote_row["unrealized_pnl"])
+                        remote_realized = _decimal_or_none(remote_row["realized_pnl"])
+                        if remote_equity is not None and remote_available is not None:
+                            # For the remote projection ``initial_deposit`` is
+                            # the observed account baseline used by the daily
+                            # circuit-breaker.  It is not a local seeded
+                            # deposit and is never written back to accounts.
+                            initial_deposit = remote_equity
+                            wallet_balance = remote_equity
+                            cash = remote_available
+                            net_equity = remote_equity
+                            if remote_unrealized is not None:
+                                unrealized_pnl = remote_unrealized
+                            if remote_realized is not None:
+                                realized_pnl = remote_realized
+                            if remote_used is not None:
+                                allocated_margin = remote_used
+                            source = "GATE_TESTNET_REMOTE"
+                        else:
+                            remote_truth_status = "DEGRADED"
+                            source = "GATE_TESTNET_REMOTE_DEGRADED"
+                    else:
+                        source = "GATE_TESTNET_REMOTE_UNAVAILABLE"
 
             trading_day = self._get_trading_day(now, tz_name)
             dl_row = conn.execute(
@@ -1265,6 +1444,10 @@ class AccountLedger:
                 snapshot_id=snapshot_id,
                 unvalued_fee_events=unvalued_fee_events,
                 unverified_protection_count=unverified_protection_count,
+                source=source,
+                remote_truth_status=remote_truth_status,
+                remote_observed_at=remote_observed_at,
+                remote_snapshot_id=remote_snapshot_id,
             )
 
     def get_open_positions(
@@ -1275,6 +1458,7 @@ class AccountLedger:
         mode: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Retrieve active positions in one account/environment scope."""
+        account_id = self._canonical_account_id(account_id)
         if self._store is not None:
             scope = resolve_account_scope(self._store, account_id)
             if scope is not None:
@@ -1363,6 +1547,7 @@ class AccountLedger:
         a replay returns the first result and never creates a second fee or
         exit event.
         """
+        account_id = self._canonical_account_id(account_id)
         side_clean = side.upper()
         now_dt = datetime.now(timezone.utc)
         now_iso = now_dt.isoformat()
@@ -2087,6 +2272,7 @@ class AccountLedger:
         evidence: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """Persist verified protection state for one scoped position."""
+        account_id = self._canonical_account_id(account_id)
         status_clean = str(status).upper()
         with self._lock:
             conn = self._get_conn()

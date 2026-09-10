@@ -62,6 +62,19 @@ def ensure_institutional_trader_schema(db: sqlite3.Connection) -> None:
             calibration_sample_size INTEGER NOT NULL DEFAULT 0,
             rationale TEXT NOT NULL DEFAULT '',
             source_hash TEXT NOT NULL,
+            conditions_json TEXT NOT NULL DEFAULT '[]',
+            trigger_completion_pct REAL,
+            entry_zone_json TEXT,
+            invalidation TEXT,
+            targets_json TEXT NOT NULL DEFAULT '[]',
+            rr REAL,
+            evidence_json TEXT NOT NULL DEFAULT '[]',
+            signal_time TEXT,
+            expires_at TEXT,
+            context_timeframe TEXT,
+            market_regime TEXT,
+            direction_bias TEXT,
+            trigger_status TEXT,
             context_json TEXT NOT NULL DEFAULT '{}',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
@@ -71,6 +84,69 @@ def ensure_institutional_trader_schema(db: sqlite3.Connection) -> None:
             ON ai_strategy_candidates(account_id, environment, closed_15m_bar DESC, symbol, strategy_id);
         CREATE INDEX IF NOT EXISTS idx_ai_candidates_status
             ON ai_strategy_candidates(account_id, status, updated_at DESC);
+
+        -- The remote Gate TestNet account is the authority for account
+        -- economics.  This append-only snapshot table is a local mirror and
+        -- audit trail; it is never populated from the local ledger.
+        CREATE TABLE IF NOT EXISTS gate_remote_account_snapshots (
+            snapshot_id TEXT PRIMARY KEY,
+            account_id TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            environment TEXT NOT NULL,
+            observed_at TEXT NOT NULL,
+            status TEXT NOT NULL,
+            equity TEXT,
+            available_margin TEXT,
+            used_margin TEXT,
+            unrealized_pnl TEXT,
+            realized_pnl TEXT,
+            positions_json TEXT NOT NULL DEFAULT '[]',
+            pending_orders_json TEXT NOT NULL DEFAULT '[]',
+            fills_json TEXT NOT NULL DEFAULT '[]',
+            source TEXT NOT NULL,
+            endpoint TEXT,
+            raw_hash TEXT NOT NULL,
+            error_code TEXT,
+            message_zh TEXT,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_gate_remote_account_snapshots_scope
+            ON gate_remote_account_snapshots(account_id, observed_at DESC, snapshot_id DESC);
+
+        CREATE TABLE IF NOT EXISTS gate_testnet_e2e_runs (
+            run_id TEXT PRIMARY KEY,
+            account_id TEXT NOT NULL,
+            environment TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            status TEXT NOT NULL,
+            current_stage TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            completed_at TEXT,
+            result_json TEXT NOT NULL DEFAULT '{}',
+            UNIQUE(account_id, idempotency_key)
+        );
+        CREATE INDEX IF NOT EXISTS idx_gate_testnet_e2e_runs_scope
+            ON gate_testnet_e2e_runs(account_id, started_at DESC);
+
+        CREATE TABLE IF NOT EXISTS ai_cycle_stages (
+            stage_id TEXT PRIMARY KEY,
+            cycle_id TEXT NOT NULL,
+            account_id TEXT NOT NULL,
+            sequence INTEGER NOT NULL,
+            stage TEXT NOT NULL,
+            status TEXT NOT NULL,
+            started_at TEXT,
+            completed_at TEXT,
+            duration_ms REAL,
+            reason_code TEXT,
+            human_message TEXT,
+            evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            UNIQUE(cycle_id, stage)
+        );
+        CREATE INDEX IF NOT EXISTS idx_ai_cycle_stages_scope
+            ON ai_cycle_stages(account_id, cycle_id, sequence);
 
         CREATE TABLE IF NOT EXISTS ai_calibration_runs (
             run_id TEXT PRIMARY KEY,
@@ -335,6 +411,25 @@ def ensure_institutional_trader_schema(db: sqlite3.Connection) -> None:
     # Additive fields on the pre-existing execution and cycle ledgers.
     _add_columns(
         db,
+        "ai_strategy_candidates",
+        {
+            "conditions_json": "TEXT NOT NULL DEFAULT '[]'",
+            "trigger_completion_pct": "REAL",
+            "entry_zone_json": "TEXT",
+            "invalidation": "TEXT",
+            "targets_json": "TEXT NOT NULL DEFAULT '[]'",
+            "rr": "REAL",
+            "evidence_json": "TEXT NOT NULL DEFAULT '[]'",
+            "signal_time": "TEXT",
+            "expires_at": "TEXT",
+            "context_timeframe": "TEXT",
+            "market_regime": "TEXT",
+            "direction_bias": "TEXT",
+            "trigger_status": "TEXT",
+        },
+    )
+    _add_columns(
+        db,
         "order_intents",
         {
             "provider": "TEXT",
@@ -369,6 +464,11 @@ def ensure_institutional_trader_schema(db: sqlite3.Connection) -> None:
             "operational_state": "TEXT",
             "decision_origin": "TEXT",
             "model_call_status": "TEXT",
+            "model_called": "INTEGER NOT NULL DEFAULT 0",
+            "model_result": "TEXT",
+            "block_stage": "TEXT",
+            "human_message": "TEXT",
+            "stage_trace_json": "TEXT NOT NULL DEFAULT '[]'",
         },
     )
     _add_columns(

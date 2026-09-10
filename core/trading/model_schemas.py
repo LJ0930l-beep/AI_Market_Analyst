@@ -40,6 +40,47 @@ AI_ACTION_SCHEMA: dict[str, object] = {
         "ttl_seconds": {"type": ["integer", "null"], "minimum": 60, "maximum": 300},
         "candidate_id": {"type": ["string", "null"], "maxLength": 200},
         "closed_15m_bar": {"type": ["string", "null"], "maxLength": 200},
+        "strategy_candidate_id": {"type": ["string", "null"], "maxLength": 200},
+        "strategy_id": {"type": ["string", "null"], "maxLength": 100},
+        "market_summary": {"type": ["string", "null"], "maxLength": 1000},
+        "timeframe_analysis": {
+            "type": ["object", "null"],
+            "additionalProperties": False,
+            "properties": {
+                "15m": {"type": ["string", "null"], "maxLength": 800},
+                "1h": {"type": ["string", "null"], "maxLength": 800},
+            },
+        },
+        "strategy_analysis": {
+            "type": ["object", "null"],
+            "additionalProperties": False,
+            "properties": {
+                "strategy_id": {"type": ["string", "null"], "maxLength": 100},
+                "matched_conditions": {"type": "array", "items": {"type": "string", "maxLength": 300}, "maxItems": 32},
+                "missing_conditions": {"type": "array", "items": {"type": "string", "maxLength": 300}, "maxItems": 32},
+                "trigger_completion_pct": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+            },
+        },
+        "news_context": {
+            "type": ["object", "null"],
+            "additionalProperties": False,
+            "properties": {
+                "impact": {"type": ["string", "null"], "enum": ["POSITIVE", "NEGATIVE", "NEUTRAL", "UNKNOWN", None]},
+                "summary": {"type": ["string", "null"], "maxLength": 800},
+            },
+        },
+        "entry_zone": {
+            "type": ["object", "null"],
+            "additionalProperties": False,
+            "properties": {
+                "low": {"type": ["number", "null"]},
+                "high": {"type": ["number", "null"]},
+            },
+        },
+        "take_profit_1": {"type": ["number", "null"]},
+        "take_profit_2": {"type": ["number", "null"]},
+        "confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+        "invalidation_condition": {"type": ["string", "null"], "maxLength": 800},
     },
 }
 

@@ -1122,6 +1122,12 @@ class ExecutionGateway:
                 self.validate_finite_decimal("price", intent.price, min_val=1e-8)
             if not intent.account_id or not str(intent.instrument_id).strip():
                 raise ParameterValidationError("account_id and instrument_id are required.")
+            if hasattr(self.store, "_connect"):
+                try:
+                    from .account_aliases import canonical_account_id
+                    intent.account_id = canonical_account_id(self.store, intent.account_id)
+                except Exception:
+                    pass
             mode = intent_mode_value(intent.mode)
             if mode not in {item.value for item in TradingMode}:
                 raise ParameterValidationError(f"Unsupported trading mode: {mode}")
@@ -1179,6 +1185,7 @@ class ExecutionGateway:
 
             # The registered account row is authoritative.  A missing row is
             # never silently created or inferred from the account name.
+            managed_gate_testnet = False
             if hasattr(self.store, "_connect"):
                 with self.store._connect() as db:
                     acct = db.execute("SELECT account_id, mode, config_json FROM accounts WHERE account_id=?", (intent.account_id,)).fetchone()
@@ -1200,6 +1207,7 @@ class ExecutionGateway:
                 expected_mode = str(account_config.get("execution_mode") or account_mode).upper()
                 if account_config.get("account_type") == "GATE_TESTNET":
                     expected_mode = "TESTNET"
+                    managed_gate_testnet = True
                 if expected_mode != mode:
                     raise GatewayError("ENVIRONMENT_ACCOUNT_MISMATCH", f"Account '{intent.account_id}' is in execution mode {expected_mode}, but order intent requested mode {mode}.", 422)
                 if intent.environment and str(intent.environment).upper() != mode:
@@ -1437,6 +1445,35 @@ class ExecutionGateway:
             if intent.reduce_only:
                 self._validate_reduce_only(intent)
 
+            # A managed Gate TestNet opening is not allowed to size against
+            # the local ledger.  Persist a read of the remote account first;
+            # the reservation below then consumes that same authoritative
+            # snapshot.  Reduce-only recovery deliberately skips this gate so
+            # a degraded private endpoint cannot strand an existing position.
+            remote_account_truth: Dict[str, Any] | None = None
+            if managed_gate_testnet and mode == TradingMode.TESTNET and not intent.reduce_only:
+                from .gate_account_truth import GateAccountTruthService
+
+                if trader_client is None:
+                    raise GatewayError(
+                        "REMOTE_ACCOUNT_TRUTH_UNAVAILABLE",
+                        "Gate TestNet 远端账户事实不可用，未创建新的风险敞口。",
+                        422,
+                    )
+                remote_account_truth = GateAccountTruthService(self.store).refresh(
+                    intent.account_id,
+                    trader_client,
+                    include_trades=False,
+                )
+                if str(remote_account_truth.get("status") or "").upper() != "AVAILABLE" or any(
+                    remote_account_truth.get(field) is None for field in ("equity", "available_margin")
+                ):
+                    raise GatewayError(
+                        "REMOTE_ACCOUNT_TRUTH_UNAVAILABLE",
+                        "Gate TestNet 账户余额/可用保证金未取得完整远端事实，未提交订单。",
+                        422,
+                    )
+
             risk_decision = None
             reservation_id = None
             if not intent.reduce_only:
@@ -1506,6 +1543,13 @@ class ExecutionGateway:
                         exec_result = self._execute_paper(intent, fresh_market, risk_decision, now=clock)
                     else:
                         exec_result = self._execute_exchange(intent, trader_client, fresh_market)
+                    if remote_account_truth and isinstance(exec_result, dict):
+                        exec_result["remote_account_truth"] = {
+                            "snapshot_id": remote_account_truth.get("snapshot_id"),
+                            "observed_at": remote_account_truth.get("observed_at"),
+                            "status": remote_account_truth.get("status"),
+                            "source": remote_account_truth.get("source"),
+                        }
                 except Exception:
                     if reservation_id:
                         self.ledger.release_risk(intent.account_id, reservation_id)

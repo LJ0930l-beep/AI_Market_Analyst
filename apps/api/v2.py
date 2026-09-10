@@ -6,6 +6,7 @@ import math
 import time
 import uuid
 import zipfile
+from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Header
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, AwareDatetime
 
@@ -66,6 +67,9 @@ from core.trading.trader_capabilities import UNKNOWN, TraderCapabilityError, Tra
 from core.trading.ai_calibration import AICalibrationService
 from core.trading.account_scope import resolve_account_scope
 from core.trading.decision_memory import list_decision_memory
+from core.trading.account_aliases import canonical_account_id, GATE_TESTNET_ACCOUNT_ID
+from core.trading.gate_account_truth import GateAccountTruthService
+from core.trading.gate_testnet_e2e import GateE2EError, GateTestnetE2EService
 
 
 
@@ -80,7 +84,9 @@ class GateConfigBody(BaseModel):
 
 class GateAccountProvisionBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    paper_initial_deposit: Decimal = Field(default=Decimal("10000"), ge=0, le=1_000_000_000)
+    # Retained as a compatibility input name; the managed TestNet account is
+    # never seeded with local capital and reads equity from Gate only.
+    paper_initial_deposit: Decimal = Field(default=Decimal("0"), ge=0, le=1_000_000_000)
     live_initial_deposit: Decimal = Field(default=Decimal("0"), ge=0, le=1_000_000_000)
 
 
@@ -106,6 +112,27 @@ class GateOrderBody(BaseModel):
     # Kept for old UI clients; server-side mode, authorization, and release
     # policy remain authoritative and never trust this request hint.
     dry_run: bool | None = None
+
+
+class GateConnectionTestBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    api_key: str = Field(min_length=1, max_length=200)
+    api_secret: str = Field(min_length=1, max_length=200)
+
+
+class GateTestnetE2EBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    account_id: str = Field(min_length=1, max_length=100)
+    symbol: str = Field(min_length=1, max_length=40)
+    side: str = Field(pattern="^(LONG|SHORT)$")
+    stop_type: str = Field(default="PRICE", pattern="^(PRICE|PERCENT|ATR)$")
+    stop_value: float | None = None
+    take_profit_type: str = Field(default="PRICE", pattern="^(PRICE|PERCENT|ATR)$")
+    take_profit_value: float | None = None
+    leverage: int = Field(default=1, ge=1, le=100)
+    cleanup: bool = True
+    confirm_testnet: bool = False
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=160)
 
 
 class SubscriptionBody(BaseModel):
@@ -266,59 +293,6 @@ class DiagnosticExportBody(BaseModel):
 def _active_macro_events(stored_events):
     # Honest empty list when no macro events are in database; do not invent fake events
     return stored_events or []
-
-
-def _sample_macro_calendar_events(now: datetime | None = None):
-    now = now or datetime.now(timezone.utc)
-    return [
-        {
-            "event_id": "macro_2026_us_nfp",
-            "title": "美国8月季调后非农就业人口 (NFP)",
-            "event_time": (now + timedelta(minutes=45)).isoformat(),
-            "importance_stars": 3,
-            "previous": "2.1万人(修正)",
-            "forecast": "5.3万人",
-            "actual": "16.2万人",
-            "macro_bias": "HAWKISH_TIGHTENING",
-            "directive": "FORBID_LONG",
-            "directive_expires_at": (now + timedelta(hours=3)).isoformat(),
-            "source_url": "https://www.bls.gov/news.release/empsit.nr0.htm",
-            "ai_summary": "非农公布值16.2w远超预期5.3w，就业市场过热打破降息预期，美元短线强势拉升，风险资产流动性承压，全面禁止盲目抄底做多。",
-            "operational_advice": "未来3小时内底层硬风控全面禁止顺势抄底做多，空头策略允许执行，持有多单建议立即收紧保本止损。",
-        },
-        {
-            "event_id": "macro_2026_us_cpi",
-            "title": "美国8月核心CPI年率 (Core CPI YoY)",
-            "event_time": (now + timedelta(hours=18)).isoformat(),
-            "importance_stars": 3,
-            "previous": "3.2%",
-            "forecast": "3.2%",
-            "actual": "待公布",
-            "macro_bias": "PENDING_RELEASE",
-            "directive": "NONE",
-            "directive_expires_at": (now + timedelta(hours=24)).isoformat(),
-            "source_url": "https://www.bls.gov/cpi/",
-            "ai_summary": "通胀粘性关键决战点，若公布值高于3.3%将重创降息预期，建议在公布前30分钟降低多头敞口防范踩踏。",
-            "operational_advice": "重点关注实际值与预期偏差，偏差超过0.2%将直接引发单边突破，未公布前保持轻仓观望。",
-        },
-        {
-            "event_id": "macro_2026_us_fomc",
-            "title": "FOMC 美联储9月利率决议与鲍威尔发布会",
-            "event_time": (now + timedelta(days=2, hours=4)).isoformat(),
-            "importance_stars": 3,
-            "previous": "5.50%",
-            "forecast": "5.25%",
-            "actual": "待公布",
-            "macro_bias": "DOVISH_PIVOT_EXPECTED",
-            "directive": "NONE",
-            "directive_expires_at": (now + timedelta(days=2, hours=8)).isoformat(),
-            "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
-            "ai_summary": "美联储开启降息周期关键窗口，点阵图将决定四季度流动性大底，市场定价年内降息75bp基调。",
-            "operational_advice": "决议发布及发布会期间严禁市价盲目开仓，防范做市商双向插针极端洗盘。",
-        },
-    ]
-
-
 def router_for(get_store, get_runtime, get_translation):
     def verify_local_request(request: Request):
         host = request.headers.get("host")
@@ -329,22 +303,24 @@ def router_for(get_store, get_runtime, get_translation):
 
     router = APIRouter(prefix="/v2", dependencies=[Depends(verify_local_request)])
 
-    def require_registered_account(store, account_id: str) -> None:
+    def require_registered_account(store, account_id: str) -> str:
         """Reject account-scoped operations that would otherwise fabricate scope."""
         if not account_id:
             raise HTTPException(status_code=422, detail="ACCOUNT_REQUIRED: account_id is required")
+        resolved_account_id = canonical_account_id(store, str(account_id))
         if hasattr(store, "_connect"):
             with store._connect() as db:
                 row = db.execute(
                     "SELECT 1 FROM accounts WHERE account_id=?",
-                    (account_id,),
+                    (resolved_account_id,),
                 ).fetchone()
             if row is None:
-                raise HTTPException(status_code=404, detail=f"ACCOUNT_NOT_FOUND: Account '{account_id}' is not registered")
+                raise HTTPException(status_code=404, detail=f"ACCOUNT_NOT_FOUND: Account '{resolved_account_id}' is not registered")
+        return resolved_account_id
 
     def require_runtime_account(runtime, store, account_id: str | None, *, action: str) -> str:
         """Require a lifecycle action to target the runtime's bound account."""
-        require_registered_account(store, account_id or "")
+        account_id = require_registered_account(store, account_id or "")
         bound = getattr(runtime, "account_id", None)
         if bound is None:
             bound = getattr(runtime, "_account_id", None)
@@ -364,6 +340,7 @@ def router_for(get_store, get_runtime, get_translation):
         """Resolve the registered account's authoritative mode and venue."""
         if not hasattr(store, "_connect"):
             return None, None
+        account_id = canonical_account_id(store, str(account_id or ""))
         with store._connect() as db:
             row = db.execute(
                 "SELECT mode, config_json FROM accounts WHERE account_id=?",
@@ -495,7 +472,7 @@ def router_for(get_store, get_runtime, get_translation):
         runtime=Depends(get_runtime),
     ):
         if account_id:
-            require_registered_account(store, account_id)
+            account_id = require_registered_account(store, account_id)
         expected_mode, expected_venue = account_execution_scope(store, account_id) if account_id else (None, None)
 
         def scoped_records(table: str, known_position_ids: set | None = None) -> list[dict]:
@@ -648,7 +625,7 @@ def router_for(get_store, get_runtime, get_translation):
             if body.enabled and runtime is None:
                 raise HTTPException(status_code=503, detail="RUNTIME_UNAVAILABLE: cannot start monitoring without the production runtime")
             if body.enabled:
-                require_registered_account(store, account_id or "")
+                account_id = require_registered_account(store, account_id or "")
             if body.enabled:
                 GatePublicProvider().market(symbol)
             if body.enabled:
@@ -726,7 +703,7 @@ def router_for(get_store, get_runtime, get_translation):
         page_size: int = 100,
         store=Depends(get_store),
     ):
-        require_registered_account(store, account_id or "")
+        account_id = require_registered_account(store, account_id or "")
         try:
             return analyze_ai_trading_ledger(
                 store,
@@ -758,7 +735,7 @@ def router_for(get_store, get_runtime, get_translation):
         scoped to one registered account and uses the same execution ledger
         as orders, fills, positions, and AI cycles.
         """
-        require_registered_account(store, account_id or "")
+        account_id = require_registered_account(store, account_id or "")
         try:
             return build_institutional_dashboard(
                 store,
@@ -774,14 +751,14 @@ def router_for(get_store, get_runtime, get_translation):
 
     @router.get("/accounts/{account_id}/snapshot")
     def get_account_snapshot(account_id: str, store=Depends(get_store)):
-        require_registered_account(store, account_id)
+        account_id = require_registered_account(store, account_id)
         ledger = AccountLedger(store=store)
         snapshot = ledger.get_snapshot(account_id)
         return snapshot.to_dict()
 
     @router.get("/accounts/{account_id}/risk")
     def get_account_risk(account_id: str, store=Depends(get_store)):
-        require_registered_account(store, account_id)
+        account_id = require_registered_account(store, account_id)
         ledger = AccountLedger(store=store)
         risk_engine = RiskEngine(ledger=ledger)
         return risk_engine.get_risk_summary(account_id)
@@ -793,7 +770,7 @@ def router_for(get_store, get_runtime, get_translation):
         runtime=Depends(get_runtime),
     ):
         """Return the account-scoped trader cockpit and evidence quality."""
-        require_registered_account(store, account_id)
+        account_id = require_registered_account(store, account_id)
         try:
             return trader_capabilities(store, runtime).risk_snapshot(account_id, runtime=runtime)
         except TraderCapabilityError as exc:
@@ -805,10 +782,10 @@ def router_for(get_store, get_runtime, get_translation):
         store=Depends(get_store),
     ):
         """Start a bounded evaluation over the authoritative execution ledger."""
-        require_registered_account(store, body.account_id)
+        account_id = require_registered_account(store, body.account_id)
         try:
             return trader_capabilities(store).evaluate_stored_strategy(
-                account_id=body.account_id,
+                account_id=account_id,
                 strategy_id=body.strategy_id,
                 strategy_version=body.strategy_version,
                 symbol=body.symbol,
@@ -831,7 +808,7 @@ def router_for(get_store, get_runtime, get_translation):
         account_id: str | None = None,
         store=Depends(get_store),
     ):
-        require_registered_account(store, account_id or "")
+        account_id = require_registered_account(store, account_id or "")
         try:
             return trader_capabilities(store).get_evaluation_task(account_id, task_id)
         except TraderCapabilityError as exc:
@@ -839,9 +816,11 @@ def router_for(get_store, get_runtime, get_translation):
 
     @router.post("/trade-plans")
     def create_trader_plan(body: TradePlanBody, store=Depends(get_store)):
-        require_registered_account(store, body.account_id)
+        account_id = require_registered_account(store, body.account_id)
         try:
-            return trader_capabilities(store).create_trade_plan(body.model_dump(mode="json"))
+            payload = body.model_dump(mode="json")
+            payload["account_id"] = account_id
+            return trader_capabilities(store).create_trade_plan(payload)
         except TraderCapabilityError as exc:
             raise HTTPException(status_code=exc.status_code, detail=f"{exc.code}: {exc.message}")
 
@@ -854,7 +833,7 @@ def router_for(get_store, get_runtime, get_translation):
     ):
         if not account_id:
             return {"plans": [], "count": 0, "scope_required": True}
-        require_registered_account(store, account_id)
+        account_id = require_registered_account(store, account_id)
         try:
             plans = trader_capabilities(store).list_trade_plans(account_id, status=status, limit=limit)
             return {"plans": plans, "count": len(plans), "account_id": account_id, "scope_required": False}
@@ -868,7 +847,7 @@ def router_for(get_store, get_runtime, get_translation):
         store=Depends(get_store),
         runtime=Depends(get_runtime),
     ):
-        require_registered_account(store, account_id or "")
+        account_id = require_registered_account(store, account_id or "")
         try:
             service = trader_capabilities(store, runtime)
             return service.execute_trade_plan(account_id, plan_id)
@@ -877,8 +856,9 @@ def router_for(get_store, get_runtime, get_translation):
 
     @router.post("/news/{news_id}/impacts")
     def record_news_impact(news_id: str, body: NewsImpactBody, store=Depends(get_store)):
-        require_registered_account(store, body.account_id)
+        account_id = require_registered_account(store, body.account_id)
         payload = body.model_dump(mode="json")
+        payload["account_id"] = account_id
         payload["news_id"] = news_id
         try:
             return trader_capabilities(store).record_news_impact(payload)
@@ -891,7 +871,7 @@ def router_for(get_store, get_runtime, get_translation):
         account_id: str | None = None,
         store=Depends(get_store),
     ):
-        require_registered_account(store, account_id or "")
+        account_id = require_registered_account(store, account_id or "")
         try:
             return trader_capabilities(store).get_news_research(account_id, news_id)
         except TraderCapabilityError as exc:
@@ -903,7 +883,7 @@ def router_for(get_store, get_runtime, get_translation):
         store=Depends(get_store),
         runtime=Depends(get_runtime),
     ):
-        require_registered_account(store, account_id or "")
+        account_id = require_registered_account(store, account_id or "")
         try:
             return trader_capabilities(store, runtime).ai_scorecard(account_id, runtime=runtime)
         except TraderCapabilityError as exc:
@@ -916,7 +896,7 @@ def router_for(get_store, get_runtime, get_translation):
         runtime=Depends(get_runtime),
     ):
         if account_id:
-            require_registered_account(store, account_id)
+            account_id = require_registered_account(store, account_id)
             bound = getattr(runtime, "account_id", None) if runtime is not None else None
             bound = bound or (getattr(runtime, "_account_id", None) if runtime is not None else None)
             if bound and str(bound) != str(account_id):
@@ -1052,6 +1032,42 @@ def router_for(get_store, get_runtime, get_translation):
             status_code = 404 if "NOT_FOUND" in code else 422
             raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
+    @router.post("/gate/accounts/{account_id}/connection-test")
+    def test_gate_account_connection(
+        account_id: str,
+        body: GateConnectionTestBody,
+        store=Depends(get_store),
+    ):
+        """Run a read-only Gate connection test without saving or trading."""
+
+        try:
+            account_id = require_registered_account(store, account_id)
+            profile = get_gate_account_profile(store, account_id)
+            if profile["mode"] == TradingMode.LIVE.value:
+                return {
+                    "account_id": account_id,
+                    "status": "NOT_RUN_LIVE_LOCKED",
+                    "read_only": True,
+                    "orders_sent": 0,
+                    "model_called": False,
+                    "authorization_created": False,
+                    "message_zh": "Live 环境保持发布锁定，连接测试未访问私有接口。",
+                }
+            candidate = GateLiveTrader(
+                body.api_key.strip(),
+                body.api_secret.strip(),
+                testnet=True,
+                api_base_url=profile["api_base_url"],
+                live_trading_enabled=False,
+            )
+            result = candidate.connection_test()
+            result.update({"account_id": account_id, "saved": False, "credentials_persisted": False})
+            return result
+        except ValueError as exc:
+            code = str(exc).split(":", 1)[0]
+            status_code = 404 if "NOT_FOUND" in code else 422
+            raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+
     @router.get("/gate/config")
     def get_gate_config(account_id: str | None = None, store=Depends(get_store)):
         if account_id and is_managed_gate_account(store, account_id):
@@ -1130,7 +1146,7 @@ def router_for(get_store, get_runtime, get_translation):
                 "balance": {"total": None, "free": None, "used": None},
                 "positions": [],
             }
-        require_registered_account(store, account_id)
+        account_id = require_registered_account(store, account_id)
 
         # Managed Gate profiles are account-scoped end to end.  The
         # ``gate_paper`` compatibility id is Gate official TestNet: it must
@@ -1204,8 +1220,12 @@ def router_for(get_store, get_runtime, get_translation):
                     "positions": [],
                     "private_api_access": "NOT_ATTEMPTED",
                 }
-            balance = trader.get_account_balance()
-            positions = trader.get_positions()
+            truth = trader.get_account_truth(include_trades=True)
+            balance = truth.get("balance") if isinstance(truth.get("balance"), dict) else {
+                "total": truth.get("equity"),
+                "free": truth.get("available_margin"),
+                "used": truth.get("used_margin"),
+            }
             return {
                 "configured": True,
                 "account_id": account_id,
@@ -1213,11 +1233,23 @@ def router_for(get_store, get_runtime, get_translation):
                 **profile_fields,
                 "credential_status": "CONFIGURED",
                 "scope_required": False,
-                "data_status": balance.get("data_status", "UNKNOWN"),
-                "observed_at": balance.get("observed_at"),
+                "data_status": truth.get("status", "UNKNOWN"),
+                "observed_at": truth.get("observed_at") or balance.get("observed_at"),
                 "balance": balance,
-                "positions": positions,
-                "positions_status": trader.last_positions_status,
+                "equity": truth.get("equity"),
+                "available_margin": truth.get("available_margin"),
+                "used_margin": truth.get("used_margin"),
+                "unrealized_pnl": truth.get("unrealized_pnl"),
+                "realized_pnl": truth.get("realized_pnl"),
+                "positions": truth.get("positions") if isinstance(truth.get("positions"), list) else [],
+                "pending_orders": truth.get("pending_orders") if isinstance(truth.get("pending_orders"), list) else [],
+                "fills": truth.get("fills") if isinstance(truth.get("fills"), list) else [],
+                "positions_status": truth.get("positions_status"),
+                "pending_orders_status": truth.get("pending_orders_status"),
+                "fills_status": truth.get("fills_status"),
+                "remote_truth": True,
+                "source": truth.get("source"),
+                "error_code": truth.get("error_code"),
                 "private_api_access": "EXPLICITLY_REQUESTED",
             }
 
@@ -1275,7 +1307,7 @@ def router_for(get_store, get_runtime, get_translation):
                 "trades": [],
                 "summary": {"total_trades": 0, "total_fee_cost": None, "fee_status": "UNKNOWN", "source": "ACCOUNT_SCOPE_REQUIRED"},
             }
-        require_registered_account(store, account_id)
+        account_id = require_registered_account(store, account_id)
         if is_managed_gate_account(store, account_id):
             profile = get_gate_account_profile(store, account_id)
             credential_meta = CredentialVault.get_account_metadata(store, account_id)
@@ -1399,6 +1431,39 @@ def router_for(get_store, get_runtime, get_translation):
                 "source": "NOT_RUN_ENVIRONMENT_MISMATCH" if account_mode == TradingMode.TESTNET.value and meta["configured"] else "NOT_CONFIGURED_OR_NO_VERIFIED_TRADES",
             },
         }
+
+    @router.post("/gate/account/refresh")
+    def refresh_gate_account_truth(
+        account_id: str | None = None,
+        store=Depends(get_store),
+    ):
+        """Explicitly persist a remote Gate account snapshot for risk/audit."""
+
+        if not account_id:
+            raise HTTPException(status_code=422, detail="ACCOUNT_REQUIRED: account_id is required")
+        account_id = require_registered_account(store, account_id)
+        try:
+            profile = get_gate_account_profile(store, account_id)
+            if profile["mode"] == TradingMode.LIVE.value:
+                return {
+                    "account_id": account_id,
+                    "status": "NOT_RUN_LIVE_LOCKED",
+                    "remote_truth": False,
+                    "message_zh": "Live 环境保持发布锁定。",
+                }
+            trader = build_gate_trader(store, account_id)
+            if trader is None:
+                return GateAccountTruthService(store)._failure(
+                    account_id,
+                    "GATE_TESTNET_CREDENTIALS_NOT_CONFIGURED",
+                    "Gate TestNet 凭证未配置，未使用本地账本替代远端事实。",
+                    observed_at=datetime.now(timezone.utc).isoformat(),
+                )
+            return GateAccountTruthService(store).refresh(account_id, trader, include_trades=True)
+        except ValueError as exc:
+            code = str(exc).split(":", 1)[0]
+            status_code = 404 if "NOT_FOUND" in code else 422
+            raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
     @router.post("/gate/orders")
     def place_gate_order(
@@ -1526,10 +1591,40 @@ def router_for(get_store, get_runtime, get_translation):
         except Exception as exc:
             raise HTTPException(500, detail=str(exc))
 
+    @router.post("/gate/testnet/order-test")
+    def run_gate_testnet_order_test(
+        body: GateTestnetE2EBody,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        store=Depends(get_store),
+    ):
+        """Explicit Gate TestNet order -> fill -> protection -> cleanup test.
+
+        This endpoint intentionally does not create an AI authorization or
+        call Qwen.  The user confirmation in the request is the separate
+        transport-test boundary; Live accounts are rejected before adapter
+        construction.
+        """
+
+        try:
+            account_id = require_registered_account(store, body.account_id)
+            request_data = body.model_dump(mode="json")
+            request_data["account_id"] = account_id
+            if idempotency_key:
+                request_data["idempotency_key"] = idempotency_key
+            trader = build_gate_trader(store, account_id)
+            result = GateTestnetE2EService(store).run(request_data, trader)
+            return result
+        except GateE2EError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=f"{exc.code}: {exc.message_zh}") from exc
+        except ValueError as exc:
+            code = str(exc).split(":", 1)[0]
+            status_code = 404 if "NOT_FOUND" in code else 422
+            raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+
     @router.get("/decisions/{decision_id}/replay")
     def replay_decision(decision_id: str, account_id: str | None = None, store=Depends(get_store)):
         """Strict read-only decision replay (AT23). Zero external requests or order side effects."""
-        require_registered_account(store, account_id or "")
+        account_id = require_registered_account(store, account_id or "")
         with store._connect() as db:
             row = db.execute(
                 "SELECT decision_id, symbol, status, payload_json, created_at FROM agent_trade_decisions WHERE decision_id = ?",
@@ -1564,7 +1659,7 @@ def router_for(get_store, get_runtime, get_translation):
     @router.post("/decisions/{decision_id}/feedback")
     def submit_decision_feedback(decision_id: str, body: TraderFeedbackBody, account_id: str | None = None, store=Depends(get_store)):
         """Trader feedback adjustment passing through mandatory RiskEngine re-check (AT23)."""
-        require_registered_account(store, account_id or "")
+        account_id = require_registered_account(store, account_id or "")
         with store._connect() as db:
             row = db.execute(
                 "SELECT decision_id, symbol, status, payload_json, created_at FROM agent_trade_decisions WHERE decision_id = ?",
@@ -1818,7 +1913,7 @@ def router_for(get_store, get_runtime, get_translation):
         store=Depends(get_store),
     ):
         """Read the latest persisted research result without starting work."""
-        require_registered_account(store, account_id or "")
+        account_id = require_registered_account(store, account_id or "")
         try:
             with store._connect() as db:
                 table = db.execute(
@@ -1889,8 +1984,8 @@ def router_for(get_store, get_runtime, get_translation):
         store=Depends(get_store),
     ):
         """Create a scoped trading authorization with local wizard confirmation (N09, AT36, AT40)."""
-        require_registered_account(store, body.account_id)
-        account_mode, account_venue = account_execution_scope(store, body.account_id)
+        account_id = require_registered_account(store, body.account_id)
+        account_mode, account_venue = account_execution_scope(store, account_id)
         if account_mode != body.mode or not account_venue or account_venue.lower() != body.venue.lower():
             raise HTTPException(
                 status_code=422,
@@ -1907,7 +2002,7 @@ def router_for(get_store, get_runtime, get_translation):
         mgr = AuthorizationManager(store)
         try:
             auth = mgr.grant_authorization(
-                account_id=body.account_id,
+                account_id=account_id,
                 venue=body.venue,
                 mode=TradingMode(body.mode),
                 decision_path=DecisionPath(body.decision_path),
@@ -1946,7 +2041,7 @@ def router_for(get_store, get_runtime, get_translation):
                 "authorization": None,
                 "scope_required": True,
             }
-        require_registered_account(store, account_id)
+        account_id = require_registered_account(store, account_id)
         mgr = AuthorizationManager(store)
         auth = mgr.get_active_authorization(account_id)
         return {
@@ -1965,7 +2060,7 @@ def router_for(get_store, get_runtime, get_translation):
         """Revoke authorization, blocking new risk while preserving protective orders (N09, AT37)."""
         if not account_id:
             raise HTTPException(status_code=422, detail="ACCOUNT_SCOPE_REQUIRED: account_id is required to revoke an authorization.")
-        require_registered_account(store, account_id)
+        account_id = require_registered_account(store, account_id)
         mgr = AuthorizationManager(store)
         authorization = mgr.get_authorization(authorization_id)
         if not authorization or authorization.account_id != account_id:
@@ -2015,7 +2110,7 @@ def router_for(get_store, get_runtime, get_translation):
             response.update({"account_id": None, "scope_required": True})
             return response
 
-        require_registered_account(store, account_id)
+        account_id = require_registered_account(store, account_id)
         account_mode, account_venue = account_execution_scope(store, account_id)
         if account_mode != TradingMode.TESTNET.value:
             return {
@@ -2123,7 +2218,7 @@ def router_for(get_store, get_runtime, get_translation):
     ):
         """Retrieve current AI autonomous session status, latest cycle, and model health (Work Package D)."""
         if account_id:
-            require_registered_account(store, account_id)
+            account_id = require_registered_account(store, account_id)
             bound = getattr(runtime, "account_id", None) if runtime is not None else None
             bound = bound or (getattr(runtime, "_account_id", None) if runtime is not None else None)
             if bound and str(bound) != str(account_id):
@@ -2141,6 +2236,8 @@ def router_for(get_store, get_runtime, get_translation):
         active_auth = auth_mgr.get_active_authorization(account_id) if account_id else None
 
         latest_cycle = None
+        latest_model_cycle = None
+        latest_system_event = None
         protection_summary = {"active_positions": 0, "symbols": []}
         expected_mode, expected_venue = account_execution_scope(store, account_id) if account_id else (None, None)
 
@@ -2151,24 +2248,83 @@ def router_for(get_store, get_runtime, get_translation):
                 ).fetchone()
                 if has_cycles:
                     row = None
+                    latest_model_row = None
+                    latest_system_row = None
                     if account_id:
                         row = db.execute(
                             "SELECT * FROM ai_led_cycles WHERE account_id=? ORDER BY created_at DESC LIMIT 1",
                             (account_id,),
                         ).fetchone()
+                        latest_model_row = db.execute(
+                            "SELECT * FROM ai_led_cycles WHERE account_id=? AND COALESCE(decision_origin, 'MODEL')='MODEL' ORDER BY created_at DESC LIMIT 1",
+                            (account_id,),
+                        ).fetchone()
+                        latest_system_row = db.execute(
+                            "SELECT * FROM ai_led_cycles WHERE account_id=? AND COALESCE(decision_origin, 'SYSTEM')<>'MODEL' ORDER BY created_at DESC LIMIT 1",
+                            (account_id,),
+                        ).fetchone()
                     if row:
                         keys = row.keys() if hasattr(row, "keys") else []
+                        try:
+                            payload = json.loads(row["payload_json"] or "{}")
+                        except (TypeError, ValueError, json.JSONDecodeError):
+                            payload = {}
+                        try:
+                            stage_trace = json.loads(row["stage_trace_json"] or "[]") if "stage_trace_json" in keys else payload.get("stage_trace", [])
+                        except (TypeError, ValueError, json.JSONDecodeError):
+                            stage_trace = payload.get("stage_trace", [])
                         latest_cycle = {
                             "cycle_id": row["cycle_id"] if "cycle_id" in keys else row[0],
                             "session_id": row["session_id"] if "session_id" in keys else None,
                             "generation": row["generation"] if "generation" in keys else 1,
                             "action": row["action"] if "action" in keys else "UNKNOWN",
+                            "decision_origin": row["decision_origin"] if "decision_origin" in keys else payload.get("decision_origin", "MODEL"),
+                            "operational_state": row["operational_state"] if "operational_state" in keys else payload.get("operational_state"),
+                            "model_called": bool(row["model_called"]) if "model_called" in keys else bool(payload.get("model_called", False)),
+                            "model_result": row["model_result"] if "model_result" in keys else payload.get("model_result"),
+                            "block_stage": row["block_stage"] if "block_stage" in keys else payload.get("block_stage"),
+                            "human_message": row["human_message"] if "human_message" in keys else payload.get("human_message"),
+                            "stage_trace": stage_trace,
+                            "model_id": payload.get("model_id"),
                             "intent_id": row["intent_id"] if "intent_id" in keys else (row["order_intent_id"] if "order_intent_id" in keys else None),
                             "rejection_code": row["rejection_code"] if "rejection_code" in keys else None,
                             "reason": row["reason"] if "reason" in keys else "",
                             "latency_ms": row["latency_ms"] if "latency_ms" in keys else 0.0,
                             "timestamp": row["created_at"] if "created_at" in keys else "",
                         }
+                        def _cycle_projection(candidate: Any) -> dict[str, Any] | None:
+                            if candidate is None:
+                                return None
+                            candidate_keys = candidate.keys() if hasattr(candidate, "keys") else []
+                            try:
+                                candidate_payload = json.loads(candidate["payload_json"] or "{}")
+                            except (TypeError, ValueError, json.JSONDecodeError):
+                                candidate_payload = {}
+                            try:
+                                candidate_trace = json.loads(candidate["stage_trace_json"] or "[]") if "stage_trace_json" in candidate_keys else candidate_payload.get("stage_trace", [])
+                            except (TypeError, ValueError, json.JSONDecodeError):
+                                candidate_trace = candidate_payload.get("stage_trace", [])
+                            return {
+                                "cycle_id": candidate["cycle_id"],
+                                "action": candidate["action"],
+                                "reason": candidate["reason"],
+                                "decision_origin": candidate["decision_origin"] if "decision_origin" in candidate_keys else candidate_payload.get("decision_origin", "MODEL"),
+                                "operational_state": candidate["operational_state"] if "operational_state" in candidate_keys else candidate_payload.get("operational_state"),
+                                "model_called": bool(candidate["model_called"]) if "model_called" in candidate_keys else bool(candidate_payload.get("model_called", False)),
+                                "model_result": candidate["model_result"] if "model_result" in candidate_keys else candidate_payload.get("model_result"),
+                                "block_stage": candidate["block_stage"] if "block_stage" in candidate_keys else candidate_payload.get("block_stage"),
+                                "human_message": candidate["human_message"] if "human_message" in candidate_keys else candidate_payload.get("human_message"),
+                                "timestamp": candidate["created_at"],
+                                "stage_trace": candidate_trace,
+                            }
+                        latest_model_cycle = _cycle_projection(latest_model_row)
+                        latest_system_event = _cycle_projection(latest_system_row)
+                    else:
+                        latest_model_cycle = None
+                        latest_system_event = None
+                else:
+                    latest_model_cycle = None
+                    latest_system_event = None
                 has_pos = db.execute(
                     "SELECT 1 FROM sqlite_master WHERE type='table' AND name='simulated_positions'"
                 ).fetchone()
@@ -2211,6 +2367,8 @@ def router_for(get_store, get_runtime, get_translation):
             "session": sess_status,
             "authorization": active_auth.to_dict() if active_auth else None,
             "latest_cycle": latest_cycle,
+            "latest_model_cycle": latest_model_cycle if account_id else None,
+            "latest_system_event": latest_system_event if account_id else None,
             "protection_summary": protection_summary,
             "market_freshness": freshness,
             "last_market_event_at": last_market_at.isoformat() if last_market_at else None,
@@ -2228,7 +2386,7 @@ def router_for(get_store, get_runtime, get_translation):
     ):
         """Retrieve paginated record of verified AI autonomous decision cycles (Work Package D)."""
         if account_id:
-            require_registered_account(store, account_id)
+            account_id = require_registered_account(store, account_id)
         cycles = []
         total = 0
         if hasattr(store, "_connect"):
@@ -2252,12 +2410,19 @@ def router_for(get_store, get_runtime, get_translation):
                             "session_id": r["session_id"],
                             "generation": r["generation"],
                             "action": r["action"],
+                            "decision_origin": r["decision_origin"] if "decision_origin" in keys else None,
+                            "operational_state": r["operational_state"] if "operational_state" in keys else None,
+                            "model_called": bool(r["model_called"]) if "model_called" in keys else False,
+                            "model_result": r["model_result"] if "model_result" in keys else None,
+                            "block_stage": r["block_stage"] if "block_stage" in keys else None,
+                            "human_message": r["human_message"] if "human_message" in keys else None,
                             "intent_id": r["intent_id"] if "intent_id" in keys else (r["order_intent_id"] if "order_intent_id" in keys else None),
                             "rejection_code": r["rejection_code"] if "rejection_code" in keys else None,
                             "reason": r["reason"],
                             "latency_ms": r["latency_ms"],
                             "timestamp": r["created_at"],
                             "payload": json.loads(r["payload_json"] or "{}"),
+                            "stage_trace": json.loads(r["stage_trace_json"] or "[]") if "stage_trace_json" in keys else [],
                         })
         return {"cycles": cycles, "total": total, "limit": limit, "offset": offset, "account_id": account_id, "scope_required": account_id is None}
 
@@ -2268,9 +2433,9 @@ def router_for(get_store, get_runtime, get_translation):
         store=Depends(get_store),
     ):
         """Return the bounded, account-scoped decision memory projection."""
-        require_registered_account(store, account_id or "")
-        scope = resolve_account_scope(store, account_id or "") or {}
-        items = list_decision_memory(store, account_id or "", limit=limit)
+        account_id = require_registered_account(store, account_id or "")
+        scope = resolve_account_scope(store, account_id) or {}
+        items = list_decision_memory(store, account_id, limit=limit)
         # The memory helper already removes model transcripts; keep the HTTP
         # contract explicit so a future payload extension cannot leak one.
         safe_items = []
@@ -2301,16 +2466,16 @@ def router_for(get_store, get_runtime, get_translation):
         store=Depends(get_store),
     ):
         """Return calibration state without running calibration or a model."""
-        require_registered_account(store, account_id or "")
-        scope = resolve_account_scope(store, account_id or "") or {}
+        account_id = require_registered_account(store, account_id or "")
+        scope = resolve_account_scope(store, account_id) or {}
         environment = str(scope.get("environment") or "unknown").lower()
         service = AICalibrationService(store, ensure_schema=False)
         return {
             "account_id": account_id,
             "scope": scope,
-            "active_profile": service.active_profile(account_id or "", environment=environment),
-            "latest_run": service.latest_run(account_id or "", environment=environment),
-            "status": "READY" if service.active_profile(account_id or "", environment=environment) else "NOT_READY",
+            "active_profile": service.active_profile(account_id, environment=environment),
+            "latest_run": service.latest_run(account_id, environment=environment),
+            "status": "READY" if service.active_profile(account_id, environment=environment) else "NOT_READY",
             "model_call": "NOT_RUN_READ_ONLY_ENDPOINT",
         }
 
@@ -2321,8 +2486,8 @@ def router_for(get_store, get_runtime, get_translation):
         store=Depends(get_store),
     ):
         """Return persisted six-strategy candidates without re-scanning bars."""
-        require_registered_account(store, account_id or "")
-        scope = resolve_account_scope(store, account_id or "") or {}
+        account_id = require_registered_account(store, account_id or "")
+        scope = resolve_account_scope(store, account_id) or {}
         bounded = max(1, min(int(limit), 500))
         candidates = []
         with store._connect() as db:
@@ -2336,6 +2501,10 @@ def router_for(get_store, get_runtime, get_translation):
                               closed_15m_bar, status, side, entry_price, stop_price,
                               take_profit, rule_score, calibrated_probability,
                               calibration_sample_size, rationale, source_hash,
+                              conditions_json, trigger_completion_pct, entry_zone_json,
+                              invalidation, targets_json, rr, evidence_json,
+                              signal_time, expires_at, context_timeframe,
+                              market_regime, direction_bias, trigger_status,
                               created_at, updated_at
                          FROM ai_strategy_candidates
                         WHERE account_id=? AND provider=? AND environment=?
@@ -2343,7 +2512,17 @@ def router_for(get_store, get_runtime, get_translation):
                         LIMIT ?""",
                     (account_id, scope.get("provider"), scope.get("environment"), bounded),
                 ).fetchall()
-                candidates = [dict(row) for row in rows]
+                candidates = []
+                for row in rows:
+                    item = dict(row)
+                    for field, default in (("conditions_json", []), ("entry_zone_json", None), ("targets_json", []), ("evidence_json", []), ("context_timeframe", {})):
+                        raw = item.get(field)
+                        try:
+                            item[field.removesuffix("_json")] = json.loads(raw) if raw else default
+                        except (TypeError, ValueError, json.JSONDecodeError):
+                            item[field.removesuffix("_json")] = default
+                        item.pop(field, None)
+                    candidates.append(item)
         return {
             "account_id": account_id,
             "scope": scope,
@@ -2390,7 +2569,7 @@ def router_for(get_store, get_runtime, get_translation):
         """List recent orders and intent states (Work Package D)."""
         if not account_id:
             return {"orders": [], "count": 0, "scope_required": True}
-        require_registered_account(store, account_id)
+        account_id = require_registered_account(store, account_id)
         expected_mode, expected_venue = account_execution_scope(store, account_id)
         orders = []
         if hasattr(store, "_connect"):
@@ -2441,7 +2620,7 @@ def router_for(get_store, get_runtime, get_translation):
         """List active positions and protective plans (Work Package D)."""
         if not account_id:
             return {"positions": [], "count": 0, "scope_required": True}
-        require_registered_account(store, account_id)
+        account_id = require_registered_account(store, account_id)
         expected_mode, expected_venue = account_execution_scope(store, account_id)
         positions = []
         if hasattr(store, "_connect"):

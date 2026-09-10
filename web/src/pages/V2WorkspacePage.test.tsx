@@ -103,17 +103,17 @@ describe("V2 task workspace",()=>{
     fireEvent.change(screen.getByLabelText("Analysis start time"), {target:{value:"2030-01-02T11:00"}});
     await waitFor(()=>expect(apiClient.v2).toHaveBeenCalledWith(expect.stringContaining("from_at=2030-01-02T03%3A00%3A00.000Z"),"GET",undefined,expect.any(AbortSignal)));
   });
-  it("shows separate Gate paper and live account profiles without remote access",async()=>{
-    vi.mocked(apiClient.v2).mockImplementation(async (path: string) => {
+  it("shows separate Gate TestNet and Live account profiles without remote access",async()=>{
+      vi.mocked(apiClient.v2).mockImplementation(async (path: string) => {
       if (path === "/gate/accounts") {
         return {accounts:[
-          {account_id:"gate_paper",mode:"PAPER",venue:"gate",account_kind:"TESTNET",api_environment:"TESTNET",api_base_url:"https://api-testnet.gateapi.io/api/v4",execution_adapter:"GATE_TESTNET_API",live_status:"AVAILABLE",private_api_access:"NOT_ATTEMPTED",credentials:{configured:false,api_key_masked:"",testnet:true,updated_at:null}},
+          {account_id:"gate_testnet",mode:"TESTNET",venue:"gate",account_kind:"TESTNET",api_environment:"TESTNET",api_base_url:"https://api-testnet.gateapi.io/api/v4",execution_adapter:"GATE_TESTNET_API",live_status:"AVAILABLE",private_api_access:"NOT_ATTEMPTED",credentials:{configured:false,api_key_masked:"",testnet:true,updated_at:null}},
           {account_id:"gate_live",mode:"LIVE",venue:"gate",account_kind:"LIVE",api_environment:"LIVE",api_base_url:"https://api.gateio.ws/api/v4",execution_adapter:"GATE_LIVE_API",live_status:"LOCKED",private_api_access:"NOT_ATTEMPTED",credentials:{configured:false,api_key_masked:"",testnet:false,updated_at:null}},
         ]};
       }
-      if (path === "/accounts") return {accounts:[{account_id:"gate_paper",mode:"PAPER",venue:"gate"},{account_id:"gate_live",mode:"LIVE",venue:"gate"}]};
+      if (path === "/accounts") return {accounts:[{account_id:"gate_testnet",mode:"TESTNET",venue:"gate"},{account_id:"gate_live",mode:"LIVE",venue:"gate"}]};
       if (path.startsWith("/gate/config")) return {configured:false,api_key_masked:"",live_enabled:false,testnet:false,updated_at:null};
-      if (path.startsWith("/gate/account")) return {configured:false,account_id:"gate_paper",mode:"TESTNET",data_status:"NOT_CONFIGURED_NO_TESTNET_CREDENTIALS",balance:{total:null,free:null,used:null},positions:[]};
+      if (path.startsWith("/gate/account")) return {configured:false,account_id:"gate_testnet",mode:"TESTNET",data_status:"NOT_CONFIGURED_NO_TESTNET_CREDENTIALS",balance:{total:null,free:null,used:null},positions:[]};
       if (path.startsWith("/gate/trades")) return {configured:false,is_sample:false,trades:[],summary:{total_trades:0,total_fee_cost:null,source:"NOT_CONFIGURED_NO_TESTNET_CREDENTIALS"}};
       if (path.startsWith("/gate/markets")) return {markets:[]};
       if (path.startsWith("/workspace")) return {watchlist:[{symbol:"BTCUSDT"}],subscriptions:[],runtime:{state:"stopped"},decisions:[],positions:[],allow_unknown_macro:false};
@@ -121,32 +121,34 @@ describe("V2 task workspace",()=>{
     });
     show("gate-live");
     expect(await screen.findByTestId("gate-account-profiles")).toBeInTheDocument();
-    expect(screen.getAllByText("gate_paper").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("gate_testnet").length).toBeGreaterThan(0);
     expect(screen.getAllByText("gate_live").length).toBeGreaterThan(0);
     expect(screen.getByText(/Register default pair/)).toBeInTheDocument();
     expect(screen.getByText(/private APIs are accessed only by an explicit/i)).toBeInTheDocument();
+    expect(screen.getByTestId("gate-testnet-e2e")).toHaveTextContent("Gate TestNet 独立链路验收");
+    expect(screen.getByRole("button", { name: /执行 TestNet 独立验收/ })).toBeDisabled();
   });
   it("verifies and saves credentials in the selected Gate account slot",async()=>{
     const verifyCalls: Array<{path:string; method:string; body:unknown}> = [];
     vi.mocked(apiClient.v2).mockImplementation(async (path: string, method?: string, body?: unknown) => {
       if (path === "/gate/accounts") {
         return {accounts:[
-          {account_id:"gate_paper",mode:"PAPER",venue:"gate",account_kind:"TESTNET",api_environment:"TESTNET",api_base_url:"https://api-testnet.gateapi.io/api/v4",execution_adapter:"GATE_TESTNET_API",live_status:"AVAILABLE",private_api_access:"NOT_ATTEMPTED",credentials:{configured:false,api_key_masked:"",testnet:true,updated_at:null}},
+          {account_id:"gate_testnet",mode:"TESTNET",venue:"gate",account_kind:"TESTNET",api_environment:"TESTNET",api_base_url:"https://api-testnet.gateapi.io/api/v4",execution_adapter:"GATE_TESTNET_API",live_status:"AVAILABLE",private_api_access:"NOT_ATTEMPTED",credentials:{configured:false,api_key_masked:"",testnet:true,updated_at:null}},
           {account_id:"gate_live",mode:"LIVE",venue:"gate",account_kind:"LIVE",api_environment:"LIVE",api_base_url:"https://api.gateio.ws/api/v4",execution_adapter:"GATE_LIVE_API",live_status:"LOCKED",private_api_access:"NOT_ATTEMPTED",credentials:{configured:false,api_key_masked:"",testnet:false,updated_at:null}},
         ]};
       }
-      if (path === "/accounts") return {accounts:[{account_id:"gate_paper",mode:"PAPER",venue:"gate"},{account_id:"gate_live",mode:"LIVE",venue:"gate"}]};
+      if (path === "/accounts") return {accounts:[{account_id:"gate_testnet",mode:"TESTNET",venue:"gate"},{account_id:"gate_live",mode:"LIVE",venue:"gate"}]};
       if (path.endsWith("/credentials/verify")) {
         verifyCalls.push({path,method:method || "",body});
         return {
           saved:true,
           private_api_access:"EXPLICITLY_REQUESTED",
-          account:{account_id:"gate_paper",mode:"PAPER",venue:"gate",account_kind:"GATE_TESTNET",api_environment:"TESTNET",api_base_url:"https://api-testnet.gateapi.io/api/v4",execution_adapter:"GATE_TESTNET_API",live_status:"AVAILABLE",private_api_access:"EXPLICITLY_REQUESTED",credentials:{configured:true,api_key_masked:"pape***1234",testnet:true,updated_at:"2030-01-02T00:00:00Z"}},
-          validation:{valid:true,status:"VERIFIED_READ_ONLY",private_api_access:"EXPLICITLY_REQUESTED",account_id:"gate_paper",api_environment:"TESTNET",account_type:"Gate.io Futures / Swap",data_status:"AVAILABLE",total_usdt:123.45},
+          account:{account_id:"gate_testnet",mode:"TESTNET",venue:"gate",account_kind:"GATE_TESTNET",api_environment:"TESTNET",api_base_url:"https://api-testnet.gateapi.io/api/v4",execution_adapter:"GATE_TESTNET_API",live_status:"AVAILABLE",private_api_access:"EXPLICITLY_REQUESTED",credentials:{configured:true,api_key_masked:"test***1234",testnet:true,updated_at:"2030-01-02T00:00:00Z"}},
+          validation:{valid:true,status:"VERIFIED_READ_ONLY",private_api_access:"EXPLICITLY_REQUESTED",account_id:"gate_testnet",api_environment:"TESTNET",account_type:"Gate.io Futures / Swap",data_status:"AVAILABLE",total_usdt:123.45},
         };
       }
       if (path.startsWith("/gate/config")) return {configured:false,api_key_masked:"",live_enabled:false,testnet:true,updated_at:null};
-      if (path.startsWith("/gate/account")) return {configured:true,account_id:"gate_paper",mode:"PAPER",data_status:"AVAILABLE",balance:{total:10000,free:10000,used:0},positions:[]};
+      if (path.startsWith("/gate/account")) return {configured:true,account_id:"gate_testnet",mode:"TESTNET",data_status:"AVAILABLE",equity:123.45,available_margin:123.45,used_margin:0,balance:{total:123.45,free:123.45,used:0},positions:[],pending_orders:[],source:"GATE_TESTNET_PRIVATE_API"};
       if (path.startsWith("/gate/trades")) return {configured:true,is_sample:false,trades:[],summary:{total_trades:0,total_fee_cost:null,source:"Gate.io v4 TESTNET Private API"}};
       if (path.startsWith("/gate/markets")) return {markets:[]};
       if (path.startsWith("/workspace")) return {watchlist:[{symbol:"BTCUSDT"}],subscriptions:[],runtime:{state:"stopped"},decisions:[],positions:[],allow_unknown_macro:false};
@@ -160,9 +162,40 @@ describe("V2 task workspace",()=>{
     fireEvent.click(await screen.findByRole("button",{name:/Verify & save/}));
     expect(await screen.findByTestId("gate-verification-result")).toHaveTextContent("Read-only API verification passed");
     await waitFor(()=>expect(verifyCalls).toEqual([{
-      path:"/gate/accounts/gate_paper/credentials/verify",
+      path:"/gate/accounts/gate_testnet/credentials/verify",
       method:"POST",
       body:{api_key:"paper-verify-key",api_secret:"paper-verify-secret"},
+      }]));
+  });
+  it("runs a scoped read-only Gate connection test without saving or sending",async()=>{
+    const calls: Array<{path:string;method:string;body:unknown}> = [];
+    vi.mocked(apiClient.v2).mockImplementation(async (path: string, method?: string, body?: unknown) => {
+      if (path === "/gate/accounts") {
+        return {accounts:[
+          {account_id:"gate_testnet",mode:"TESTNET",venue:"gate",account_kind:"TESTNET",api_environment:"TESTNET",api_base_url:"https://api-testnet.gateapi.io/api/v4",execution_adapter:"GATE_TESTNET_API",live_status:"AVAILABLE",private_api_access:"NOT_ATTEMPTED",credentials:{configured:false,api_key_masked:"",testnet:true,updated_at:null}},
+        ]};
+      }
+      if (path === "/accounts") return {accounts:[{account_id:"gate_testnet",mode:"TESTNET",venue:"gate"}]};
+      if (path.endsWith("/connection-test")) {
+        calls.push({path,method:method || "",body});
+        return {valid:true,status:"VERIFIED_READ_ONLY",code:"GATE_CONNECTION_VERIFIED",message_zh:"只读连接、账户、持仓和挂单查询成功。",account_id:"gate_testnet",api_environment:"TESTNET",read_only:true,orders_sent:0,model_called:false,authorization_created:false};
+      }
+      if (path.startsWith("/gate/config")) return {configured:false,api_key_masked:"",live_enabled:false,testnet:true,updated_at:null};
+      if (path.startsWith("/gate/account")) return {configured:false,account_id:"gate_testnet",mode:"TESTNET",data_status:"NOT_CONFIGURED_NO_TESTNET_CREDENTIALS",balance:{total:null,free:null,used:null},positions:[]};
+      if (path.startsWith("/gate/trades")) return {configured:false,is_sample:false,trades:[],summary:{total_trades:0,total_fee_cost:null,source:"NOT_CONFIGURED_NO_TESTNET_CREDENTIALS"}};
+      if (path.startsWith("/gate/markets")) return {markets:[]};
+      if (path.startsWith("/workspace")) return {watchlist:[{symbol:"BTCUSDT"}],subscriptions:[],runtime:{state:"stopped"},decisions:[],positions:[],allow_unknown_macro:false};
+      return {watchlist:[{symbol:"BTCUSDT"}],subscriptions:[],runtime:{state:"stopped"},decisions:[],positions:[],allow_unknown_macro:false};
+    });
+    show("gate-live");
+    fireEvent.change(await screen.findByLabelText(/API Key/),{target:{value:"readonly-key"}});
+    fireEvent.change(screen.getByLabelText(/API Secret/),{target:{value:"readonly-secret"}});
+    fireEvent.click(await screen.findByTestId("gate-connection-test"));
+    expect(await screen.findByTestId("gate-connection-test-result")).toHaveTextContent("orders_sent=0");
+    await waitFor(()=>expect(calls).toEqual([{
+      path:"/gate/accounts/gate_testnet/connection-test",
+      method:"POST",
+      body:{api_key:"readonly-key",api_secret:"readonly-secret"},
     }]));
   });
 });

@@ -6,6 +6,7 @@ import json
 import os
 import time
 from datetime import datetime, timezone
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from ..context import MarketContext
@@ -69,18 +70,61 @@ class OllamaProvider:
                     return decoded
             except LLMError:
                 raise
+            except HTTPError as exc:
+                # Ollama/Qwen 3.5 currently rejects some JSON-schema grammar
+                # combinations with HTTP 400.  Keep that distinction so the
+                # caller can use the provider's JSON mode plus local strict
+                # validation instead of retrying the same invalid grammar.
+                try:
+                    error_body = exc.read(2000).decode("utf-8", errors="replace")
+                except Exception:
+                    error_body = ""
+                if exc.code == 400 and "failed to parse grammar" in error_body.lower():
+                    raise LLMError(
+                        "Ollama rejected the supplied JSON schema grammar",
+                        code="MODEL_SCHEMA_UNSUPPORTED",
+                        raw_response=error_body,
+                    ) from exc
+                last_error = RuntimeError(f"HTTP {exc.code}: {error_body[:240]}")
+                if attempt < self.retries:
+                    time.sleep(0.25 * (attempt + 1))
             except Exception as exc:  # pragma: no cover - network dependent
                 last_error = exc
                 if attempt < self.retries:
                     time.sleep(0.25 * (attempt + 1))
         raise LLMError(f"Ollama unavailable: {last_error}", code="MODEL_UNAVAILABLE") from last_error
 
-    def health(self) -> dict[str, object]:
+    def _request_json_with_schema_compat(
+        self,
+        payload: dict[str, object],
+        *,
+        schema: dict[str, object] | None,
+    ) -> tuple[dict[str, object], str]:
+        """Request structured JSON and record any provider compatibility downgrade.
+
+        The application still validates the decoded object against its domain
+        contract.  The fallback is narrow: it is used only after Ollama
+        explicitly rejects the grammar, never after an arbitrary network or
+        model error.  This keeps Qwen 3.5 usable on affected Ollama builds
+        while preserving an auditable distinction from native schema grammar.
+        """
+
+        try:
+            return self._request("POST", "/api/chat", payload), "strict_json_schema" if schema else "json_object"
+        except LLMError as exc:
+            if not schema or exc.code != "MODEL_SCHEMA_UNSUPPORTED":
+                raise
+            fallback_payload = {**payload, "format": "json"}
+            envelope = self._request("POST", "/api/chat", fallback_payload)
+            return envelope, "json_mode_local_validation"
+
+    def health(self, *, model_name: str | None = None) -> dict[str, object]:
+        target_model = model_name or self.model_name
         try:
             payload = self._request("GET", "/api/tags")
             models = payload.get("models", [])
             names = [item.get("name") for item in models if isinstance(item, dict) and isinstance(item.get("name"), str)]
-            selected = next((item for item in models if isinstance(item, dict) and item.get("name") == self.model_name), {})
+            selected = next((item for item in models if isinstance(item, dict) and item.get("name") == target_model), {})
             raw_digest = selected.get("digest") if isinstance(selected, dict) else None
             digest = str(raw_digest or "").strip().lower()
             if digest.startswith("sha256:"):
@@ -89,8 +133,8 @@ class OllamaProvider:
             return {
                 "provider": self.provider_name,
                 "available": True,
-                "model_id": self.model_name,
-                "model_available": self.model_name in names,
+                "model_id": target_model,
+                "model_available": target_model in names,
                 "models": names,
                 "weight_digest": self.weight_digest,
                 "digest_status": "OBSERVED_PROVIDER_DIGEST" if self.weight_digest else "UNKNOWN_NOT_PROVIDED",
@@ -104,7 +148,7 @@ class OllamaProvider:
             return {
                 "provider": self.provider_name,
                 "available": False,
-                "model_id": self.model_name,
+                "model_id": target_model,
                 "model_available": False,
                 "error_code": exc.code,
                 "weight_digest": None,
@@ -156,7 +200,7 @@ class OllamaProvider:
             },
         }
         try:
-            envelope = self._request("POST", "/api/chat", payload)
+            envelope, schema_enforcement = self._request_json_with_schema_compat(payload, schema=schema)
             raw = self._content(envelope)
             if len(raw) > self.max_response_chars:
                 raise LLMError("Ollama response exceeds output limit", code="output_too_long", raw_response=raw[: self.max_response_chars])
@@ -177,7 +221,8 @@ class OllamaProvider:
                 "parse_status": "valid",
                 "input_tokens_est": sum(len(item.get("content", "")) for item in messages) // 4,
                 "output_chars": len(raw),
-                "schema_version": "strict_json_schema" if schema else "json_object",
+                "schema_version": schema_enforcement,
+                "schema_enforcement": schema_enforcement,
             }
             return decoded, raw, metadata
         except LLMError:
@@ -206,7 +251,7 @@ class OllamaProvider:
             },
         }
         try:
-            envelope = self._request("POST", "/api/chat", payload)
+            envelope, schema_enforcement = self._request_json_with_schema_compat(payload, schema=SIGNAL_SCHEMA)
             raw = self._content(envelope)
             if len(raw) > self.max_response_chars:
                 raise LLMError("Ollama response exceeds output limit", code="output_too_long", raw_response=raw[: self.max_response_chars])
@@ -226,6 +271,7 @@ class OllamaProvider:
                 parse_status="repair_valid" if repair else "valid",
                 input_tokens_est=sum(len(item["content"]) for item in messages) // 4,
                 output_chars=len(raw),
+                schema_enforcement=schema_enforcement,
             )
             return response, metadata
         except LLMError:

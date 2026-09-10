@@ -337,6 +337,12 @@ class SQLiteStore(V2Store):
             # evidence or changing the desktop schema contract.
             from ..trading.institutional_schema import ensure_institutional_trader_schema
             ensure_institutional_trader_schema(db)
+            # Canonicalize the historical Gate paper spelling at database
+            # initialization as well as at ledger construction.  This keeps
+            # read-only account lists and API scope resolution consistent
+            # even before an execution service is instantiated.
+            from ..trading.account_aliases import ensure_account_alias_migration
+            ensure_account_alias_migration(db)
 
     @staticmethod
     def _ensure_v11_tables(db: sqlite3.Connection) -> None:

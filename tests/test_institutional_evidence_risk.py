@@ -33,6 +33,26 @@ def test_evidence_bundle_is_frozen_idempotent_and_digest_does_not_hash_model_nam
         temp.cleanup()
 
 
+def test_model_digest_is_selected_for_requested_smart_model() -> None:
+    class DualModelProvider:
+        model_name = "qwen3.5:4b"
+        weight_digest = "a" * 64
+
+        def health(self, *, model_name=None):
+            target = model_name or self.model_name
+            return {
+                "model_id": target,
+                "weight_digest": "b" * 64 if target == "qwen3.5:9b" else "a" * 64,
+            }
+
+    digest, status = model_weight_digest(
+        DualModelProvider(),
+        health_result={"model_id": "qwen3.5:9b", "weight_digest": "b" * 64},
+        model_name="qwen3.5:9b",
+    )
+    assert (digest, status) == ("b" * 64, "OBSERVED_PROVIDER_DIGEST")
+
+
 def test_institutional_risk_uses_stop_risk_and_marks_unknown_capacity() -> None:
     exposures = build_exposure_snapshots([
         {

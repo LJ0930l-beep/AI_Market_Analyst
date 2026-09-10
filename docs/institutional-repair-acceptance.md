@@ -1,5 +1,50 @@
 # AI Market Analyst 机构量化审计修复验收记录
 
+> **当前 main 权威复核（2026-09-10）**：本节优先于本文保留的历史验收快照。当前 HEAD 为 `3700bc63d4e35df1f0e2b2ec86beeb5d889a2889`，`main` 与 `origin/main` 同步；四个版本来源均为 `2.0.0`。V1.7 仅被核对，没有改版本号。
+
+## 本轮复核摘要
+
+本轮以当前 `main` 的源码和工作区为基线直接复核，保留用户既有改动，不做 reset/checkout/clean，不运行 `scripts/direct_install.ps1`；在原程序已停止的前提下，用当前 MSVC NSIS 包完成 current-user 安装，并按用户后续明确要求将交付清单提交/推送到 `origin/main`。未访问业务数据库、私有 Gate 凭证或真实订单，安装后未启动应用。
+
+| 项目 | 结果 |
+|---|---|
+| 后端完整 pytest | `370 passed, 1 skipped, 1 warning` |
+| 前端 | `22 files / 98 tests`、typecheck/lint/build 全部 PASS |
+| 隔离机构验收脚本 | `4/4 PASS` |
+| Gate 公共 HTTP | TestNet 200/63 contracts；Live 200/977 contracts；只读公开接口 |
+| 本机 Qwen | `qwen3.5:9b` 可用；真实 digest `6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7`；无账户 WAIT smoke PASS |
+| 当前安装版 | current-user 安装成功，版本 `2.0.0`、桌面快捷方式和 sidecar 哈希已核对；`127.0.0.1:18765` 安装后未启动 |
+| 新 sidecar | 构建 PASS，并随当前 NSIS 包安装 |
+| NSIS | MSVC 目标生成并成功完成 current-user 安装，安装器退出码 `0`；安装后未启动应用，不访问业务库或账户 |
+
+### 当前验收边界
+
+- `gate_testnet` 是唯一权威 Gate TestNet 账户；`gate_paper` 只接受为历史输入别名，不再指向本地 PAPER 撮合。`gate_live` 独立保存元数据，发布锁保持 `LOCKED`。
+- Gate 远端余额/保证金/持仓/挂单/成交由账户作用域 adapter 和 `GateAccountTruthService` 读取、记录、镜像；镜像不生成 `trade_fills`，不把本地初始资金当成远端权益。
+- 独立 TestNet E2E 已实现“确认→真实 entry→远端回执→持仓/保护→可选 reduce-only 清理→远端归零→撤保护”的步骤、超时、幂等与故障关闭，但因没有用户凭证，本轮只通过隔离 fake adapter，真实私有端点和真实订单为 `NOT_ATTEMPTED`。
+- AI 运行阶段区分 `SYSTEM_BLOCKED`、`MODEL WAIT`、风险拒绝和执行结果；真实 Ollama 9B digest/响应/延迟可被保存。Qwen smoke 不是固定评测集、影子账户或真实交易表现证明。
+- Ollama 兼容修复只对服务端明确 `failed to parse grammar` 的 Schema 拒绝使用 JSON mode + 本地严格校验；普通错误仍失败关闭，证据带 `schema_enforcement`。
+
+### R01–R11 独立验收索引
+
+| 合同 | 结果 | 关键实现/测试 | 依赖与限制 |
+|---|---|---|---|
+| R01 | `PASS_ISOLATED` | instrument identity、account alias migration、latest/range；`AT-DATA-IDENTITY-LATEST` | 生产活动库迁移未执行 |
+| R02 | `PASS_ISOLATED` | closed-bar/PIT/latest 相关 full pytest 与 RT 回归 | 真实源的历史可知性依赖数据提供方 |
+| R03 | `PASS_FIXTURE` | 六策略边界、typed candidate、退出/非法参数测试 | 不把默认参数当优化结果 |
+| R04 | `PARTIAL_EXTERNAL` | 精确 hostname、重定向安全、否定句方向测试 | 真实付费/私有新闻与 FF actual 仍未配置 |
+| R05 | `PASS_SCOPED` | 回放时钟、版本/hash、缺数据不做零交易假评估 | 足量真实试验才可运行 DSR/PBO |
+| R06 | `PASS_ISOLATED` | TradeLifecycle、SHORT MAE/MFE、费用守恒、反事实 | 真实深度/资金费/费用源按字段标记 |
+| R07 | `PASS_ISOLATED_UI` | 统一账本投影、AI stage trace、GET 纯读、98 前端测试 | UI 已构建，未安装到当前用户程序 |
+| R08 | `PASS_ISOLATED` | v3 research cancel、资格与持久化全量回归 | 未接入付费数据不阻断其他实现 |
+| R09 | `PASS_ISOLATED` | Decimal/Guardian/租约/风险预留、TestNet E2E fake chain | 私有 Gate 凭证缺失，真实订单未尝试 |
+| R10 | `PASS_LOCAL_WITH_REAL_SMOKE` | digest 目标选择、Ollama grammar fallback、stage/model provenance | 未做固定 eval、forward shadow、效果结论 |
+| R11 | `PASS_LOCAL_WITH_MSVC_BUILD` | 脱敏、Origin、outbox、compileall、ruff F821、cargo check、MSVC NSIS、current-user install | 生产/真实 TestNet 运维未运行；LIVE 仍锁定 |
+
+Sol 仍需独立复核并决定里程碑签收；本文件不把开发者验证写成生产发布批准。
+
+> **以下为历史快照**：从“验收结论边界”开始的旧执行记录用于追溯，可能包含先前运行、安装或测试环境的结果；若与本文开头“当前 main 权威复核”冲突，以当前 main 复核和 `evidence/institutional-repair-result.json` 的 `current_main_revalidation` 为准。
+
 ## 验收结论边界
 
 开发执行状态：`DEVELOPER_COMPLETE_PENDING_SOL_ACCEPTANCE`。

@@ -39,6 +39,12 @@ from core.trading.order_selection import (
     OrderSelectionInput,
     OrderSelectionPolicy,
 )
+from .ai_cycle_trace import (
+    build_stage_trace,
+    humanize_reason,
+    infer_block_stage,
+    persist_stage_trace,
+)
 
 logger = logging.getLogger("core.trading.ai_led_engine")
 
@@ -84,6 +90,11 @@ class AICycleContext:
     input_hash: Optional[str] = None
     model_digest: Optional[str] = None
     model_digest_status: str = "UNKNOWN_NOT_PROVIDED"
+    model_quantization: Optional[str] = None
+    model_inference_settings: Dict[str, Any] = field(default_factory=dict)
+    model_latency_ms: Optional[float] = None
+    model_raw_response: Optional[str] = None
+    model_call_prompt_version: Optional[str] = None
     evidence_bundle_id: Optional[str] = None
     evidence_status: str = "NOT_FROZEN"
     evidence_refs: tuple[str, ...] = ()
@@ -101,6 +112,10 @@ class AICycleContext:
     strategy_readiness: Dict[str, Any] = field(default_factory=dict)
     indicator_snapshot_id: Optional[str] = None
     scheduled_at: Optional[str] = None
+    # Managed Gate TestNet cycles carry the exact remote account snapshot used
+    # for economics.  A local ledger projection is never substituted here.
+    account_truth: Dict[str, Any] = field(default_factory=dict)
+    stage_block: Optional[str] = None
 
 
 @dataclass
@@ -249,12 +264,37 @@ class AILedDecisionEngine:
         return max(0.0, (datetime.now(timezone.utc) - started).total_seconds() * 1000.0)
 
     def _persist_cycle(self, result: AICycleResult, context: AICycleContext) -> None:
+        output = result.action_output
+        origin = str(result.decision_origin or getattr(output, "decision_origin", "SYSTEM") or "SYSTEM").upper()
+        extra = getattr(output, "extra_fields", {}) or {}
+        if origin == "MODEL" and extra.get("is_model_decision") is False:
+            origin = "SYSTEM"
+        model_called = bool(extra.get("model_called", origin == "MODEL")) if origin == "MODEL" else False
+        model_result = str(
+            extra.get("model_result")
+            or (output.action if origin == "MODEL" else "NOT_RUN")
+        )
+        block_stage = infer_block_stage(result.reason, extra.get("block_stage") or getattr(context, "stage_block", None)) if origin != "MODEL" else None
+        human_message = str(extra.get("human_message") or humanize_reason(result.reason, stage=block_stage))
+        persisted_action = output.action if origin == "MODEL" else "SYSTEM_BLOCKED"
+        stage_trace = build_stage_trace(
+            context,
+            result_status=result.status,
+            result_reason=result.reason,
+            decision_origin=origin,
+            model_called=model_called,
+            model_result=model_result,
+            completed_at=datetime.now(timezone.utc),
+            execution_result=result.execution_result,
+            order_intent=result.order_intent,
+        )
         payload = {
             "cycle_id": result.cycle_id,
-            "action": result.action_output.action,
-            "instrument_id": result.action_output.instrument_id,
-            "reason": result.action_output.reason,
-            "decision_id": result.action_output.decision_id,
+            "action": persisted_action,
+            "model_action": output.action if origin != "MODEL" else None,
+            "instrument_id": output.instrument_id,
+            "reason": output.reason,
+            "decision_id": output.decision_id,
             "account_id": context.account_id,
             "venue": context.venue,
             "mode": context.mode.value if isinstance(context.mode, TradingMode) else str(context.mode),
@@ -272,6 +312,11 @@ class AILedDecisionEngine:
             "input_hash": context.input_hash,
             "model_digest": context.model_digest,
             "model_digest_status": context.model_digest_status,
+            "model_quantization": context.model_quantization,
+            "model_inference_settings": context.model_inference_settings,
+            "model_latency_ms": context.model_latency_ms,
+            "model_raw_response": context.model_raw_response,
+            "model_call_prompt_version": context.model_call_prompt_version,
             "evidence_bundle_id": context.evidence_bundle_id,
             "evidence_status": context.evidence_status,
             "evidence_context_refs": list(context.evidence_refs),
@@ -298,19 +343,24 @@ class AILedDecisionEngine:
             "strategy_readiness": context.strategy_readiness,
             "indicator_snapshot_id": context.indicator_snapshot_id,
             "decision_memory": context.decision_memory[:20],
-            "evidence_refs": list(result.action_output.evidence_refs),
+            "evidence_refs": list(output.evidence_refs),
             "order_selection": {
-                "preference": result.action_output.order_preference,
-                "limit_price": result.action_output.limit_price,
-                "ttl_seconds": result.action_output.ttl_seconds,
-                "candidate_id": result.action_output.candidate_id,
-                "closed_15m_bar": result.action_output.closed_15m_bar,
+                "preference": output.order_preference,
+                "limit_price": output.limit_price,
+                "ttl_seconds": output.ttl_seconds,
+                "candidate_id": output.candidate_id,
+                "closed_15m_bar": output.closed_15m_bar,
             },
             "order_intent": result.order_intent.to_dict() if result.order_intent else None,
             "execution_result": result.execution_result,
-            "decision_origin": result.decision_origin,
+            "decision_origin": origin,
             "operational_state": result.operational_state,
-            "is_model_decision": result.decision_origin == "MODEL",
+            "is_model_decision": origin == "MODEL" and model_called,
+            "model_called": model_called,
+            "model_result": model_result,
+            "block_stage": block_stage,
+            "human_message": human_message,
+            "stage_trace": stage_trace,
         }
         iid = result.order_intent.intent_id if result.order_intent else None
         now_iso = datetime.now(timezone.utc).isoformat()
@@ -322,17 +372,20 @@ class AILedDecisionEngine:
                        (cycle_id, account_id, action, status, reason, latency_ms, order_intent_id, payload_json, created_at,
                         session_id, generation, authorization_id, market_snapshot_hash)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (result.cycle_id, context.account_id, result.action_output.action, result.status, result.reason, self._cycle_latency_ms(context), iid, json.dumps(payload, allow_nan=False), now_iso,
+                    (result.cycle_id, context.account_id, persisted_action, result.status, result.reason, self._cycle_latency_ms(context), iid, json.dumps(payload, allow_nan=False), now_iso,
                      context.session_id, context.generation, context.authorization_id, payload["market_snapshot_hash"]),
                 )
                 conn.execute(
                     """UPDATE ai_led_cycles SET started_at=?, scheduled_at=?,
                        calibration_state=?, candidate_count=?, provider=?, environment=?,
-                       operational_state=?, decision_origin=?, model_call_status=?
+                       operational_state=?, decision_origin=?, model_call_status=?,
+                       model_called=?, model_result=?, block_stage=?, human_message=?,
+                       stage_trace_json=?
                        WHERE cycle_id=?""",
-                    (context.started_at, context.scheduled_at, (context.calibration or {}).get("status"), len(context.candidates), context.provider or context.venue, context.execution_environment or context.environment, result.operational_state, result.decision_origin, "MODEL_DECISION" if result.decision_origin == "MODEL" else "NOT_CALLED", result.cycle_id),
+                    (context.started_at, context.scheduled_at, (context.calibration or {}).get("status"), len(context.candidates), context.provider or context.venue, context.execution_environment or context.environment, result.operational_state, origin, "MODEL_DECISION" if model_called else "NOT_CALLED", int(model_called), model_result, block_stage, human_message, json.dumps(stage_trace, ensure_ascii=False, allow_nan=False), result.cycle_id),
                 )
                 conn.commit()
+                persist_stage_trace(self.store, cycle_id=result.cycle_id, account_id=context.account_id, trace=stage_trace)
             elif hasattr(self.store, "_connect"):
                 with self.store._connect() as db:
                     db.execute(
@@ -340,16 +393,19 @@ class AILedDecisionEngine:
                            (cycle_id, account_id, action, status, reason, latency_ms, order_intent_id, payload_json, created_at,
                             session_id, generation, authorization_id, market_snapshot_hash)
                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                        (result.cycle_id, context.account_id, result.action_output.action, result.status, result.reason, self._cycle_latency_ms(context), iid, json.dumps(payload, allow_nan=False), now_iso,
+                        (result.cycle_id, context.account_id, persisted_action, result.status, result.reason, self._cycle_latency_ms(context), iid, json.dumps(payload, allow_nan=False), now_iso,
                          context.session_id, context.generation, context.authorization_id, payload["market_snapshot_hash"]),
                     )
                     db.execute(
                         """UPDATE ai_led_cycles SET started_at=?, scheduled_at=?,
                            calibration_state=?, candidate_count=?, provider=?, environment=?,
-                           operational_state=?, decision_origin=?, model_call_status=?
+                           operational_state=?, decision_origin=?, model_call_status=?,
+                           model_called=?, model_result=?, block_stage=?, human_message=?,
+                           stage_trace_json=?
                            WHERE cycle_id=?""",
-                        (context.started_at, context.scheduled_at, (context.calibration or {}).get("status"), len(context.candidates), context.provider or context.venue, context.execution_environment or context.environment, result.operational_state, result.decision_origin, "MODEL_DECISION" if result.decision_origin == "MODEL" else "NOT_CALLED", result.cycle_id),
+                        (context.started_at, context.scheduled_at, (context.calibration or {}).get("status"), len(context.candidates), context.provider or context.venue, context.execution_environment or context.environment, result.operational_state, origin, "MODEL_DECISION" if model_called else "NOT_CALLED", int(model_called), model_result, block_stage, human_message, json.dumps(stage_trace, ensure_ascii=False, allow_nan=False), result.cycle_id),
                     )
+                    persist_stage_trace(self.store, cycle_id=result.cycle_id, account_id=context.account_id, trace=stage_trace)
         except Exception as e:
             logger.warning("Failed to persist ai_led_cycle: %s", e)
 
@@ -388,10 +444,30 @@ class AILedDecisionEngine:
                 order_intent=intent,
                 execution_result=execution_result,
                 decision_origin=origin,
-                operational_state=operational_state or ("MODEL_DECISION" if origin == "MODEL" else "PRECHECK_BLOCKED"),
+                operational_state=operational_state or ("MODEL_DECISION" if origin == "MODEL" else "SYSTEM_BLOCKED"),
             )
             self._persist_cycle(result, context)
             return result
+
+        def system_output(reason: str, *, block_stage: str | None = None) -> AIActionOutput:
+            """Represent a guard/availability fact without a fake model WAIT."""
+
+            stage = infer_block_stage(reason, block_stage)
+            return AIActionOutput(
+                action="WAIT",  # compatibility for callers; persistence/API use SYSTEM_BLOCKED
+                instrument_id=default_symbol,
+                reason=reason,
+                decision_origin="SYSTEM",
+                extra_fields={
+                    "is_model_decision": False,
+                    "model_called": False,
+                    "model_result": "NOT_RUN",
+                    "block_stage": stage,
+                    "operational_state": "SYSTEM_BLOCKED",
+                    "blocked_code": str(reason).split(":", 1)[0],
+                    "human_message": humanize_reason(reason, stage=stage),
+                },
+            )
 
         def market_for(symbol: str) -> Dict[str, Any]:
             raw = context.market_snapshots.get(symbol) or {}
@@ -430,14 +506,10 @@ class AILedDecisionEngine:
 
         expires_at_dt = self._parse_time(context.expires_at)
         if expires_at_dt is None:
-            output = model_output or AIActionOutput(action="WAIT", instrument_id=default_symbol, reason="Invalid cycle expiration")
+            output = system_output("INVALID_CYCLE_EXPIRATION", block_stage="ACCOUNT")
             return finish(output, "REJECTED", "INVALID_CYCLE_EXPIRATION")
         if now > expires_at_dt:
-            output = model_output or AIActionOutput(
-                action="WAIT",
-                instrument_id=default_symbol,
-                reason="Inference cycle expired before completion",
-            )
+            output = system_output("MODEL_TIMEOUT_DISCARDED", block_stage="AI_MODEL")
             return finish(
                 output,
                 "TIMEOUT_DISCARDED",
@@ -446,27 +518,27 @@ class AILedDecisionEngine:
 
         if model_output is None:
             if self.model_runner is None:
-                output = AIActionOutput(action="WAIT", instrument_id=default_symbol, reason="Model runner not configured")
+                output = system_output("SMART_MODEL_UNAVAILABLE", block_stage="AI_MODEL")
                 return finish(output, "BLOCKED", "SMART_MODEL_UNAVAILABLE")
             try:
                 output = self.model_runner(context)
             except Exception as exc:
-                output = AIActionOutput(action="WAIT", instrument_id=default_symbol, reason="Model generation failed")
-                return finish(output, "BLOCKED", f"SMART_MODEL_UNAVAILABLE: {type(exc).__name__}: {exc}")
+                output = system_output(f"SMART_MODEL_UNAVAILABLE: {type(exc).__name__}", block_stage="AI_MODEL")
+                return finish(output, "BLOCKED", "SMART_MODEL_UNAVAILABLE")
         else:
             output = model_output
+
+        if not isinstance(output, AIActionOutput):
+            output = system_output("INVALID_MODEL_OUTPUT_SCHEMA", block_stage="AI_MODEL")
+            return finish(output, "REJECTED", "INVALID_MODEL_OUTPUT_SCHEMA")
 
         if str(getattr(output, "decision_origin", "MODEL") or "MODEL").upper() != "MODEL" or (getattr(output, "extra_fields", {}) or {}).get("is_model_decision") is False:
             return finish(
                 output,
                 "BLOCKED",
                 output.reason or "系统前置条件未满足",
-                operational_state=str((getattr(output, "extra_fields", {}) or {}).get("operational_state") or "PRECHECK_BLOCKED"),
+                operational_state=str((getattr(output, "extra_fields", {}) or {}).get("operational_state") or "SYSTEM_BLOCKED"),
             )
-
-        if not isinstance(output, AIActionOutput):
-            output = AIActionOutput(action="WAIT", instrument_id=default_symbol, reason="Model output is not the required action object")
-            return finish(output, "REJECTED", "INVALID_MODEL_OUTPUT_SCHEMA")
 
         if output.action not in ALLOWED_AI_ACTIONS:
             return finish(output, "REJECTED", f"INVALID_ACTION_SCHEMA: Unknown action '{output.action}'")

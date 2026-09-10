@@ -75,6 +75,42 @@ describe("AI trader durable plan console", () => {
 
     render(<MemoryRouter><AITraderPanel currentMode="PAPER" activeAccount="paper_unknown" /></MemoryRouter>);
 
-    await waitFor(() => expect(screen.getByText("UNKNOWN")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("PROTECTED POSITIONS").parentElement).toHaveTextContent("UNKNOWN"));
+  });
+
+  it("renders a system block separately from a model WAIT", async () => {
+    vi.spyOn(apiClient, "v2").mockImplementation(async (path: string) => {
+      if (path === "/accounts") return { accounts: [{ account_id: "paper_trace", mode: "PAPER", venue: "simulated" }] } as never;
+      if (path.startsWith("/trading-authorizations/active")) return { authorization: null } as never;
+      if (path.startsWith("/ai-session/status")) {
+        return {
+          session: { state: "PAUSED", generation: 3 },
+          latest_cycle: {
+            cycle_id: "cycle-system-1",
+            action: "SYSTEM_BLOCKED",
+            reason: "SMART_MODEL_UNAVAILABLE",
+            decision_origin: "SYSTEM",
+            operational_state: "SYSTEM_BLOCKED",
+            model_called: false,
+            model_result: "NOT_RUN",
+            block_stage: "AI_MODEL",
+            human_message: "模型不可用，未提交新订单。",
+            stage_trace: [{ stage: "AI_MODEL", status: "BLOCKED", human_message: "Qwen3.5-9B 未运行。" }],
+          },
+          market_freshness: { status: "HEALTHY" },
+          model_status: { status: "SMART_MODEL_UNAVAILABLE" },
+        } as never;
+      }
+      if (path.startsWith("/trade-plans")) return { plans: [] } as never;
+      return {} as never;
+    });
+
+    render(<MemoryRouter><AITraderPanel currentMode="PAPER" activeAccount="paper_trace" /></MemoryRouter>);
+
+    const card = await screen.findByTestId("ai-cycle-card");
+    expect(card).toHaveTextContent("SYSTEM · 系统阻断");
+    expect(card).toHaveTextContent("NOT_RUN");
+    expect(card).toHaveTextContent("Qwen3.5-9B 未运行");
+    expect(card).not.toHaveTextContent("MODEL · Qwen3.5-9B");
   });
 });

@@ -17,6 +17,7 @@ import json
 import logging
 import math
 import threading
+import time
 from typing import Any, Callable, Optional
 
 from .ai_led_engine import (
@@ -43,6 +44,10 @@ from .candidate_scanner import CandidateScanner
 from .decision_memory import memory_for_prompt, record_decision_memory
 from .institutional_schema import ensure_institutional_trader_schema
 from .model_schemas import AI_ACTION_SCHEMA
+from .account_aliases import canonical_account_id, GATE_TESTNET_ACCOUNT_ID
+from .gate_account_truth import GateAccountTruthService
+from .gate_accounts import build_gate_trader
+from .ai_cycle_trace import humanize_reason, infer_block_stage
 
 logger = logging.getLogger("core.trading.ai_session_coordinator")
 
@@ -195,11 +200,12 @@ class AISessionCoordinator:
     def _configure_scope(self, account_id: str | None) -> tuple[dict[str, Any] | None, str | None]:
         if not account_id:
             return None, "ACCOUNT_REQUIRED"
-        account = self._account_record(str(account_id))
+        canonical = canonical_account_id(self.store, str(account_id))
+        account = self._account_record(canonical)
         if account is None:
             return None, "ACCOUNT_NOT_FOUND"
         try:
-            scope = resolve_account_scope(self.store, str(account_id))
+            scope = resolve_account_scope(self.store, canonical)
             mode = TradingMode(str((scope or {}).get("mode") or account.get("mode", "")).upper())
         except ValueError:
             return None, "ACCOUNT_MODE_INVALID"
@@ -208,7 +214,7 @@ class AISessionCoordinator:
         if scope:
             account["execution_scope"] = scope
         with self._lock:
-            self._account_id = str(account_id)
+            self._account_id = str(canonical)
             self._mode = mode
             self._venue = venue
             self._calibration_state = "CALIBRATING"
@@ -249,7 +255,10 @@ class AISessionCoordinator:
             }
         else:
             try:
-                raw = provider.health()
+                try:
+                    raw = provider.health(model_name=DEFAULT_SMART_MODEL)
+                except TypeError:
+                    raw = provider.health()
                 raw = raw if isinstance(raw, dict) else {}
                 models = raw.get("models") if isinstance(raw.get("models"), list) else []
                 model_available = bool(raw.get("model_available")) and (
@@ -466,6 +475,8 @@ class AISessionCoordinator:
         snapshots: dict[str, dict[str, Any]],
         candidates: list[dict[str, Any]] | None = None,
         calibration: dict[str, Any] | None = None,
+        account_truth: dict[str, Any] | None = None,
+        news_revisions: list[dict[str, Any]] | None = None,
         scheduled_at: str | None = None,
     ) -> AICycleContext:
         instruments = tuple(snapshots.keys()) or tuple(self._allowed_symbols(authorization))
@@ -494,6 +505,12 @@ class AISessionCoordinator:
             "calibration_status": str((calibration or {}).get("status") or "UNKNOWN"),
         }
         indicator_snapshot_id = next((str(item.get("indicator_snapshot_id")) for item in snapshots.values() if isinstance(item, dict) and item.get("indicator_snapshot_id")), None)
+        remote_positions = (account_truth or {}).get("positions") if isinstance(account_truth, dict) else None
+        scoped_positions = (
+            [dict(item) for item in remote_positions if isinstance(item, dict)]
+            if str((account_truth or {}).get("status") or "").upper() == "AVAILABLE" and isinstance(remote_positions, list)
+            else self.ledger.get_open_positions(account_id, venue=venue, mode=mode.value)
+        )
         return AICycleContext(
             cycle_id=cycle_id,
             account_id=account_id,
@@ -513,7 +530,7 @@ class AISessionCoordinator:
             lease_holder_id=getattr(self.gateway, "runtime_lease_holder_id", None),
             fencing_token=getattr(self.gateway, "runtime_fencing_token", None),
             market_snapshots=snapshots,
-            positions=self.ledger.get_open_positions(account_id, venue=venue, mode=mode.value),
+            positions=scoped_positions,
             candidates=candidate_rows,
             decision_memory=memory_for_prompt(self.store, account_id),
             calibration=dict(calibration or {}),
@@ -521,6 +538,8 @@ class AISessionCoordinator:
             data_quality=data_quality,
             strategy_readiness=strategy_readiness,
             indicator_snapshot_id=indicator_snapshot_id,
+            account_truth=dict(account_truth or {}),
+            news_revisions=list(news_revisions or []),
             scheduled_at=scheduled_at,
         )
 
@@ -533,7 +552,20 @@ class AISessionCoordinator:
             "mode": context.mode.value if isinstance(context.mode, TradingMode) else str(context.mode),
             "venue": context.venue,
             "allowed_instruments": list(context.allowed_instruments),
+            "account_truth": {
+                "status": context.account_truth.get("status"),
+                "source": context.account_truth.get("source"),
+                "observed_at": context.account_truth.get("observed_at"),
+                "snapshot_id": context.account_truth.get("snapshot_id"),
+                "equity": context.account_truth.get("equity"),
+                "available_margin": context.account_truth.get("available_margin"),
+                "used_margin": context.account_truth.get("used_margin"),
+                "unrealized_pnl": context.account_truth.get("unrealized_pnl"),
+                "positions": context.account_truth.get("positions", []),
+                "pending_orders": context.account_truth.get("pending_orders", []),
+            },
             "market_snapshots": context.market_snapshots,
+            "news_revisions": context.news_revisions,
             "positions": context.positions,
             "candidates": context.candidates,
             "calibration": context.calibration,
@@ -557,12 +589,45 @@ class AISessionCoordinator:
         )
         with self._lock:
             health_snapshot = dict(self._health_cache or {})
-        model_digest, model_digest_status = model_weight_digest(provider, health_result=health_snapshot)
-        evidence_refs = tuple(
+        model_digest, model_digest_status = model_weight_digest(
+            provider,
+            health_result=health_snapshot,
+            model_name=DEFAULT_SMART_MODEL,
+        )
+        model_quantization = str(
+            health_snapshot.get("quantization")
+            or getattr(provider, "quantization", None)
+            or "UNKNOWN_NOT_PROVIDED"
+        )
+        model_inference_settings = {
+            "temperature": 0.0,
+            "context_length": getattr(provider, "context_length", None),
+            "max_tokens": getattr(provider, "max_tokens", None),
+            "think": getattr(provider, "think", None),
+            "schema": "AI_ACTION_SCHEMA",
+            "schema_enforcement": "REQUESTED_NATIVE_JSON_SCHEMA",
+        }
+        context.model_quantization = model_quantization
+        context.model_inference_settings = model_inference_settings
+        evidence_refs_list = (
             [f"market_snapshot:{symbol}:{_digest(snapshot)[:16]}" for symbol, snapshot in sorted(context.market_snapshots.items())]
             + ([f"authorization:{context.authorization_id}"] if context.authorization_id else [])
             + ([f"session:{context.session_id}:{context.generation}"] if context.session_id else [])
+            + ([f"account_snapshot:{context.account_truth.get('snapshot_id')}"] if context.account_truth.get("snapshot_id") else [])
+            + ([f"indicator_snapshot:{context.indicator_snapshot_id}"] if context.indicator_snapshot_id else [])
         )
+        for candidate in context.candidates:
+            if not isinstance(candidate, dict):
+                continue
+            if candidate.get("candidate_id"):
+                evidence_refs_list.append(f"candidate:{candidate['candidate_id']}")
+            candidate_refs = candidate.get("evidence_refs")
+            if isinstance(candidate_refs, (list, tuple)):
+                evidence_refs_list.extend(str(item) for item in candidate_refs if str(item).strip())
+        for revision in context.news_revisions:
+            if isinstance(revision, dict) and revision.get("revision_id"):
+                evidence_refs_list.append(f"news_revision:{revision['revision_id']}")
+        evidence_refs = tuple(dict.fromkeys(evidence_refs_list))
         bundle = EvidenceBundle.freeze(
             dataset_id=f"ai_cycle:{context.cycle_id}",
             as_of=context.started_at,
@@ -574,6 +639,10 @@ class AISessionCoordinator:
                     "provider": provider_name,
                     "model_id": model_id,
                     "model_version": model_version,
+                    "weight_digest": model_digest,
+                    "quantization": model_quantization,
+                    "inference_settings": model_inference_settings,
+                    "prompt_version": AI_PROMPT_VERSION,
                     "weight_digest_status": model_digest_status,
                 },
             },
@@ -614,14 +683,32 @@ class AISessionCoordinator:
             {"role": "user", "content": json.dumps(prompt_payload, sort_keys=True, ensure_ascii=True)},
         ]
         def call_model(call_messages: list[dict[str, str]], prompt_version: str) -> Any:
-            return provider.generate_json(
-                call_messages,
-                model_name=DEFAULT_SMART_MODEL,
-                prompt_version=prompt_version,
-                input_hash=input_hash,
-                temperature=0.0,
-                schema=AI_ACTION_SCHEMA,
-            )
+            started = time.perf_counter()
+            try:
+                result = provider.generate_json(
+                    call_messages,
+                    model_name=DEFAULT_SMART_MODEL,
+                    prompt_version=prompt_version,
+                    input_hash=input_hash,
+                    temperature=0.0,
+                    schema=AI_ACTION_SCHEMA,
+                )
+            finally:
+                elapsed_ms = round((time.perf_counter() - started) * 1000.0, 3)
+                context.model_latency_ms = elapsed_ms
+                context.model_call_prompt_version = prompt_version
+            metadata = result[2] if isinstance(result, tuple) and len(result) > 2 and isinstance(result[2], dict) else {}
+            returned_model = str(metadata.get("model_id") or "").strip()
+            if returned_model and returned_model != DEFAULT_SMART_MODEL:
+                raise ValueError("SMART_MODEL_MISMATCH")
+            context.model_latency_ms = metadata.get("latency_ms", context.model_latency_ms)
+            if metadata.get("schema_enforcement"):
+                context.model_inference_settings["schema_enforcement"] = metadata["schema_enforcement"]
+            context.model_raw_response = str(metadata.get("raw_response"))[:12000] if metadata.get("raw_response") is not None else None
+            context.model_id = str(metadata.get("model_id") or context.model_id or DEFAULT_SMART_MODEL)
+            context.model_version = str(metadata.get("model_version") or context.model_version or context.model_id)
+            context.prompt_version = str(metadata.get("prompt_version") or prompt_version)
+            return result
 
         response: Any = None
         try:
@@ -655,6 +742,9 @@ class AISessionCoordinator:
             "entry_price", "stop_price", "take_profit", "requested_risk_fraction",
             "requested_leverage", "new_stop_price", "reduce_fraction", "evidence_refs",
             "order_preference", "limit_price", "ttl_seconds", "candidate_id", "closed_15m_bar",
+            "strategy_candidate_id", "strategy_id", "market_summary", "timeframe_analysis",
+            "strategy_analysis", "news_context", "entry_zone", "take_profit_1", "take_profit_2",
+            "confidence", "invalidation_condition",
         }
         if set(decoded) - allowed_fields:
             raise ValueError("INVALID_ACTION_SCHEMA: unexpected model fields")
@@ -717,10 +807,113 @@ class AISessionCoordinator:
                 if not isinstance(decoded[field], str) or len(decoded[field]) > 200:
                     raise ValueError(f"INVALID_{field.upper()}")
                 values[field] = decoded[field]
+        if values.get("candidate_id") is None and decoded.get("strategy_candidate_id") is not None:
+            values["candidate_id"] = decoded["strategy_candidate_id"]
         evidence_refs = decoded.get("evidence_refs", [])
         if not isinstance(evidence_refs, list) or any(not isinstance(item, str) or len(item) > 200 for item in evidence_refs):
             raise ValueError("INVALID_EVIDENCE_REFS")
+        allowed_evidence_refs = set(context.evidence_refs)
+        if any(item not in allowed_evidence_refs for item in evidence_refs):
+            raise ValueError("INVALID_EVIDENCE_REF")
         values["evidence_refs"] = tuple(evidence_refs[:32])
+        extra_fields: dict[str, Any] = {}
+
+        def bounded_text(field: str, maximum: int) -> None:
+            value = decoded.get(field)
+            if value is None:
+                return
+            if not isinstance(value, str) or len(value) > maximum:
+                raise ValueError(f"INVALID_{field.upper()}")
+            extra_fields[field] = value
+
+        bounded_text("strategy_candidate_id", 200)
+        bounded_text("strategy_id", 100)
+        bounded_text("market_summary", 1000)
+        bounded_text("invalidation_condition", 800)
+        for field in ("take_profit_1", "take_profit_2", "confidence"):
+            if field not in decoded or decoded[field] is None:
+                continue
+            try:
+                number = float(decoded[field])
+            except (TypeError, ValueError):
+                raise ValueError(f"INVALID_{field.upper()}")
+            if not math.isfinite(number):
+                raise ValueError(f"INVALID_{field.upper()}")
+            if field == "confidence" and not 0 <= number <= 100:
+                raise ValueError("INVALID_CONFIDENCE")
+            if field.startswith("take_profit") and number <= 0:
+                raise ValueError(f"INVALID_{field.upper()}")
+            extra_fields[field] = number
+
+        timeframe_analysis = decoded.get("timeframe_analysis")
+        if timeframe_analysis is not None:
+            if not isinstance(timeframe_analysis, dict) or set(timeframe_analysis) - {"15m", "1h"}:
+                raise ValueError("INVALID_TIMEFRAME_ANALYSIS")
+            extra_fields["timeframe_analysis"] = {}
+            for key, value in timeframe_analysis.items():
+                if value is not None and (not isinstance(value, str) or len(value) > 800):
+                    raise ValueError("INVALID_TIMEFRAME_ANALYSIS")
+                extra_fields["timeframe_analysis"][key] = value
+
+        strategy_analysis = decoded.get("strategy_analysis")
+        if strategy_analysis is not None:
+            if not isinstance(strategy_analysis, dict) or set(strategy_analysis) - {"strategy_id", "matched_conditions", "missing_conditions", "trigger_completion_pct"}:
+                raise ValueError("INVALID_STRATEGY_ANALYSIS")
+            normalized_analysis: dict[str, Any] = {}
+            if strategy_analysis.get("strategy_id") is not None:
+                if not isinstance(strategy_analysis["strategy_id"], str) or len(strategy_analysis["strategy_id"]) > 100:
+                    raise ValueError("INVALID_STRATEGY_ANALYSIS")
+                normalized_analysis["strategy_id"] = strategy_analysis["strategy_id"]
+            for key in ("matched_conditions", "missing_conditions"):
+                values_list = strategy_analysis.get(key, [])
+                if not isinstance(values_list, list) or any(not isinstance(item, str) or len(item) > 300 for item in values_list):
+                    raise ValueError("INVALID_STRATEGY_ANALYSIS")
+                normalized_analysis[key] = values_list[:32]
+            if strategy_analysis.get("trigger_completion_pct") is not None:
+                try:
+                    completion = float(strategy_analysis["trigger_completion_pct"])
+                except (TypeError, ValueError):
+                    raise ValueError("INVALID_STRATEGY_ANALYSIS")
+                if not math.isfinite(completion) or not 0 <= completion <= 100:
+                    raise ValueError("INVALID_STRATEGY_ANALYSIS")
+                normalized_analysis["trigger_completion_pct"] = completion
+            extra_fields["strategy_analysis"] = normalized_analysis
+
+        news_context = decoded.get("news_context")
+        if news_context is not None:
+            if not isinstance(news_context, dict) or set(news_context) - {"impact", "summary"}:
+                raise ValueError("INVALID_NEWS_CONTEXT")
+            impact = news_context.get("impact")
+            if impact is not None and impact not in {"POSITIVE", "NEGATIVE", "NEUTRAL", "UNKNOWN"}:
+                raise ValueError("INVALID_NEWS_CONTEXT")
+            summary = news_context.get("summary")
+            if summary is not None and (not isinstance(summary, str) or len(summary) > 800):
+                raise ValueError("INVALID_NEWS_CONTEXT")
+            extra_fields["news_context"] = {"impact": impact, "summary": summary}
+
+        entry_zone = decoded.get("entry_zone")
+        if entry_zone is not None:
+            if not isinstance(entry_zone, dict) or set(entry_zone) - {"low", "high"}:
+                raise ValueError("INVALID_ENTRY_ZONE")
+            normalized_zone: dict[str, float | None] = {}
+            for key in ("low", "high"):
+                value = entry_zone.get(key)
+                if value is None:
+                    normalized_zone[key] = None
+                    continue
+                try:
+                    number = float(value)
+                except (TypeError, ValueError):
+                    raise ValueError("INVALID_ENTRY_ZONE")
+                if not math.isfinite(number) or number <= 0:
+                    raise ValueError("INVALID_ENTRY_ZONE")
+                normalized_zone[key] = number
+            if normalized_zone["low"] is not None and normalized_zone["high"] is not None and normalized_zone["low"] > normalized_zone["high"]:
+                raise ValueError("INVALID_ENTRY_ZONE")
+            extra_fields["entry_zone"] = normalized_zone
+
+        if extra_fields:
+            values["extra_fields"] = extra_fields
         return AIActionOutput(action=action, instrument_id=instrument, reason=reason, **values)
 
     def _cancel_model_generation(self, context: AICycleContext) -> None:
@@ -809,16 +1002,66 @@ class AISessionCoordinator:
             self._calibration_run = dict(result)
         return result
 
+    def _news_revisions(self, symbols: tuple[str, ...], *, now: datetime) -> list[dict[str, Any]]:
+        """Load only point-in-time stored event revisions for the model context."""
+
+        if not callable(getattr(self.store, "list_event_evidence", None)):
+            return []
+        revisions: list[dict[str, Any]] = []
+        published_since = _iso(now - timedelta(hours=48))
+        as_of = _iso(now)
+        for symbol in symbols:
+            try:
+                rows = self.store.list_event_evidence(
+                    symbol=symbol,
+                    as_of=as_of,
+                    published_since=published_since,
+                    limit=20,
+                )
+            except Exception:
+                rows = []
+            for item in rows if isinstance(rows, list) else []:
+                if not isinstance(item, dict):
+                    continue
+                revision_id = item.get("revision_id") or item.get("event_id") or item.get("news_id")
+                if not revision_id:
+                    continue
+                revisions.append(
+                    {
+                        "revision_id": str(revision_id),
+                        "symbol": symbol,
+                        "title": str(item.get("title") or item.get("headline") or "")[:320],
+                        "published_at": item.get("published_at"),
+                        "known_at": item.get("known_at"),
+                        "source": str(item.get("source") or item.get("publisher") or "")[:160],
+                        "impact": str(item.get("impact") or item.get("sentiment") or "UNKNOWN").upper(),
+                    }
+                )
+        deduped: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for item in revisions:
+            identity = str(item["revision_id"])
+            if identity in seen:
+                continue
+            seen.add(identity)
+            deduped.append(item)
+        return deduped[:64]
+
     def _blocked_cycle(self, context: AICycleContext, reason: str) -> Any:
+        block_stage = infer_block_stage(reason, getattr(context, "stage_block", None))
         output = AIActionOutput(
             action="WAIT",
             instrument_id=context.allowed_instruments[0] if context.allowed_instruments else "",
             reason=reason,
-            decision_origin="PRECHECK",
+            decision_origin="SYSTEM",
             extra_fields={
                 "is_model_decision": False,
-                "operational_state": "PRECHECK_BLOCKED",
+                "model_called": False,
+                "model_result": "NOT_RUN",
+                "block_stage": block_stage,
+                "operational_state": "SYSTEM_BLOCKED",
                 "blocked_code": str(reason).split(":", 1)[0],
+                "human_message": humanize_reason(reason, stage=block_stage),
             },
         )
         engine = AILedDecisionEngine(
@@ -830,6 +1073,26 @@ class AISessionCoordinator:
             model_runner=None,
         )
         return engine.execute_cycle(context, now=self.clock(), model_output=output)
+
+    def _refresh_remote_account_truth(self, account_id: str, mode: TradingMode) -> dict[str, Any]:
+        """Read Gate TestNet facts before calibration or model generation.
+
+        A TestNet cycle cannot use the local ledger as an account substitute.
+        This method intentionally returns a blocked-shaped fact on every
+        failure; the caller decides whether to persist a system-blocked cycle.
+        """
+
+        scope = resolve_account_scope(self.store, account_id) or {}
+        if mode is not TradingMode.TESTNET or str(scope.get("account_type") or "").upper() != "GATE_TESTNET":
+            return {}
+        truth_service = GateAccountTruthService(self.store, clock=self.clock)
+        try:
+            trader = build_gate_trader(self.store, account_id)
+        except Exception:
+            trader = None
+        if trader is None:
+            return truth_service.refresh(account_id, object(), include_trades=False)
+        return truth_service.refresh(account_id, trader, include_trades=False)
 
     def run_cycle_once(self, scheduled_at: str | datetime | None = None) -> Any:
         """Run one complete aligned cycle; manual callers may provide a schedule."""
@@ -932,6 +1195,79 @@ class AISessionCoordinator:
             self._record_result(result, context=context, scheduled_at=scheduled_text, started_at=cycle_started)
             return result
 
+        # Gate TestNet is a remote-account execution environment.  Perform
+        # this read-only truth check before calibration/model calls so a
+        # missing credential or degraded private response cannot be turned
+        # into a model WAIT or a local 10000-unit risk budget.
+        account_truth = self._refresh_remote_account_truth(account_id, mode)
+        if mode is TradingMode.LIVE:
+            context = AICycleContext(
+                cycle_id=cycle_id,
+                account_id=account_id,
+                generation=int(session.get("generation") or 0),
+                started_at=_iso(now),
+                expires_at=_iso(now + timedelta(seconds=INTENT_TTL_SECONDS)),
+                allowed_instruments=(),
+                mode=mode,
+                venue=venue,
+                session_id=session.get("session_id"),
+                authorization_id=getattr(authorization, "authorization_id", None),
+                authorization_version=getattr(authorization, "version", None),
+                account_truth=account_truth,
+                stage_block="ACCOUNT",
+            )
+            result = self._blocked_cycle(context, "LIVE_EXECUTION_LOCKED")
+            self._record_result(result, context=context, scheduled_at=scheduled_text, started_at=cycle_started)
+            return result
+        if mode is TradingMode.TESTNET and (
+            str(account_truth.get("status") or "").upper() != "AVAILABLE"
+            or account_truth.get("equity") is None
+            or account_truth.get("available_margin") is None
+        ):
+            context = self._build_context(
+                cycle_id=cycle_id,
+                now=now,
+                session_id=str(session.get("session_id")),
+                generation=int(session.get("generation") or 0),
+                account_id=account_id,
+                mode=mode,
+                venue=venue,
+                authorization=authorization,
+                snapshots={},
+                candidates=[],
+                calibration={},
+                account_truth=account_truth,
+                scheduled_at=scheduled_text,
+            )
+            reason = str(account_truth.get("error_code") or "REMOTE_ACCOUNT_TRUTH_UNAVAILABLE")
+            result = self._blocked_cycle(context, reason)
+            self._record_result(result, context=context, scheduled_at=scheduled_text, started_at=cycle_started)
+            return result
+
+        # Probe the required Smart model before calibration.  This prevents a
+        # provider whose normal default is qwen3.5:4b from making any
+        # calibration call when qwen3.5:9b is unavailable.
+        health = self._health(force=True)
+        if health.get("status") != "READY":
+            context = self._build_context(
+                cycle_id=cycle_id,
+                now=now,
+                session_id=str(session.get("session_id")),
+                generation=int(session.get("generation") or 0),
+                account_id=account_id,
+                mode=mode,
+                venue=venue,
+                authorization=authorization,
+                snapshots={},
+                candidates=[],
+                calibration={},
+                scheduled_at=scheduled_text,
+                account_truth=account_truth,
+            )
+            result = self._blocked_cycle(context, str(health.get("reason_code") or "SMART_MODEL_UNAVAILABLE"))
+            self._record_result(result, context=context, scheduled_at=scheduled_text, started_at=cycle_started)
+            return result
+
         symbols = self._allowed_symbols(authorization)
         calibration = self._calibrate_scope(
             account_id=account_id,
@@ -954,6 +1290,7 @@ class AISessionCoordinator:
                 snapshots={},
                 calibration=calibration,
                 scheduled_at=scheduled_text,
+                account_truth=account_truth,
             )
             result = self._blocked_cycle(context, str(calibration.get("error_code") or "CALIBRATION_NOT_READY"))
             self._record_result(result, context=context, scheduled_at=scheduled_text, started_at=cycle_started)
@@ -970,6 +1307,7 @@ class AISessionCoordinator:
         with self._lock:
             self._candidate_count = len(candidates)
         snapshots = self._market_snapshots(symbols, now=now)
+        news_revisions = self._news_revisions(symbols, now=now)
         context = self._build_context(
             cycle_id=cycle_id,
             now=now,
@@ -982,6 +1320,8 @@ class AISessionCoordinator:
             snapshots=snapshots,
             candidates=candidates,
             calibration=calibration,
+            account_truth=account_truth,
+            news_revisions=news_revisions,
             scheduled_at=scheduled_text,
         )
         if not snapshots:

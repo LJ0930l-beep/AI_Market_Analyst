@@ -37,6 +37,7 @@ from .execution_gateway import (
 )
 from .ledger import AccountLedger
 from .account_scope import resolve_account_scope
+from .gate_account_truth import GateAccountTruthService
 from .risk_engine import RiskEngine
 from .trade_plan_contract import (
     TRADE_PLAN_SCHEMA_VERSION,
@@ -435,9 +436,9 @@ class TraderCapabilityService:
     def risk_snapshot(self, account_id: str, *, runtime: Any | None = None) -> dict[str, Any]:
         """Return one account/venue/mode risk cockpit snapshot.
 
-        Numeric ledger values remain the authoritative local snapshot.  Mark
-        quality and remote reconciliation are separately labelled so a stale
-        or missing provider cannot be mistaken for a current equity fact.
+        For managed Gate TestNet, the remote private snapshot is authoritative
+        for equity/margin/positions/orders.  The local ledger remains a
+        mirror/audit projection and is never displayed as a remote balance.
         """
 
         scope = self._scope(account_id)
@@ -463,6 +464,51 @@ class TraderCapabilityService:
         risk = RiskEngine(ledger).get_risk_summary(account_id, now=now)
         orders = self._orders(scope)
         reservations = self._reservations(scope)
+        is_gate_testnet = (
+            scope["mode"] == "TESTNET"
+            and str(scope.get("account_type") or "").upper() == "GATE_TESTNET"
+        )
+        remote_account: dict[str, Any] | None = None
+        if is_gate_testnet:
+            latest = GateAccountTruthService(self.store, clock=self.clock).latest(account_id)
+            if latest is not None:
+                remote_account = {
+                    "status": str(latest.get("status") or "UNKNOWN").upper(),
+                    "source": latest.get("source") or "Gate.io private API",
+                    "environment": latest.get("environment") or "testnet",
+                    "snapshot_id": latest.get("snapshot_id"),
+                    "observed_at": latest.get("observed_at"),
+                    "equity": _number(latest.get("equity")),
+                    "available_margin": _number(latest.get("available_margin")),
+                    "used_margin": _number(latest.get("used_margin")),
+                    "unrealized_pnl": _number(latest.get("unrealized_pnl")),
+                    "realized_pnl": _number(latest.get("realized_pnl")),
+                    "positions": latest.get("positions") if isinstance(latest.get("positions"), list) else [],
+                    "pending_orders": latest.get("pending_orders") if isinstance(latest.get("pending_orders"), list) else [],
+                    "fills": latest.get("fills") if isinstance(latest.get("fills"), list) else [],
+                    "error_code": latest.get("error_code"),
+                    "message_zh": latest.get("message_zh"),
+                    "authority": "REMOTE_GATE_TESTNET_PRIVATE_API",
+                }
+            else:
+                remote_account = {
+                    "status": "NOT_AVAILABLE",
+                    "source": "Gate.io private API",
+                    "environment": "testnet",
+                    "snapshot_id": None,
+                    "observed_at": None,
+                    "equity": None,
+                    "available_margin": None,
+                    "used_margin": None,
+                    "unrealized_pnl": None,
+                    "realized_pnl": None,
+                    "positions": [],
+                    "pending_orders": [],
+                    "fills": [],
+                    "error_code": "REMOTE_ACCOUNT_TRUTH_NOT_READ",
+                    "message_zh": "尚未读取 Gate TestNet 账户事实；本地账本不作为余额替代。",
+                    "authority": "REMOTE_GATE_TESTNET_PRIVATE_API",
+                }
 
         protections: list[dict[str, Any]] = []
         known_position_risk = Decimal("0")
@@ -717,8 +763,38 @@ class TraderCapabilityService:
                     ).fetchone()
                     if row:
                         reconciliation_times.append((str(row["created_at"]), "paper_ledger"))
+        if is_gate_testnet and remote_account is not None and remote_account.get("observed_at"):
+            remote_status = str(remote_account.get("status") or "UNKNOWN").upper()
+            if remote_status == "AVAILABLE":
+                reconciliation_times.append((str(remote_account["observed_at"]), "gate_testnet_remote_snapshot"))
         reconciliation_times.sort(reverse=True)
-        if reconciliation_times:
+        if is_gate_testnet and remote_account is not None:
+            remote_status = str(remote_account.get("status") or "UNKNOWN").upper()
+            if remote_status == "AVAILABLE":
+                reconciliation = {
+                    "status": "SYNCED",
+                    "last_reconciled_at": remote_account.get("observed_at"),
+                    "source": "gate_testnet_remote_snapshot",
+                    "snapshot_id": remote_account.get("snapshot_id"),
+                    "authority": "REMOTE_GATE_TESTNET_PRIVATE_API",
+                }
+            elif remote_status == "DEGRADED":
+                reconciliation = {
+                    "status": "DEGRADED",
+                    "last_reconciled_at": remote_account.get("observed_at"),
+                    "source": "gate_testnet_remote_snapshot",
+                    "snapshot_id": remote_account.get("snapshot_id"),
+                    "authority": "REMOTE_GATE_TESTNET_PRIVATE_API",
+                }
+            else:
+                reconciliation = {
+                    "status": UNKNOWN,
+                    "last_reconciled_at": remote_account.get("observed_at"),
+                    "source": "gate_testnet_remote_snapshot_unavailable",
+                    "snapshot_id": remote_account.get("snapshot_id"),
+                    "authority": "REMOTE_GATE_TESTNET_PRIVATE_API",
+                }
+        elif reconciliation_times:
             reconciliation = {
                 "status": "RECONCILED",
                 "last_reconciled_at": reconciliation_times[0][0],
@@ -749,12 +825,35 @@ class TraderCapabilityService:
             blocked_reasons.append("RUNTIME_EXECUTION_BLOCKED")
         if scope["mode"] in {"TESTNET", "LIVE"} and reconciliation["status"] == UNKNOWN:
             blocked_reasons.append("REMOTE_RECONCILIATION_UNKNOWN")
+        if is_gate_testnet and (remote_account is None or remote_account.get("status") != "AVAILABLE"):
+            blocked_reasons.append("REMOTE_ACCOUNT_TRUTH_UNAVAILABLE")
+        if is_gate_testnet:
+            if remote_account and remote_account.get("status") == "AVAILABLE" and remote_account.get("equity") is not None:
+                remote_equity = float(remote_account["equity"])
+                risk["net_equity"] = remote_equity
+                risk["max_portfolio_risk_budget"] = round(remote_equity * RiskEngine.MAX_PORTFOLIO_RISK, 4)
+                risk["cash"] = str(remote_account.get("available_margin")) if remote_account.get("available_margin") is not None else UNKNOWN
+                risk["account_truth_basis"] = "REMOTE_GATE_TESTNET_PRIVATE_API"
+            else:
+                for key in ("net_equity", "max_portfolio_risk_budget", "cash", "max_portfolio_risk"):
+                    risk[key] = None
+                risk["account_truth_basis"] = "REMOTE_GATE_TESTNET_PRIVATE_API_UNAVAILABLE"
+        ledger_payload = snapshot.to_dict()
+        ledger_payload["role"] = "LOCAL_MIRROR_AUDIT_ONLY" if is_gate_testnet else "LOCAL_ACCOUNT_LEDGER_AUTHORITY"
+        if is_gate_testnet and (remote_account is None or remote_account.get("status") != "AVAILABLE" or remote_account.get("equity") is None):
+            # Do not expose the canonical TestNet row's zero/local baseline as
+            # if it were Gate equity.  The local fields remain available in
+            # the database for audit, but the cockpit's authority is UNKNOWN.
+            for key in ("initial_deposit", "wallet_balance", "cash", "realized_pnl", "unrealized_pnl", "allocated_margin", "net_equity"):
+                ledger_payload[key] = None
         return {
             "account_id": account_id,
             "venue": scope["venue"],
             "mode": scope["mode"],
             "as_of": now.isoformat(),
-            "ledger_snapshot": snapshot.to_dict(),
+            "ledger_snapshot": ledger_payload,
+            "account_truth": remote_account,
+            "account_truth_authority": "REMOTE_GATE_TESTNET_PRIVATE_API" if is_gate_testnet else "LOCAL_ACCOUNT_LEDGER",
             "risk": {
                 **risk,
                 "new_risk_blocked": bool(blocked_reasons),
