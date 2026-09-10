@@ -136,7 +136,7 @@
       "dirty_worktree_preserved": true,
       "reset_checkout_clean_commit_push": "RESET_CHECKOUT_CLEAN_NOT_USED; COMMIT_PUSH_PERFORMED_PER_EXPLICIT_USER_REQUEST",
       "direct_install_script": "NOT_RUN",
-      "current_installation": "CURRENT_USER_INSTALL_COMPLETED; APP_NOT_STARTED_AFTER_INSTALL",
+      "current_installation": "CURRENT_USER_INSTALL_COMPLETED; READ_ONLY_HEALTH_VERIFIED",
       "business_database": "NOT_TOUCHED",
       "production_migration": "NOT_RUN",
       "private_gate_credentials": "NOT_ACCESSED",
@@ -163,7 +163,8 @@
       {"command": "cd web && npm run build", "status": "PASS", "result": "Vite 6.4.3, 86 modules"},
       {"command": "cargo check --manifest-path src-tauri/Cargo.toml", "status": "PASS", "result": "Finished dev profile"},
       {"command": "cargo tauri build --target x86_64-pc-windows-msvc --config '{\"build\":{\"beforeBuildCommand\":\"\"}}' --bundles nsis", "status": "PASS", "result": "Current 2.0.0 MSVC NSIS installer generated at src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/AI Market Analyst_2.0.0_x64-setup.exe"},
-      {"command": "Current NSIS installer /S current-user install", "status": "PASS", "result": "Exit code 0; installed app version 2.0.0, desktop shortcut target verified, installed sidecar SHA-256 matches source sidecar; app was not started after installation."},
+      {"command": "Current NSIS installer /S current-user install", "status": "PASS", "result": "Exit code 0; installed app version 2.0.0, desktop shortcut target verified, installed sidecar SHA-256 matches source sidecar."},
+      {"command": "Installed app read-only health verification", "status": "PASS_READ_ONLY", "result": "Exact installed executable process responded with /health=200 ready and /hydration/status=200 ready; real_orders=false and private_keys=false; no trade operation was invoked."},
       {"command": "ruff check apps core scripts/institutional_acceptance.py tests --select F821", "status": "PASS", "result": "All checks passed"},
       {"command": "git diff --check", "status": "PASS", "result": "exit 0; only LF-to-CRLF conversion notices"}
     ],
@@ -172,14 +173,14 @@
       "gate_live_public_contracts": {"status": "PASS_READ_ONLY", "status_code": 200, "count": 977},
       "ollama": {"status": "AVAILABLE", "version": "0.33.3", "model": "qwen3.5:9b", "digest": "6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7", "quantization": "Q4_K_M", "inference_settings": {"temperature": 0.2, "context_length": 8192, "max_tokens": 700, "think": false}},
       "real_qwen_smoke": {"status": "PASS", "action": "WAIT", "schema_enforcement": "json_mode_local_validation", "latency_ms": 11791.205, "raw_response_sha256": "bcb7de71de5239d54afef09cd73f04e0e186c8ada247d471d64cc6adea146447"},
-      "current_installation_health": {"status": "NOT_RUNNING_AFTER_INSTALL", "url": "http://127.0.0.1:18765/health", "reason": "current-user installation verified; app was not started during verification"}
+      "current_installation_health": {"status": "PASS_READY_READ_ONLY", "url": "http://127.0.0.1:18765/health", "http_status": 200, "ready": true, "phase": 7, "api_version": "2.0.0", "real_orders": false, "private_keys": false, "hydration_status": "ready", "reason": "installed app was observed through read-only health endpoints; no trade operation was invoked"}
     },
     "packaging": {
       "sidecar": "PASS_GENERATED_ONLY",
       "tauri_nsis": "PASS_MSVC",
       "installer": "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/AI Market Analyst_2.0.0_x64-setup.exe",
       "installer_sha256": "548B45CC63B8143767D8EDE85D3670F3D896FF8169D2213C30469A5B9257BF4D",
-      "installation": "PASS_CURRENT_USER; APP_NOT_STARTED_AFTER_INSTALL"
+      "installation": "PASS_CURRENT_USER; READ_ONLY_HEALTH_VERIFIED"
     },
     "contracts": [
       {"id": "R01", "result": "PASS_ISOLATED", "paths": ["core/storage/sqlite.py", "core/instruments.py", "core/trading/account_aliases.py"], "tests": ["test_latest_bars_limit_one_returns_newest_and_cross_venue_identity_is_kept", "test_gate_default_accounts_are_distinct_and_api_provision_is_idempotent"], "dependency": "production migration not run"},
@@ -220,8 +221,8 @@
         "core/trading/ledger.py": "7077A84CC2251FBEDA915DEF53A5182511B017F582CEC43506055F70650D9567",
         "core/trading/model_schemas.py": "D1BABD9D4E879F6A935309763A8C64C121D6D513C3CEE5FBE6C8FA7F7A1E3994",
         "core/trading/trader_capabilities.py": "9689BFCF1791F107B8250E29B71069D962957B6BC657694C31D7BCF521EF97F6",
-        "docs/institutional-repair-acceptance.md": "E3161C6764DF8A2DC365E4FEABA21AFE64D750AE37579A6CDC84C29B0AA574B1",
-        "docs/institutional-repair-implementation.md": "5EE8D9160F4B00B1B488D32443345E7BD742A6DCA3B0002098A60498B1C5A883",
+        "docs/institutional-repair-acceptance.md": "401E02DAD7E01EC47D98E6083550167C4240718E91C87D4371064F7AD1F103F0",
+        "docs/institutional-repair-implementation.md": "06839595ACAFDD07EF19F6CF5A20BF7B24C74648B2F1D05B670249E94FE49049",
         "evidence/manifest.json": "73DA456764AD66BB0153F3F256E088DBFF7AC3C0CA190BDC42334ECCD4E8DDF5",
         "tests/test_gate_account_chain.py": "66FA83D013CEA7EA2FC75A4D102108455C15444BCD694F22E853F4C9BFBA1CC7",
         "tests/test_gate_testnet_ai_chain.py": "EA54D16E5D12399180EA1BCFE15D20564E3B7321D36AAF8D29136D58E8AD669C",
@@ -235,7 +236,7 @@
       }
     },
     "fixture_boundary": "Deterministic fixtures and the real no-trade Qwen smoke do not prove private Gate permissions, real order/fill, shadow performance, or production release readiness.",
-    "uncompleted_items": ["real Gate TestNet private credential verification and order/fill", "fixed evaluation set and forward shadow account", "production database migration", "post-install runtime health check (app was intentionally not started in this turn)", "paid/private news and consensus data", "DSR/PBO with sufficient real trials", "Sol independent acceptance"]
+    "uncompleted_items": ["real Gate TestNet private credential verification and order/fill", "fixed evaluation set and forward shadow account", "production database migration", "cross-process trading-session/order verification (health-only verification completed; no trade operation invoked)", "paid/private news and consensus data", "DSR/PBO with sufficient real trials", "Sol independent acceptance"]
   },
   "public_network_validation": {
     "performed_at": "2026-09-10",

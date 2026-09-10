@@ -20,11 +20,11 @@
 | `python scripts/institutional_acceptance.py` | `4/4 PASS` | disposable SQLite；不是公开 HTTP/Qwen/交易证明 |
 | 前端 | `22 files / 98 tests`、typecheck PASS、lint PASS、Vite build PASS（86 modules） | 当前 React 源码与页面回归 |
 | Tauri Rust | `cargo check --manifest-path src-tauri/Cargo.toml` PASS | 只代表 Rust 检查通过 |
-| sidecar 构建 | `scripts/build-tauri.ps1` PASS，PyInstaller 6.21.0 生成新 sidecar，并随当前 NSIS 包安装 | 安装后未启动应用 |
-| Tauri NSIS | PASS：使用 MSVC 目标生成当前 `2.0.0` 用户级安装器并成功安装 | 安装后未启动应用；未做业务库迁移、私有账户访问或下单 |
+| sidecar 构建 | `scripts/build-tauri.ps1` PASS，PyInstaller 6.21.0 生成新 sidecar，并随当前 NSIS 包安装 | 安装后只读健康核验通过 |
+| Tauri NSIS | PASS：使用 MSVC 目标生成当前 `2.0.0` 用户级安装器并成功安装 | 安装后只读健康核验为 `200/ready`；未做业务库迁移、私有账户访问或下单 |
 | Gate 公共只读 HTTP | TestNet `/api/v4/futures/usdt/contracts`=`200`、63；Live=`200`、977；TestNet 样本字段完整 | 公共接口，不含私有鉴权、余额、订单或成交 |
 | Ollama/Qwen | `qwen3.5:9b` health 可用，digest=`6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7`；真实 JSON smoke 返回 `WAIT`，schema 标记 `json_mode_local_validation` | 仅无账户无交易 smoke；未运行前瞻影子账户、固定评测集或交易效果评估 |
-| 当前安装版 | current-user 安装成功，版本 `2.0.0`、桌面快捷方式和 sidecar 哈希已核对；`127.0.0.1:18765` 未启动 | 安装后未启动应用；没有改用户配置、业务库或私有账户 |
+| 当前安装版 | current-user 安装成功，版本 `2.0.0`、桌面快捷方式和 sidecar 哈希已核对；`/health=200/ready`、`/hydration/status=ready` | 只读核验；没有改用户配置、业务库、私有账户或交易状态 |
 
 ### R01–R11 当前对应矩阵
 

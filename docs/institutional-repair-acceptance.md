@@ -4,7 +4,7 @@
 
 ## 本轮复核摘要
 
-本轮以当前 `main` 的源码和工作区为基线直接复核，保留用户既有改动，不做 reset/checkout/clean，不运行 `scripts/direct_install.ps1`；在原程序已停止的前提下，用当前 MSVC NSIS 包完成 current-user 安装，并按用户后续明确要求将交付清单提交/推送到 `origin/main`（实现提交 `5b2bef62471f640a72da26965eb92f7fd1e8b5ff`）。未访问业务数据库、私有 Gate 凭证或真实订单，安装后未启动应用。
+本轮以当前 `main` 的源码和工作区为基线直接复核，保留用户既有改动，不做 reset/checkout/clean，不运行 `scripts/direct_install.ps1`；在原程序已停止的前提下，用当前 MSVC NSIS 包完成 current-user 安装，并按用户后续明确要求将交付清单提交/推送到 `origin/main`（实现提交 `5b2bef62471f640a72da26965eb92f7fd1e8b5ff`）。未访问业务数据库、私有 Gate 凭证或真实订单；安装后仅完成只读健康核验。
 
 | 项目 | 结果 |
 |---|---|
@@ -13,9 +13,9 @@
 | 隔离机构验收脚本 | `4/4 PASS` |
 | Gate 公共 HTTP | TestNet 200/63 contracts；Live 200/977 contracts；只读公开接口 |
 | 本机 Qwen | `qwen3.5:9b` 可用；真实 digest `6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7`；无账户 WAIT smoke PASS |
-| 当前安装版 | current-user 安装成功，版本 `2.0.0`、桌面快捷方式和 sidecar 哈希已核对；`127.0.0.1:18765` 安装后未启动 |
+| 当前安装版 | current-user 安装成功，版本 `2.0.0`、桌面快捷方式和 sidecar 哈希已核对；`/health=200/ready`、`/hydration/status=ready` |
 | 新 sidecar | 构建 PASS，并随当前 NSIS 包安装 |
-| NSIS | MSVC 目标生成并成功完成 current-user 安装，安装器退出码 `0`；安装后未启动应用，不访问业务库或账户 |
+| NSIS | MSVC 目标生成并成功完成 current-user 安装，安装器退出码 `0`；安装后只读健康核验通过，不访问业务库或账户 |
 
 ### 当前验收边界
 
