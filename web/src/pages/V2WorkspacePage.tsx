@@ -926,9 +926,7 @@ export function V2WorkspacePage({
     setGateNotice(null);
     setGateVerification(null);
     setGateConnectionTest(null);
-    const selectedAccount = tradingAccounts.find((item) => item.account_id === selectedTradingAccount);
-    const selectedProfile = gateProfiles.find((item) => item.account_id === selectedTradingAccount);
-    const testnet = selectedAccount?.mode === "TESTNET";
+    let selectedProfile = gateProfiles.find((item) => item.account_id === selectedTradingAccount);
     if (!gateApiKeyInput.trim() || !gateApiSecretInput.trim()) {
       setGateNotice({
         msg: zh ? "请输入 API Key 和 API Secret 后再验证。" : "Enter both API Key and API Secret before verification.",
@@ -938,97 +936,82 @@ export function V2WorkspacePage({
     }
     setGateVerificationBusy(true);
     try {
-      if (selectedProfile) {
-        const res = await apiClient.v2<GateCredentialVerifyResponse>(
-          `/gate/accounts/${encodeURIComponent(selectedProfile.account_id)}/credentials/verify`,
+      if (!selectedProfile) {
+        const provisioned = await apiClient.v2<{ accounts?: GateAccountProfileResponse[] }>(
+          "/gate/accounts/provision-defaults",
           "POST",
-          {
+          {},
+        );
+        const provisionedProfiles = Array.isArray(provisioned.accounts)
+          ? provisioned.accounts.filter((item) => item && typeof item.account_id === "string")
+          : [];
+        selectedProfile = provisionedProfiles.find((item) => item.account_id === selectedTradingAccount)
+          ?? (!selectedTradingAccount
+            ? provisionedProfiles.find((item) => item.api_environment === "TESTNET")
+            : undefined);
+        if (!selectedProfile) {
+          throw new Error(
+            zh
+              ? "ACCOUNT_SCOPE_REQUIRED：默认 Gate 账户登记后仍未找到当前执行账户。"
+              : "ACCOUNT_SCOPE_REQUIRED: no profile was found for the current execution account after provisioning.",
+          );
+        }
+        setGateProfiles(provisionedProfiles);
+        setSelectedTradingAccount(selectedProfile.account_id);
+      }
+
+      const profile = selectedProfile;
+      const res = await apiClient.v2<GateCredentialVerifyResponse>(
+        `/gate/accounts/${encodeURIComponent(profile.account_id)}/credentials/verify`,
+        "POST",
+        {
           api_key: gateApiKeyInput.trim(),
           api_secret: gateApiSecretInput.trim(),
-          },
-        );
-        setGateVerification(res.validation);
-        const credentials = res.account.credentials;
-        setGateConfig({
-          configured: credentials.configured,
-          api_key_masked: credentials.api_key_masked,
-          live_enabled: false,
-          testnet: credentials.testnet,
-          updated_at: credentials.updated_at,
-        });
-        if (res.validation.valid && res.saved) {
-          setGateDryRunMode(true);
-          setGateApiKeyInput("");
-          setGateApiSecretInput("");
-          setGateNotice({
-            msg: zh
-              ? `只读 API 验证成功，已安全保存到 ${selectedProfile.account_id}；${selectedProfile.api_environment === "TESTNET" ? "后续请求仅发送到 Gate 官方 TestNet。" : "Live 下单仍由发布锁阻止。"}`
-              : `Read-only API verification passed and was saved to ${selectedProfile.account_id}; ${selectedProfile.api_environment === "TESTNET" ? "subsequent requests stay on Gate official TestNet." : "live orders remain blocked by the release lock."}`,
-            type: "ok",
-          });
-        } else {
-          setGateNotice({
-            msg: (zh ? "API 验证未通过，原有凭证未覆盖：" : "API verification failed; existing credentials were not replaced: ")
-              + (res.validation.reason || res.validation.status),
-            type: "err",
-          });
-        }
-        if (res.validation.valid && res.saved && selectedProfile.api_environment === "TESTNET") {
-          try {
-            await apiClient.v2(
-              `/gate/account/refresh?account_id=${encodeURIComponent(selectedProfile.account_id)}`,
-              "POST",
-            );
-            await refresh();
-          } catch (refreshError: unknown) {
-            setGateNotice({
-              msg: zh
-                ? `凭证已保存，但远端账户尚未完成对账：${errorMessage(refreshError, "UNKNOWN")}`
-                : `Credentials were saved, but remote reconciliation is not complete: ${errorMessage(refreshError, "UNKNOWN")}`,
-              type: "err",
-            });
-          }
-        }
-        await fetchGateData();
-        return;
-      }
-      const res = await apiClient.v2<{
-        saved: boolean;
-        configured: boolean;
-        api_key_masked: string;
-        live_enabled: boolean;
-        validation: { valid: boolean; error?: string };
-      }>("/gate/config", "POST", {
-        api_key: gateApiKeyInput.trim(),
-        api_secret: gateApiSecretInput.trim(),
-        live_enabled: !gateDryRunMode,
-        testnet,
-      });
+        },
+      );
+      setGateVerification(res.validation);
+      const credentials = res.account.credentials;
       setGateConfig({
-        configured: res.configured,
-        api_key_masked: res.api_key_masked,
-        live_enabled: res.live_enabled,
-        testnet,
-        updated_at: new Date().toISOString(),
+        configured: credentials.configured,
+        api_key_masked: credentials.api_key_masked,
+        live_enabled: false,
+        testnet: credentials.testnet,
+        updated_at: credentials.updated_at,
       });
-      setGateVerification({
-        valid: Boolean(res.validation.valid),
-        status: res.validation.valid ? "VERIFIED_READ_ONLY" : "INVALID_OR_UNAVAILABLE",
-        private_api_access: "EXPLICITLY_REQUESTED",
-        reason: res.validation.error,
-      });
-      if (res.validation.valid) {
+      if (res.validation.valid && res.saved) {
+        setGateDryRunMode(true);
+        setGateApiKeyInput("");
+        setGateApiSecretInput("");
         setGateNotice({
-          msg: zh ? "Gate.io API 验证成功并已安全持久化！" : "Gate.io API credentials validated and stored!",
+          msg: zh
+            ? `只读 API 验证成功，已安全保存到 ${profile.account_id}；${profile.api_environment === "TESTNET" ? "后续请求仅发送到 Gate 官方 TestNet。" : "Live 下单仍由发布锁阻止。"}`
+            : `Read-only API verification passed and was saved to ${profile.account_id}; ${profile.api_environment === "TESTNET" ? "subsequent requests stay on Gate official TestNet." : "live orders remain blocked by the release lock."}`,
           type: "ok",
         });
       } else {
         setGateNotice({
-          msg: (zh ? "配置已保存，但验证提示: " : "Saved, but validation notice: ") + (res.validation.error || "未知"),
+          msg: (zh ? "API 验证未通过，原有凭证未覆盖：" : "API verification failed; existing credentials were not replaced: ")
+            + (res.validation.reason || res.validation.status),
           type: "err",
         });
       }
-      void fetchGateData();
+      if (res.validation.valid && res.saved && profile.api_environment === "TESTNET") {
+        try {
+          await apiClient.v2(
+            `/gate/account/refresh?account_id=${encodeURIComponent(profile.account_id)}`,
+            "POST",
+          );
+          await refresh();
+        } catch (refreshError: unknown) {
+          setGateNotice({
+            msg: zh
+              ? `凭证已保存，但远端账户尚未完成对账：${errorMessage(refreshError, "UNKNOWN")}`
+              : `Credentials were saved, but remote reconciliation is not complete: ${errorMessage(refreshError, "UNKNOWN")}`,
+            type: "err",
+          });
+        }
+      }
+      await fetchGateData();
     } catch (err: unknown) {
       setGateNotice({
         msg: errorMessage(err, zh ? "保存配置失败" : "Failed to save config"),
