@@ -1,10 +1,10 @@
 # AI Market Analyst 机构量化审计修复验收记录
 
-> **当前 main 权威复核（2026-09-10）**：本节优先于本文保留的历史验收快照。当前 HEAD 为 `3700bc63d4e35df1f0e2b2ec86beeb5d889a2889`，`main` 与 `origin/main` 同步；四个版本来源均为 `2.0.0`。V1.7 仅被核对，没有改版本号。
+> **当前 main 权威复核（2026-09-10）**：本节优先于本文保留的历史验收快照。审验基线 HEAD 为 `3700bc63d4e35df1f0e2b2ec86beeb5d889a2889`，实现提交 `5b2bef62471f640a72da26965eb92f7fd1e8b5ff` 已推送到 `origin/main`；四个版本来源均为 `2.0.0`。V1.7 仅被核对，没有改版本号。
 
 ## 本轮复核摘要
 
-本轮以当前 `main` 的源码和工作区为基线直接复核，保留用户既有改动，不做 reset/checkout/clean，不运行 `scripts/direct_install.ps1`；在原程序已停止的前提下，用当前 MSVC NSIS 包完成 current-user 安装，并按用户后续明确要求将交付清单提交/推送到 `origin/main`。未访问业务数据库、私有 Gate 凭证或真实订单，安装后未启动应用。
+本轮以当前 `main` 的源码和工作区为基线直接复核，保留用户既有改动，不做 reset/checkout/clean，不运行 `scripts/direct_install.ps1`；在原程序已停止的前提下，用当前 MSVC NSIS 包完成 current-user 安装，并按用户后续明确要求将交付清单提交/推送到 `origin/main`（实现提交 `5b2bef62471f640a72da26965eb92f7fd1e8b5ff`）。未访问业务数据库、私有 Gate 凭证或真实订单，安装后未启动应用。
 
 | 项目 | 结果 |
 |---|---|
