@@ -15,6 +15,7 @@ from core.quant.strategies import (
 )
 from core.providers.base import Bar
 from core.storage import SQLiteStore
+from core.trading.ledger import AccountLedger
 from core.instruments import instrument_for
 
 NOW = datetime.now(timezone.utc)
@@ -209,12 +210,21 @@ def test_simulation_approved_model_permission_and_revocation(store):
             }
 
     store.upsert_app_setting("simulation.allow_unknown_macro", True)
+    AccountLedger(store).create_account("default", mode="PAPER", initial_deposit=10000.0)
     service = AgentDecisionService(store, Approve())
+    approved_proposal = proposal().to_dict()
+    approved_proposal["account_id"] = "default"
+    approved_proposal["venue"] = "simulated"
+    approved_proposal["mode"] = "PAPER"
+    approved_proposal["source_bar_at"] = NOW.isoformat()
     result = service.decide(
-        proposal(), MARKET, {"freshness": "fresh", "as_of": NOW.isoformat()}, now=NOW
+        approved_proposal,
+        MARKET,
+        {"freshness": "fresh", "as_of": NOW.isoformat(), "price": 100.0},
+        now=NOW,
     )
-    assert result["status"] == "SIMULATED"
-    assert result["execution"]["protected"]
+    assert result["status"] == "SIMULATED", result.get("reason")
+    assert result["execution"]["protection"]["status"] == "ACTIVE"
     assert store.list_alerts(limit=10)[0]["symbol"] == "BTCUSDT"
 
 

@@ -180,7 +180,10 @@ def test_monitoring_startup_is_off_without_resume_authorization_and_resumes_only
     on_store, on_app = make_app(tmp_path / "resume-on.sqlite3", resume=True, eligible=True)
     try:
         with TestClient(on_app) as client:
-            _wait_until(lambda: client.get("/monitoring/status").json()["active"] is True)
+            _wait_until(
+                lambda: client.get("/monitoring/status").json()["active"] is True
+                and client.get("/monitoring/status").json().get("active_symbols") == ["BTCUSDT"]
+            )
             running = client.get("/monitoring/status").json()
             assert running["worker_alive"] is True
             assert running["active_symbols"] == ["BTCUSDT"]

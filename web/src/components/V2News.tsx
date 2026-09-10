@@ -3,6 +3,18 @@ import { apiClient } from "../api/client";
 import type { IntelligenceEvent } from "../api/types";
 import { useI18n } from "../i18n";
 
+function formatHktTime(val?: unknown): string {
+  if (!val || typeof val !== "string") return "—";
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return String(val).slice(11, 16);
+  return new Intl.DateTimeFormat("zh-HK", {
+    timeZone: "Asia/Hong_Kong",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(d);
+}
+
 export function V2News({
   event,
   onRefresh,
@@ -58,7 +70,7 @@ export function V2News({
         <span className="v2-stars" title={`影响星级: ${stars}星`}>
           {"★".repeat(stars)}{"☆".repeat(Math.max(0, 3 - stars))}
         </span>
-        <time className="v2-news-time">{String(event.published_at ?? "").slice(11, 16)}</time>
+        <time className="v2-news-time" title="中国香港时间 (HKT)">{formatHktTime(event.published_at)}</time>
       </div>
 
       <h3 className="v2-news-title">

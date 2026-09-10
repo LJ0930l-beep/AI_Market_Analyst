@@ -5,6 +5,7 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:event:default",
     "notification:allow-is-permission-granted",
     "notification:allow-request-permission",
     "notification:allow-show",

@@ -6,7 +6,7 @@ $webRoot = Join-Path $projectRoot "web"
 $env:VITE_API_BASE_URL = ""
 Push-Location $webRoot
 try {
-    npm run build
+    cmd /c "npm run build"
     if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw "npm run build failed with exit code $LASTEXITCODE" }
 }
 finally {

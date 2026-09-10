@@ -1,0 +1,566 @@
+{
+  "manifest_schema_version": "1.2",
+  "release_code": "V2R1",
+  "spec_version": "1.2",
+  "spec_title": "AI_Market_Analyst_V2R1_真实交易链路修复实施方案_v1.2",
+  "generated_at": "2026-09-10T04:48:01.538343+00:00",
+  "platform": {
+    "os": "Windows",
+    "os_release": "11",
+    "os_version": "10.0.26200",
+    "architecture": "AMD64",
+    "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]"
+  },
+  "supported_trading_modes": [
+    "RESEARCH",
+    "PAPER",
+    "TESTNET",
+    "LIVE_LOCKED"
+  ],
+  "control_modes": [
+    "ASSISTED",
+    "AUTONOMOUS"
+  ],
+  "decision_paths": [
+    "STRATEGY_DRIVEN",
+    "AI_LED"
+  ],
+  "file_sha256": {
+    "core/trading/execution_gateway.py": "7c555719ec8750bb42e884a1df7aa4c798242d65d04f5b820e297646501ca53d",
+    "core/trading/authorization.py": "28e9d61488c558a876743695b3b05f68c7f860939eb66dae7665aa9d61d8cdf7",
+    "core/trading/position_guardian.py": "e8aaa46df53f1110ac8dd97b860fe7dfc08fbb318de2d7a3965082eb3a1ae9d3",
+    "core/trading/ledger.py": "354166162bac851b42fdeab208039ea3424c4a0550f38402e8321d69cc6e2a7a",
+    "core/trading/risk_engine.py": "148fe3925852bdd18861118018f711f7bd2cdf095e8414e0cd5d3077dbb43d94",
+    "core/trading/trade_plan_contract.py": "9b079885967f3206c6fd3208e595036aa9ca59f973cadda9114db8697ce4722f",
+    "core/trading/trader_capabilities.py": "bebdff43d43e560db81fa661d11d7c328bd4623d991c4a122a400f750117c8bd",
+    "core/trading/session_manager.py": "4e9ba6d2aa70204522790f48c7866e0781b4ca7d17f53494327b73e358c06d42",
+    "core/trading/testnet_capabilities.py": "2d56c17b372013fed87f831bd096b4d1d681383383fd3d0625523ec4c9433be0",
+    "core/trading/ai_led_engine.py": "eb2a5c69856d99d4db53fe169c690ceb825edbe59dfa5d27d22ee7b166abe289",
+    "core/trading/ai_session_coordinator.py": "74508f50e769875fb14ce923c45cb844f2ea330d3dc9dadcd968fdf48e46e8a5",
+    "core/monitoring_runtime.py": "945d1a6cd12dd2929de3e62c44970e72a214fee817790e9743fb3491d7fead60",
+    "core/v2_store.py": "75d9459e9a60ceced9a0fd0b970a9b2648db88a393e859f45053ff34de5a3938",
+    "core/analysis/strategy_evaluator.py": "c6801acef9e8d8d723e9e3dc0211740d266430c45285cc4a6bf8969daf110593",
+    "core/news_revision.py": "cfe5cb9f132e46402ff302745355b3239dc4f0880a11bec8bc4fabc526ce0d3b",
+    "core/data_migration.py": "e3d368fa7efcca42501ba557da31858a67f065eff952333fa5febaa1208e0a8a",
+    "core/diagnostics.py": "52c86003fd0d2f02acdcfe8621e040bd716e0692be681c65a98a5c8fb3058d54",
+    "core/sidecar_lifecycle.py": "8d3be2546c24e0df6af6583c8e699861e089ecbd8a400b6432c794897a6335b8",
+    "core/trading/stress_runner.py": "8b1ff8ac2ca1ab25225bfbb75a52e74c9e053ea4b7b78b6840f6c0b391ceb7d6",
+    "apps/api/v2.py": "10d4459903faf32bb9040251484120dceef814bf791806755f40040137383437",
+    "tests/test_spec_a01_a12.py": "8b72a66a2947be3b30ac7d1fb5c79bea24b79ca51e2498af2f6e07b908d89cb4",
+    "tests/test_spec_at01_at07.py": "12c5bdb31fb806982287ef3bc6879f70e014b51db0d1bc845f1a463d743f29a5",
+    "tests/test_spec_at08_at14.py": "854dfdf89417c91d910f1f7251e828797ec1695d58180b37984adac20a00287c",
+    "tests/test_spec_at15_at23.py": "0176e534c6f00cc46125154a7012c96f4bde89c36f446258fffa2faf4a05b709",
+    "tests/test_spec_at31_at35.py": "a162810abfa264de128e5787b8cbb0937c1f4091c9c90cf00b5c736ae76cf2eb",
+    "tests/test_spec_at36_at40.py": "1ef0a67c79c53754b217b8655afd2d5f9edbef45823acfcc879b376417b6488f",
+    "tests/test_spec_at24_at30.py": "8962a7aa35ac4ddca4095a991b084ef7065c1a392604176a656f24b340648b15",
+    "tests/test_spec_rt01_rt16.py": "e3ab7452b880dec538e5c4c5bf644cea92f398ba4900ef987a36281bc787092d",
+    "tests/test_spec_rt17_rt26.py": "4119dbe62c5f19f58b1382af08f5f4b79403d5207e418406a2a271cd8256d8dc",
+    "tests/test_repair_v12_luna.py": "413edc8fdd24d17404aa7f9c0de48069ffd0565523aca80df2982a7b3212157c",
+    "tests/test_trader_reliability_v13.py": "f4accd5539792e0fa35773cf450480623dcb69a855f978e3c8eb73ebbeb41061",
+    "tests/test_trader_reliability_v14.py": "332e74fc76b7260e17d81d6e93adc33e52434d18b7f17fcdaa5f8e343133ef90",
+    "web/src/components/AITraderPanel.tsx": "1965f0fc065932b36a8bd754f2da10447d3105a5bd7358cae587726ca133a318",
+    "web/src/components/AuthorizationWizardModal.tsx": "806fcf90bd22c76276e056a9c935e2713281007d50003849dc4c5390188f1a2c",
+    "web/src/pages/V2WorkspacePage.tsx": "977b887413494690d44483fa9cf64d4a294c3746ddd30ce2fdcb012217c6cade",
+    "web/src/api/client.ts": "ea04e02a6b6677a2cc7715078c5f3a2438c5efdfbd84852caef2c973f90b2ddd"
+  },
+  "source_state": {
+    "status": "AVAILABLE",
+    "git_head": "32596a3f1431a6646e3c5cb853a213fcc69a067c",
+    "dirty": true,
+    "dirty_paths": [
+      "STATUS.md",
+      "apps/api/main.py",
+      "apps/api/v2.py",
+      "core/agent_execution.py",
+      "core/ai/ollama.py",
+      "core/events.py",
+      "core/gate_stream.py",
+      "core/instruments.py",
+      "core/market_hydration.py",
+      "core/market_intelligence.py",
+      "core/monitoring_runtime.py",
+      "core/news_engine.py",
+      "core/providers/base.py",
+      "core/providers/gateio_provider.py",
+      "core/quant/strategies.py",
+      "core/realtime.py",
+      "core/storage/sqlite.py",
+      "core/strategy_monitoring.py",
+      "core/v2_store.py",
+      "scripts/build-sidecar.ps1",
+      "scripts/build-tauri-frontend.ps1",
+      "src-tauri/capabilities/default.json",
+      "src-tauri/src/main.rs",
+      "src-tauri/tauri.conf.json",
+      "tests/test_v121_production_usability.py",
+      "tests/test_v2_execution.py",
+      "web/index.html",
+      "web/src/App.test.tsx",
+      "web/src/App.tsx",
+      "web/src/api/client.ts",
+      "web/src/components/ResearchFacts.tsx",
+      "web/src/components/V2News.tsx",
+      "web/src/i18n.test.tsx",
+      "web/src/i18n.tsx",
+      "web/src/pages/AlertsPage.tsx",
+      "web/src/pages/SettingsHealthPage.tsx",
+      "web/src/pages/V2WorkspacePage.test.tsx",
+      "web/src/pages/V2WorkspacePage.tsx",
+      "web/src/test/setup.ts",
+      "web/src/v2.css",
+      "web/src/v2copy.ts",
+      "apps/api/v3.py",
+      "artifacts/",
+      "core/analysis/",
+      "core/data_migration.py",
+      "core/diagnostics.py",
+      "core/evidence.py",
+      "core/macro_calendar.py",
+      "core/manifest.py",
+      "core/news_revision.py",
+      "core/security/",
+      "core/sidecar_lifecycle.py",
+      "core/trading/",
+      "docs/final-owner-repair-report.md",
+      "docs/institutional-repair-acceptance.md",
+      "docs/institutional-repair-implementation.md",
+      "docs/repair-v1.2-luna-report.md",
+      "docs/trader-reliability-v1.3-plan.md",
+      "docs/trader-reliability-v1.3-report.md",
+      "docs/trader-reliability-v1.4-plan.md",
+      "docs/trader-reliability-v1.4-report.md",
+      "docs/trader-reliability-v1.5-plan.md",
+      "docs/trader-reliability-v1.5-report.md",
+      "docs/trader-reliability-v1.6-plan.md",
+      "docs/v1.4-audit-repair-contract.md",
+      "evidence/",
+      "repair-plan-v1.2.md",
+      "scratch/",
+      "scripts/direct_install.ps1",
+      "scripts/institutional_acceptance.py",
+      "scripts/smoke-final-sidecar.py",
+      "tests/test_final_calendar.py",
+      "tests/test_final_strategy_analysis.py",
+      "tests/test_gate_account_chain.py",
+      "tests/test_gate_and_analytics.py",
+      "tests/test_guardian_intrabar.py",
+      "tests/test_institutional_evidence_risk.py",
+      "tests/test_institutional_gate_testnet.py",
+      "tests/test_institutional_repair_regressions.py",
+      "tests/test_institutional_v3_api.py",
+      "tests/test_repair_v12_luna.py",
+      "tests/test_spec_at01_at07.py",
+      "tests/test_spec_at08_at14.py",
+      "tests/test_spec_at15_at23.py",
+      "tests/test_spec_at24_at30.py",
+      "tests/test_spec_at31_at35.py",
+      "tests/test_spec_at36_at40.py",
+      "tests/test_spec_rt01_rt16.py",
+      "tests/test_spec_rt17_rt26.py",
+      "tests/test_trader_reliability_v13.py",
+      "tests/test_trader_reliability_v14.py",
+      "tests/test_trader_reliability_v15.py",
+      "tests/test_trader_reliability_v16.py",
+      "web/src/chineseDisplay.ts",
+      "web/src/components/AITraderPanel.test.tsx",
+      "web/src/components/AITraderPanel.tsx",
+      "web/src/components/AuthorizationWizardModal.tsx",
+      "web/src/components/InstitutionalAnalysisDashboard.tsx",
+      "web/src/components/InstitutionalEvidencePanel.test.tsx",
+      "web/src/components/InstitutionalEvidencePanel.tsx",
+      "web/src/pages/FinalWorkflow.test.tsx",
+      "web/src/tradingAccountSelection.ts"
+    ],
+    "dirty_file_sha256": {
+      "STATUS.md": "1219cb58f742d798a035cae9f7ee6a25983f2207187e2798fea5e075e308966e",
+      "apps/api/main.py": "80991926dca100de37420b88052c65a132406842ac1d03fafff5169e8962626c",
+      "apps/api/v2.py": "10d4459903faf32bb9040251484120dceef814bf791806755f40040137383437",
+      "core/agent_execution.py": "3d9a6c9848864a2e8e017a42e2aeff65f3fa1d7cf1a93ed00a4c4868f5865e58",
+      "core/ai/ollama.py": "377c41de25affd6d6d7b7deb9d3f1328daee47e835400263b46a35bcaafe4f5d",
+      "core/events.py": "0dc3cbb0b2f3684defb2c594175c3242d1385be410a4d5f1a06450e41b046b91",
+      "core/gate_stream.py": "1ca9fba34e814a40912a17fe7345f0d46082bfa7345899cb874f5e10bb96271d",
+      "core/instruments.py": "9214a80d939a04ed158ac2dae07793fde1430b16003cdaf02be31bffd449dca1",
+      "core/market_hydration.py": "ed752f65ad68f9650c73d19b6207df3cbc5e229e25db4eb90a52f94221a256a4",
+      "core/market_intelligence.py": "8190a811c32f9773dd49e8296e6757b05fc045187c6a608bfd5930b73fe8a92f",
+      "core/monitoring_runtime.py": "945d1a6cd12dd2929de3e62c44970e72a214fee817790e9743fb3491d7fead60",
+      "core/news_engine.py": "5e87d5bc9c94bbd4b7d19d9f4216758194fe182b7b664fafb2e8b52715efd028",
+      "core/providers/base.py": "84b2586ace21254c8288faaa0d182671eccaec542bc3459c76d5907e3ac8cdc0",
+      "core/providers/gateio_provider.py": "9a0f555e16e117180386017f995ef47cd257829d9f9e744de00d973b36675f09",
+      "core/quant/strategies.py": "b03a9ae45191c80d73b070c5be203a5cfe4842c4ef3fec91687a7b8fbe35977c",
+      "core/realtime.py": "2e5791175019e7c576856a9504cd173a1c4d04d7eeee8d1a7cf34c53aebcabab",
+      "core/storage/sqlite.py": "7fe8990344c2f3de84f7cc04fb4fd6ccbc325d2b99bfdbb1d46b55aa7f7f5e13",
+      "core/strategy_monitoring.py": "8cde346d0f8a6c703272918fc5975bf5b469bdaaf607c066de2e648ad9a07dc7",
+      "core/v2_store.py": "75d9459e9a60ceced9a0fd0b970a9b2648db88a393e859f45053ff34de5a3938",
+      "scripts/build-sidecar.ps1": "d31a41c48842907ea75497061865aec24e30165a60d376f2a8376ffab37eba31",
+      "scripts/build-tauri-frontend.ps1": "566d0fcf433827aa748f1be86ed0a68f3f3cf1bd7389462f6040d70302f33fa6",
+      "src-tauri/capabilities/default.json": "0f959a342a8d8beeafb423d573af7be25792a8ea0861fc4ac92a527a020069f8",
+      "src-tauri/src/main.rs": "d61c38d9573a41d7e1276789ac18d171c81331d6047f9ed4f7472b7aba709e0d",
+      "src-tauri/tauri.conf.json": "a0bee0e7fd6a15bf9a4bdbe7f75f08a47cb5acb69c0306a2fb49b979a3fee1bf",
+      "tests/test_v121_production_usability.py": "c2d4f2d651112c94dc8cee6d83ee03d3d7f203fc39d69a2f76f039ebc7a69aa9",
+      "tests/test_v2_execution.py": "bdac00fb5cbf35de24b21ef767d852c607046a5b9ad73f0b2d7cdbe37cbc9d58",
+      "web/index.html": "f1777d08854b7cbc7c6c71171401283b215fca7254a47b3ed05b68873a554081",
+      "web/src/App.test.tsx": "9e86e810c746283befe9f79d650c44fd11586464f92b54acf37407330d3cedff",
+      "web/src/App.tsx": "68b5d6d49aeea5ca39b0347ab4b49d02a7899d9396bf767f2560fe41aea844db",
+      "web/src/api/client.ts": "ea04e02a6b6677a2cc7715078c5f3a2438c5efdfbd84852caef2c973f90b2ddd",
+      "web/src/components/ResearchFacts.tsx": "84905aba57e5661fdffac561e461b09022747731bd35c32b64bef4c2afdc90f7",
+      "web/src/components/V2News.tsx": "b451c1758c0f9f8df2cb4280c4e8fea750ebbe7ef8a21908934c0eb18c2e7677",
+      "web/src/i18n.test.tsx": "9d7d738179c3aef65394c97bce6b817eb9ae3a1e69794ab41a6fca0d2d291b40",
+      "web/src/i18n.tsx": "8f9b89d95a095d2fa2810bfcc0d841abed3f815c3c2693a20cc37b2f3387f03f",
+      "web/src/pages/AlertsPage.tsx": "f93aaf00e5f3e1940ac5b6086dbc4cbdc96557349de17b817ae39d913186d56b",
+      "web/src/pages/SettingsHealthPage.tsx": "61cb2feed62c296d50796ab09d9da51880b4dc3931994f7725f42417a7331d9e",
+      "web/src/pages/V2WorkspacePage.test.tsx": "a2477f7278c95e7e88c3332d8ec12b53bae9d80ee16e0a917cc2715ad9c15c6e",
+      "web/src/pages/V2WorkspacePage.tsx": "977b887413494690d44483fa9cf64d4a294c3746ddd30ce2fdcb012217c6cade",
+      "web/src/test/setup.ts": "37d6443e1bb730df1d1a35720147ce950b1752935621d3b7e208e5afc7dd9953",
+      "web/src/v2.css": "00f70abf9ee26c1f324a881c59bb26360b13196c28eaf611a9b6cda9bc4ffad0",
+      "web/src/v2copy.ts": "801269241e53bb135601f9ae0d49f41c20f16f93a90dc9ca89e3be1b09721274",
+      "apps/api/v3.py": "88826d20fd42510340563f3837f3d2332967837d222e5ffea4dcb4d40b81843d",
+      "core/data_migration.py": "e3d368fa7efcca42501ba557da31858a67f065eff952333fa5febaa1208e0a8a",
+      "core/diagnostics.py": "52c86003fd0d2f02acdcfe8621e040bd716e0692be681c65a98a5c8fb3058d54",
+      "core/evidence.py": "8fdb28a716890b751048d6f400d0ad8fa76b67b42f12a842fb62f89ebf9c9760",
+      "core/macro_calendar.py": "4b4d94d64e15f4f3689401f79e6d2ceaac5647272ebe331226671ded8f74fae7",
+      "core/manifest.py": "b00b801494499cdb6a650d1b7f855635d6e048700653074d9628f01b71cfe12a",
+      "core/news_revision.py": "cfe5cb9f132e46402ff302745355b3239dc4f0880a11bec8bc4fabc526ce0d3b",
+      "core/sidecar_lifecycle.py": "8d3be2546c24e0df6af6583c8e699861e089ecbd8a400b6432c794897a6335b8",
+      "docs/final-owner-repair-report.md": "93b91148eaa35449c92da49937ebca883c9d67cd4657fd4d566725a10e39a34a",
+      "docs/institutional-repair-acceptance.md": "b62ef329e511c8f1b6553a9f95347318bd7e642c35a7e65a19c0e193dc8b1425",
+      "docs/institutional-repair-implementation.md": "05454b21f24e8a4b6f805644a8bc3ee49b47a391af5f892e316006bd4af53521",
+      "docs/repair-v1.2-luna-report.md": "1e81e6ada0df799128210a3fb93cc5c7d91d0390dcd448807ed6e107836f3907",
+      "docs/trader-reliability-v1.3-plan.md": "342c722474775585d030847275b2203fa01be06ff54ca61d3fbf5027bc5fe512",
+      "docs/trader-reliability-v1.3-report.md": "58e265a13a0d4e12d22918a919e2fd0675c59c260bf2ef054389b77a65f04738",
+      "docs/trader-reliability-v1.4-plan.md": "ffac526bd5f85101aa9a7c43aed54b3f0bb8152597c9cd9623cc47ad23ef2fb7",
+      "docs/trader-reliability-v1.4-report.md": "5936a277977877d2239ebf45d93029333970ba9072fc5a51d94ce400196eaf95",
+      "docs/trader-reliability-v1.5-plan.md": "8984cc6ef77ea53698881caa8fb203a3a501c200c9749d84c0b3982317c7bbb7",
+      "docs/trader-reliability-v1.5-report.md": "8a83dea900456bffd83ee508378d929cff77f2e75e867872584fd561aaa524be",
+      "docs/trader-reliability-v1.6-plan.md": "06e409deb40b0b3fc337e716c1b71069cb7f0c9163c7b76b9a98ef0b725cf38b",
+      "docs/v1.4-audit-repair-contract.md": "6861942add9d08c51003935607e79e681ba3a39eeaec76a8e3055e83f0cf4947",
+      "repair-plan-v1.2.md": "7cefb9483f8b5d1eb2630adaddd9f3ada97379782e733ddc627833f615214d20",
+      "scripts/direct_install.ps1": "ff3e7912389274310d4503da2e352b8bf7c24d43682b430066bcaa75e4d58fa4",
+      "scripts/institutional_acceptance.py": "cb5c9b8e674fb4004552d8d8bdf9bcb76658ed3db348161f1a856d9a93914fb2",
+      "scripts/smoke-final-sidecar.py": "817b3b0193a8106a4ff9af2f6ac947346da52b49b493acfbfd06f3bcc36a08ee",
+      "tests/test_final_calendar.py": "2b4134457ab7acff42045b5cd10f58d1769facc5c3be26117fa68dc8e4a6f30d",
+      "tests/test_final_strategy_analysis.py": "a5fe7bd61d2be437416c91908a23545a845f3c50341e7c4544dfc6f280c7fa21",
+      "tests/test_gate_account_chain.py": "f9f8ab54439001f0b738badd1ffaae7e627f0b7b9bae3b55500feeadcaae8a7d",
+      "tests/test_gate_and_analytics.py": "b0ebd97d1b7c22d658fb5a3860830310cfa439b70b4b5e93aef2890fda4fb89f",
+      "tests/test_guardian_intrabar.py": "23a6c2ef97795c0b8cf0268bd388c07a4bb86c3cacd2ee281c97f54f4fd305d5",
+      "tests/test_institutional_evidence_risk.py": "b6c2057332016d5d483ba6b2d567b3168e5465d7e4db2f67c442fc05f85cceeb",
+      "tests/test_institutional_gate_testnet.py": "7f68173967fa37033cff493b00227ef1e8129571ce0beb9a4ae594bc350e4d1f",
+      "tests/test_institutional_repair_regressions.py": "d225e7fe9cee6a561728196cf6dc3cf43685984c3716842714cfdac35cc1b58e",
+      "tests/test_institutional_v3_api.py": "199c5533c2408f1ef9dfb5b71e45edb6fe3cb4de0283941b3e2dfe72b6a4fdfa",
+      "tests/test_repair_v12_luna.py": "413edc8fdd24d17404aa7f9c0de48069ffd0565523aca80df2982a7b3212157c",
+      "tests/test_spec_at01_at07.py": "12c5bdb31fb806982287ef3bc6879f70e014b51db0d1bc845f1a463d743f29a5",
+      "tests/test_spec_at08_at14.py": "854dfdf89417c91d910f1f7251e828797ec1695d58180b37984adac20a00287c",
+      "tests/test_spec_at15_at23.py": "0176e534c6f00cc46125154a7012c96f4bde89c36f446258fffa2faf4a05b709",
+      "tests/test_spec_at24_at30.py": "8962a7aa35ac4ddca4095a991b084ef7065c1a392604176a656f24b340648b15",
+      "tests/test_spec_at31_at35.py": "a162810abfa264de128e5787b8cbb0937c1f4091c9c90cf00b5c736ae76cf2eb",
+      "tests/test_spec_at36_at40.py": "1ef0a67c79c53754b217b8655afd2d5f9edbef45823acfcc879b376417b6488f",
+      "tests/test_spec_rt01_rt16.py": "e3ab7452b880dec538e5c4c5bf644cea92f398ba4900ef987a36281bc787092d",
+      "tests/test_spec_rt17_rt26.py": "4119dbe62c5f19f58b1382af08f5f4b79403d5207e418406a2a271cd8256d8dc",
+      "tests/test_trader_reliability_v13.py": "f4accd5539792e0fa35773cf450480623dcb69a855f978e3c8eb73ebbeb41061",
+      "tests/test_trader_reliability_v14.py": "332e74fc76b7260e17d81d6e93adc33e52434d18b7f17fcdaa5f8e343133ef90",
+      "tests/test_trader_reliability_v15.py": "bbbff4dd017d96a03f1979d77205ab588fc2e2a6327a945cf7fad2f45045ebe5",
+      "tests/test_trader_reliability_v16.py": "d54cf9d5d019689f689aff1efd5af21f73261e8d457ecd3ed36098ebc8fa11f2",
+      "web/src/chineseDisplay.ts": "18c812327f37e5ec4a86b72daf3b8a9fd31955fc5c4e632386f2d0a12b4b4ed4",
+      "web/src/components/AITraderPanel.test.tsx": "b6999b069f5d964b2fd965318b801c5d48d4e176a528aaf8ac7d811c0a02a03b",
+      "web/src/components/AITraderPanel.tsx": "1965f0fc065932b36a8bd754f2da10447d3105a5bd7358cae587726ca133a318",
+      "web/src/components/AuthorizationWizardModal.tsx": "806fcf90bd22c76276e056a9c935e2713281007d50003849dc4c5390188f1a2c",
+      "web/src/components/InstitutionalAnalysisDashboard.tsx": "3b2721e8a554d46bd7cf7f96e98bbef46cd4ee85e8b581646a24843d5d9a7488",
+      "web/src/components/InstitutionalEvidencePanel.test.tsx": "507c90d1d1c0636cf756b7c8b6091ba77ba318aeb1ec368037295011ab2dd0ac",
+      "web/src/components/InstitutionalEvidencePanel.tsx": "fbf0ef866e3798f9db3003c99d178ebb23957bc15c35b0fb51f72ea19a587bb7",
+      "web/src/pages/FinalWorkflow.test.tsx": "593e3df5e39e378cf11e290daccf102044d80b6ba3c976c53c47510b5a165d97",
+      "web/src/tradingAccountSelection.ts": "075423791f695e56168b735251e8899d2d8ea3abdb914d0a442a42f7d5399ca4"
+    },
+    "dirty_tree_sha256": "0a6df0b3a1538d5a143ecc54c1b1c12d9e3b83ad286da63cc039f74c58c79c6c"
+  },
+  "acceptance_matrix": {
+    "AT01": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT01"
+    },
+    "AT02": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT02"
+    },
+    "AT03": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT03"
+    },
+    "AT04": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT04"
+    },
+    "AT05": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT05"
+    },
+    "AT06": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT06"
+    },
+    "AT07": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT07"
+    },
+    "AT08": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT08"
+    },
+    "AT09": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT09"
+    },
+    "AT10": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT10"
+    },
+    "AT11": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT11"
+    },
+    "AT12": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT12"
+    },
+    "AT13": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT13"
+    },
+    "AT14": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT14"
+    },
+    "AT15": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT15"
+    },
+    "AT16": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT16"
+    },
+    "AT17": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT17"
+    },
+    "AT18": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT18"
+    },
+    "AT19": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT19"
+    },
+    "AT20": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT20"
+    },
+    "AT21": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT21"
+    },
+    "AT22": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT22"
+    },
+    "AT23": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT23"
+    },
+    "AT24": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT24"
+    },
+    "AT25": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT25"
+    },
+    "AT26": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT26"
+    },
+    "AT27": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT27"
+    },
+    "AT28": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT28"
+    },
+    "AT29": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT29"
+    },
+    "AT30": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT30"
+    },
+    "AT31": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT31"
+    },
+    "AT32": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT32"
+    },
+    "AT33": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT33"
+    },
+    "AT34": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT34"
+    },
+    "AT35": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT35"
+    },
+    "AT36": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT36"
+    },
+    "AT37": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT37"
+    },
+    "AT38": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT38"
+    },
+    "AT39": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT39"
+    },
+    "AT40": {
+      "status": "NOT_RUN",
+      "scope": "Milestone verification for AT40"
+    },
+    "AT41": {
+      "status": "WAITING_USER_AUTHORIZATION",
+      "scope": "Milestone verification for AT41"
+    },
+    "AT42": {
+      "status": "WAITING_USER_AUTHORIZATION",
+      "scope": "Milestone verification for AT42"
+    }
+  },
+  "rt_matrix": {
+    "RT01": {
+      "status": "NOT_RUN",
+      "scope": "Specialized real trading repair verification for RT01"
+    },
+    "RT02": {
+      "status": "NOT_RUN",
+      "scope": "Specialized real trading repair verification for RT02"
+    },
+    "RT03": {
+      "status": "NOT_RUN",
+      "scope": "Specialized real trading repair verification for RT03"
+    },
+    "RT04": {
+      "status": "NOT_RUN",
+      "scope": "Specialized real trading repair verification for RT04"
+    },
+    "RT05": {
+      "status": "NOT_RUN",
+      "scope": "Specialized real trading repair verification for RT05"
+    },
+    "RT06": {
+      "status": "NOT_RUN",
+      "scope": "Specialized real trading repair verification for RT06"
+    },
+    "RT07": {
+      "status": "NOT_RUN",
+      "scope": "Specialized real trading repair verification for RT07"
+    },
+    "RT08": {
+      "status": "NOT_RUN",
+      "scope": "Specialized real trading repair verification for RT08"
+    },
+    "RT09": {
+      "status": "NOT_RUN",
+      "scope": "Specialized real trading repair verification for RT09"
+    },
+    "RT10": {
+      "status": "NOT_RUN",
+      "scope": "Specialized real trading repair verification for RT10"
+    },
+    "RT11": {
+      "status": "NOT_RUN",
+      "scope": "Specialized real trading repair verification for RT11"
+    },
+    "RT12": {
+      "status": "NOT_RUN",
+      "scope": "Specialized real trading repair verification for RT12"
+    },
+    "RT13": {
+      "status": "NOT_RUN",
+      "scope": "Specialized real trading repair verification for RT13"
+    },
+    "RT14": {
+      "status": "NOT_RUN",
+      "scope": "Specialized real trading repair verification for RT14"
+    },
+    "RT15": {
+      "status": "NOT_RUN",
+      "scope": "Specialized real trading repair verification for RT15"
+    },
+    "RT16": {
+      "status": "NOT_RUN",
+      "scope": "Specialized real trading repair verification for RT16"
+    },
+    "RT17": {
+      "status": "NOT_RUN",
+      "scope": "Specialized real trading repair verification for RT17"
+    },
+    "RT18": {
+      "status": "NOT_RUN",
+      "scope": "Specialized real trading repair verification for RT18"
+    },
+    "RT19": {
+      "status": "NOT_RUN",
+      "scope": "Specialized real trading repair verification for RT19"
+    },
+    "RT20": {
+      "status": "NOT_RUN",
+      "scope": "Specialized real trading repair verification for RT20"
+    },
+    "RT21": {
+      "status": "NOT_RUN",
+      "scope": "Specialized real trading repair verification for RT21"
+    },
+    "RT22": {
+      "status": "NOT_RUN",
+      "scope": "Specialized real trading repair verification for RT22"
+    },
+    "RT23": {
+      "status": "WAITING_USER_AUTHORIZATION",
+      "scope": "Specialized real trading repair verification for RT23"
+    },
+    "RT24": {
+      "status": "NOT_RUN",
+      "scope": "Specialized real trading repair verification for RT24"
+    },
+    "RT25": {
+      "status": "WAITING_USER_AUTHORIZATION",
+      "scope": "Specialized real trading repair verification for RT25"
+    },
+    "RT26": {
+      "status": "NOT_RUN",
+      "scope": "Specialized real trading repair verification for RT26"
+    }
+  },
+  "report_metadata": null,
+  "report_evidence": [],
+  "build_evidence": {
+    "status": "NOT_RUN",
+    "reason": "No build evidence supplied to manifest generator"
+  },
+  "runtime_evidence": {
+    "status": "NOT_RUN",
+    "reason": "No runtime evidence supplied to manifest generator"
+  },
+  "verification_commands": [
+    "pytest tests/test_spec_a01_a12.py tests/test_spec_at01_at07.py tests/test_spec_at08_at14.py tests/test_spec_at15_at23.py tests/test_spec_at31_at35.py -v",
+    "pytest tests/test_spec_at24_at30.py tests/test_spec_at36_at40.py -v",
+    "pytest tests/test_spec_rt01_rt16.py tests/test_spec_rt17_rt26.py -v",
+    "cd web && npm test -- --run"
+  ]
+}

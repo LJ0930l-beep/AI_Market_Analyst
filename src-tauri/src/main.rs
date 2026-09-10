@@ -140,7 +140,8 @@ fn sidecar_is_healthy(port: u16, identity: &SessionIdentity, pid: u32) -> Result
         // launcher_pid binds the health contract to the exact Rust-owned
         // process tree that can be stopped without touching foreign listeners.
         && payload.get("pid").and_then(serde_json::Value::as_u64).map(|value| value > 0).unwrap_or(false)
-        && payload.get("launcher_pid").and_then(serde_json::Value::as_u64) == Some(pid as u64)
+        && (payload.get("launcher_pid").and_then(serde_json::Value::as_u64) == Some(pid as u64)
+            || payload.get("pid").and_then(serde_json::Value::as_u64) == Some(pid as u64))
         && payload.get("port").and_then(serde_json::Value::as_u64) == Some(port as u64)
         && payload.get("ownership_verified").and_then(serde_json::Value::as_bool) == Some(true);
     if matches { Ok(()) } else { Err("backend health contract or ownership identity mismatch".to_string()) }
@@ -215,8 +216,11 @@ fn monitoring_runtime_active(app: &AppHandle) -> Option<bool> {
 
 fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
         let _ = window.show();
+        let _ = window.set_always_on_top(true);
         let _ = window.set_focus();
+        let _ = window.set_always_on_top(false);
     }
 }
 
@@ -453,19 +457,19 @@ fn start_owned_sidecar(app: &AppHandle) -> Result<(), String> {
 
 fn set_monitoring_tray_text<R: tauri::Runtime>(app: &AppHandle, status_item: &MenuItem<R>, toggle_item: &MenuItem<R>) {
     if !owned_backend_ready(app) {
-        let _ = status_item.set_text("Monitoring: DEGRADED · backend unavailable");
-        let _ = toggle_item.set_text("Resume monitoring");
+        let _ = status_item.set_text("盯盘降级：后端不可用");
+        let _ = toggle_item.set_text("恢复盯盘");
         return;
     }
     let Some(port) = current_port(app) else {
-        let _ = status_item.set_text("Monitoring: DEGRADED · backend unavailable");
-        let _ = toggle_item.set_text("Resume monitoring");
+        let _ = status_item.set_text("盯盘降级：后端不可用");
+        let _ = toggle_item.set_text("恢复盯盘");
         return;
     };
     let token = current_token(app);
     let Some(payload) = http_json(port, "GET", "/monitoring/status", token.as_deref()) else {
-        let _ = status_item.set_text("Monitoring: DEGRADED · backend unavailable");
-        let _ = toggle_item.set_text("Resume monitoring");
+        let _ = status_item.set_text("盯盘降级：后端不可用");
+        let _ = toggle_item.set_text("恢复盯盘");
         return;
     };
     let state = payload.get("state").and_then(serde_json::Value::as_str).unwrap_or("unknown");
@@ -475,8 +479,12 @@ fn set_monitoring_tray_text<R: tauri::Runtime>(app: &AppHandle, status_item: &Me
         .and_then(serde_json::Value::as_array)
         .map(|items| items.len())
         .unwrap_or(0);
-    let _ = status_item.set_text(format!("Monitoring: {} · {} symbols", state.to_uppercase(), symbols));
-    let _ = toggle_item.set_text(if active { "Pause monitoring" } else { "Resume monitoring" });
+    let state_zh = match state.to_lowercase().as_str() {
+        "running" => "运行中", "paused" => "已暂停", "stopped" => "已停止",
+        "terminated" => "已终止", "starting" => "正在启动", "degraded" => "降级运行", _ => "待核验",
+    };
+    let _ = status_item.set_text(format!("盯盘：{} · {} 个品种", state_zh, symbols));
+    let _ = toggle_item.set_text(if active { "暂停盯盘" } else { "恢复盯盘" });
 }
 
 fn notify_monitoring_continues(app: &AppHandle) {
@@ -496,8 +504,8 @@ fn notify_monitoring_continues(app: &AppHandle) {
     let _ = app
         .notification()
         .builder()
-        .title("AI Market Analyst")
-        .body("Monitoring continues in the background. Open the tray to pause or exit.")
+        .title("AI 市场分析师")
+        .body("盯盘仍在后台运行。可通过系统托盘暂停盯盘或退出应用。")
         .show();
 }
 
@@ -535,17 +543,20 @@ fn main() {
                     .build(),
             )?;
 
-            if let Err(error) = start_owned_sidecar(&app.handle()) {
-                emit_backend_status(&app.handle(), "degraded", 0, None, Some(error));
-            }
+            let startup_app = app.handle().clone();
+            thread::spawn(move || {
+                if let Err(error) = start_owned_sidecar(&startup_app) {
+                    emit_backend_status(&startup_app, "degraded", 0, None, Some(error));
+                }
+            });
 
-            let show = MenuItem::with_id(app, "show", "Show AI Market Analyst", true, None::<&str>)?;
-            let terminal = MenuItem::with_id(app, "terminal", "Open monitoring terminal", true, None::<&str>)?;
-            let monitoring_status = MenuItem::with_id(app, "monitoring-status", "Monitoring: STARTING", false, None::<&str>)?;
-            let monitoring_toggle = MenuItem::with_id(app, "monitoring-toggle", "Resume monitoring", true, None::<&str>)?;
-            let settings = MenuItem::with_id(app, "settings", "Desktop settings", true, None::<&str>)?;
-            let restart = MenuItem::with_id(app, "restart-backend", "Restart backend", true, None::<&str>)?;
-            let exit = MenuItem::with_id(app, "exit", "Exit", true, None::<&str>)?;
+            let show = MenuItem::with_id(app, "show", "显示交易员工作台", true, None::<&str>)?;
+            let terminal = MenuItem::with_id(app, "terminal", "打开盯盘终端", true, None::<&str>)?;
+            let monitoring_status = MenuItem::with_id(app, "monitoring-status", "盯盘：正在启动", false, None::<&str>)?;
+            let monitoring_toggle = MenuItem::with_id(app, "monitoring-toggle", "恢复盯盘", true, None::<&str>)?;
+            let settings = MenuItem::with_id(app, "settings", "桌面设置", true, None::<&str>)?;
+            let restart = MenuItem::with_id(app, "restart-backend", "重启后端", true, None::<&str>)?;
+            let exit = MenuItem::with_id(app, "exit", "退出", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &terminal, &monitoring_status, &monitoring_toggle, &settings, &restart, &exit])?;
 
             let tray_status = monitoring_status.clone();
@@ -563,7 +574,7 @@ fn main() {
             let event_toggle = monitoring_toggle.clone();
             TrayIconBuilder::with_id("main-tray")
                 .menu(&menu)
-                .tooltip("AI Market Analyst · local monitoring")
+                .tooltip("AI 市场分析师 · 本地盯盘")
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "show" => show_main_window(app),
                     "terminal" => route_main_window(app, "/monitoring"),
@@ -578,8 +589,8 @@ fn main() {
                             .map(|payload| payload.get("error").is_none())
                             .unwrap_or(false);
                         if !owned_backend_ready(app) || !action_succeeded {
-                            let _ = event_status.set_text("Monitoring: DEGRADED · action failed");
-                            let _ = event_toggle.set_text("Resume monitoring");
+                            let _ = event_status.set_text("盯盘降级：操作失败");
+                            let _ = event_toggle.set_text("恢复盯盘");
                         } else {
                             set_monitoring_tray_text(app, &event_status, &event_toggle);
                         }

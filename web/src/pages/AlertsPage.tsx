@@ -39,7 +39,7 @@ function AlertCard({ alert, onAcknowledge, busy }: { alert: AlertRecord; onAckno
   const acknowledged = alert.status === "ACKNOWLEDGED";
   const timestamp = (value: string | null | undefined) => {
     if (!value) return t("common.notSupplied");
-    return Number.isNaN(new Date(value).getTime()) ? value : formatDateTime(value, { dateStyle: "medium", timeStyle: "medium", timeZone: "UTC" });
+    return Number.isNaN(new Date(value).getTime()) ? value : formatDateTime(value, { dateStyle: "medium", timeStyle: "medium", timeZone: "Asia/Hong_Kong" });
   };
   const source = sourceKeys[alert.source as AlertSource] ? t(sourceKeys[alert.source as AlertSource]) : alert.source;
   return (

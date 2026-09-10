@@ -1,4 +1,5 @@
 import { cloneElement, createContext, isValidElement, useContext, useMemo, useState, type ReactElement, type ReactNode } from "react";
+import { chineseDisplayText } from "./chineseDisplay";
 
 export type Language = "en" | "zh-CN";
 
@@ -8,6 +9,8 @@ const en = {
   "v2.monitor": "Watch & monitor",
   "v2.strategies": "Strategies",
   "v2.intel": "News & macro",
+  "v2.aiAnalysis": "AI Trading Analysis",
+  "v2.gateLiveDesk": "Gate.io Live Desk",
   "language.label": "Language",
   "language.chinese": "Chinese",
   "language.english": "English",
@@ -1159,6 +1162,8 @@ const zhCN: Record<TranslationKey, string> = {
   "v2.monitor": "自选与盯盘",
   "v2.strategies": "量化与策略库",
   "v2.intel": "资讯与宏观",
+  "v2.aiAnalysis": "AI 做单分析",
+  "v2.gateLiveDesk": "Gate 实盘管理",
   "language.label": "语言",
   "language.chinese": "中文",
   "language.english": "English",
@@ -2383,7 +2388,7 @@ export function detectBrowserLanguage(): Language {
 }
 
 export function resolveInitialLanguage(): Language {
-  return readStoredLanguage() ?? detectBrowserLanguage();
+  return readStoredLanguage() ?? "zh-CN";
 }
 
 export function translateText(value: string, language: Language): string {
@@ -2393,6 +2398,8 @@ export function translateText(value: string, language: Language): string {
   if (!trimmed) return value;
   if (trimmed.startsWith("{") || trimmed.startsWith("[")) return value;
   if (language === "zh-CN") {
+    const display = chineseDisplayText(trimmed);
+    if (display !== trimmed) return `${leading}${display}${trailing}`;
     const key = englishByText.get(trimmed) ?? enumText[trimmed];
     if (key) return `${leading}${zhCN[key]}${trailing}`;
     let translated = trimmed;
@@ -2402,7 +2409,7 @@ export function translateText(value: string, language: Language): string {
     for (const [source, sourceKey] of Object.entries(enumText)) {
       translated = translated.replace(new RegExp(`(?<![A-Za-z_])${source}(?![A-Za-z_])`, "g"), zhCN[sourceKey]);
     }
-    return `${leading}${translated}${trailing}`;
+    return `${leading}${chineseDisplayText(translated)}${trailing}`;
   }
   const key = chineseByText.get(trimmed) ?? enumTextChinese[trimmed];
   if (key) return `${leading}${en[key]}${trailing}`;
@@ -2436,7 +2443,7 @@ const defaultContext: I18nContextValue = {
   t: (key) => en[key],
   text: (value) => value,
   formatNumber: (value, options) => new Intl.NumberFormat("en", options).format(value),
-  formatDateTime: (value, options) => new Intl.DateTimeFormat("en", options).format(new Date(value)),
+  formatDateTime: (value, options) => new Intl.DateTimeFormat("en", { timeZone: "Asia/Hong_Kong", ...options }).format(new Date(value)),
   formatPercent: (value) => new Intl.NumberFormat("en", { style: "percent", maximumFractionDigits: 1 }).format(value),
 };
 
@@ -2462,9 +2469,10 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     t: (key) => translateKey(key, language),
     text: (text) => translateText(text, language),
     formatNumber: (number, options) => new Intl.NumberFormat(language, options).format(number),
-    formatDateTime: (date, options) => new Intl.DateTimeFormat(language, {
+    formatDateTime: (date, options) => new Intl.DateTimeFormat(language === "zh-CN" ? "zh-HK" : language, {
       dateStyle: "medium",
       timeStyle: "short",
+      timeZone: "Asia/Hong_Kong",
       ...options,
     }).format(new Date(date)),
     formatPercent: (number) => new Intl.NumberFormat(language, { style: "percent", maximumFractionDigits: 1 }).format(number),
@@ -2477,6 +2485,7 @@ function localizeNode(node: ReactNode, language: Language): ReactNode {
   if (Array.isArray(node)) return node.map((child) => localizeNode(child, language));
   if (!isValidElement(node)) return node;
   const element = node as ReactElement<{ children?: ReactNode; [key: string]: unknown }>;
+  if (element.type === "code" || element.type === "pre" || element.props["data-no-translate"]) return node;
   const props = { ...element.props };
   const originalChildren = props.children;
   delete props.children;

@@ -2419,6 +2419,8 @@ def create_app(
     app.include_router(router)
     from apps.api.v2 import router_for
     app.include_router(router_for(get_store, get_monitoring_runtime, get_news_translation_service))
+    from apps.api.v3 import router_for as v3_router_for
+    app.include_router(v3_router_for(get_store))
 
     if store is not None:
         store.initialize()
@@ -2568,7 +2570,10 @@ def create_app(
         except Exception:
             resume_setting = False
         if resume_setting:
-            runtime.start(resume=True, user_initiated=False)
+            try:
+                runtime.start(resume=True, user_initiated=False)
+            except Exception as exc:
+                print(f"[startup_monitoring] auto-resume deferred: {exc}")
 
     app.router.on_startup.append(startup_monitoring)
     app.router.on_shutdown.append(shutdown_scheduler)

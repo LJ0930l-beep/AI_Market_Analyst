@@ -47,6 +47,8 @@ const navigationItems: NavigationItem[] = [
   { label: "nav.dashboard", secondary: "nav.dashboard", to: "/", icon: "⌂", end: true },
   { label: "v2.monitor", secondary: "v2.monitor", to: "/monitor", icon: "◉" },
   { label: "v2.strategies", secondary: "v2.strategies", to: "/strategies", icon: "⌁" },
+  { label: "v2.aiAnalysis", secondary: "v2.aiAnalysis", to: "/ai-analysis", icon: "📊" },
+  { label: "v2.gateLiveDesk", secondary: "v2.gateLiveDesk", to: "/gate-live", icon: "⚡" },
   { label: "v2.intel", secondary: "v2.intel", to: "/intel", icon: "≡" },
   { label: "nav.consult", secondary: "nav.consult", to: "/consult", icon: "✦" },
   { label: "nav.settings", secondary: "nav.settings", to: "/settings", icon: "⚙" },
@@ -84,7 +86,7 @@ function DesktopNavigation({ healthState, health }: { healthState: BackendHealth
     <aside className="nav-ledger">
       <div className="brand-lockup">
         <span className="brand-lockup__sigil" aria-hidden="true">L</span>
-        <div><p className="brand-lockup__eyebrow">{t("shell.aiMarketAnalyst")}</p><p className="brand-lockup__title">LUNA TERMINAL</p><p className="brand-lockup__meta">{t("shell.localFirst")}</p></div>
+        <div><p className="brand-lockup__eyebrow">{t("shell.aiMarketAnalyst")}</p><p className="brand-lockup__title">{t("shell.researchDesk")}</p><p className="brand-lockup__meta">{t("shell.localFirst")}</p></div>
       </div>
       <nav aria-label={t("shell.primaryNavigation")}>
         <p className="nav-heading">{t("shell.workspace")}</p>
@@ -278,6 +280,8 @@ function WorkspaceRoutes({
       <Route index element={<V2WorkspacePage />} />
       <Route path="monitor" element={<V2WorkspacePage surface="monitor" />} />
       <Route path="strategies" element={<V2WorkspacePage surface="strategies" />} />
+      <Route path="ai-analysis" element={<V2WorkspacePage surface="analysis" />} />
+      <Route path="gate-live" element={<V2WorkspacePage surface="gate-live" />} />
       <Route path="intel" element={<V2WorkspacePage surface="intel" />} />
       <Route path="simulation" element={<V2WorkspacePage surface="ledger" />} />
       <Route

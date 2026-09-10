@@ -13,6 +13,13 @@ data/*.bak
 *.egg-info/
 web/node_modules/
 web/dist/
+
+# Local audit/build outputs, desktop backups, and unsafe ad-hoc installers.
+# Canonical acceptance evidence belongs under evidence/ and is tracked
+# explicitly; these folders must never carry user databases or credentials.
+artifacts/
+scratch/
+scripts/direct_install.ps1
 web/coverage/
 web/.vite/
 web/playwright-report/

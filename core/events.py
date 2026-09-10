@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Protocol
+from urllib.parse import urlsplit
 
 from .instruments import Instrument
 from .news_engine import NewsFetchResult, cluster_news_events
@@ -19,6 +20,24 @@ SOURCE_CREDIBILITY_VERSION = "source_credibility_v1"
 
 _SPACE_RE = re.compile(r"\s+")
 _TOKEN_RE = re.compile(r"[^a-z0-9]+")
+_OFFICIAL_HOSTS = {
+    "sec.gov",
+    "www.sec.gov",
+    "federalreserve.gov",
+    "www.federalreserve.gov",
+    "investor.gov",
+    "www.investor.gov",
+}
+_PROFESSIONAL_HOSTS = {
+    "reuters.com",
+    "www.reuters.com",
+    "apnews.com",
+    "www.apnews.com",
+    "cnbc.com",
+    "www.cnbc.com",
+    "bloomberg.com",
+    "www.bloomberg.com",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -272,17 +291,34 @@ def _title_key(value: str) -> tuple[str, ...]:
 
 
 def _source_type(source: str) -> str:
-    lowered = source.lower()
-    if any(token in lowered for token in ("sec", "ir", "company ir", "investor relations", "federal reserve", "treasury", "official")):
+    lowered = str(source).strip().lower()
+    host = _source_hostname(source)
+    if host in _OFFICIAL_HOSTS or lowered in {"sec", "sec.gov", "federal reserve", "company ir", "company investor relations"}:
         return "official"
-    if any(token in lowered for token in ("reuters", "ap", "cnbc", "bloomberg")):
+    if host in _PROFESSIONAL_HOSTS or lowered in {"reuters", "ap", "associated press", "cnbc", "bloomberg"}:
         return "professional"
     return "secondary"
 
 
 def _is_primary_source(source: str, url: str | None) -> bool:
-    text = f"{source} {url or ''}".lower()
-    return any(token in text for token in ("sec.gov", "ir.", "company ir", "investor.", "investor relations", "federalreserve.gov", "official"))
+    # Publisher labels and URL paths are claims, not provenance.  Only an
+    # exact allow-listed official hostname can establish primary-source
+    # status; ``evil.invalid/sec.gov`` and ``official sec.gov`` stay
+    # untrusted.
+    host = _source_hostname(url)
+    return host in _OFFICIAL_HOSTS
+
+
+def _source_hostname(value: str | None) -> str | None:
+    if not value:
+        return None
+    try:
+        parsed = urlsplit(str(value).strip())
+    except ValueError:
+        return None
+    if parsed.scheme.lower() not in {"https", "http"} or parsed.username or parsed.password:
+        return None
+    return (parsed.hostname or "").lower().rstrip(".") or None
 
 
 def _source_identity(source: str) -> str:
@@ -303,12 +339,15 @@ def _source_identity(source: str) -> str:
 
 
 def source_credibility(source: str, *, primary_source: bool = False, reported: int | float | None = None) -> int:
-    text = source.lower()
-    if primary_source or any(token in text for token in ("sec", "federal reserve", "company ir", "company official", "official ir")):
+    text = str(source).strip().lower()
+    host = _source_hostname(source)
+    exact_official_label = text in {"sec", "sec.gov", "federal reserve", "company ir", "company investor relations"}
+    exact_professional_label = text in {"reuters", "associated press", "ap", "cnbc", "bloomberg"}
+    if primary_source or host in _OFFICIAL_HOSTS or exact_official_label:
         baseline = 95
-    elif any(token in text for token in ("reuters", "associated press", "cnbc", "bloomberg")):
+    elif host in _PROFESSIONAL_HOSTS or exact_professional_label:
         baseline = 85
-    elif any(token in text for token in ("rss", "google news", "fixture")):
+    elif text in {"rss", "google news", "google_news_rss", "fixture", "fixture_news"}:
         baseline = 50
     else:
         baseline = 35

@@ -272,6 +272,14 @@ export function getApiBaseUrl(
   if (explicitBaseUrl) {
     return explicitBaseUrl;
   }
+  if (
+    typeof window !== "undefined" &&
+    (window.location.hostname === "tauri.localhost" ||
+      window.location.protocol === "tauri:" ||
+      "__TAURI_INTERNALS__" in window)
+  ) {
+    return "http://127.0.0.1:18765";
+  }
   return isDevelopment ? "/api" : "";
 }
 
@@ -408,6 +416,10 @@ export class ApiClient implements MarketApiClient {
 
   v2<T>(path: string, method: "GET" | "POST" | "PUT" | "DELETE" = "GET", body?: unknown, signal?: AbortSignal): Promise<T> {
     return this.request<T>(`/v2${path}`, { method, body, signal });
+  }
+
+  v3<T>(path: string, method: "GET" | "POST" | "PUT" | "DELETE" = "GET", body?: unknown, signal?: AbortSignal): Promise<T> {
+    return this.request<T>(`/v3${path}`, { method, body, signal });
   }
 
   releaseHealth(signal?: AbortSignal): Promise<ReleaseHealthResponse> {

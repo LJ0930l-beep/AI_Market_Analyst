@@ -76,7 +76,7 @@ function SchedulerFacts({ status, history }: { status: SchedulerStatus; history?
   const counts = lastRun?.counts;
   const timestamp = (value: string | null | undefined) => {
     if (!value) return t("common.notSupplied");
-    return Number.isNaN(new Date(value).getTime()) ? value : formatDateTime(value, { dateStyle: "medium", timeStyle: "medium", timeZone: "UTC" });
+    return Number.isNaN(new Date(value).getTime()) ? value : formatDateTime(value, { dateStyle: "medium", timeStyle: "medium", timeZone: "Asia/Hong_Kong" });
   };
   const value = (input: unknown) => schedulerText(input, t("common.notDisplayable"));
   return (

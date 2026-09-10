@@ -121,11 +121,25 @@ class BinanceRealtimeStream:
             return None
         symbol = str(kline.get("s") or "").upper()
         try:
+            closed = kline.get("x") in (True, 1, "1", "true", "TRUE")
             timestamp = datetime.fromtimestamp(float(kline["t"]) / 1000.0, tz=timezone.utc)
-            bar = Bar(timestamp, float(kline["o"]), float(kline["h"]), float(kline["l"]), float(kline["c"]), float(kline["v"]))
+            bar_end = datetime.fromtimestamp(float(kline["T"]) / 1000.0, tz=timezone.utc) if kline.get("T") is not None else None
+            event_at = datetime.fromtimestamp(float(message.get("E")) / 1000.0, tz=timezone.utc) if message.get("E") is not None else datetime.now(timezone.utc)
+            bar = Bar(
+                timestamp,
+                float(kline["o"]),
+                float(kline["h"]),
+                float(kline["l"]),
+                float(kline["c"]),
+                float(kline["v"]),
+                bar_end=bar_end,
+                event_at=event_at,
+                sequence=kline.get("n") or message.get("E"),
+                is_closed=closed,
+            )
         except (KeyError, TypeError, ValueError) as exc:
             raise ProviderError("Binance WebSocket returned a malformed kline", code="websocket_invalid_payload", provider="binance_public_ws") from exc
-        return symbol, bar, bool(kline.get("x", False))
+        return symbol, bar, closed
 
     def run_forever(
         self,

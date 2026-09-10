@@ -11,7 +11,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from urllib.parse import quote_plus
-from urllib.request import Request, urlopen
+from urllib.parse import urljoin, urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 from xml.etree import ElementTree
 
 from .instruments import Instrument
@@ -22,6 +23,7 @@ _TAG_RE = re.compile(r"<[^>]+>")
 _SPACE_RE = re.compile(r"\s+")
 _POSITIVE = {"beat", "growth", "surge", "strong", "upgrade", "record", "profit", "approved", "launch"}
 _NEGATIVE = {"miss", "fall", "drop", "weak", "downgrade", "loss", "probe", "lawsuit", "recall", "cut"}
+_NEGATION = {"not", "no", "never", "without", "failed", "fail", "didn't", "didnt", "未", "没有", "未能", "不"}
 
 
 def _clean_text(value: str | None, max_chars: int = 800) -> str:
@@ -43,7 +45,9 @@ def _parse_date(value: str | None) -> datetime | None:
 
 def _classify(title: str, summary: str) -> tuple[str, float, int, int, str]:
     text = f"{title} {summary}".lower()
-    if any(word in text for word in ("earnings", "quarter", "revenue", "guidance")):
+    tokens = re.findall(r"[a-z]+(?:['’][a-z]+)?|[\u4e00-\u9fff]+", text)
+    token_set = set(tokens)
+    if token_set.intersection({"earnings", "quarter", "revenue", "guidance", "profit", "eps", "beat", "miss"}):
         category = NewsCategory.EARNINGS.value
         importance = 80
         horizon = ImpactHorizon.DAYS_1_TO_3.value
@@ -75,11 +79,42 @@ def _classify(title: str, summary: str) -> tuple[str, float, int, int, str]:
         category = NewsCategory.OTHER.value
         importance = 30
         horizon = ImpactHorizon.UNKNOWN.value
-    positive = sum(1 for word in _POSITIVE if word in text)
-    negative = sum(1 for word in _NEGATIVE if word in text)
-    sentiment = max(-1.0, min(1.0, (positive - negative) / 3.0))
-    credibility = 85 if any(name in text for name in ("reuters", "sec", "cnbc", "federal reserve")) else 60
+    # Score tokens, with a small local negation window.  Substring matching
+    # made "drop"/"not beat" and publisher names produce the wrong direction.
+    score = 0.0
+    for index, token in enumerate(tokens):
+        if token not in _POSITIVE and token not in _NEGATIVE:
+            continue
+        negated = any(previous in _NEGATION for previous in tokens[max(0, index - 3):index])
+        weight = -1.0 if token in _NEGATIVE else 1.0
+        score += -weight if negated else weight
+    if re.search(r"(?:did\s+not|didn['’]?t|not|failed\s+to|未能|没有)\s+(?:beat|exceed|meet)", text):
+        score = min(score, -1.0)
+    sentiment = max(-1.0, min(1.0, score / 3.0))
+    credibility = 85 if token_set.intersection({"reuters", "sec", "cnbc"}) or "federal reserve" in text else 60
     return category, sentiment, importance, credibility, horizon
+
+
+class _ValidatedRedirectHandler(HTTPRedirectHandler):
+    """Reject an unsafe redirect before urllib opens the next hop."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
+        target = urljoin(req.full_url, newurl)
+        from .security.local_guard import is_safe_outbound_url
+
+        allowed, reason = is_safe_outbound_url(target)
+        if not allowed:
+            raise RuntimeError(f"unsafe RSS redirect: {reason}")
+        return super().redirect_request(req, fp, code, msg, headers, target)
+
+
+def _safe_urlopen(request: Request, *, timeout: float):
+    from .security.local_guard import is_safe_outbound_url
+
+    allowed, reason = is_safe_outbound_url(request.full_url)
+    if not allowed:
+        raise RuntimeError(f"unsafe RSS URL: {reason}")
+    return build_opener(_ValidatedRedirectHandler()).open(request, timeout=timeout)
 
 
 def dedupe_news_events(events: list[NewsEvent], *, max_items: int | None = None) -> list[NewsEvent]:
@@ -164,7 +199,7 @@ class RSSNewsProvider(NewsProvider):
         for attempt in range(self.retries + 1):
             try:
                 request = Request(url, headers={"Accept": "application/rss+xml, application/xml", "User-Agent": "ai-market-analyst/0.2"})
-                with urlopen(request, timeout=self.timeout) as response:
+                with _safe_urlopen(request, timeout=self.timeout) as response:
                     if response.status != 200:
                         raise RuntimeError(f"HTTP {response.status}")
                     return response.read()

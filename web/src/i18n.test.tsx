@@ -48,6 +48,14 @@ describe("i18n contract", () => {
     expect(translateText("unmapped backend message", "zh-CN")).toBe("unmapped backend message");
   });
 
+  it("defaults a fresh installation to Chinese regardless of browser language", () => {
+    expect(resolveInitialLanguage()).toBe("zh-CN");
+    expect(translateText("AI_LED", "zh-CN")).toBe("AI 自主决策");
+    expect(translateText("🤖 AI Autonomous Trader Console (N10)", "zh-CN")).toBe("🤖 AI 自主交易控制台");
+    expect(translateText("Core CPI y/y", "zh-CN")).toBe("核心消费者价格指数 同比");
+    expect(translateText("intent_AI_LED_123", "zh-CN")).toBe("intent_AI_LED_123");
+  });
+
   it("chooses Chinese from the browser locale and persists a manual switch", () => {
     Object.defineProperty(window.navigator, "language", { configurable: true, value: "zh-CN" });
     Object.defineProperty(window.navigator, "languages", { configurable: true, value: ["zh-CN", "en-US"] });

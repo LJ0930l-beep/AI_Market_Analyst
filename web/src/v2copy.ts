@@ -1,5 +1,96 @@
 import { useI18n } from "./i18n";
 
+export type StrategyId =
+  | "ema_trend"
+  | "bollinger_squeeze"
+  | "liquidity_sweep"
+  | "session_vwap"
+  | "opening_range_breakout"
+  | "funding_extreme";
+
+export interface StrategyMeta {
+  id: StrategyId;
+  nameZh: string;
+  nameEn: string;
+  classificationZh: string;
+  classificationEn: string;
+  styleZh: string;
+  styleEn: string;
+  badgeVariant: "bull" | "neutral" | "bear" | "warning" | "gold";
+  isRecommended?: boolean;
+}
+
+export const STRATEGY_CATALOG: Record<StrategyId, StrategyMeta> = {
+  ema_trend: {
+    id: "ema_trend",
+    nameZh: "EMA 动态通道动能策略",
+    nameEn: "EMA Trend Momentum",
+    classificationZh: "稳健 · 趋势追踪型",
+    classificationEn: "Conservative · Trend Following",
+    styleZh: "稳健型",
+    styleEn: "Conservative",
+    badgeVariant: "bull",
+    isRecommended: true,
+  },
+  session_vwap: {
+    id: "session_vwap",
+    nameZh: "会话 VWAP 均值回归策略",
+    nameEn: "Session VWAP Mean Reversion",
+    classificationZh: "稳健 · 价值中枢回归型",
+    classificationEn: "Conservative · Mean Reversion",
+    styleZh: "稳健型",
+    styleEn: "Conservative",
+    badgeVariant: "bull",
+  },
+  bollinger_squeeze: {
+    id: "bollinger_squeeze",
+    nameZh: "布林带/ATR 挤压突破策略",
+    nameEn: "Bollinger Squeeze Breakout",
+    classificationZh: "平衡 · 波动蓄势爆发型",
+    classificationEn: "Balanced · Volatility Breakout",
+    styleZh: "平衡型",
+    styleEn: "Balanced",
+    badgeVariant: "neutral",
+  },
+  liquidity_sweep: {
+    id: "liquidity_sweep",
+    nameZh: "流动性扫荡与订单块反转",
+    nameEn: "Liquidity Sweep Reversal",
+    classificationZh: "进阶 · 机构猎杀反转型",
+    classificationEn: "Advanced · Institutional Reversal",
+    styleZh: "进阶型",
+    styleEn: "Advanced",
+    badgeVariant: "warning",
+  },
+  opening_range_breakout: {
+    id: "opening_range_breakout",
+    nameZh: "开盘区间突破策略 (ORB)",
+    nameEn: "Opening Range Breakout (ORB)",
+    classificationZh: "激进 · 日内放量突破型",
+    classificationEn: "Aggressive · Day-trading Momentum",
+    styleZh: "激进型",
+    styleEn: "Aggressive",
+    badgeVariant: "bear",
+  },
+  funding_extreme: {
+    id: "funding_extreme",
+    nameZh: "资金费率/OI 极值挤压策略",
+    nameEn: "Funding Extreme / OI Squeeze",
+    classificationZh: "对冲 · 衍生品多空挤压型",
+    classificationEn: "Hedging · Derivatives Squeeze",
+    styleZh: "对冲型",
+    styleEn: "Hedging",
+    badgeVariant: "gold",
+  },
+};
+
+export function getStrategyOptionLabel(meta: StrategyMeta, zh: boolean): string {
+  const prefix = meta.isRecommended ? "⭐ [系统推荐] " : "";
+  const tag = zh ? `[${meta.classificationZh}]` : `[${meta.classificationEn}]`;
+  const name = zh ? meta.nameZh : meta.nameEn;
+  return `${prefix}${tag} ${name}`;
+}
+
 const en = {
   timeframe: "Timeframe",
   bars: "bars",
@@ -17,9 +108,21 @@ const en = {
   remove: "Remove",
   attach: "Attach strategy",
   enable: "Monitor",
+  start: "Start",
   pause: "Pause",
   resume: "Resume",
   stop: "Stop",
+  running: "Running",
+  paused: "Paused",
+  stopped: "Stopped",
+  startMonitoring: "Start Monitoring",
+  pauseMonitoring: "Pause Monitoring",
+  stopMonitoring: "Stop Monitoring",
+  startAll: "▶ Start All",
+  pauseAll: "⏸ Pause All",
+  stopAll: "⏹ Stop All",
+  singleStrategyNotice: "Single strategy exclusive per symbol",
+  recommendedBadge: "⭐ System Recommended",
   emergency: "Emergency stop",
   worker: "Monitoring worker",
   noWatch:
@@ -84,8 +187,6 @@ const en = {
   previous: "Previous",
   forecast: "Forecast",
   actual: "Actual",
-  running: "Running",
-  stopped: "Stopped",
   macroBarometer: "Macro Policy Barometer (24h)",
   bullishNews: "Bullish Policies",
   bearishNews: "Bearish Policies",
@@ -105,6 +206,34 @@ const en = {
   directive: "Macro Directive",
   activeDirective: "Active Macro Circuit Breaker",
   minutes: "min",
+  aiAnalysis: "AI Trading Analysis Desk",
+  aiAnalysisSub: "Initial Capital $1,000 USDT · AI Dynamic 5x~100x Autonomous Leverage · Style DNA Profiling",
+  gateLiveDesk: "Gate.io Live Desk & Trades",
+  gateLiveSub: "300+ Active Contracts · Real Trade Ledger & Fees · Pre-reserved Quantitative Interface",
+  initialCapital: "Initial Capital",
+  currentEquity: "Current Total Equity",
+  totalPnl: "Total Realized PnL",
+  winRate: "Win Rate",
+  profitFactor: "Profit Factor",
+  maxDrawdown: "Max Drawdown",
+  dynamicLeverage: "AI Dynamic Leverage",
+  styleDna: "AI Trader Style DNA",
+  strategyMatrix: "6 Strategies Performance Matrix",
+  tradeLedger: "AI Trading Decisions Ledger",
+  gateConfig: "Gate.io API Credentials",
+  gateMarkets: "Gate.io Contracts Universe",
+  gateTrades: "Gate.io Real Trade Ledger",
+  gateQuantInterface: "Gate.io Live Quantitative Execution Interface",
+  gateApiKey: "API Key",
+  gateApiSecret: "API Secret",
+  testConnection: "Test & Validate",
+  saveConfig: "Save Config",
+  dryRunSafety: "Dry-Run Safety Sandbox",
+  dryRunDesc: "When active, quantitative orders perform full risk validation without actual fund deduction on Gate.io",
+  placeOrder: "Submit Pre-reserved Order",
+  closeAllPositions: "Emergency Close All Positions",
+  searchContracts: "Search Gate contracts (e.g. BTC, ETH, SOL, SUI...)",
+  noGateTrades: "No Gate.io trade records found. Configure API Key to fetch real execution and fee ledger.",
 } as const;
 
 const zh: Record<keyof typeof en, string> = {
@@ -123,9 +252,21 @@ const zh: Record<keyof typeof en, string> = {
   remove: "移除",
   attach: "挂载策略",
   enable: "盯盘",
+  start: "开始",
   pause: "暂停",
   resume: "恢复",
-  stop: "停止",
+  stop: "结束",
+  running: "运行中",
+  paused: "已暂停",
+  stopped: "已结束",
+  startMonitoring: "开始盯盘",
+  pauseMonitoring: "暂停盯盘",
+  stopMonitoring: "结束盯盘",
+  startAll: "▶ 全部开始",
+  pauseAll: "⏸ 全部暂停",
+  stopAll: "⏹ 全部结束",
+  singleStrategyNotice: "单标的独占单策略 · 严控风险",
+  recommendedBadge: "⭐ 系统推荐",
   emergency: "紧急停止",
   worker: "盯盘守护进程",
   noWatch: "暂无自选合约。添加 Gate USDT 永续合约后，须明确开启策略才会盯盘。",
@@ -138,7 +279,7 @@ const zh: Record<keyof typeof en, string> = {
   news: "资讯 · 最近 48 小时",
   macro: "重大宏观日历三要素",
   noNews: "最近 48 小时内暂无快讯。",
-  noMacro: "未配置宏观数据源。前值/预期/实际不可用；MacroGuard 将拦截模拟入场。",
+  noMacro: "尚无可用日历缓存，请点击“更新公开日历”。数据缺失不等于没有宏观风险；依赖宏观证据的交易仍需通过风控核验。",
   analyze: "呼叫 AI 深度分析",
   source: "来源",
   time: "更新时间",
@@ -186,8 +327,6 @@ const zh: Record<keyof typeof en, string> = {
   previous: "前值",
   forecast: "预期",
   actual: "公布值",
-  running: "运行中",
-  stopped: "已停止",
   macroBarometer: "宏观多空政策晴雨表 (24h)",
   bullishNews: "利多政策",
   bearishNews: "利空政策",
@@ -207,6 +346,34 @@ const zh: Record<keyof typeof en, string> = {
   directive: "宏观风控指令",
   activeDirective: "宏观硬熔断生效中",
   minutes: "分钟",
+  aiAnalysis: "AI 做单分析看板",
+  aiAnalysisSub: "初始模拟本金 $1,000 USDT · AI 动态 5x~100x 智能杠杆 · 交易员风格洞察",
+  gateLiveDesk: "Gate.io 实盘与交易记录",
+  gateLiveSub: "300+ 活跃合约全量接入 · 实盘成交明细与手续费核对 · 实盘量化接口预留",
+  initialCapital: "初始模拟本金",
+  currentEquity: "当前动态总资产",
+  totalPnl: "累计已实现净盈亏",
+  winRate: "综合胜率",
+  profitFactor: "盈亏比 (PF)",
+  maxDrawdown: "最大回撤率",
+  dynamicLeverage: "AI 自主动态杠杆决策",
+  styleDna: "AI 交易员风格画像与评级",
+  strategyMatrix: "六大专业策略战绩矩阵",
+  tradeLedger: "AI 策略决策与交易明细表",
+  gateConfig: "Gate.io 实盘 API 接入配置",
+  gateMarkets: "Gate.io 全量活跃永续合约池",
+  gateTrades: "Gate.io 实盘成交记录与手续费",
+  gateQuantInterface: "Gate.io 实盘量化预留接口",
+  gateApiKey: "Gate API Key",
+  gateApiSecret: "Gate API Secret",
+  testConnection: "测试连通性",
+  saveConfig: "保存并验证",
+  dryRunSafety: "Dry-Run 安全沙盒模式",
+  dryRunDesc: "开启后所有量化买卖、止盈止损均进行全链路风控验证，不实际向 Gate.io 发单扣款",
+  placeOrder: "预留接口发单测试",
+  closeAllPositions: "一键紧急全平",
+  searchContracts: "搜索 Gate 合约（输入 BTC, ETH, SOL, SUI, PEPE...）",
+  noGateTrades: "暂无 Gate.io 实盘成交记录。在上方配置 API Key 后可自动读取实盘成交与手续费明细。",
 };
 
 export function useV2Copy() {

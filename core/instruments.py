@@ -7,8 +7,42 @@ symbol string. This keeps stock/Crypto differences at the provider boundary.
 from __future__ import annotations
 
 import re
+import math
 from dataclasses import dataclass
 from enum import StrEnum
+
+
+_IDENTITY_PART_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+
+def canonical_instrument_key(
+    venue: object,
+    market_type: object,
+    native_symbol: object,
+    settle_currency: object,
+    price_type: object,
+) -> str:
+    """Build the lossless market identity used by market-data and research.
+
+    The legacy application used ``symbol`` as its primary key.  That is not
+    sufficient for a spot/perpetual pair (or for last/mark/index prices), so
+    the v3 identity is a deliberately boring, deterministic five-part key.
+    Components are validated instead of being escaped implicitly; callers
+    must pass the provider's native symbol exactly as a data identity field.
+    """
+
+    values = (
+        str(venue or "").strip().lower(),
+        str(market_type or "").strip().lower(),
+        str(native_symbol or "").strip().upper(),
+        str(settle_currency or "").strip().upper(),
+        str(price_type or "").strip().lower(),
+    )
+    if any(not value for value in values):
+        raise ValueError("instrument identity requires venue, market_type, native_symbol, settle_currency, and price_type")
+    if any(not _IDENTITY_PART_RE.fullmatch(value) for value in values):
+        raise ValueError("instrument identity contains unsupported characters")
+    return ":".join(values)
 
 
 class AssetType(StrEnum):
@@ -35,6 +69,7 @@ class Instrument:
     step_size: float = 1.0
     contract_type: str = "spot"
     capabilities: tuple[str, ...] = ("trade", "market_data")
+    price_type: str = "last"
 
     def __post_init__(self) -> None:
         symbol = self.symbol.strip().upper()
@@ -44,6 +79,14 @@ class Instrument:
         object.__setattr__(self, "exchange", self.exchange.strip().upper())
         object.__setattr__(self, "currency", self.currency.strip().upper())
         object.__setattr__(self, "contract_type", str(self.contract_type).strip().lower())
+        price_type = str(self.price_type).strip().lower()
+        if price_type not in {"last", "mark", "index", "closed"}:
+            raise ValueError("price_type must be one of last, mark, index, closed")
+        object.__setattr__(self, "price_type", price_type)
+        for name in ("contract_size", "tick_size", "step_size"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not math.isfinite(float(value)) or float(value) <= 0:
+                raise ValueError(f"{name} must be a finite positive number")
 
     @property
     def instrument_id(self) -> str:
@@ -52,6 +95,36 @@ class Instrument:
         asset = self.asset_type.value
         sym = self.symbol
         return f"{asset}:{venue}:{sym}:{self.contract_type}:{self.currency.lower()}"
+
+    @property
+    def market_type(self) -> str:
+        """Canonical venue market type (spot vs perpetual is not inferred from symbol)."""
+
+        if self.contract_type in {"perp", "swap", "future", "futures"}:
+            return "perpetual"
+        return self.contract_type or ("equity" if self.asset_type is AssetType.EQUITY else "spot")
+
+    @property
+    def native_symbol(self) -> str:
+        return self.symbol
+
+    @property
+    def venue(self) -> str:
+        return self.exchange
+
+    @property
+    def settle_currency(self) -> str:
+        return self.currency
+
+    @property
+    def instrument_key(self) -> str:
+        return canonical_instrument_key(
+            self.exchange,
+            self.market_type,
+            self.symbol,
+            self.currency,
+            self.price_type,
+        )
 
     @property
     def base(self) -> str:
@@ -272,6 +345,12 @@ def instrument_from_payload(payload: dict[str, object]) -> Instrument:
             timezone=str(payload["timezone"]),
             trading_hours=TradingHours(str(payload["trading_hours"])),
             sector=payload.get("sector") if isinstance(payload.get("sector"), str) else None,
+            contract_size=float(payload.get("contract_size", 1.0)),
+            tick_size=float(payload.get("tick_size", 0.01)),
+            step_size=float(payload.get("step_size", 1.0)),
+            contract_type=str(payload.get("contract_type", "spot")),
+            capabilities=tuple(str(item) for item in payload.get("capabilities", ("trade", "market_data")) if str(item).strip()),
+            price_type=str(payload.get("price_type", "last")),
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("stored instrument payload is invalid") from exc

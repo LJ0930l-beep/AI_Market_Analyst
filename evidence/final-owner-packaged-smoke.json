@@ -1,0 +1,19 @@
+{
+  "tested_at": "2026-09-09T11:29:44.410702+00:00",
+  "packaged_backend": "PASS",
+  "isolated_data": true,
+  "entry_projection": "PASS",
+  "read_does_not_duplicate_fill": "PASS",
+  "no_fabricated_score": "PASS",
+  "calendar_api": "PASS",
+  "calendar_fetch_status": "SCHEDULE_ONLY",
+  "calendar_events": 17,
+  "calendar_actual_supported": false,
+  "backend_tests": {"passed": 329, "skipped": 1, "warnings": 1},
+  "frontend_tests": {"files": 21, "passed": 91},
+  "windows_bundle": "PASS",
+  "installer_sha256": "4FB16F6484A2F1B20856905E5FD9CB7136449900FBBC5E08BC9E97F7373D782E",
+  "installed_app_replaced": false,
+  "clean_windows_install": "NOT_RUN",
+  "live_trading": "NOT_RUN"
+}

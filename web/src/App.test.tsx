@@ -30,7 +30,7 @@ describe("application shell", () => {
 
     const navigation = screen.getByRole("navigation", { name: "Primary navigation" });
     expect(within(navigation).getByRole("link", { name: "Strategies" })).toHaveAttribute("aria-current", "page");
-    expect(within(navigation).getAllByRole("link")).toHaveLength(6);
+    expect(within(navigation).getAllByRole("link")).toHaveLength(8);
     expect(screen.getByRole("main")).toHaveAttribute("id", "main-content");
     expect(screen.getByRole("link", { name: "Skip to content" })).toHaveAttribute("href", "#main-content");
     expect(await screen.findByRole("heading", { name: "Strategy library" })).toBeInTheDocument();

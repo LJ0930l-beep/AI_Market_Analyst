@@ -27,6 +27,26 @@ class Bar:
     low: float
     close: float
     volume: float
+    # ``timestamp`` is the bar start in the storage/provider contract.  The
+    # optional fields keep an unclosed cumulative bar from being mistaken for
+    # a fully observed interval when protection was armed inside that bar.
+    bar_end: datetime | None = None
+    event_at: datetime | None = None
+    sequence: int | str | None = None
+    # ``None`` means that the producer did not carry an explicit close
+    # signal.  Guardian must not infer a completed interval merely because a
+    # provider supplied an interval end in the future.
+    is_closed: bool | None = None
+    # Point-in-time provenance.  These fields are optional at the provider
+    # boundary for backward compatibility, but storage/replay must preserve
+    # them whenever a provider supplies them.
+    event_time: datetime | None = None
+    first_received_at: datetime | None = None
+    available_at: datetime | None = None
+    fetched_at: datetime | None = None
+    revision_id: str | None = None
+    volume_unit: str | None = None
+    source: str | None = None
 
     def __post_init__(self) -> None:
         values = (self.open, self.high, self.low, self.close, self.volume)

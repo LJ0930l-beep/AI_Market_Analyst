@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "AI Market Analyst · V2.0.0",
+        "title": "AI 市场分析师 · 交易员工作台",
         "width": 1440,
         "height": 920,
         "minWidth": 1040,
@@ -42,7 +42,8 @@
     "windows": {
       "nsis": {
         "installMode": "currentUser",
-        "displayLanguageSelector": true,
+        "displayLanguageSelector": false,
+        "languages": ["SimpChinese"],
         "installerIcon": "icons/icon.ico",
         "installerHooks": "../scripts/installer-hooks.nsh"
       }

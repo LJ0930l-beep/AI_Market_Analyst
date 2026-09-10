@@ -235,9 +235,21 @@ def classify_macro_policy(
     # Negation and rejection keywords
     negation_words = (
         "reject", "rejected", "denied", "delay", "postpone", "refuse",
-        "disapprove", "dismiss", "撤回", "拒绝", "推迟", "驳回", "推延", "败诉", "暂缓"
+        "disapprove", "dismiss", "撤回", "拒绝", "推迟", "驳回", "推延", "败诉", "暂缓", "否认", "澄清", "辟谣"
     )
     has_negation = any(w in text for w in negation_words)
+
+    # Bullish and Bearish target predicates
+    bullish_targets = (
+        "降息", "rate cut", "easing", "dovish", "鸽派", "approval", "inflow",
+        "增持", "净流入", "突破", "surge", "gain", "soar", "放鸽", "扩容", "etf", "etf申请"
+    )
+    bearish_targets = (
+        "加息", "rate hike", "hawkish", "紧缩", "鹰派", "通胀反弹", "lawsuit", "ban",
+        "probe", "调查", "起诉", "outflow", "dump", "fall", "drop", "抛压", "承压", "违规", "罚款"
+    )
+    has_bullish_target = any(w in text for w in bullish_targets)
+    has_bearish_target = any(w in text for w in bearish_targets)
 
     if any(k in text for k in ("circuit breaker", "forbid_long", "熔断", "加息超预期", "非农远超预期", "black swan", "halt")):
         policy = "CIRCUIT_BREAKER"
@@ -246,19 +258,35 @@ def classify_macro_policy(
         direction = "bearish"
         stars = 3
     elif has_negation:
-        # e.g., "SEC 拒绝某 ETF 申请" -> bearish/forbid_long, NOT bullish!
-        policy = "BEARISH_POLICY"
-        policy_label = "利空政策"
-        directive = "FORBID_LONG"
-        direction = "bearish"
-        stars = 3 if any(w in text for w in ("fed", "美联储", "cpi", "sec", "etf")) else 2
-    elif sentiment > 0.12 or any(w in text for w in ("降息", "rate cut", "easing", "dovish", "鸽派", "approval", "inflow", "增持", "净流入", "突破", "surge", "gain", "soar", "放鸽", "扩容")):
+        # AT18: Distinguish negation of bullish targets vs negation of bearish targets
+        # e.g. "美联储拒绝降息提议" / "SEC拒绝ETF申请" -> negating bullish target -> BEARISH_POLICY
+        # e.g. "美联储否认加息" / "SEC否认遭调查" / "驳回起诉" -> negating bearish target -> NEUTRAL / relief, NOT BEARISH_POLICY!
+        if has_bullish_target and not has_bearish_target:
+            policy = "BEARISH_POLICY"
+            policy_label = "利空政策"
+            directive = "FORBID_LONG"
+            direction = "bearish"
+            stars = 3 if any(w in text for w in ("fed", "美联储", "cpi", "sec", "etf")) else 2
+        elif has_bearish_target:
+            # Denying probe / rejecting rate hike / dismissing lawsuit is a relief or neutral clarification
+            policy = "NEUTRAL"
+            policy_label = "中性观望"
+            directive = "NONE"
+            direction = "neutral"
+            stars = 2
+        else:
+            policy = "NEUTRAL"
+            policy_label = "中性观望"
+            directive = "NONE"
+            direction = "neutral"
+            stars = 2
+    elif sentiment > 0.12 or has_bullish_target:
         policy = "BULLISH_POLICY"
         policy_label = "利多政策"
         directive = "FAVOR_LONG"
         direction = "bullish"
         stars = 3 if any(w in text for w in ("fed", "美联储", "cpi", "rate cut", "降息", "etf")) else 2
-    elif sentiment < -0.12 or any(w in text for w in ("加息", "rate hike", "hawkish", "紧缩", "鹰派", "通胀反弹", "sec", "lawsuit", "ban", "probe", "调查", "起诉", "outflow", "dump", "fall", "drop", "抛压", "承压")):
+    elif sentiment < -0.12 or has_bearish_target:
         policy = "BEARISH_POLICY"
         policy_label = "利空政策"
         directive = "FORBID_LONG"
@@ -271,14 +299,34 @@ def classify_macro_policy(
         direction = "neutral"
         stars = 2
 
-    # Tiered source attribution: A-Tier Official only with official URL/Publisher
-    if "federalreserve.gov" in norm_url or "federalreserve.gov" in norm_pub:
+    # Tiered source attribution: A-Tier Official only with official URL hostname or trusted publisher
+    # R10 & AT18: Strictly check hostname using urlsplit to prevent spoofing like example.com/?source=sec.gov
+    from urllib.parse import urlsplit
+    url_host = ""
+    if norm_url:
+        try:
+            parsed = urlsplit(norm_url)
+            url_host = (parsed.hostname or "").lower()
+        except Exception:
+            url_host = ""
+
+    def _matches_official(host: str, official_domain: str) -> bool:
+        if not host:
+            return False
+        return host == official_domain or host.endswith("." + official_domain)
+
+    # Official domain matching:
+    is_official_fed = _matches_official(url_host, "federalreserve.gov") or (not norm_url and norm_pub in ("federalreserve.gov", "federal reserve"))
+    is_official_sec = _matches_official(url_host, "sec.gov") or (not norm_url and norm_pub in ("sec.gov", "u.s. securities and exchange commission"))
+    is_official_bls = _matches_official(url_host, "bls.gov") or (not norm_url and norm_pub in ("bls.gov", "bureau of labor statistics"))
+
+    if is_official_fed:
         source_display = "Federal Reserve 美联储官方"
         source_tier = "TIER_A_OFFICIAL"
-    elif "sec.gov" in norm_url or "sec.gov" in norm_pub:
+    elif is_official_sec:
         source_display = "SEC 官方披露"
         source_tier = "TIER_A_OFFICIAL"
-    elif "bls.gov" in norm_url or "bls.gov" in norm_pub:
+    elif is_official_bls:
         source_display = "BLS 劳工统计局官方"
         source_tier = "TIER_A_OFFICIAL"
     elif "bloomberg" in norm_source or "bloomberg" in norm_url or "彭博" in norm_source:
@@ -303,7 +351,6 @@ def classify_macro_policy(
         source_display = "CNBC 金融"
         source_tier = "TIER_B_MEDIA"
     elif "fed" in text or "美联储" in text or "fomc" in text:
-        # Merely mentioning Fed in text without Fed domain is a media report
         source_display = "媒体报道 (提及美联储)"
         source_tier = "TIER_B_MEDIA"
     elif "sec" in text:
