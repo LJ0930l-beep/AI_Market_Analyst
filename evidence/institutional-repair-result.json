@@ -124,8 +124,8 @@
   "version_check": {
     "pyproject_version": "2.0.0",
     "web_package_version": "2.0.0",
-    "git_head": "9c9fa36",
-    "working_tree_revalidation": "IMPLEMENTATION_COMMIT_9C9FA36_PUSHED; PROVENANCE_RECORD_UPDATED_AFTER_VALIDATION",
+    "git_head": "c719d2d",
+    "working_tree_revalidation": "SOURCE_COMMIT_C719D2D_PUSHED; ACCOUNT_SCOPE_UI_RECOVERY_REVALIDATED; PROVENANCE_RECORD_UPDATED_AFTER_VALIDATION",
     "git_tag_at_head": null,
     "v1_7_reference_checked": true,
     "version_metadata_changed": false,
@@ -134,9 +134,9 @@
   "current_main_revalidation": {
     "authority": "AUTHORITATIVE_CURRENT_MAIN_REVALIDATION",
     "performed_at": "2026-09-10",
-    "git_head": "9c9fa36",
-    "working_tree_revalidation": "IMPLEMENTATION_COMMIT_9C9FA36_PUSHED; PROVENANCE_RECORD_UPDATED_AFTER_VALIDATION",
-    "published_implementation_commit": "9c9fa36",
+    "git_head": "c719d2d",
+    "working_tree_revalidation": "SOURCE_COMMIT_C719D2D_PUSHED; ACCOUNT_SCOPE_UI_RECOVERY_REVALIDATED; PROVENANCE_RECORD_UPDATED_AFTER_VALIDATION",
+    "published_implementation_commit": "c719d2d",
     "publication_status": "PUSHED_TO_ORIGIN_MAIN_PER_EXPLICIT_USER_REQUEST",
     "branch": "main",
     "origin_sync": "main...origin/main 0 ahead, 0 behind",
@@ -164,7 +164,8 @@
       "remote_truth": "ACCOUNT_SCOPED_REMOTE_FACTS; AUDIT_SNAPSHOT_ONLY; NO_LOCAL_GATE_POSITIONS",
       "ai_stage_trace": "SYSTEM_BLOCKED_DISTINCT_FROM_MODEL_WAIT",
       "model_provenance": "REAL_RESPONSE_LATENCY_QUANTIZATION_DIGEST_AND_SCHEMA_ENFORCEMENT",
-      "ui": "REMOTE_ACCOUNT_FACTS_SCOPED_CONNECTION_TEST_AND_BOUNDED_MACRO_REGION",
+      "ui": "REMOTE_ACCOUNT_FACTS_SCOPED_CONNECTION_TEST_BOUNDED_MACRO_REGION_AND_MISSING_PROFILE_AUTO_PROVISION",
+      "credential_scope_ui": "MISSING_GATE_PROFILE_AUTO_PROVISIONS_DEFAULTS_THEN_ONLY_CALLS_ACCOUNT_SCOPED_CREDENTIALS_VERIFY; NO_GLOBAL_GATE_CONFIG_WRITE_FALLBACK",
       "ollama_compatibility": "EXPLICIT_GRAMMAR_REJECTION_ONLY_JSON_MODE_FALLBACK_WITH_LOCAL_VALIDATION"
     },
     "verification": [
@@ -172,7 +173,7 @@
       {"command": "targeted Gate/AI/evidence/Ollama tests", "status": "PASS", "result": "22 passed, 1 warning"},
       {"command": "python -m compileall -q apps core scripts tests", "status": "PASS", "result": "exit 0"},
       {"command": "python scripts/institutional_acceptance.py", "status": "PASS", "result": "4 of 4 isolated deterministic checks"},
-      {"command": "cd web && npm test -- --run", "status": "PASS", "result": "22 files, 98 tests"},
+      {"command": "cd web && npm test -- --run", "status": "PASS_AFTER_SCOPE_RECOVERY", "result": "22 files, 99 tests; missing Gate profile auto-provisions then calls only the account-scoped credentials verify endpoint"},
       {"command": "cd web && npm run typecheck", "status": "PASS", "result": "tsc --noEmit exit 0"},
       {"command": "cd web && npm run lint", "status": "PASS", "result": "eslint --max-warnings=0 exit 0"},
       {"command": "cd web && npm run build", "status": "PASS", "result": "Vite 6.4.3, 86 modules"},
@@ -190,6 +191,7 @@
       "ollama": {"status": "AVAILABLE", "version": "0.33.3", "model": "qwen3.5:9b", "digest": "6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7", "quantization": "Q4_K_M", "inference_settings": {"temperature": 0.2, "context_length": 8192, "max_tokens": 700, "think": false}},
       "real_qwen_smoke": {"status": "PASS", "action": "WAIT", "schema_enforcement": "json_mode_local_validation", "latency_ms": 11791.205, "raw_response_sha256": "bcb7de71de5239d54afef09cd73f04e0e186c8ada247d471d64cc6adea146447"},
       "current_installation_health": {"status": "PASS_READY_READ_ONLY", "url": "http://127.0.0.1:18765/health", "http_status": 200, "ready": true, "phase": 7, "api_version": "2.0.0", "real_orders": false, "private_keys": false, "hydration_status": "ready", "reason": "installed app was observed through read-only health endpoints; no trade operation was invoked"},
+      "frontend_account_scope_recovery": {"status": "PASS", "scope": "LOCAL_SOURCE_VITE", "behavior": "Missing profile triggers idempotent default-account provisioning and then only POST /v2/gate/accounts/{account_id}/credentials/verify; the rejected global fallback is not called", "tests": "22 files / 99 tests; typecheck, lint, build PASS", "credentials": "NOT_LOGGED"},
       "real_gate_testnet_cycle": {"status": "PASS", "account_id": "gate_testnet", "symbol": "ETHUSDT", "amount_contracts": "1", "entry": "FILLED", "protection": "PROTECTED", "cleanup": "FILLED_REDUCE_ONLY", "post_position_contracts": "0", "post_open_orders": "0", "local_simulated_positions": "NOT_CREATED", "live": "NOT_ACCESSED", "pre_existing_positions": "NOT_TOUCHED"}
     },
     "packaging": {
@@ -206,7 +208,7 @@
       {"id": "R04", "result": "PARTIAL_EXTERNAL", "paths": ["core/events.py", "core/news_revision.py", "core/macro_calendar.py"], "tests": ["test_source_registry_does_not_trust_path_or_source_text", "test_news_negation_changes_direction"], "dependency": "paid/private news and FF actual not configured"},
       {"id": "R05", "result": "PASS_SCOPED", "paths": ["core/analysis/strategy_replay.py", "core/trading/trader_capabilities.py"], "tests": ["test_v14_d03_closed_bar_replay_and_real_parameter_perturbation", "AT24-AT30"], "dependency": "DSR/PBO need sufficient real trials"},
       {"id": "R06", "result": "PASS_ISOLATED", "paths": ["core/trading/ledger.py", "core/analysis/ai_trade_analytics.py", "core/trading/institutional_risk.py"], "tests": ["test_partial_exit_with_remaining_quantity_is_not_closed_trade", "test_short_mae_uses_high_and_mfe_uses_low", "test_counterfactual_stress_recomputes_costs_and_unreviewed_is_not_pass"], "dependency": "real depth/fee/funding fields remain explicit"},
-      {"id": "R07", "result": "PASS_ISOLATED_UI", "paths": ["core/trading/ai_led_engine.py", "apps/api/v2.py", "web/src/components/AITraderPanel.tsx", "web/src/pages/V2WorkspacePage.tsx"], "tests": ["test_ai_system_block_is_not_persisted_as_model_wait", "98 frontend tests"], "dependency": "current installation not replaced"},
+      {"id": "R07", "result": "PASS_ISOLATED_UI", "paths": ["core/trading/ai_led_engine.py", "apps/api/v2.py", "web/src/components/AITraderPanel.tsx", "web/src/pages/V2WorkspacePage.tsx"], "tests": ["test_ai_system_block_is_not_persisted_as_model_wait", "V2WorkspacePage missing profile provisions before scoped credential verify", "99 frontend tests"], "dependency": "current installation not replaced"},
       {"id": "R08", "result": "PASS_ISOLATED", "paths": ["apps/api/v3.py", "apps/api/v2.py", "core/storage/sqlite.py"], "tests": ["test_research_cancel_uses_authoritative_scope_and_does_not_500", "full pytest"], "dependency": "unconfigured paid data remains unavailable"},
       {"id": "R09", "result": "PASS_ISOLATED_WITH_REAL_TESTNET_CYCLE", "paths": ["core/trading/execution_gateway.py", "core/trading/position_guardian.py", "core/trading/gate_testnet_e2e.py"], "tests": ["test_gate_remote_truth_required_for_new_risk_but_not_reduce_only_boundary", "test_gate_gateway_open_and_reduce_only_use_remote_position_without_local_mirror", "test_gate_testnet_e2e_uses_remote_fill_and_cleans_without_local_fill", "REAL_GATE_TESTNET_ETHUSDT_OPEN_PROTECTED_CLOSE", "RT01-RT16"], "dependency": "Live private API remains locked and was not accessed"},
       {"id": "R10", "result": "PASS_LOCAL_WITH_REAL_SMOKE", "paths": ["core/evidence.py", "core/ai/ollama.py", "core/trading/ai_session_coordinator.py", "core/trading/ai_cycle_trace.py"], "tests": ["test_model_digest_is_selected_for_requested_smart_model", "test_generate_json_falls_back_only_after_explicit_schema_grammar_rejection", "real_qwen_smoke"], "dependency": "no fixed eval or forward shadow run"},
@@ -241,8 +243,8 @@
         "core/trading/risk_engine.py": "DABA3EA45734AEF02E6AD8A83FE7C5B6F6505FB3FE65E2DD24449824A9591DAC",
         "core/trading/model_schemas.py": "D1BABD9D4E879F6A935309763A8C64C121D6D513C3CEE5FBE6C8FA7F7A1E3994",
         "core/trading/trader_capabilities.py": "567095046881A10634D6E4CD5F6045C696EF42304B8EE262090138C36223858D",
-        "docs/institutional-repair-acceptance.md": "38EC1FB491ADB18D2F1F3D7D8E52BFA9E0D3B96F414BC3C3E072463A58C46322",
-        "docs/institutional-repair-implementation.md": "A2ABC5BBB8C1F8B4F6C469B2F7537E426E144C1A079A2E0109973CF7B0B55508",
+        "docs/institutional-repair-acceptance.md": "9C55917745AE40B326B528D65C37EDDF52B91A22E5E43A045940F008B23ECBA9",
+        "docs/institutional-repair-implementation.md": "C70608EB32DFB17A4070488B0452EA7AA9221923F71DDFAA7243EAAF019DDD38",
         "evidence/manifest.json": "C7057AC60062EDB4515AE00EF7F7682635955E0BAE4C275A01725639F39FBFAD",
         "tests/test_gate_account_chain.py": "802AC5DE2EC0A3CB42F8F93879DF4A32C40E5ED577797699C4F0D2DBF4C9C468",
         "tests/test_gate_testnet_ai_chain.py": "76D72242C0D149B8B569D71497FEA0329A3E7BE27B0780D48C65C096ADE9EC10",
@@ -250,8 +252,8 @@
         "tests/test_ollama_provider_contract.py": "51131B7CE40B87F3DD482A934359AB2549B7FDC5B13F795B45EC6B2D4E124DBC",
         "web/src/components/AITraderPanel.test.tsx": "576525F2A573FC5D5C15A7CD3504B034416D08A64A2AB58B96A912BC1867194B",
         "web/src/components/AITraderPanel.tsx": "4F0A6ED9A4E61828B3BF06A6B1D655FA2D2E8DA7E2939D2F1F48C1B27A8C260B",
-        "web/src/pages/V2WorkspacePage.test.tsx": "489FF46EFC1567505DE1AD3336E5C557FF142AE8AA3ACD6B23A1483C435C894F",
-        "web/src/pages/V2WorkspacePage.tsx": "EFA5C9E68C230E768EA135DDEE6F01CA3FFFF97AB9E95D6ED91924FFBA4E14AC",
+        "web/src/pages/V2WorkspacePage.test.tsx": "24DE483572A7BDA8DA191FA18682E478C814C7B6CE1A5A50497B276B3CB902F5",
+        "web/src/pages/V2WorkspacePage.tsx": "203E332E30B9F7B856C5ED0277D7E872838F55E00FF899FDFC239942ADE2D52B",
         "web/src/v2.css": "0F9E4ED89ECDD58964680C6D21CA22DEECA18A19CC12506E7A364942CB86DA82"
       }
     },

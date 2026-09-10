@@ -1,6 +1,6 @@
 # AI Market Analyst 机构量化审计修复验收记录
 
-> **当前 main 权威复核（2026-09-10）**：本节优先于本文保留的历史验收快照。源码实现提交为 `9c9fa36`（已推送到 `origin/main`），四个版本来源均为 `2.0.0`。V1.7 仅被核对，没有改版本号。
+> **当前 main 权威复核（2026-09-10）**：本节优先于本文保留的历史验收快照。源码实现提交为 `c719d2d`（已推送到 `origin/main`），四个版本来源均为 `2.0.0`。V1.7 仅被核对，没有改版本号。
 
 ## 本轮复核摘要
 
@@ -9,7 +9,7 @@
 | 项目 | 结果 |
 |---|---|
 | 后端完整 pytest | `374 passed, 1 skipped, 1 warning` |
-| 前端 | `22 files / 98 tests`、typecheck/lint/build 全部 PASS |
+| 前端 | `22 files / 99 tests`、typecheck/lint/build 全部 PASS；缺失 Gate profile 自动登记后仍只走账户范围验证 |
 | 隔离机构验收脚本 | `4/4 PASS` |
 | Gate 公共 HTTP | TestNet 200/63 contracts；Live 200/977 contracts；只读公开接口 |
 | 本机 Qwen | `qwen3.5:9b` 可用；真实 digest `6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7`；无账户 WAIT smoke PASS |
@@ -21,6 +21,7 @@
 
 - `gate_testnet` 是唯一权威 Gate TestNet 账户；`gate_paper` 只接受为历史输入别名，不再指向本地 PAPER 撮合。`gate_live` 独立保存元数据，发布锁保持 `LOCKED`。
 - Gate 远端余额/保证金/持仓/挂单/成交由账户作用域 adapter 和 `GateAccountTruthService` 读取并记录为审计快照；不创建或更新 Gate 的本地 `simulated_positions`，不把本地初始资金当成远端权益。
+- 凭证页面不会再在账户 profile 缺失时回退调用全局 `/v2/gate/config`。它会先幂等登记 `gate_testnet` / `gate_live`，然后仅向当前选定账户的 `/credentials/verify` 发送只读鉴权候选；不存在作用域时明确失败关闭。
 - 独立 TestNet E2E 已实现“确认→真实 entry→远端回执→持仓/保护→reduce-only 清理→远端归零→撤保护”的步骤、超时、幂等与故障关闭。本轮已用用户明确提供的 TestNet 凭证完成 `ETHUSDT` 1 张真实开平；既有 BTC 仓位未触碰，Live 未访问。
 - AI 运行阶段区分 `SYSTEM_BLOCKED`、`MODEL WAIT`、风险拒绝和执行结果；真实 Ollama 9B digest/响应/延迟可被保存。Qwen smoke 不是固定评测集、影子账户或真实交易表现证明。
 - Ollama 兼容修复只对服务端明确 `failed to parse grammar` 的 Schema 拒绝使用 JSON mode + 本地严格校验；普通错误仍失败关闭，证据带 `schema_enforcement`。
@@ -35,7 +36,7 @@
 | R04 | `PARTIAL_EXTERNAL` | 精确 hostname、重定向安全、否定句方向测试 | 真实付费/私有新闻与 FF actual 仍未配置 |
 | R05 | `PASS_SCOPED` | 回放时钟、版本/hash、缺数据不做零交易假评估 | 足量真实试验才可运行 DSR/PBO |
 | R06 | `PASS_ISOLATED` | TradeLifecycle、SHORT MAE/MFE、费用守恒、反事实 | 真实深度/资金费/费用源按字段标记 |
-| R07 | `PASS_ISOLATED_UI` | 统一账本投影、AI stage trace、GET 纯读、98 前端测试 | UI 已构建，未安装到当前用户程序 |
+| R07 | `PASS_ISOLATED_UI` | 统一账本投影、AI stage trace、GET 纯读、99 前端测试、缺失 profile 不回退全局凭证接口 | UI 已构建，未安装到当前用户程序 |
 | R08 | `PASS_ISOLATED` | v3 research cancel、资格与持久化全量回归 | 未接入付费数据不阻断其他实现 |
 | R09 | `PASS_ISOLATED_WITH_REAL_TESTNET_CYCLE` | Decimal/Guardian/租约/风险预留、远端仓位投影、TestNet E2E 与真实 ETHUSDT 开平 | Live 私有 API 未访问；真实成交仅证明 TestNet 链路，不证明策略表现 |
 | R10 | `PASS_LOCAL_WITH_REAL_SMOKE` | digest 目标选择、Ollama grammar fallback、stage/model provenance | 未做固定 eval、forward shadow、效果结论 |
