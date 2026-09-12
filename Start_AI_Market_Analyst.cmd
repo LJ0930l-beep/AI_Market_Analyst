@@ -11,4 +11,7 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
+echo.
+echo Client launched successfully. This launcher window will close in 3 seconds...
+timeout /t 3 >nul
 endlocal

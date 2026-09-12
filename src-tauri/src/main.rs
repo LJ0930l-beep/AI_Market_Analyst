@@ -216,11 +216,9 @@ fn monitoring_runtime_active(app: &AppHandle) -> Option<bool> {
 
 fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
-        let _ = window.unminimize();
         let _ = window.show();
-        let _ = window.set_always_on_top(true);
+        let _ = window.unminimize();
         let _ = window.set_focus();
-        let _ = window.set_always_on_top(false);
     }
 }
 
@@ -527,6 +525,16 @@ fn backend_status(app: AppHandle) -> Result<SidecarStatus, String> {
 }
 
 fn main() {
+    std::panic::set_hook(Box::new(|info| {
+        let log_dir = std::env::var("LOCALAPPDATA")
+            .map(|d| std::path::PathBuf::from(d).join("AI Market Analyst").join("logs"))
+            .unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let _ = std::fs::create_dir_all(&log_dir);
+        let panic_file = log_dir.join("tauri_panic.log");
+        let payload = format!("Panic occurred: {}\nLocation: {:?}\n", info, info.location());
+        let _ = std::fs::write(panic_file, payload);
+    }));
+
     tauri::Builder::default()
         .manage(OwnedSidecar::new())
         .plugin(tauri_plugin_notification::init())
@@ -612,6 +620,7 @@ fn main() {
                 })
                 .build(app)?;
             set_monitoring_tray_text(&app.handle(), &monitoring_status, &monitoring_toggle);
+            show_main_window(&app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {

@@ -128,7 +128,8 @@ class GatePublicProvider:
             raise ProviderError("Gate contract is not trading", code="contract_inactive", provider="gate")
         contract_size = _number(payload.get("quanto_multiplier"), name="quanto_multiplier", positive=True)
         price_tick = _number(payload.get("order_price_round"), name="order_price_round", positive=True)
-        amount_step = _number(payload.get("order_size_min"), name="order_size_min", positive=True)
+        min_size = _number(payload.get("order_size_min"), name="order_size_min", non_negative=True)
+        amount_step = min_size if min_size > 0 else 1.0
         amount_max = _number(payload.get("order_size_max"), name="order_size_max", positive=True)
         return {
             "id": str(payload.get("name") or contract).upper(),
