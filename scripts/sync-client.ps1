@@ -186,11 +186,13 @@ if (-not $SkipBuild) {
     # 上，Git Bash 里又会被 coreutils 的 link.exe 遮蔽。
     Initialize-MsvcEnvironment
     Push-Location (Join-Path $ProjectRoot "src-tauri")
+    $overrideConfig = Join-Path $env:TEMP "aima-tauri-build-override.json"
+    '{"build":{"beforeBuildCommand":""}}' | Set-Content -LiteralPath $overrideConfig -Encoding utf8
     try {
         $tauriArgs = @(
             "tauri", "build",
             "--target", $BuildTarget,
-            "--config", '{"build":{"beforeBuildCommand":""}}'
+            "--config", $overrideConfig
         )
         if ($SkipBundle) { $tauriArgs += "--no-bundle" }
         $startedAt = Get-Date
