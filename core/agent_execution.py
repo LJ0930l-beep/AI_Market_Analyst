@@ -408,7 +408,7 @@ class AgentDecisionService:
                 return {"decision_id": identity, "status": "DUPLICATE"}
         try:
             if not authorized():
-                raise ValueError("MONITORING_AUTHORIZATION_REVOKED")
+                raise ValueError("MONITORING_CANCELLED_OR_UNSUBSCRIBED")
             if facts.get("freshness") != "fresh":
                 raise ValueError("STALE_FACTS")
             if self.model is None:
@@ -442,7 +442,7 @@ class AgentDecisionService:
                 raise ValueError("INVALID_MODEL_JSON")
             record["verdict"] = verdict
             if not authorized():
-                raise ValueError("MONITORING_AUTHORIZATION_REVOKED")
+                raise ValueError("MONITORING_CANCELLED_OR_UNSUBSCRIBED")
             decision_at = supplied_now or datetime.now(timezone.utc)
             if (
                 facts.get("as_of")

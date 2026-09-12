@@ -135,7 +135,7 @@ class Phase7BackupTests(unittest.TestCase):
             self.assertEqual(SQLiteStore(target).counts(), original_counts)
             self.assertFalse(list(root.glob("target.sqlite3.pre-restore-*")))
 
-    def test_restore_rejects_persisted_wal_mode_before_safety_backup(self):
+    def test_restore_accepts_closed_target_with_persisted_wal_mode(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             source = root / "source.sqlite3"
@@ -149,9 +149,13 @@ class Phase7BackupTests(unittest.TestCase):
                 self.assertEqual(connection.execute("PRAGMA journal_mode=WAL").fetchone()[0], "wal")
             finally:
                 connection.close()
-            with self.assertRaisesRegex(BackupError, "offline.*WAL"):
-                restore_database(backup, target)
-            self.assertFalse(list(root.glob("target.sqlite3.pre-restore-*")))
+            # WAL is a persistent journal preference, not proof that an
+            # application still owns the target.  The active WAL/SHM sidecar
+            # case is covered separately above; a clean, closed target must
+            # remain restorable.
+            result = restore_database(backup, target)
+            self.assertTrue(result["restored"])
+            self.assertTrue(list(root.glob("target.sqlite3.pre-restore-*")))
 
     def test_new_target_post_replace_failure_is_quarantined(self):
         with tempfile.TemporaryDirectory() as temp:

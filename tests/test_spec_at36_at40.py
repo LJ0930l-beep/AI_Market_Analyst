@@ -34,6 +34,7 @@ from core.trading.execution_gateway import (
     ProtectionPlan,
     TradingMode,
 )
+from core.trading.ledger import AccountSnapshot
 from core.trading.testnet_capabilities import TestnetCapabilityService
 
 
@@ -54,8 +55,8 @@ class InMemoryStore:
 # ============================================================================
 # AT36: Authorization Scope Expiry and Constraint Enforcement
 # ============================================================================
-def test_at36_authorization_expiry_and_scope_blocking():
-    """AT36: Immediate blocking when authorization expires or scope is exceeded; no silent renewal."""
+def test_at36_legacy_authorization_records_do_not_gate_scoped_execution():
+    """Legacy authorization records remain readable but do not gate orders."""
     store = InMemoryStore()
     manager = AuthorizationManager(store)
 
@@ -79,7 +80,7 @@ def test_at36_authorization_expiry_and_scope_blocking():
 
     gateway = ExecutionGateway(store)
 
-    # A: Leverage exceeding authorized limit (5x > 3x) -> REJECTED
+    # A: A legacy 3x record cannot inject a local authorization rejection.
     intent_high_lev = OrderIntent(
         intent_id="intent_high_lev",
         idempotency_key="idem_high_lev",
@@ -98,9 +99,9 @@ def test_at36_authorization_expiry_and_scope_blocking():
     )
     with pytest.raises(GatewayError) as exc_info:
         gateway.submit_intent(intent_high_lev)
-    assert exc_info.value.code == "LEVERAGE_EXCEEDS_AUTHORIZED_MAX"
+    assert exc_info.value.code == "EXECUTION_ADAPTER_UNAVAILABLE"
 
-    # B: Instrument not authorized (ETH_USDT) -> REJECTED
+    # B: Nor can it inject an instrument authorization rejection.
     intent_wrong_inst = OrderIntent(
         intent_id="intent_wrong_inst",
         idempotency_key="idem_wrong_inst",
@@ -119,14 +120,15 @@ def test_at36_authorization_expiry_and_scope_blocking():
     )
     with pytest.raises(GatewayError) as exc_info:
         gateway.submit_intent(intent_wrong_inst)
-    assert exc_info.value.code == "INSTRUMENT_NOT_AUTHORIZED"
+    assert exc_info.value.code == "EXECUTION_ADAPTER_UNAVAILABLE"
 
     # C: Wait for expiry (1.2s) -> EXPIRED
     time.sleep(1.2)
     assert not auth.is_valid()
     assert manager.get_active_authorization("acc_testnet_01") is None
 
-    # Submission after expiry must be blocked immediately
+    # Expiry remains an audit attribute only; it cannot re-enable a local
+    # authorization gate in the execution path.
     intent_expired = OrderIntent(
         intent_id="intent_exp",
         idempotency_key="idem_exp",
@@ -145,14 +147,14 @@ def test_at36_authorization_expiry_and_scope_blocking():
     )
     with pytest.raises(GatewayError) as exc_info:
         gateway.submit_intent(intent_expired)
-    assert exc_info.value.code == "AUTHORIZATION_EXPIRED"
+    assert exc_info.value.code == "EXECUTION_ADAPTER_UNAVAILABLE"
 
 
 # ============================================================================
 # AT37: Revocation Concurrency, Protective Stop Preservation & In-flight Cancel
 # ============================================================================
-def test_at37_revocation_preserves_stops_and_reconciles_in_flight():
-    """AT37: Revocation immediately cuts off new risk, preserves protective stop orders,
+def test_at37_legacy_revocation_does_not_cut_off_scoped_execution_or_protection():
+    """AT37: Legacy revocation does not cut off scoped execution or protection,
 
     and an in-flight cancel is not reported as complete without an adapter acknowledgement.
     """
@@ -177,7 +179,15 @@ def test_at37_revocation_preserves_stops_and_reconciles_in_flight():
         cancel_order=lambda *args, **kwargs: {"status": "cancelled"},
     )
     class ProtectiveLedger:
-        def get_open_positions(self, account_id):
+        """Ledger double for the scoped protection path.
+
+        ``RiskEngine.evaluate_proposal`` reads the unified account snapshot and
+        ``ExecutionGateway`` reserves/commits risk through the same ledger, so
+        the double has to expose those entry points as well as the protection
+        rows this test asserts on.  Everything else stays out of scope.
+        """
+
+        def get_open_positions(self, account_id, *args, **kwargs):
             if account_id != "acc_testnet_02":
                 return []
             return [{
@@ -190,13 +200,44 @@ def test_at37_revocation_preserves_stops_and_reconciles_in_flight():
                 "remaining_contracts": 1.0,
             }]
 
+        def get_snapshot(self, account_id, open_positions=None, mark_prices=None, now=None):
+            now = now or datetime.now(timezone.utc)
+            return AccountSnapshot(
+                account_id=account_id,
+                mode="TESTNET",
+                currency="USDT",
+                initial_deposit=Decimal("10000"),
+                wallet_balance=Decimal("10000"),
+                cash=Decimal("10000"),
+                realized_pnl=Decimal("0"),
+                unrealized_pnl=Decimal("0"),
+                cumulative_fees=Decimal("0"),
+                cumulative_funding_fees=Decimal("0"),
+                allocated_margin=Decimal("0"),
+                reserved_risk=Decimal("0"),
+                net_equity=Decimal("10000"),
+                daily_loss=Decimal("0"),
+                daily_loss_limit_reached=False,
+                as_of=now,
+                snapshot_id="snap_at37_test_double",
+            )
+
+        def reserve_risk(self, *args, **kwargs):
+            return True
+
+        def commit_risk(self, *args, **kwargs):
+            return True
+
+        def release_risk(self, *args, **kwargs):
+            return True
+
     gateway = ExecutionGateway(store, trader_client=mock_client, ledger=ProtectiveLedger())
 
     # 1. Revoke authorization
     revoked = manager.revoke_authorization(auth.authorization_id, reason="USER_KILL_SWITCH")
     assert revoked
 
-    # 2. Attempting new opening order -> BLOCKED
+    # 2. New opening does not consult the legacy revocation record.
     new_open_intent = OrderIntent(
         intent_id="intent_new_open",
         idempotency_key="idem_new_open",
@@ -212,9 +253,27 @@ def test_at37_revocation_preserves_stops_and_reconciles_in_flight():
         reduce_only=False,
         protection_plan=ProtectionPlan(stop_price=95.0),
     )
-    with pytest.raises(GatewayError) as exc_info:
-        gateway.submit_intent(new_open_intent)
-    assert exc_info.value.code in ("AUTHORIZATION_REVOKED", "AUTHORIZATION_REQUIRED")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    opened = gateway.submit_intent(
+        new_open_intent,
+        market_snapshot={
+            "price": 100.0,
+            "data_as_of": now_iso,
+            "received_at": now_iso,
+            "fresh": True,
+            "market": {
+                "contractSize": 1.0,
+                "precision": {"amount": 0.1, "price": 0.1},
+                "limits": {"amount": {"min": 0.1, "max": 100.0, "step": 0.1}},
+                "taker": 0.0005,
+            },
+        },
+    )
+    # This deliberately minimal adapter cannot prove a remote fill, so it
+    # reports UNKNOWN rather than fabricating a fill.  The important contract
+    # is that no local authorization error is produced.
+    assert opened["status"] in ("ACKNOWLEDGED", "SUBMITTED", "CREATED", "UNKNOWN")
+    assert "AUTHORIZATION" not in str(opened)
 
     # 3. Protective order (reduce_only=True) must still be allowed to close/protect position!
     protective_exit_intent = OrderIntent(
@@ -232,7 +291,6 @@ def test_at37_revocation_preserves_stops_and_reconciles_in_flight():
         reduce_only=True,
         protection_plan=ProtectionPlan(stop_price=95.0, reduce_only=True),
     )
-    now_iso = datetime.now(timezone.utc).isoformat()
     res = gateway.submit_intent(
         protective_exit_intent,
         market_snapshot={

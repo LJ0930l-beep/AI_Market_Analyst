@@ -220,11 +220,12 @@ def test_a08_paused_halts_new_proposals_while_protecting_positions(store):
     pos = sim.open("pos_1", p, plan, created_at=NOW.isoformat())
     assert pos["status"] == "OPEN"
 
-    # User pauses monitoring: authorized() returns False
+    # Monitoring cancellation is distinct from the removed trading
+    # authorization system.
     agent = AgentDecisionService(store, model=None)
     blocked_record = agent.decide(p, MARKET, {"as_of": NOW.isoformat(), "freshness": "fresh"}, now=NOW, authorized=lambda: False)
     assert blocked_record["status"] == "BLOCKED"
-    assert blocked_record["reason"] == "MONITORING_AUTHORIZATION_REVOKED"
+    assert blocked_record["reason"] == "MONITORING_CANCELLED_OR_UNSUBSCRIBED"
 
     # BUT position protection continues running on bar close
     next_bar = Bar(NOW + timedelta(minutes=15), 94, 96, 93, 94, 50)

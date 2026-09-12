@@ -412,13 +412,12 @@ class MonitoringRuntime:
                     )
                 if self._active_state(current):
                     raise RuntimeError("RUNTIME_ACCOUNT_BOUND: runtime is active on another account")
-            outside = self._runtime_duties_outside(requested_account_id)
-            if outside["has_duties"]:
-                raise RuntimeError(
-                    "RUNTIME_RECOVERY_REQUIRED: another account has durable protection or "
-                    "unresolved execution duties; recover that account before starting "
-                    f"'{requested_account_id or 'unscoped'}' ({outside})"
-                )
+            # Each registered account has its own scoped ledger, exchange
+            # credentials and guardian state.  Historical work in account A
+            # must be reported in its own dashboard, never prevent account B
+            # from starting a fresh session.  In particular, old local Gate
+            # TestNet mirror rows are no longer an application-wide launch
+            # lock; current TestNet truth comes from Gate's private API.
             # Concurrency protection with RuntimeLease (AT10)
             if not self.runtime_lease.acquire("monitoring_runtime", self.holder_id):
                 self._set_status(
@@ -438,6 +437,8 @@ class MonitoringRuntime:
                     fencing_token=self._fencing_token,
                 )
             self._account_id = requested_account_id
+            if getattr(self.service, "strategy_mode", False):
+                self.service.ai_only = bool(enable_ai)
             if requested_account_id and hasattr(self.service, "account_id"):
                 # Fixed-strategy execution is scoped to the same registered
                 # account as the optional AI coordinator.  A missing scope
@@ -846,6 +847,8 @@ class MonitoringRuntime:
             self._status["stream"] = stream_payload
 
     def _enabled_symbols(self) -> tuple[str, ...]:
+        if getattr(self.service, "ai_only", False):
+            return self.ai_coordinator._allowed_symbols()
         if getattr(self.service, "strategy_mode", False):
             return tuple(dict.fromkeys(s["symbol"] for s in self.store.list_strategy_subscriptions(True)))[:self.max_symbols]
         symbols: list[str] = []
@@ -1153,6 +1156,10 @@ class MonitoringRuntime:
                 self._publish_locked(event)
 
     def _run_cycle(self, symbols: tuple[str, ...]) -> MonitoringRunResult:
+        if getattr(self.service, "ai_only", False):
+            # Coordinator refreshes public data and calls Qwen once per cycle.
+            # The monitoring loop continues stream/Guardian maintenance only.
+            return MonitoringRunResult("AI_COORDINATOR_OWNS_DECISIONS", self.clock(), (), (), {"symbols": len(symbols)})
         return self.service.run(symbols=symbols, now=self.clock())
 
     def _worker_loop(self) -> None:

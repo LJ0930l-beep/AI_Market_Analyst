@@ -115,6 +115,13 @@ class OllamaProvider:
             if not schema or exc.code != "MODEL_SCHEMA_UNSUPPORTED":
                 raise
             fallback_payload = {**payload, "format": "json"}
+            # JSON mode alone does not transmit the rejected grammar. Carry
+            # the schema as trusted instructions so the first compatibility
+            # response can satisfy exactly the same local contract.
+            fallback_payload["messages"] = [*payload.get("messages", []), {
+                "role": "system",
+                "content": "只输出符合以下 JSON Schema 的 JSON。解释字段保持简体中文。省略不需要的可选字段，不添加额外字段。\n" + json.dumps(schema, ensure_ascii=False, separators=(",", ":")),
+            }]
             envelope = self._request("POST", "/api/chat", fallback_payload)
             return envelope, "json_mode_local_validation"
 

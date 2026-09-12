@@ -647,7 +647,7 @@ def test_rt14_concurrent_risk_reservation_and_unknown_orders_hold_budget(temp_st
 # ============================================================================
 # RT15: Revoked/expired authorization blocks new openings while preserving protective reductions
 # ============================================================================
-def test_rt15_revocation_and_mismatch_blocks_openings_allows_protective_reductions(temp_store):
+def test_rt15_legacy_revocation_does_not_block_scoped_openings_or_protective_reductions(temp_store):
     mgr = AuthorizationManager(temp_store)
     ledger = AccountLedger(temp_store)
     ledger.create_account("acc_rt15", mode="TESTNET", initial_deposit=Decimal("10000.0"))
@@ -688,7 +688,8 @@ def test_rt15_revocation_and_mismatch_blocks_openings_allows_protective_reductio
     )
     gateway = ExecutionGateway(temp_store, trader_client=mock_client)
 
-    # New opening order -> BLOCKED
+    # A legacy revocation is an audit record only; it cannot block a scoped
+    # gateway order after the local authorization lock was removed.
     open_intent = OrderIntent(
         intent_id="intent_rt15_open",
         idempotency_key="idem_rt15_open",
@@ -704,9 +705,9 @@ def test_rt15_revocation_and_mismatch_blocks_openings_allows_protective_reductio
         reduce_only=False,
         protection_plan=ProtectionPlan(stop_price=49000.0),
     )
-    with pytest.raises(GatewayError) as exc_info:
-        gateway.submit_intent(open_intent)
-    assert exc_info.value.code in ("AUTHORIZATION_REVOKED", "AUTHORIZATION_REQUIRED")
+    opened = gateway.submit_intent(open_intent)
+    assert opened["status"] in ("ACKNOWLEDGED", "SUBMITTED", "CREATED", "UNKNOWN")
+    assert "AUTHORIZATION" not in str(opened)
 
     # Protective exit order (reduce_only=True) -> PERMITTED
     reduce_intent = OrderIntent(

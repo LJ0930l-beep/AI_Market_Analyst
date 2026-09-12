@@ -1,7 +1,7 @@
-"""Acceptance Test Suite AT01 to AT07 for Milestone M0 (Specification v1.1).
+"""Acceptance Test Suite AT01 to AT07 for the current execution boundary.
 
 Covers:
-- AT01: Live trading blocked without authorization across all endpoints (403, zero network orders).
+- AT01: account-scoped execution does not require a duplicate local authorization.
 - AT02: Open receipt with filled=0 is ACKNOWLEDGED, NEVER LIVE_EXECUTED, zero fake positions/PnL.
 - AT03: Partial fills and duplicate receipts: single fee accumulation, protection size matches filled exposure.
 - AT04: Order submission timeout: marks UNKNOWN, initiates active reconciliation, forbids blind resends.
@@ -25,16 +25,11 @@ from core.security.credentials import CredentialVault, mask_api_key
 from core.security.local_guard import validate_local_request, is_safe_outbound_url
 from core.trading.execution_gateway import (
     ExecutionGateway,
-    CapabilityService,
     OrderIntent,
     ProtectionPlan,
     TradingMode,
     OrderStatus,
     ProtectionStatus,
-    CapabilityStatus,
-    LivePermissionState,
-    LiveDisabledByReleasePolicyError,
-    LiveAuthorizationRequiredError,
     IdempotencyConflictError,
     ParameterValidationError,
 )
@@ -96,9 +91,9 @@ def _fresh_paper_market(symbol: str, price: float) -> dict[str, Any]:
 
 
 # =========================================================================
-# AT01: 未达门槛或未授权调用实盘接口 -> 服务端 403 阻断，绝无网络下单
+# AT01: 已登记账户不再需要本地 TradingAuthorization
 # =========================================================================
-def test_at01_live_blocked_without_authorization(temp_store, api_client):
+def test_at01_live_execution_does_not_require_local_authorization(temp_store, api_client):
     gateway = ExecutionGateway(temp_store)
 
     intent = OrderIntent(
@@ -106,6 +101,8 @@ def test_at01_live_blocked_without_authorization(temp_store, api_client):
         idempotency_key="idem_key_live_1",
         account_id="gateio_main",
         mode=TradingMode.LIVE,
+        venue="gate",
+        environment="LIVE",
         instrument_id="BTCUSDT",
         side="LONG",
         order_type="market",
@@ -115,14 +112,22 @@ def test_at01_live_blocked_without_authorization(temp_store, api_client):
 
     mock_trader = MagicMock()
 
-    # 1. Direct gateway submission raises LiveDisabledByReleasePolicyError (403)
-    with pytest.raises(LiveDisabledByReleasePolicyError) as exc_info:
-        gateway.submit_intent(intent, trader_client=mock_trader)
-    assert exc_info.value.status_code == 403
-    assert "LIVE_DISABLED_BY_RELEASE_POLICY" in exc_info.value.code
-    assert mock_trader.place_order.call_count == 0  # Absolute guarantee: no network call
+    # The order reaches the normal exchange adapter boundary.  The mocked
+    # receipt is deliberately a no-fill acknowledgement; the assertion is
+    # that no local authorization/release-policy response intervenes.
+    mock_trader.place_order.return_value = {"status": "ACKNOWLEDGED", "order_id": "ord-live-1", "filled_quantity": 0}
+    result = gateway.submit_intent(
+        intent,
+        trader_client=mock_trader,
+        market_snapshot={
+            **_fresh_paper_market("BTCUSDT", 68000.0),
+            "market": {"contractSize": 1.0, "precision": {"amount": 0.001, "price": 0.01}, "limits": {"amount": {"min": 0.001, "max": 1_000_000.0, "step": 0.001}}, "taker": 0.0005},
+        },
+    )
+    assert result["status"] in {"ACKNOWLEDGED", "UNKNOWN"}
+    assert result.get("error_code") not in {"AUTHORIZATION_REQUIRED", "LIVE_DISABLED_BY_RELEASE_POLICY", "LIVE_AUTHORIZATION_REQUIRED"}
 
-    # 2. API endpoint submission returns 403
+    # A missing account remains a validation error, not a hidden LIVE lock.
     res = api_client.post(
         "/v2/gate/orders",
         json={
@@ -135,8 +140,8 @@ def test_at01_live_blocked_without_authorization(temp_store, api_client):
         },
         headers={"Host": "localhost:8000"},
     )
-    assert res.status_code == 403
-    assert "LIVE_DISABLED_BY_RELEASE_POLICY" in res.json()["detail"]
+    assert res.status_code == 422
+    assert "ACCOUNT_REQUIRED" in res.json()["detail"]
 
 
 # =========================================================================

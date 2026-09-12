@@ -31,7 +31,7 @@ from core.alerts import (
     alert_policy,
 )
 from core.analysis_service import AnalysisError, AnalysisService
-from core.config import API_PHASE, APP_VERSION, ConfigurationError, database_path_from_env, env_bool, redact_path, runtime_capabilities
+from core.config import API_PHASE, APP_VERSION, ConfigurationError, app_data_paths, database_path_from_env, env_bool, redact_path, runtime_capabilities
 from core.consult import (
     CONSULT_CONTRACT_VERSION,
     CONSULT_STREAM_MEDIA_TYPE,
@@ -88,6 +88,7 @@ from core.providers import (
 from core.realtime import BinanceRealtimeStream
 from core.signals import Action
 from core.storage import APP_SETTING_DEFINITIONS, SQLiteStore, validate_app_setting_value
+from core.storage.retention import RETENTION_STATE_FILENAME, start_background_retention
 
 _UNSET = object()
 API_VERSION = APP_VERSION
@@ -97,6 +98,9 @@ DEFAULT_CORS_ORIGINS = (
     "http://127.0.0.1:3000",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "https://tauri.localhost",
+    "http://tauri.localhost",
+    "tauri://localhost",
 )
 VALID_TIMEFRAMES = frozenset({"5m", "15m", "1h", "4h", "1d"})
 VALID_SOURCE_TYPES = frozenset({"live", "replay"})
@@ -152,13 +156,24 @@ except ImportError:  # pragma: no cover - exercised only without the optional AP
     StreamingResponse = None  # type: ignore[assignment,misc]
 
 
+_INITIALIZED_STORE_PATHS: set[str] = set()
+_STORE_INIT_LOCK = threading.Lock()
+
+
 def _store() -> SQLiteStore:
     try:
         database_path = database_path_from_env()
     except ConfigurationError as exc:
         raise RuntimeError("invalid local database configuration") from exc
     store = SQLiteStore(database_path)
-    store.initialize()
+    path_key = str(database_path)
+    if path_key == ":memory:":
+        store.initialize()
+    elif path_key not in _INITIALIZED_STORE_PATHS:
+        with _STORE_INIT_LOCK:
+            if path_key not in _INITIALIZED_STORE_PATHS:
+                store.initialize()
+                _INITIALIZED_STORE_PATHS.add(path_key)
     return store
 
 
@@ -2576,6 +2591,22 @@ def create_app(
                 print(f"[startup_monitoring] auto-resume deferred: {exc}")
 
     app.router.on_startup.append(startup_monitoring)
+
+    def startup_retention() -> None:
+        # The bar store keeps one revision per *fetch* rather than one per
+        # content change, so the database grows without bound unless something
+        # prunes it (see core/storage/retention.py for the measurements).
+        # Housekeeping runs off the request path and must never be able to take
+        # the sidecar down.
+        try:
+            start_background_retention(
+                database_path_from_env(),
+                app_data_paths().runtime / RETENTION_STATE_FILENAME,
+            )
+        except Exception:
+            pass
+
+    app.router.on_startup.append(startup_retention)
     app.router.on_shutdown.append(shutdown_scheduler)
     return app
 

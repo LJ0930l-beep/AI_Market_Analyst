@@ -67,7 +67,7 @@ def infer_block_stage(reason: Any, explicit: Any = None) -> str:
         return "MARKET_DATA"
     if any(token in code for token in ("NEWS", "EVENT")):
         return "NEWS_EVENTS"
-    if any(token in code for token in ("KLINE", "INDICATOR", "TIMEFRAME")):
+    if any(token in code for token in ("KLINE", "INDICATOR", "TIMEFRAME", "TECHNICAL")):
         return "KLINE_CONTEXT"
     if any(token in code for token in ("CALIBRATION", "CANDIDATE", "STRATEGY")):
         return "STRATEGY_SCAN"
@@ -87,6 +87,13 @@ def humanize_reason(reason: Any, *, stage: str | None = None) -> str:
 
     code = str(reason or "UNKNOWN").split(":", 1)[0].strip().upper()
     messages = {
+        "AI_STRATEGY_PLAN_REQUIRED": "AI 未给出完整自拟策略，本轮不新增仓位。",
+        "TECHNICAL_EVIDENCE_UNAVAILABLE": "已收盘 K 线不足或过期，等待有效技术面证据。",
+        "NEWS_EVIDENCE_UNAVAILABLE": "缺少当前标的有效新闻引用，本轮不新增仓位。",
+        "AI_ENTRY_CONDITION_NOT_MET": "当前价格不在 AI 入场区间内，等待下一轮重新评估。",
+        "AI_NET_REWARD_RISK_TOO_LOW": "计入手续费和滑点后，盈亏比不足 2，本轮不新增仓位。",
+        "AI_CONFIDENCE_BELOW_POLICY": "AI 置信分数未达到固定门槛，本轮不新增仓位。",
+        "AI_ORDER_EXCEEDS_OBSERVED_DEPTH": "下单量超过已观测盘口深度，本轮不新增仓位。",
         "ACCOUNT_REQUIRED": "未选择可执行账户，本轮未读取账户事实，也未调用模型。",
         "AI_SESSION_NOT_ENABLED": "AI 会话未显式启动，本轮未调用模型。",
         "AUTHORIZATION_REQUIRED": "没有当前账户有效的 AI_LED 本地授权，本轮未调用模型。",

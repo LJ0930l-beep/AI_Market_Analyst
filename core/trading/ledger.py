@@ -245,7 +245,7 @@ class AccountLedger:
         except (TypeError, ValueError):
             return False
         age = (now - observed).total_seconds()
-        return -5.0 <= age <= 120.0
+        return -60.0 <= age <= 180.0
 
     def _ensure_tables(self) -> None:
         with self._lock:

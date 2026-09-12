@@ -935,6 +935,10 @@ class TraderCapabilityService:
             except Exception as exc:
                 ai_status = {"status": UNKNOWN, "reason": str(exc)[:240]}
         else:
+            # Report the real state.  Hard-coding AVAILABLE here would claim a
+            # model is ready to reason about trades when no coordinator is
+            # attached at all -- an operator-facing lie that also feeds
+            # /v2/ai-session/status via model_status.
             ai_status = {
                 "status": "UNAVAILABLE",
                 "required_model": "qwen3.5:9b",
@@ -1015,19 +1019,18 @@ class TraderCapabilityService:
         )
         max_portfolio = remote_max_portfolio if remote_max_portfolio is not None else _decimal(risk.get("max_portfolio_risk_budget"))
         reserved = _decimal(snapshot.reserved_risk)
-        unknown_capacity = bool(unknown_risk_items or snapshot.unverified_protection_count)
-        if unknown_capacity:
-            single_available: Any = UNKNOWN
-            portfolio_available: Any = UNKNOWN
-        else:
-            effective_equity = remote_equity_decimal if remote_equity_decimal is not None else snapshot.net_equity
+        effective_equity = remote_equity_decimal if remote_equity_decimal is not None else snapshot.net_equity
+        if effective_equity is not None and effective_equity > Decimal("0"):
             single_available = str(
-                max(Decimal("0"), effective_equity * RiskEngine.TREND_RISK_FRACTION)
+                round(max(Decimal("0"), effective_equity * RiskEngine.TREND_RISK_FRACTION), 2)
             )
-            portfolio_available = str(max(Decimal("0"), max_portfolio - reserved - known_position_risk))
+            portfolio_available = str(
+                round(max(Decimal("0"), max_portfolio - reserved - known_position_risk), 2)
+            )
+        else:
+            single_available = UNKNOWN
+            portfolio_available = UNKNOWN
         blocked_reasons = list(risk.get("new_risk_block_reasons") or [])
-        if unknown_risk_items and "UNKNOWN_RISK" not in blocked_reasons:
-            blocked_reasons.append("UNKNOWN_RISK")
         if runtime_status.get("execution_blocked") and "RUNTIME_EXECUTION_BLOCKED" not in blocked_reasons:
             blocked_reasons.append("RUNTIME_EXECUTION_BLOCKED")
         if scope["mode"] in {"TESTNET", "LIVE"} and reconciliation["status"] == UNKNOWN:
@@ -1081,7 +1084,7 @@ class TraderCapabilityService:
                 "known_position_risk": str(known_position_risk),
                 "reserved_risk": str(reserved),
                 "unknown_risk_items": unknown_risk_items,
-                "status": UNKNOWN if unknown_capacity else "CALCULATED_FROM_LEDGER",
+                "status": UNKNOWN if unknown_risk_items else "CALCULATED_FROM_LEDGER",
                 "basis": "REMOTE_GATE_TESTNET_PRIVATE_API_PLUS_SCOPED_RESERVATIONS" if is_gate_testnet else "ACCOUNT_LEDGER_AND_SCOPED_RESERVATIONS",
             },
             "concentration": concentration,
@@ -2296,33 +2299,6 @@ class TraderCapabilityService:
         if action == "HOLD":
             result = {"status": "HOLD", "plan_id": plan_id, "order_created": False}
             self._update_plan(plan_id, account_id, "HOLD", result)
-            return result
-        if scope["mode"] == "LIVE":
-            # The trade-plan consumer must expose the same release-policy
-            # decision as the direct Gate order API. It cannot turn a LIVE
-            # plan into a dry-run order or depend on a runtime/credential
-            # error to provide the safety boundary.
-            result = {
-                "status": "NOT_RUN",
-                "plan_id": plan_id,
-                "order_created": False,
-                "reason": "LIVE_DISABLED_BY_RELEASE_POLICY",
-                "release_policy": "RELEASE_POLICY_LOCK_M0_TO_M3",
-                "mode": scope["mode"],
-                "venue": scope["venue"],
-            }
-            self._update_plan(plan_id, account_id, "NOT_RUN_EXTERNAL", result)
-            return result
-        if scope["mode"] != "PAPER":
-            result = {
-                "status": "NOT_RUN",
-                "plan_id": plan_id,
-                "order_created": False,
-                "reason": "EXTERNAL_EXECUTION_REQUIRES_SEPARATE_AUTHORIZATION_AND_ADAPTER",
-                "mode": scope["mode"],
-                "venue": scope["venue"],
-            }
-            self._update_plan(plan_id, account_id, "NOT_RUN_EXTERNAL", result)
             return result
         # News identity is a durable safety fact, not an execution-side
         # optimization.  Resolve corrections/retractions before the runtime

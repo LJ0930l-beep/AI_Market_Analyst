@@ -93,6 +93,7 @@ class AICycleContext:
     model_quantization: Optional[str] = None
     model_inference_settings: Dict[str, Any] = field(default_factory=dict)
     model_latency_ms: Optional[float] = None
+    model_call_attempted: bool = False
     model_raw_response: Optional[str] = None
     model_call_prompt_version: Optional[str] = None
     evidence_bundle_id: Optional[str] = None
@@ -116,6 +117,8 @@ class AICycleContext:
     # for economics.  A local ledger projection is never substituted here.
     account_truth: Dict[str, Any] = field(default_factory=dict)
     stage_block: Optional[str] = None
+    decision_contract: Optional[str] = None
+    technical_context: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -269,10 +272,10 @@ class AILedDecisionEngine:
         extra = getattr(output, "extra_fields", {}) or {}
         if origin == "MODEL" and extra.get("is_model_decision") is False:
             origin = "SYSTEM"
-        model_called = bool(extra.get("model_called", origin == "MODEL")) if origin == "MODEL" else False
+        model_called = context.model_call_attempted or (bool(extra.get("model_called", origin == "MODEL")) if origin == "MODEL" else False)
         model_result = str(
             extra.get("model_result")
-            or (output.action if origin == "MODEL" else "NOT_RUN")
+            or (output.action if origin == "MODEL" else "INVALID_OR_DISCARDED" if model_called else "NOT_RUN")
         )
         block_stage = infer_block_stage(result.reason, extra.get("block_stage") or getattr(context, "stage_block", None)) if origin != "MODEL" else None
         human_message = str(extra.get("human_message") or humanize_reason(result.reason, stage=block_stage))
@@ -295,6 +298,9 @@ class AILedDecisionEngine:
             "instrument_id": output.instrument_id,
             "reason": output.reason,
             "decision_id": output.decision_id,
+            "model_output": asdict(output),
+            "analysis": dict(output.extra_fields),
+            "strategy_plan": output.extra_fields.get("strategy_plan"),
             "account_id": context.account_id,
             "venue": context.venue,
             "mode": context.mode.value if isinstance(context.mode, TradingMode) else str(context.mode),
@@ -341,6 +347,9 @@ class AILedDecisionEngine:
             "market_data_environment": context.market_data_environment,
             "data_quality": context.data_quality,
             "strategy_readiness": context.strategy_readiness,
+            "decision_contract": context.decision_contract,
+            "technical_context": context.technical_context,
+            "news_revisions": context.news_revisions,
             "indicator_snapshot_id": context.indicator_snapshot_id,
             "decision_memory": context.decision_memory[:20],
             "evidence_refs": list(output.evidence_refs),
@@ -589,6 +598,11 @@ class AILedDecisionEngine:
         )
 
         if output.action in ("OPEN_LONG", "OPEN_SHORT"):
+            from .autonomous_strategy import CONTRACT, validate_entry
+            if context.decision_contract == CONTRACT:
+                rejection = validate_entry(context, output, now)
+                if rejection:
+                    return finish(output, "BLOCKED", rejection)
             if existing_positions:
                 target_side = "LONG" if output.action == "OPEN_LONG" else "SHORT"
                 existing_side = str(existing_positions[0].get("side", "")).upper()
@@ -626,7 +640,7 @@ class AILedDecisionEngine:
                     item for item in context.candidates
                     if str(item.get("symbol") or "").upper() == output.instrument_id.upper()
                     and str(item.get("status") or "").upper() == "PROPOSAL"
-                    and (not output.candidate_id or str(item.get("candidate_id")) == str(output.candidate_id))
+                    and output.candidate_id and str(item.get("candidate_id")) == str(output.candidate_id)
                 ),
                 None,
             )
@@ -658,8 +672,8 @@ class AILedDecisionEngine:
                     bid=market_snap.get("bid"),
                     ask=market_snap.get("ask"),
                     limit_price=output.limit_price or output.entry_price or candidate_proposal.get("entry"),
-                    entry_zone_low=market_snap.get("entry_zone_low") or (entry_reference * 0.995),
-                    entry_zone_high=market_snap.get("entry_zone_high") or (entry_reference * 1.005),
+                    entry_zone_low=(output.extra_fields.get("entry_zone") or {}).get("low") or market_snap.get("entry_zone_low") or (entry_reference * 0.995),
+                    entry_zone_high=(output.extra_fields.get("entry_zone") or {}).get("high") or market_snap.get("entry_zone_high") or (entry_reference * 1.005),
                     signal_at=signal_at,
                     now=now,
                     slippage_bps=slippage_bps,
@@ -737,6 +751,11 @@ class AILedDecisionEngine:
                 return finish(output, "REJECTED", f"RISK_SIZING_UNAVAILABLE: {exc}")
             if qty <= 0:
                 return finish(output, "REJECTED", f"ORDER_QTY_BELOW_MINIMUM: Computed quantity {raw_qty:.12g} below market step {step_size}")
+            if context.decision_contract == CONTRACT and mode_val is not TradingMode.PAPER:
+                from .autonomous_strategy import number
+                depth = number((market_snap.get("depth_contracts") or {}).get("asks" if side == "LONG" else "bids"))
+                if depth is None or qty > depth:
+                    return finish(output, "BLOCKED", "AI_ORDER_EXCEEDS_OBSERVED_DEPTH")
 
             protection = ProtectionPlan(
                 stop_price=float(stop_price),
@@ -756,7 +775,7 @@ class AILedDecisionEngine:
                 quantity=qty,
                 # Informational only; gateway uses market_snap's executable quote.
                 price=selection.limit_price if selection.order_type == "limit" else current_price,
-                leverage=output.requested_leverage,
+                leverage=(output.requested_leverage or 1) if context.decision_contract == CONTRACT else output.requested_leverage,
                 protection_plan=protection,
                 reduce_only=False,
                 control_mode=ControlMode.AUTONOMOUS,

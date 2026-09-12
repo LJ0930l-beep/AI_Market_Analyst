@@ -1,6 +1,42 @@
 """JSON schemas sent to Qwen/Ollama and used by local validators."""
 
 from __future__ import annotations
+import math
+
+
+def validate_schema(value, schema, path="output"):
+    """Validate the bounded JSON-schema subset used by these local contracts.
+
+    Ollama may fall back to JSON mode after a grammar rejection, so native
+    schema enforcement is never assumed to replace local validation.
+    """
+    kinds = schema.get("type", [])
+    kinds = [kinds] if isinstance(kinds, str) else kinds
+    actual = ("null" if value is None else "boolean" if isinstance(value, bool) else
+              "integer" if isinstance(value, int) else "number" if isinstance(value, float) else
+              "string" if isinstance(value, str) else "array" if isinstance(value, list) else
+              "object" if isinstance(value, dict) else "invalid")
+    if actual not in kinds and not (actual == "integer" and "number" in kinds):
+        raise ValueError(f"INVALID_ACTION_SCHEMA:{path}:type")
+    if "enum" in schema and value not in schema["enum"]:
+        raise ValueError(f"INVALID_ACTION_SCHEMA:{path}:enum")
+    if actual in {"integer", "number"}:
+        if not math.isfinite(value) or value < schema.get("minimum", -math.inf) or value > schema.get("maximum", math.inf):
+            raise ValueError(f"INVALID_ACTION_SCHEMA:{path}:range")
+    if actual in {"string", "array"}:
+        prefix = "Length" if actual == "string" else "Items"
+        if not schema.get("min" + prefix, 0) <= len(value) <= schema.get("max" + prefix, math.inf):
+            raise ValueError(f"INVALID_ACTION_SCHEMA:{path}:length")
+    if actual == "object":
+        props = schema.get("properties", {})
+        if set(schema.get("required", [])) - set(value) or (schema.get("additionalProperties") is False and set(value) - set(props)):
+            raise ValueError(f"INVALID_ACTION_SCHEMA:{path}:fields")
+        for key, item in value.items():
+            if key in props:
+                validate_schema(item, props[key], path + "." + key)
+    if actual == "array":
+        for item in value:
+            validate_schema(item, schema["items"], path + "[]")
 
 
 CALIBRATION_PROFILE_SCHEMA: dict[str, object] = {
@@ -106,5 +142,16 @@ SIGNAL_SCHEMA: dict[str, object] = {
     },
 }
 
+
+AI_ACTION_SCHEMA["properties"]["strategy_plan"] = {
+    "type": "object", "additionalProperties": False,
+    "required": ["name", "thesis", "entry_conditions", "exit_conditions"],
+    "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 100},
+        "thesis": {"type": "string", "minLength": 1, "maxLength": 800},
+        "entry_conditions": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"type": "string", "minLength": 1, "maxLength": 300}},
+        "exit_conditions": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"type": "string", "minLength": 1, "maxLength": 300}},
+    },
+}
 
 __all__ = ["AI_ACTION_SCHEMA", "CALIBRATION_PROFILE_SCHEMA", "SIGNAL_SCHEMA"]

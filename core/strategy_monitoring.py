@@ -30,7 +30,32 @@ class StrategyMonitoringService(MonitoringService):
             gateway=self.execution_gateway,
         )
 
-    def run(self, *, symbols=None, now=None):
+    def refresh_ai_inputs(self, symbols):
+        """Public evidence refresh owned by the AI cycle; no legacy decisions."""
+        from .news_refresh import refresh_public_news
+        result = self.run(symbols=symbols, analysis_only=True)
+        refresh_public_news(self.store, symbols=symbols)
+        # News/bootstrap may take time. Refresh executable quote and observed
+        # depth last instead of aging the initial ticker during those reads.
+        from .trading.autonomous_strategy import book_cost_evidence
+        for symbol in symbols:
+            try:
+                quote = self.gate.get_quote(self.store.resolve_instrument(symbol))
+                book = self.gate.order_book(symbol, limit=20)
+                snapshot = dict(self.store.get_realtime_state(symbol) or {})
+                snapshot.update(book_cost_evidence(book, quote.price))
+                snapshot.update(price=quote.price, data_as_of=quote.timestamp.isoformat(), freshness_status="fresh")
+                self.store.save_realtime_state(snapshot, now=datetime.now(timezone.utc))
+            except Exception:
+                # No cost defaults for a remote account. Missing depth is a
+                # visible entry blocker, while Guardian remains independent.
+                snapshot = dict(self.store.get_realtime_state(symbol) or {})
+                snapshot.update(slippage=None, liquidity_ok=False, cost_evidence_status="UNAVAILABLE")
+                if snapshot.get("symbol"):
+                    self.store.save_realtime_state(snapshot, now=datetime.now(timezone.utc))
+        return result
+
+    def run(self, *, symbols=None, now=None, analysis_only=False):
         now = now or datetime.now(timezone.utc)
         subscriptions = self.store.list_strategy_subscriptions(True)
         symbols = set(symbols or [s["symbol"] for s in subscriptions])
@@ -43,7 +68,7 @@ class StrategyMonitoringService(MonitoringService):
                 break
             try:
                 active = [s for s in subscriptions if s["symbol"] == symbol]
-                if not active:
+                if not active and not analysis_only:
                     continue
                 instrument = self.store.resolve_instrument(symbol)
                 market = self.gate.market(symbol)
@@ -118,11 +143,19 @@ class StrategyMonitoringService(MonitoringService):
                     return bars_by_timeframe[timeframe]
 
                 required_timeframes = {STRATEGIES[s["strategy_id"]].signal_timeframe for s in active}
+                if analysis_only:
+                    required_timeframes.update(("15m", "1h"))
                 if any("1h" in STRATEGIES[s["strategy_id"]].context_timeframes for s in active):
                     required_timeframes.add("1h")
                 if any("5m" in STRATEGIES[s["strategy_id"]].context_timeframes for s in active):
                     required_timeframes.add("5m")
                 for timeframe in sorted(required_timeframes):
+                    if analysis_only and timeframe in {"15m", "1h"}:
+                        # Bootstrap history is cached for calibration, but the
+                        # latest closed bars must be refreshed each AI cycle.
+                        bars_by_timeframe.pop(timeframe, None)
+                        load_bars(timeframe, 160)
+                        continue
                     if isinstance(native_bootstrap, dict) and timeframe in bars_by_timeframe:
                         continue
                     load_bars(timeframe, 240 if timeframe in {"5m", "15m"} else 120)
@@ -235,7 +268,7 @@ class StrategyMonitoringService(MonitoringService):
                         "timeframe": signal_timeframe,
                         "bars": len(signal_bars),
                     }
-                    if proposal:
+                    if proposal and not analysis_only and not getattr(self, "ai_only", False):
                         facts = {
                             "freshness": "fresh" if fresh else "stale",
                             "source": self.gate.provider_name,
@@ -252,7 +285,7 @@ class StrategyMonitoringService(MonitoringService):
                         }
 
                         def authorized():
-                            return not (
+                            return not getattr(self, "ai_only", False) and not (
                                 getattr(self, "cancel_event", None) is not None
                                 and self.cancel_event.is_set()
                             ) and any(

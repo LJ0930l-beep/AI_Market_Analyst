@@ -662,7 +662,7 @@ def test_v13_d_cockpit_and_api_queries_are_account_scoped(v13_store: SQLiteStore
     assert any(item["type"] == "RESERVATION_SCOPE" for item in scoped_after_legacy["capacity"]["unknown_risk_items"])
 
 
-def test_v13_d_legacy_position_is_unknown_and_blocks_runtime_recovery(v13_store: SQLiteStore) -> None:
+def test_v13_d_legacy_position_remains_visible_without_cross_account_runtime_lock(v13_store: SQLiteStore) -> None:
     ledger = AccountLedger(v13_store)
     _account(ledger, "legacy_a")
     payload = {
@@ -703,8 +703,8 @@ def test_v13_d_legacy_position_is_unknown_and_blocks_runtime_recovery(v13_store:
         stream_factory=lambda symbols: _QuietStream(symbols),
     )
     try:
-        with pytest.raises(RuntimeError, match="RUNTIME_RECOVERY_REQUIRED"):
-            runtime.start(account_id="legacy_a")
+        status = runtime.start(account_id="legacy_a")
+        assert status["state"] in {"starting", "running"}
     finally:
         runtime.stop()
 

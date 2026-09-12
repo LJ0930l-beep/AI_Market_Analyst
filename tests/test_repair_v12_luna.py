@@ -158,7 +158,7 @@ def test_gateway_requires_fresh_quote_and_unified_budget(repair_store):
     assert ledger.get_open_positions("audit_acc")[0]["entry"] == receipt["average_price"]
 
 
-def test_authorization_revoke_fence_releases_pre_execution_budget(repair_store, monkeypatch):
+def test_legacy_authorization_revocation_does_not_fence_scoped_execution(repair_store, monkeypatch):
     ledger = AccountLedger(repair_store)
     ledger.create_account("fenced_account", mode="PAPER", initial_deposit=Decimal("10000.00"))
     auth = AuthorizationManager(repair_store).grant_authorization(
@@ -192,12 +192,11 @@ def test_authorization_revoke_fence_releases_pre_execution_budget(repair_store, 
     )
     intent.authorization_id = auth.authorization_id
     intent.authorization_version = auth.version
-    with pytest.raises(GatewayError) as rejected:
-        gateway.submit_intent(intent, market_snapshot=fresh_market("BTCUSDT", 100.0))
-    assert rejected.value.code == "AUTHORIZATION_REVOKED"
-    assert ledger.get_open_positions("fenced_account") == []
+    receipt = gateway.submit_intent(intent, market_snapshot=fresh_market("BTCUSDT", 100.0))
+    assert receipt["status"] == "FILLED"
+    assert len(ledger.get_open_positions("fenced_account")) == 1
     with repair_store._connect() as db:
-        assert db.execute("SELECT status FROM risk_reservations WHERE reservation_id=?", ("res_fenced-open",)).fetchone()[0] == "RELEASED"
+        assert db.execute("SELECT status FROM risk_reservations WHERE reservation_id=?", ("res_fenced-open",)).fetchone()[0] == "COMMITTED"
 
 
 def test_reduce_only_direction_scope_and_concurrent_exit_are_safe(repair_store):
@@ -397,7 +396,7 @@ def test_production_ai_coordinator_uses_qwen9b_and_persists_cycles(repair_store)
         with repair_store._connect() as db:
             rows = db.execute("SELECT account_id, session_id, generation, authorization_id, market_snapshot_hash FROM ai_led_cycles WHERE account_id='ai_account'").fetchall()
         assert len(rows) >= 2
-        assert all(row["authorization_id"] for row in rows)
+        assert all(row["authorization_id"] is None for row in rows)
         assert all(row["market_snapshot_hash"] for row in rows)
         assert coordinator.status()["model"]["required_model"] == "qwen3.5:9b"
     finally:
@@ -779,7 +778,7 @@ def test_reduce_only_requires_position_identity_for_multiple_scoped_positions(re
     }
 
 
-def test_authorization_portfolio_cap_reaches_unified_risk_engine(repair_store):
+def test_legacy_authorization_portfolio_cap_does_not_override_unified_risk_engine(repair_store):
     ledger = AccountLedger(repair_store)
     ledger.create_account("auth_cap_account", mode="PAPER", initial_deposit=Decimal("10000.00"))
     auth = AuthorizationManager(repair_store).grant_authorization(
@@ -806,10 +805,9 @@ def test_authorization_portfolio_cap_reaches_unified_risk_engine(repair_store):
     )
     intent.authorization_id = auth.authorization_id
     intent.authorization_version = auth.version
-    with pytest.raises(GatewayError) as rejected:
-        ExecutionGateway(repair_store, ledger=ledger).submit_intent(
-            intent,
-            market_snapshot=fresh_market("BTCUSDT", 100.0),
-        )
-    assert rejected.value.code == "PORTFOLIO_RISK_EXCEEDED"
-    assert ledger.get_open_positions("auth_cap_account") == []
+    receipt = ExecutionGateway(repair_store, ledger=ledger).submit_intent(
+        intent,
+        market_snapshot=fresh_market("BTCUSDT", 100.0),
+    )
+    assert receipt["status"] == "FILLED"
+    assert len(ledger.get_open_positions("auth_cap_account")) == 1

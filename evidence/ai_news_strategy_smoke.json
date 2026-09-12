@@ -1,0 +1,84 @@
+{
+  "contract": "ai_news_technical_v1",
+  "model": "qwen3.5:9b",
+  "external_orders": false,
+  "scope": "PUBLIC_DATA_REAL_MODEL_ISOLATED_PAPER",
+  "tested_at": "2026-09-12T12:25:23.177059+00:00",
+  "news_refresh": {
+    "status": "AVAILABLE",
+    "provider": "google_news_rss",
+    "fetched_at": "2026-09-12T12:25:24.827715+00:00",
+    "requested_symbols": [
+      "BTCUSDT"
+    ],
+    "available_symbols": 1,
+    "event_count": 12,
+    "results": [
+      {
+        "symbol": "BTCUSDT",
+        "status": "AVAILABLE",
+        "event_count": 12,
+        "provider": "google_news_rss"
+      }
+    ],
+    "model_called": false,
+    "order_created": false
+  },
+  "technical_status": "READY",
+  "news_count": 4,
+  "status": "PASS",
+  "model_action": "WAIT",
+  "execution_status": "WAITING",
+  "reason": "当前价格 77278.3 位于 15m EMA20 (77296.6) 下方，且 RSI(47.5) 显示中性偏弱动能。1h 图表虽在 EMA20 上方但 RSI(74.7) 接近超买区，存在回调风险。新闻面关于政治捐款和墨西哥矿场的消息对 BTCUSDT 无直接利好驱动，整体环境缺乏明确的突破信号或强催化剂。需等待价格重新站上关键阻力位或出现明确的反转形态后再行操作。",
+  "model_latency_ms": 47628.658,
+  "model_digest": "6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7",
+  "strategy_plan": {
+    "name": "AI_Authored_Momentum_Breakout",
+    "thesis": "等待明确的趋势确认信号（如 15m 突破 EMA20 并伴随放量）或关键阻力位的有效突破，结合中性偏谨慎的新闻面，避免在震荡区间内过早入场。",
+    "entry_conditions": [
+      "价格站上 15m EMA20 (77296.6) 且 RSI > 50",
+      "成交量显著放大（高于 20 周期均值）",
+      "突破前高阻力位 77363.1"
+    ],
+    "exit_conditions": [
+      "价格跌破入场 K 线低点",
+      "RSI 出现顶背离或跌破 50 中轴",
+      "触及止损位（入场价下方 2 ATR）"
+    ]
+  },
+  "analysis": {
+    "strategy_plan": {
+      "name": "AI_Authored_Momentum_Breakout",
+      "thesis": "等待明确的趋势确认信号（如 15m 突破 EMA20 并伴随放量）或关键阻力位的有效突破，结合中性偏谨慎的新闻面，避免在震荡区间内过早入场。",
+      "entry_conditions": [
+        "价格站上 15m EMA20 (77296.6) 且 RSI > 50",
+        "成交量显著放大（高于 20 周期均值）",
+        "突破前高阻力位 77363.1"
+      ],
+      "exit_conditions": [
+        "价格跌破入场 K 线低点",
+        "RSI 出现顶背离或跌破 50 中轴",
+        "触及止损位（入场价下方 2 ATR）"
+      ]
+    },
+    "market_summary": "BTCUSDT 当前在 77278.3 附近震荡，15m 级别受 EMA20 压制，1h 级别高位盘整。市场情绪中性偏谨慎，缺乏单边行情所需的明确动能。",
+    "invalidation_condition": "若价格强势突破并站稳 77400 上方，且伴随成交量激增，则当前观望策略失效，需重新评估做多机会。",
+    "confidence": 65.0,
+    "timeframe_analysis": {
+      "15m": "价格位于 EMA20 (77296.6) 下方，RSI 47.5 中性，ATR 41.4。近期高点在 77363.1，低点在 77223.8。当前处于回调整理阶段，未形成有效突破。",
+      "1h": "价格位于 EMA20 (77306.0) 上方，RSI 74.7 接近超买，ATR 115.8。近期高点在 79297.8，低点在 76846.1。整体趋势向上但短期有回调需求，需警惕回落至 EMA20 下方的风险。"
+    },
+    "news_context": {
+      "impact": "NEUTRAL",
+      "summary": "多条新闻涉及政治捐款和墨西哥矿场，对 BTCUSDT 价格无直接正面或负面驱动，属于中性背景噪音。"
+    }
+  },
+  "input_hash": "60c5ff0081abc8b747fcb777946074c6bafa3c913587e5a3622fa9e1b9454f44",
+  "prompt_version": "ai_news_technical_qwen9b_v2",
+  "evidence_refs": [
+    "market_snapshot:BTCUSDT:9ecc6e8e2e056231",
+    "technical_snapshot:BTCUSDT:94737ac00e3b043a",
+    "news_revision:3e67c733b6791496a1f9ade1"
+  ],
+  "paper_order_created": false
+}

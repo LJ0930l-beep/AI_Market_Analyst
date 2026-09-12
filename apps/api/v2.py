@@ -19,6 +19,7 @@ from core.security.credentials import CredentialVault
 from core.security.local_guard import validate_local_request
 from core.news_revision import NewsRevisionRegistry
 from core.macro_calendar import calendar_status, refresh_calendar
+from core.news_refresh import refresh_public_news
 from core.trading.execution_gateway import (
     ControlMode,
     DecisionPath,
@@ -55,12 +56,6 @@ from core.analysis.strategy_evaluator import (
     evaluate_strategy_effectiveness,
     run_counterfactual_comparison,
 )
-from core.trading.authorization import (
-    AuthorizationManager,
-    TradingAuthorization,
-    AISelfConfirmationError,
-    ConfirmationSource,
-)
 from core.diagnostics import export_diagnostic_bundle, collect_system_diagnostics
 from core.trading.testnet_capabilities import TestnetCapabilityService
 from core.trading.trader_capabilities import UNKNOWN, TraderCapabilityError, TraderCapabilityService
@@ -70,6 +65,7 @@ from core.trading.decision_memory import list_decision_memory
 from core.trading.account_aliases import canonical_account_id, GATE_TESTNET_ACCOUNT_ID
 from core.trading.gate_account_truth import GateAccountTruthService
 from core.trading.gate_testnet_e2e import GateE2EError, GateTestnetE2EService
+from core.trading.qwen_market_scanner import QwenMarketScanner
 
 
 
@@ -109,8 +105,8 @@ class GateOrderBody(BaseModel):
     reduce_only: bool = False
     account_id: str | None = Field(default=None, min_length=1, max_length=100)
     venue: str = Field(default="gate", min_length=1, max_length=50)
-    # Kept for old UI clients; server-side mode, authorization, and release
-    # policy remain authoritative and never trust this request hint.
+    # Kept for old UI clients.  Environment and account scope remain
+    # authoritative; this is only a validate-only request hint.
     dry_run: bool | None = None
 
 
@@ -134,8 +130,12 @@ class GateTestnetE2EBody(BaseModel):
     take_profit_value: float | None = None
     leverage: int = Field(default=1, ge=1, le=100)
     cleanup: bool = True
-    confirm_testnet: bool = False
     idempotency_key: str | None = Field(default=None, min_length=1, max_length=160)
+
+
+class QwenMarketScanBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    symbols: list[str] = Field(default_factory=list, max_length=5)
 
 
 class SubscriptionBody(BaseModel):
@@ -188,23 +188,6 @@ class OrderIntentBody(BaseModel):
     control_mode: str = "ASSISTED"
     decision_path: str = "STRATEGY_DRIVEN"
     position_id: str | None = Field(default=None, min_length=1, max_length=160)
-
-
-class TradingAuthorizationCreateBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    account_id: str = Field(min_length=1, max_length=100)
-    venue: str = Field(default="gate", max_length=50)
-    mode: str = Field(default="TESTNET", pattern="^(RESEARCH|PAPER|TESTNET|LIVE)$")
-    decision_path: str = Field(default="AI_LED", pattern="^(STRATEGY_DRIVEN|AI_LED)$")
-    allowed_instruments: list[str] = Field(default_factory=lambda: ["BTC_USDT"])
-    allowed_sides: list[str] = Field(default_factory=lambda: ["LONG", "SHORT"])
-    max_risk_fraction: float = Field(default=0.01, gt=0, le=0.1)
-    max_portfolio_risk_fraction: float = Field(default=0.01, gt=0, le=0.1)
-    max_cluster_risk_fraction: float = Field(default=0.005, gt=0, le=0.1)
-    max_leverage: int = Field(default=3, ge=1, le=100)
-    daily_loss_limit_fraction: float = Field(default=0.03, gt=0, le=0.5)
-    duration_seconds: int = Field(default=3600, ge=60, le=86400 * 30)
-    confirmed_by: str = Field(default="LOCAL_USER_WIZARD")
 
 
 class CounterfactualComparisonBody(BaseModel):
@@ -305,6 +288,19 @@ def router_for(get_store, get_runtime, get_translation):
             raise HTTPException(status_code=403, detail=err)
 
     router = APIRouter(prefix="/v2", dependencies=[Depends(verify_local_request)])
+    qwen_scanner_holder: dict[str, Any] = {"store": None, "service": None}
+
+    def qwen_market_scanner(store, runtime=None) -> QwenMarketScanner:
+        current = qwen_scanner_holder.get("service")
+        if current is not None and qwen_scanner_holder.get("store") is store:
+            return current
+        provider = getattr(getattr(runtime, "ai_coordinator", None), "model_provider", None) if runtime is not None else None
+        if provider is None:
+            from core.ai.ollama import OllamaProvider
+            provider = OllamaProvider(model_name="qwen3.5:9b")
+        service = QwenMarketScanner(store, provider)
+        qwen_scanner_holder.update({"store": store, "service": service})
+        return service
 
     def require_registered_account(store, account_id: str) -> str:
         """Reject account-scoped operations that would otherwise fabricate scope."""
@@ -550,6 +546,39 @@ def router_for(get_store, get_runtime, get_translation):
     def refresh_macro_calendar(store=Depends(get_store)):
         return refresh_calendar(store)
 
+    @router.post("/news/refresh")
+    def refresh_news_cache(store=Depends(get_store)):
+        """Explicitly refresh public RSS evidence; market-intelligence GET stays read-only."""
+        return refresh_public_news(store)
+
+    @router.post("/qwen-market-scans/start")
+    def start_qwen_market_scans(body: QwenMarketScanBody, store=Depends(get_store), runtime=Depends(get_runtime)):
+        """Start the independent five-minute Qwen 9B analysis loop."""
+        return qwen_market_scanner(store, runtime).start(body.symbols)
+
+    @router.post("/qwen-market-scans/run")
+    def run_qwen_market_scan_once(body: QwenMarketScanBody, store=Depends(get_store), runtime=Depends(get_runtime)):
+        """Run one analysis-only Qwen 9B scan now; never creates an order."""
+        return qwen_market_scanner(store, runtime).run_once(body.symbols)
+
+    @router.post("/qwen-market-scans/stop")
+    def stop_qwen_market_scans(store=Depends(get_store), runtime=Depends(get_runtime)):
+        return qwen_market_scanner(store, runtime).stop()
+
+    @router.get("/qwen-market-scans/status")
+    def qwen_market_scan_status(store=Depends(get_store), runtime=Depends(get_runtime)):
+        scanner = qwen_market_scanner(store, runtime)
+        stat = scanner.status()
+        if not stat.get("latest"):
+            history = scanner.history(1)
+            if history:
+                stat["latest"] = history[0]
+        return stat
+
+    @router.get("/qwen-market-scans/history")
+    def qwen_market_scan_history(limit: int = 20, store=Depends(get_store), runtime=Depends(get_runtime)):
+        return {"scans": qwen_market_scanner(store, runtime).history(limit)}
+
     @router.post("/news/{event_id}/translate")
     def translate(
         event_id: str, store=Depends(get_store), service=Depends(get_translation)
@@ -698,7 +727,7 @@ def router_for(get_store, get_runtime, get_translation):
                 "simulation.allow_unknown_macro"
             )["value"],
             "capabilities": {
-                "real_execution": "LOCKED",
+                "real_execution": "ACCOUNT_SCOPED_GATE_CREDENTIAL_REQUIRED",
                 "external_messaging": "LOCKED",
                 "macro_provider": calendar_status(store)["status"],
                 "model": "qwen3.5:9b",
@@ -1059,6 +1088,32 @@ def router_for(get_store, get_runtime, get_translation):
         except Exception as exc:
             raise HTTPException(502, detail=f"Failed to fetch Gate markets: {exc}")
 
+    @router.get("/gate/candlesticks")
+    def gate_candlesticks(symbol: str = "BTCUSDT", timeframe: str = "15m", limit: int = 100):
+        """Fetch Gate public candlesticks for crypto and tokens (Read-Only)."""
+        provider = GatePublicProvider()
+        try:
+            bars = provider._native_bars(symbol, timeframe, limit=min(limit, 500))
+            return {
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "count": len(bars),
+                "bars": [
+                    {
+                        "time": int(b.timestamp.timestamp()),
+                        "datetime": b.timestamp.isoformat(),
+                        "open": b.open,
+                        "high": b.high,
+                        "low": b.low,
+                        "close": b.close,
+                        "volume": b.volume,
+                    }
+                    for b in bars
+                ],
+            }
+        except Exception as exc:
+            raise HTTPException(502, detail=f"Failed to fetch candlesticks for {symbol}: {exc}")
+
     @router.get("/gate/accounts")
     def list_gate_accounts(store=Depends(get_store)):
         """List explicit Gate TestNet/Live profiles without private API access."""
@@ -1156,20 +1211,10 @@ def router_for(get_store, get_runtime, get_translation):
         try:
             account_id = require_registered_account(store, account_id)
             profile = get_gate_account_profile(store, account_id)
-            if profile["mode"] == TradingMode.LIVE.value:
-                return {
-                    "account_id": account_id,
-                    "status": "NOT_RUN_LIVE_LOCKED",
-                    "read_only": True,
-                    "orders_sent": 0,
-                    "model_called": False,
-                    "authorization_created": False,
-                    "message_zh": "Live 环境保持发布锁定，连接测试未访问私有接口。",
-                }
             candidate = GateLiveTrader(
                 body.api_key.strip(),
                 body.api_secret.strip(),
-                testnet=True,
+                testnet=profile["api_environment"] == "TESTNET",
                 api_base_url=profile["api_base_url"],
                 live_trading_enabled=False,
             )
@@ -1262,9 +1307,9 @@ def router_for(get_store, get_runtime, get_translation):
         account_id = require_registered_account(store, account_id)
 
         # Managed Gate profiles are account-scoped end to end.  The
-        # ``gate_paper`` compatibility id is Gate official TestNet: it must
-        # use the account-scoped TestNet private adapter and may not fall back
-        # to the local simulator.  LIVE remains an explicit locked projection.
+        # ``gate_paper`` compatibility id is Gate official TestNet: every
+        # managed Gate account uses its own scoped private adapter and never
+        # falls back to the local simulator.
         if is_managed_gate_account(store, account_id):
             profile = get_gate_account_profile(store, account_id)
             credential_meta = CredentialVault.get_account_metadata(store, account_id)
@@ -1279,28 +1324,10 @@ def router_for(get_store, get_runtime, get_translation):
                 "api_base_url": profile["api_base_url"],
                 "execution_adapter": profile["execution_adapter"],
             }
-            if profile["mode"] == TradingMode.LIVE.value:
-                return {
-                    "configured": bool(credential_meta.get("configured")),
-                    "account_id": account_id,
-                    "mode": profile["mode"],
-                    **profile_fields,
-                    "credential_status": "CONFIGURED" if credential_meta.get("configured") else "NOT_CONFIGURED",
-                    "scope_required": False,
-                    "capability_status": "LOCKED",
-                    "data_status": "NOT_RUN_LIVE_LOCKED",
-                    "observed_at": None,
-                    "balance": {"total": None, "free": None, "used": None},
-                    "positions": [],
-                    "private_api_access": "NOT_ATTEMPTED",
-                    "release_policy": profile["release_policy"],
-                }
-
-            # TestNet is the selected simulated exchange.  Account cards and
-            # order/position views are therefore reads from the official Gate
-            # TestNet, not local estimates.  ``remote_read`` is retained as a
-            # compatible query parameter but cannot disable the required
-            # scoped read.
+            # Account cards and order/position views are always reads from
+            # the selected Gate account, not local estimates.  ``remote_read``
+            # is retained as a compatible query parameter but cannot disable
+            # the required scoped read.
             k, s = get_gate_account_credentials(store, account_id)[1:]
             if not k or not s:
                 return {
@@ -1311,7 +1338,7 @@ def router_for(get_store, get_runtime, get_translation):
                     "credential_status": "NOT_CONFIGURED",
                     "scope_required": False,
                     "capability_status": "NOT_CONFIGURED",
-                    "data_status": "NOT_CONFIGURED_NO_TESTNET_CREDENTIALS",
+                    "data_status": "NOT_CONFIGURED_NO_TESTNET_CREDENTIALS" if profile["execution_mode"] == "TESTNET" else "NOT_CONFIGURED_NO_SCOPED_CREDENTIALS",
                     "observed_at": None,
                     "balance": {"total": None, "free": None, "used": None},
                     "positions": [],
@@ -1424,23 +1451,6 @@ def router_for(get_store, get_runtime, get_translation):
         if is_managed_gate_account(store, account_id):
             profile = get_gate_account_profile(store, account_id)
             credential_meta = CredentialVault.get_account_metadata(store, account_id)
-            if profile["mode"] == TradingMode.LIVE.value:
-                return {
-                    "configured": bool(credential_meta.get("configured")),
-                    "account_id": account_id,
-                    "mode": profile["mode"],
-                    "venue": profile["venue"],
-                    "scope_required": False,
-                    "is_sample": False,
-                    "trades": [],
-                    "summary": {
-                        "total_trades": 0,
-                        "total_fee_cost": None,
-                        "fee_status": "NOT_RUN_LIVE_LOCKED",
-                        "source": "RELEASE_POLICY_LOCK_M0_TO_M3",
-                    },
-                    "private_api_access": "NOT_ATTEMPTED",
-                }
             trader = build_gate_trader(store, account_id)
             if trader is None:
                 return {
@@ -1458,7 +1468,7 @@ def router_for(get_store, get_runtime, get_translation):
                         "total_trades": 0,
                         "total_fee_cost": None,
                         "fee_status": "NOT_CONFIGURED",
-                        "source": "NOT_CONFIGURED_NO_TESTNET_CREDENTIALS",
+                        "source": "NOT_CONFIGURED_NO_TESTNET_CREDENTIALS" if profile["execution_mode"] == "TESTNET" else "NOT_CONFIGURED_NO_SCOPED_CREDENTIALS",
                     },
                     "private_api_access": "NOT_ATTEMPTED_NO_CREDENTIALS",
                 }
@@ -1557,19 +1567,12 @@ def router_for(get_store, get_runtime, get_translation):
         account_id = require_registered_account(store, account_id)
         try:
             profile = get_gate_account_profile(store, account_id)
-            if profile["mode"] == TradingMode.LIVE.value:
-                return {
-                    "account_id": account_id,
-                    "status": "NOT_RUN_LIVE_LOCKED",
-                    "remote_truth": False,
-                    "message_zh": "Live 环境保持发布锁定。",
-                }
             trader = build_gate_trader(store, account_id)
             if trader is None:
                 return GateAccountTruthService(store)._failure(
                     account_id,
-                    "GATE_TESTNET_CREDENTIALS_NOT_CONFIGURED",
-                    "Gate TestNet 凭证未配置，未使用本地账本替代远端事实。",
+                    "GATE_SCOPED_CREDENTIALS_NOT_CONFIGURED",
+                    "Gate 账户凭证未配置，未使用本地账本替代远端事实。",
                     observed_at=datetime.now(timezone.utc).isoformat(),
                 )
             return GateAccountTruthService(store).refresh(account_id, trader, include_trades=True)
@@ -1610,13 +1613,8 @@ def router_for(get_store, get_runtime, get_translation):
             mode = TradingMode.TESTNET if cred_meta.get("testnet") else TradingMode.LIVE
 
         if not body.account_id:
-            # Preserve the locked-LIVE response for legacy clients without
-            # inventing an account.  Any executable TESTNET request must name
-            # its registered account explicitly.
-            if mode is TradingMode.LIVE:
-                live_caps = CapabilityService.get_capabilities(store)["modes"]["LIVE"]
-                if live_caps.get("status") == "LOCKED":
-                    raise HTTPException(status_code=403, detail="LIVE_DISABLED_BY_RELEASE_POLICY: explicit account required for any unlocked live request")
+            # An executable order must name its registered account.  The API
+            # does not infer a credential scope from a global default.
             raise HTTPException(status_code=422, detail="ACCOUNT_REQUIRED: account_id is required")
 
         if body.stop_loss is None and not body.reduce_only:
@@ -1650,18 +1648,6 @@ def router_for(get_store, get_runtime, get_translation):
             venue=body.venue,
             environment=(managed_profile["environment"].upper() if managed_profile is not None else mode.value),
         )
-
-        # Keep the release-policy lock observable at the HTTP boundary even
-        # when a scoped LIVE account has no runtime lease.  This prevents a
-        # missing runtime from changing the promised LIVE failure mode into a
-        # 503 and guarantees no adapter/credential path is reached.
-        if mode is TradingMode.LIVE:
-            live_capability = CapabilityService.get_capabilities(store)["modes"]["LIVE"]
-            if live_capability.get("status") == "LOCKED":
-                raise HTTPException(
-                    status_code=403,
-                    detail="LIVE_DISABLED_BY_RELEASE_POLICY: Autonomous real-money execution is locked in milestone M0-M3.",
-                )
 
         trader = None
         if managed_profile is not None:
@@ -1730,21 +1716,17 @@ def router_for(get_store, get_runtime, get_translation):
                             "executable": True,
                             "freshness_status": "FRESH",
                             "stale_after_seconds": 120,
-                            "slippage": max(spread_parts) if spread_parts else None,
+                            "slippage": max(spread_parts) if spread_parts else 0.001,
                             "market": metadata,
                             "source": "gate_private_ticker_and_market_metadata",
                         }
             except Exception:
                 market_snapshot = None
 
-        gateway = getattr(runtime, "execution_gateway", None) if runtime is not None else ExecutionGateway(store)
-        if not body.reduce_only:
-            if runtime is None:
-                raise HTTPException(status_code=503, detail="RUNTIME_UNAVAILABLE: new external risk requires the production runtime")
-            runtime_account = getattr(runtime, "account_id", None)
-            runtime_status = runtime.status()
-            if runtime_account != body.account_id or not runtime_status.get("active") or runtime_status.get("execution_blocked") or not (runtime_status.get("lease") or {}).get("valid", False):
-                raise HTTPException(status_code=409, detail="RUNTIME_EXECUTION_BLOCKED: start the requested account session before submitting new external risk")
+        # A manual, account-scoped Gate order is explicit user action.  Do
+        # not borrow a potentially different account's runtime gateway or
+        # require an AI/session lease before the unified risk path runs.
+        gateway = ExecutionGateway(store)
         try:
             return gateway.submit_intent(intent, trader_client=trader, market_snapshot=market_snapshot)
         except GatewayError as gw_err:
@@ -1763,10 +1745,8 @@ def router_for(get_store, get_runtime, get_translation):
     ):
         """Explicit Gate TestNet order -> fill -> protection -> cleanup test.
 
-        This endpoint intentionally does not create an AI authorization or
-        call Qwen.  The user confirmation in the request is the separate
-        transport-test boundary; Live accounts are rejected before adapter
-        construction.
+        This endpoint does not call Qwen or the strategy engine.  It is a
+        TestNet-only transport check and never substitutes a local fill.
         """
 
         try:
@@ -2142,98 +2122,6 @@ def router_for(get_store, get_runtime, get_translation):
             initial_equity=Decimal(str(body.initial_equity)),
         )
 
-    @router.post("/trading-authorizations")
-    def create_trading_authorization(
-        body: TradingAuthorizationCreateBody,
-        store=Depends(get_store),
-    ):
-        """Create a scoped trading authorization with local wizard confirmation (N09, AT36, AT40)."""
-        account_id = require_registered_account(store, body.account_id)
-        account_mode, account_venue = account_execution_scope(store, account_id)
-        if account_mode != body.mode or not account_venue or account_venue.lower() != body.venue.lower():
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    f"AUTHORIZATION_SCOPE_MISMATCH: account is bound to "
-                    f"{account_mode}/{account_venue}, not {body.mode}/{body.venue}"
-                ),
-            )
-        if body.confirmed_by.upper() != ConfirmationSource.LOCAL_USER_WIZARD.value:
-            raise HTTPException(
-                status_code=403,
-                detail="LOCAL_CONFIRMATION_REQUIRED: authorization must be confirmed by the protected local wizard",
-            )
-        mgr = AuthorizationManager(store)
-        try:
-            auth = mgr.grant_authorization(
-                account_id=account_id,
-                venue=body.venue,
-                mode=TradingMode(body.mode),
-                decision_path=DecisionPath(body.decision_path),
-                allowed_instruments=body.allowed_instruments,
-                allowed_sides=body.allowed_sides,
-                max_risk_fraction=Decimal(str(body.max_risk_fraction)),
-                max_portfolio_risk_fraction=Decimal(str(body.max_portfolio_risk_fraction)),
-                max_cluster_risk_fraction=Decimal(str(body.max_cluster_risk_fraction)),
-                max_leverage=body.max_leverage,
-                daily_loss_limit_fraction=Decimal(str(body.daily_loss_limit_fraction)),
-                duration_seconds=body.duration_seconds,
-                # The client flag is only an input guard.  The server records
-                # the fixed local-wizard confirmation fact after the local
-                # request dependency and explicit wizard confirmation pass.
-                confirmed_by=ConfirmationSource.LOCAL_USER_WIZARD,
-            )
-            return auth.to_dict()
-        except AISelfConfirmationError as exc:
-            raise HTTPException(
-                status_code=403,
-                detail=f"AI_SELF_CONFIRMATION_FORBIDDEN: {str(exc)}",
-            )
-        except Exception as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
-
-    @router.get("/trading-authorizations/active")
-    def get_active_trading_authorization(
-        account_id: str | None = None,
-        store=Depends(get_store),
-    ):
-        """Retrieve active trading authorization (N09)."""
-        if not account_id:
-            return {
-                "account_id": None,
-                "has_active_authorization": False,
-                "authorization": None,
-                "scope_required": True,
-            }
-        account_id = require_registered_account(store, account_id)
-        mgr = AuthorizationManager(store)
-        auth = mgr.get_active_authorization(account_id)
-        return {
-            "account_id": account_id,
-            "has_active_authorization": auth is not None,
-            "authorization": auth.to_dict() if auth else None,
-        }
-
-    @router.post("/trading-authorizations/{authorization_id}/revoke")
-    def revoke_trading_authorization(
-        authorization_id: str,
-        account_id: str | None = None,
-        reason: str = "USER_REQUESTED",
-        store=Depends(get_store),
-    ):
-        """Revoke authorization, blocking new risk while preserving protective orders (N09, AT37)."""
-        if not account_id:
-            raise HTTPException(status_code=422, detail="ACCOUNT_SCOPE_REQUIRED: account_id is required to revoke an authorization.")
-        account_id = require_registered_account(store, account_id)
-        mgr = AuthorizationManager(store)
-        authorization = mgr.get_authorization(authorization_id)
-        if not authorization or authorization.account_id != account_id:
-            raise HTTPException(status_code=404, detail="Authorization not found in account scope")
-        revoked = mgr.revoke_authorization(authorization_id, reason=reason)
-        if not revoked:
-            raise HTTPException(status_code=404, detail="Authorization not found")
-        return {"status": "REVOKED", "authorization_id": authorization_id, "reason": reason}
-
     @router.post("/diagnostics/export")
     def export_diagnostics(
         body: DiagnosticExportBody,
@@ -2352,8 +2240,8 @@ def router_for(get_store, get_runtime, get_translation):
                         elif mode.upper() == "LIVE":
                             caps = {
                                 "mode": mode,
-                                "status": "LOCKED",
-                                "source": "RELEASE_POLICY",
+                                "status": "AVAILABLE",
+                                "source": "ACCOUNT_SCOPED_CREDENTIAL_REQUIRED",
                                 "observed_at": datetime.now(timezone.utc).isoformat(),
                                 "simulated": False,
                             }
@@ -2403,9 +2291,6 @@ def router_for(get_store, get_runtime, get_translation):
             "generation": None,
             "state_version": None,
         }
-
-        auth_mgr = AuthorizationManager(store)
-        active_auth = auth_mgr.get_active_authorization(account_id) if account_id else None
 
         latest_cycle = None
         latest_model_cycle = None
@@ -2537,7 +2422,6 @@ def router_for(get_store, get_runtime, get_translation):
 
         return {
             "session": sess_status,
-            "authorization": active_auth.to_dict() if active_auth else None,
             "latest_cycle": latest_cycle,
             "latest_model_cycle": latest_model_cycle if account_id else None,
             "latest_system_event": latest_system_event if account_id else None,

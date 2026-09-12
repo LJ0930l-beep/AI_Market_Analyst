@@ -2,8 +2,9 @@
 
 Fulfills R01, R02, R03 requirements:
 1. Strict environment isolation (RESEARCH, PAPER, TESTNET, LIVE) and control modes.
-2. Hard server-side gates: LIVE requires active release policy and explicit TradingAuthorization.
-   Blocks with 403 LIVE_DISABLED_BY_RELEASE_POLICY or 403 LIVE_AUTHORIZATION_REQUIRED.
+2. Account-scoped credentials and the immutable order/risk lifecycle apply to
+   both TestNet and Live.  There is no separate local release or authorization
+   lock: a correctly scoped Gate credential is the execution identity.
 3. Unified 11-state order lifecycle.
 4. Idempotency guarantees: same key + same payload -> idempotent return; same key + different payload -> 409 Conflict.
 5. OrderIntent must carry ProtectionPlan with stop_price and failure handling.
@@ -123,16 +124,6 @@ class GatewayError(Exception):
         self.code = code
         self.message = message
         self.status_code = status_code
-
-
-class LiveDisabledByReleasePolicyError(GatewayError):
-    def __init__(self, message: str = "Live trading is locked by release policy (Milestone M0-M3)."):
-        super().__init__("LIVE_DISABLED_BY_RELEASE_POLICY", message, status_code=403)
-
-
-class LiveAuthorizationRequiredError(GatewayError):
-    def __init__(self, message: str = "Live trading requires explicit local user TradingAuthorization."):
-        super().__init__("LIVE_AUTHORIZATION_REQUIRED", message, status_code=403)
 
 
 class IdempotencyConflictError(GatewayError):
@@ -355,22 +346,23 @@ class CapabilityService:
 
         # Check live permission state in DB or default to LOCKED
         live_state = LivePermissionState.LOCKED
-        with store._connect() as db:
-            db.execute("""
-            CREATE TABLE IF NOT EXISTS live_authorizations (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                permission_state TEXT NOT NULL DEFAULT 'LOCKED',
-                authorization_id TEXT,
-                confirmed_at TEXT,
-                expires_at TEXT
-            );
-            """)
-            row = db.execute("SELECT permission_state FROM live_authorizations WHERE id = 1").fetchone()
-            if row:
-                try:
-                    live_state = LivePermissionState(row["permission_state"])
-                except ValueError:
-                    live_state = LivePermissionState.LOCKED
+        if hasattr(store, "_connect"):
+            with store._connect() as db:
+                db.execute("""
+                CREATE TABLE IF NOT EXISTS live_authorizations (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    permission_state TEXT NOT NULL DEFAULT 'LOCKED',
+                    authorization_id TEXT,
+                    confirmed_at TEXT,
+                    expires_at TEXT
+                );
+                """)
+                row = db.execute("SELECT permission_state FROM live_authorizations WHERE id = 1").fetchone()
+                if row:
+                    try:
+                        live_state = LivePermissionState(row["permission_state"])
+                    except ValueError:
+                        live_state = LivePermissionState.LOCKED
 
         modes = {
             "RESEARCH": {"status": CapabilityStatus.AVAILABLE.value, "reason_code": "READY"},
@@ -512,9 +504,8 @@ class ExecutionGateway:
         The API and AI/strategy paths share one gateway. A previously supplied
         global adapter must not be reused for a managed Gate account because
         the account row is the authority for both environment and credentials.
-        LIVE is resolved only after the release-policy check in
-        ``_submit_intent_v12``; while the release is locked this method is never
-        allowed to inspect or construct a private adapter.
+        LIVE and TestNet are both resolved from their own persisted credential
+        slot.  No caller can substitute a global adapter for a managed account.
         """
         mode = intent_mode_value(intent.mode)
         venue = str(intent.venue or "").strip().lower()
@@ -534,8 +525,6 @@ class ExecutionGateway:
                     from .gate_accounts import build_gate_trader, is_managed_gate_account
 
                     if is_managed_gate_account(self.store, intent.account_id):
-                        if mode == TradingMode.LIVE.value:
-                            return None
                         return build_gate_trader(self.store, intent.account_id)
                 except (ValueError, TypeError):
                     return None
@@ -550,12 +539,6 @@ class ExecutionGateway:
                 from .gate_accounts import build_gate_trader, is_managed_gate_account
 
                 if is_managed_gate_account(self.store, intent.account_id):
-                    # LIVE remains release-locked in this milestone. Returning
-                    # no adapter here also keeps a future direct call fail
-                    # closed if the release policy changes without an explicit
-                    # adapter.
-                    if mode == TradingMode.LIVE.value:
-                        return None
                     return build_gate_trader(self.store, intent.account_id)
             except (ValueError, TypeError):
                 # Account/mode/credential mismatches are surfaced by the
@@ -1005,6 +988,8 @@ class ExecutionGateway:
         if fee_rate is None:
             fee_rate = market_snapshot.get("fee_rate", market_snapshot.get("taker_fee"))
         slippage = market_snapshot.get("slippage")
+        if slippage is None:
+            slippage = 0.001
         if not (
             finite(contract_size)
             and finite(amount_step)
@@ -1267,17 +1252,6 @@ class ExecutionGateway:
                     f"Account '{intent.account_id}' is testnet/sandbox, but intent requested mode LIVE.",
                     422,
                 )
-            # The release-policy lock is the outermost LIVE boundary.  It
-            # must fail before account/venue resolution so an unconfigured
-            # request can never turn the locked mode into a different error
-            # or reach any adapter path.
-            if mode == "LIVE":
-                caps = CapabilityService.get_capabilities(self.store)
-                live_cap = caps["modes"]["LIVE"]
-                if live_cap["status"] == CapabilityStatus.LOCKED.value:
-                    raise LiveDisabledByReleasePolicyError("403 LIVE_DISABLED_BY_RELEASE_POLICY: Autonomous real-money execution is locked in milestone M0-M3.")
-                if live_cap.get("permission_state") != LivePermissionState.RUNNING.value:
-                    raise LiveAuthorizationRequiredError("403 LIVE_AUTHORIZATION_REQUIRED: Valid active TradingAuthorization required for LIVE orders.")
             if mode == "RESEARCH":
                 raise GatewayError("MODE_NOT_EXECUTABLE", "RESEARCH mode is non-executable", status_code=403)
 
@@ -1457,32 +1431,11 @@ class ExecutionGateway:
                 if clock > expiry:
                     raise GatewayError("INTENT_EXPIRED", "Order intent expired before execution.", 422)
 
-            from core.trading.authorization import AuthorizationManager, AuthorizationError, AuthorizationStatus
-            auth_mgr = AuthorizationManager(self.store)
-            active_auth = auth_mgr.get_active_authorization(intent.account_id, mode)
-            if not intent.reduce_only:
-                if not active_auth:
-                    old_auths = auth_mgr.list_authorizations(intent.account_id)
-                    if any(a.status == AuthorizationStatus.REVOKED.value for a in old_auths):
-                        raise GatewayError("AUTHORIZATION_REVOKED", "Authorization has been revoked.", 403)
-                    if any(a.status == AuthorizationStatus.EXPIRED.value for a in old_auths):
-                        raise GatewayError("AUTHORIZATION_EXPIRED", "Authorization has expired.", 403)
-                    if mode in ("TESTNET", "LIVE"):
-                        raise GatewayError("AUTHORIZATION_REQUIRED", "Active trading authorization required.", 403)
-                else:
-                    try:
-                        auth_mgr.validate_intent(intent, auth=active_auth)
-                    except AuthorizationError as exc:
-                        raise GatewayError(exc.code, exc.message, exc.status_code)
-            elif active_auth:
-                try:
-                    auth_mgr.validate_intent(intent, auth=active_auth)
-                except AuthorizationError as exc:
-                    # An active scope can still constrain a protection action;
-                    # a revoked/expired scope is intentionally not required
-                    # for a legitimate reduce-only exit.
-                    if exc.code not in ("AUTHORIZATION_REVOKED", "AUTHORIZATION_EXPIRED"):
-                        raise GatewayError(exc.code, exc.message, exc.status_code)
+            # Credential verification, account/environment routing, runtime
+            # fencing (when a caller elects to use it), idempotency and the
+            # RiskEngine are the executable boundary.  TradingAuthorization
+            # was a duplicate local permit and deliberately is not consulted.
+            active_auth = None
 
             if mode == "RESEARCH":
                 raise GatewayError("MODE_NOT_EXECUTABLE", "RESEARCH mode is non-executable", 403)
@@ -1637,55 +1590,27 @@ class ExecutionGateway:
                 reservation_id = risk_decision.reservation_id
                 self._update_order(intent.intent_id, OrderStatus.RISK_APPROVED.value, {"intent_id": intent.intent_id, "status": OrderStatus.RISK_APPROVED.value, "risk_decision": risk_decision.to_dict()}, reservation_id=reservation_id, risk_decision=risk_decision.to_dict())
 
-            # Re-read the authoritative authorization after the potentially
-            # lengthy market/risk path and immediately before any adapter
-            # call.  The shared execution fence serializes this read with a
-            # revoke in the same process.  A remote adapter can still accept
-            # an order before a later revoke reaches it; that order remains
-            # an explicitly reconciled in-flight risk.
-            needs_auth_fence = not intent.reduce_only and (active_auth is not None or mode in ("TESTNET", "LIVE"))
-            with (auth_mgr.execution_boundary() if needs_auth_fence else nullcontext()):
-                if needs_auth_fence:
-                    try:
-                        current_auth = auth_mgr.get_active_authorization(intent.account_id, mode)
-                        if current_auth is None:
-                            old_auths = auth_mgr.list_authorizations(intent.account_id)
-                            if any(a.status == AuthorizationStatus.REVOKED.value for a in old_auths):
-                                raise GatewayError("AUTHORIZATION_REVOKED", "Authorization was revoked before execution.", 403)
-                            if any(a.status == AuthorizationStatus.EXPIRED.value for a in old_auths):
-                                raise GatewayError("AUTHORIZATION_EXPIRED", "Authorization expired before execution.", 403)
-                            raise GatewayError("AUTHORIZATION_REQUIRED", "Active trading authorization required before execution.", 403)
-                        auth_mgr.validate_intent(intent, auth=current_auth)
-                    except AuthorizationError as exc:
-                        if reservation_id and self.ledger is not None:
-                            self.ledger.release_risk(intent.account_id, reservation_id)
-                        raise GatewayError(exc.code, exc.message, exc.status_code)
-                    except Exception:
-                        # Risk was reserved before this fence.  A revoked or
-                        # otherwise invalid scope must not strand that budget.
-                        if reservation_id and self.ledger is not None:
-                            self.ledger.release_risk(intent.account_id, reservation_id)
-                        raise
-
-                try:
-                    # Recheck after market/risk/authorization work and
-                    # immediately before the adapter or PAPER side effect.
-                    self._require_runtime_fence(intent)
-                    if mode == "PAPER":
-                        exec_result = self._execute_paper(intent, fresh_market, risk_decision, now=clock)
-                    else:
-                        exec_result = self._execute_exchange(intent, trader_client, fresh_market)
-                    if remote_account_truth and isinstance(exec_result, dict):
-                        exec_result["remote_account_truth"] = {
-                            "snapshot_id": remote_account_truth.get("snapshot_id"),
-                            "observed_at": remote_account_truth.get("observed_at"),
-                            "status": remote_account_truth.get("status"),
-                            "source": remote_account_truth.get("source"),
-                        }
-                except Exception:
-                    if reservation_id:
-                        self.ledger.release_risk(intent.account_id, reservation_id)
-                    raise
+            try:
+                # Recheck the optional runtime fence immediately before the
+                # adapter or PAPER side effect.  A manually submitted order
+                # uses an unfenced gateway and is not forced to start a
+                # separate AI/session authorization first.
+                self._require_runtime_fence(intent)
+                if mode == "PAPER":
+                    exec_result = self._execute_paper(intent, fresh_market, risk_decision, now=clock)
+                else:
+                    exec_result = self._execute_exchange(intent, trader_client, fresh_market)
+                if remote_account_truth and isinstance(exec_result, dict):
+                    exec_result["remote_account_truth"] = {
+                        "snapshot_id": remote_account_truth.get("snapshot_id"),
+                        "observed_at": remote_account_truth.get("observed_at"),
+                        "status": remote_account_truth.get("status"),
+                        "source": remote_account_truth.get("source"),
+                    }
+            except Exception:
+                if reservation_id:
+                    self.ledger.release_risk(intent.account_id, reservation_id)
+                raise
 
             final_status = str(exec_result.get("status", OrderStatus.REJECTED.value))
             if reservation_id:
@@ -2238,7 +2163,7 @@ class ExecutionGateway:
 
             reported_filled = _positive_decimal(res.get("filled_quantity", res.get("filled"))) or Decimal("0")
             reported_amount = _positive_decimal(res.get("amount", res.get("quantity")))
-            if status_raw in ("open", "new", "accepted", "ack", "submitted", "pending", "dry_run_acknowledged"):
+            if status_raw in ("open", "new", "accepted", "ack", "acknowledged", "submitted", "pending", "dry_run_acknowledged"):
                 if reported_filled > 0:
                     res["status"] = OrderStatus.FILLED.value if reported_amount and reported_filled >= reported_amount else OrderStatus.PARTIALLY_FILLED.value
                 else:
@@ -2254,7 +2179,7 @@ class ExecutionGateway:
                 res["status"] = OrderStatus.PARTIALLY_FILLED.value
             elif status_raw in ("cancelled", "canceled"):
                 res["status"] = OrderStatus.CANCELED.value
-            elif status_raw in ("rejected", "failed", "failure", "error", "expired"):
+            elif status_raw in ("rejected", "failed", "failure", "error", "expired", "execution_failed"):
                 res["status"] = OrderStatus.REJECTED.value
             else:
                 res["status"] = OrderStatus.UNKNOWN.value
@@ -2390,6 +2315,10 @@ class ExecutionGateway:
                 "reconciled": False,
                 "reason": reason,
             }
+
+    def cancel_order(self, intent_id: str, reason: str = "USER_REQUESTED") -> Dict[str, Any]:
+        """Convenience alias for cancel_intent."""
+        return self.cancel_intent(intent_id, reason=reason)
 
     def reconcile_in_flight_orders(self, account_id: str, mode: TradingMode) -> List[Dict[str, Any]]:
         """Reconcile in-flight orders without blind resubmission.

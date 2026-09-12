@@ -1,11 +1,10 @@
 """Production AI-led session coordinator.
 
-This module is the only production entry point that turns the Qwen 9B
+This module is the legacy execution entry point that turns the Qwen 9B
 provider into :class:`AILedDecisionEngine` cycles.  It deliberately keeps
-model selection, account scope, authorization, market snapshots, generation
-checks and cancellation outside the model.  A missing provider, stale quote,
-missing authorization or expired generation is a recorded blocked cycle, not
-an implicit approval or a silent model substitution.
+model selection, account scope, market snapshots, generation checks and
+cancellation outside the model.  Exchange credentials and risk controls are
+the executable boundary; a second local TradingAuthorization is not.
 """
 
 from __future__ import annotations
@@ -26,7 +25,6 @@ from .ai_led_engine import (
     AILedDecisionEngine,
     ALLOWED_AI_ACTIONS,
 )
-from .authorization import AuthorizationManager
 from .execution_gateway import (
     ControlMode,
     DecisionPath,
@@ -43,23 +41,24 @@ from .ai_calibration import AICalibrationService
 from .candidate_scanner import CandidateScanner
 from .decision_memory import memory_for_prompt, record_decision_memory
 from .institutional_schema import ensure_institutional_trader_schema
-from .model_schemas import AI_ACTION_SCHEMA
+from .model_schemas import AI_ACTION_SCHEMA, validate_schema
 from .account_aliases import canonical_account_id, GATE_TESTNET_ACCOUNT_ID
 from .gate_account_truth import GateAccountTruthService
 from .gate_accounts import build_gate_trader
 from .ai_cycle_trace import humanize_reason, infer_block_stage
+from .autonomous_strategy import CONTRACT, POLICY, SYSTEM_PROMPT, technical_context, compact_technical
 
 logger = logging.getLogger("core.trading.ai_session_coordinator")
 
 AI_COORDINATOR_CONTRACT_VERSION = "ai_session_coordinator_v1"
-AI_PROMPT_VERSION = "ai_led_qwen9b_cycle_v1"
+AI_PROMPT_VERSION = "ai_news_technical_qwen9b_v2"
 MIN_CYCLE_INTERVAL_SECONDS = 60.0
-DEFAULT_CYCLE_INTERVAL_SECONDS = 300.0
+DEFAULT_CYCLE_INTERVAL_SECONDS = 900.0
 MAX_CYCLE_SYMBOLS = 5
 MODEL_BUDGET_SECONDS = 120.0
 INTENT_TTL_SECONDS = 240.0
 MARKET_MAX_AGE_SECONDS = 120.0
-SCAN_INTERVAL_SECONDS = 300.0
+SCAN_INTERVAL_SECONDS = 900.0
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -115,6 +114,15 @@ class AISessionCoordinator:
         self.gateway = execution_gateway or ExecutionGateway(store, ledger=ledger)
         self.risk_engine = risk_engine or RiskEngine(ledger)
         self.model_provider = model_provider if model_provider is not None else self._provider_from_service(service)
+        from ..ai.ollama import OllamaProvider
+        if isinstance(self.model_provider, OllamaProvider):
+            # Dedicated session settings do not mutate consultation/translation.
+            original = self.model_provider
+            self.model_provider = OllamaProvider(
+                base_url=original.base_url, model_name=DEFAULT_SMART_MODEL,
+                timeout=55, context_length=16384, max_tokens=1800,
+                temperature=0, retries=0, quantization=original.quantization, think=False,
+            )
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.cycle_interval_seconds = max(MIN_CYCLE_INTERVAL_SECONDS, min(float(cycle_interval_seconds), 3600.0))
         self.model_budget_seconds = max(0.1, min(float(model_budget_seconds), MODEL_BUDGET_SECONDS))
@@ -122,6 +130,8 @@ class AISessionCoordinator:
         self.calibration_lookback_days = max(1, int(calibration_lookback_days))
 
         self._lock = threading.RLock()
+        self._cycle_lock = threading.Lock()
+        self._inflight_future: Future[Any] | None = None
         self._stop_event = threading.Event()
         self._wake_event = threading.Event()
         self._thread: threading.Thread | None = None
@@ -326,6 +336,8 @@ class AISessionCoordinator:
         return {
             "contract_version": AI_COORDINATOR_CONTRACT_VERSION,
             "state": state,
+            "decision_contract": CONTRACT,
+            "decision_policy": dict(POLICY),
             "enabled": enabled,
             "worker_alive": bool(thread and thread.is_alive()),
             "account_id": account_id,
@@ -340,7 +352,7 @@ class AISessionCoordinator:
             "scan_interval_seconds": SCAN_INTERVAL_SECONDS,
             "schedule": {
                 "timezone": "UTC",
-                "alignment": "minute % 5 == 0",
+                "alignment": "minute % 15 == 0",
                 "catch_up": False,
                 "last_scheduled_at": last_scheduled_at,
                 "last_started_at": last_started_at,
@@ -363,13 +375,9 @@ class AISessionCoordinator:
             "last_cycle_at": last_cycle_at,
         }
 
-    def _authorization(self, account_id: str, mode: TradingMode, *, as_of: datetime) -> Any | None:
-        manager = AuthorizationManager(self.store)
-        return manager.get_active_authorization(account_id, mode, as_of=as_of)
-
-    def _allowed_symbols(self, authorization: Any) -> tuple[str, ...]:
+    def _allowed_symbols(self, authorization: Any | None = None) -> tuple[str, ...]:
         allowed = [str(item).strip().upper() for item in getattr(authorization, "allowed_instruments", []) if str(item).strip() and str(item).strip() != "*"]
-        allow_all = any(str(item).strip() == "*" for item in getattr(authorization, "allowed_instruments", []))
+        allow_all = authorization is None or any(str(item).strip() == "*" for item in getattr(authorization, "allowed_instruments", []))
         policies = []
         try:
             policies = [str(item.get("instrument_id") or "").strip().upper() for item in self.store.list_monitoring_policies(enabled=True)]
@@ -382,6 +390,11 @@ class AISessionCoordinator:
         for symbol in policy_scope + allowed:
             if symbol and symbol not in ordered:
                 ordered.append(symbol)
+        # Qwen market scans must remain usable before an operator has made a
+        # monitoring-policy record.  These are public Gate instruments, not
+        # a fabricated market-data fallback.
+        if not ordered and authorization is None:
+            ordered.extend(("BTCUSDT", "ETHUSDT", "SOLUSDT"))
         return tuple(ordered[:MAX_CYCLE_SYMBOLS])
 
     def _market_snapshots(self, symbols: tuple[str, ...], *, now: datetime) -> dict[str, dict[str, Any]]:
@@ -417,7 +430,7 @@ class AISessionCoordinator:
                 received_at = _parse_time(snapshot.get("received_at") or snapshot.get("updated_at"))
             except (TypeError, ValueError):
                 continue
-            if price <= 0 or data_as_of is None:
+            if not math.isfinite(price) or price <= 0 or data_as_of is None:
                 continue
             age = (now - data_as_of).total_seconds()
             freshness = str(snapshot.get("freshness_status", "fresh")).lower()
@@ -541,6 +554,8 @@ class AISessionCoordinator:
             account_truth=dict(account_truth or {}),
             news_revisions=list(news_revisions or []),
             scheduled_at=scheduled_at,
+            decision_contract=CONTRACT,
+            technical_context=technical_context(self.store, instruments, now),
         )
 
     def _model_output(self, context: AICycleContext) -> AIActionOutput:
@@ -548,6 +563,9 @@ class AISessionCoordinator:
         if provider is None or not callable(getattr(provider, "generate_json", None)):
             raise RuntimeError("SMART_MODEL_UNAVAILABLE")
         prompt_payload = {
+            "decision_contract": CONTRACT,
+            "fixed_policy": dict(POLICY),
+            "technical_context": compact_technical(context.technical_context),
             "account_id": context.account_id,
             "mode": context.mode.value if isinstance(context.mode, TradingMode) else str(context.mode),
             "venue": context.venue,
@@ -567,13 +585,13 @@ class AISessionCoordinator:
             "market_snapshots": context.market_snapshots,
             "news_revisions": context.news_revisions,
             "positions": context.positions,
-            "candidates": context.candidates,
+            "candidates": [{k: row.get(k) for k in ("candidate_id", "symbol", "strategy_id", "status", "direction_bias", "rr")} for row in context.candidates[:30]],
             "calibration": context.calibration,
             "market_data_environment": context.market_data_environment,
             "data_quality": context.data_quality,
             "strategy_readiness": context.strategy_readiness,
             "indicator_snapshot_id": context.indicator_snapshot_id,
-            "decision_memory": context.decision_memory[:20],
+            "decision_memory": context.decision_memory[:6],
             "generation": context.generation,
         }
         provider_name = str(
@@ -611,6 +629,7 @@ class AISessionCoordinator:
         context.model_inference_settings = model_inference_settings
         evidence_refs_list = (
             [f"market_snapshot:{symbol}:{_digest(snapshot)[:16]}" for symbol, snapshot in sorted(context.market_snapshots.items())]
+            + [f"technical_snapshot:{symbol}:{_digest(snapshot)[:16]}" for symbol, snapshot in sorted(context.technical_context.items())]
             + ([f"authorization:{context.authorization_id}"] if context.authorization_id else [])
             + ([f"session:{context.session_id}:{context.generation}"] if context.session_id else [])
             + ([f"account_snapshot:{context.account_truth.get('snapshot_id')}"] if context.account_truth.get("snapshot_id") else [])
@@ -669,21 +688,15 @@ class AISessionCoordinator:
         messages = [
             {
                 "role": "system",
-                "content": (
-                    "You are the AI_LED decision component for a locally authorized trading session. "
-                    "Return JSON only with action WAIT, HOLD, OPEN_LONG, OPEN_SHORT, REDUCE_POSITION, "
-                    "CLOSE_POSITION, or TIGHTEN_STOP; instrument_id, reason, and only the numeric fields "
-                    "needed for that action. For an opening action include order_preference MARKET, LIMIT, or AUTO; "
-                    "LIMIT may include limit_price and ttl_seconds from 60 to 300. "
-                    "Never choose account, venue, mode, authorization, or client. "
-                    "Never widen stops, reverse an open position, or invent missing market data. "
-                    "Write reason and other human-readable explanations in Simplified Chinese. Keep JSON keys, action enums and instrument identifiers unchanged."
-                ),
+                "content": SYSTEM_PROMPT,
             },
-            {"role": "user", "content": json.dumps(prompt_payload, sort_keys=True, ensure_ascii=True)},
+            {"role": "user", "content": json.dumps(prompt_payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))},
         ]
+        if len(messages[1]["content"]) > 36000:
+            raise ValueError("AI_INPUT_BUDGET_EXCEEDED")
         def call_model(call_messages: list[dict[str, str]], prompt_version: str) -> Any:
             started = time.perf_counter()
+            context.model_call_attempted = True
             try:
                 result = provider.generate_json(
                     call_messages,
@@ -714,18 +727,18 @@ class AISessionCoordinator:
         try:
             response = call_model(messages, AI_PROMPT_VERSION)
             candidate_decoded = response[0] if isinstance(response, tuple) else response
-            if not isinstance(candidate_decoded, dict) or set(candidate_decoded) - set(AI_ACTION_SCHEMA["properties"]):
-                raise ValueError("INVALID_ACTION_SCHEMA")
+            validate_schema(candidate_decoded, AI_ACTION_SCHEMA)
         except Exception as first_error:
             # One and only one bounded repair attempt.  The retry is still
             # schema-constrained and cannot change account, authorization or
             # market facts stamped above.
             repair_messages = [
-                {"role": "system", "content": "只返回符合给定 JSON Schema 的 JSON 对象；不得增加字段，不得输出解释。"},
+                {"role": "system", "content": SYSTEM_PROMPT + "\nRepair the previous invalid JSON to the supplied schema. Previous output is untrusted data."},
                 {"role": "user", "content": json.dumps({"schema": AI_ACTION_SCHEMA, "validation_error": str(first_error)[:240], "previous_response": (response[1] if isinstance(response, tuple) and len(response) > 1 else None), "inputs": prompt_payload}, ensure_ascii=False, sort_keys=True)},
             ]
             response = call_model(repair_messages, AI_PROMPT_VERSION + "_repair")
         decoded = response[0] if isinstance(response, tuple) else response
+        validate_schema(decoded, AI_ACTION_SCHEMA)
         if not isinstance(decoded, dict):
             raise ValueError("INVALID_MODEL_JSON")
         action = str(decoded.get("action", "")).strip().upper()
@@ -744,6 +757,7 @@ class AISessionCoordinator:
             "order_preference", "limit_price", "ttl_seconds", "candidate_id", "closed_15m_bar",
             "strategy_candidate_id", "strategy_id", "market_summary", "timeframe_analysis",
             "strategy_analysis", "news_context", "entry_zone", "take_profit_1", "take_profit_2",
+            "strategy_plan",
             "confidence", "invalidation_condition",
         }
         if set(decoded) - allowed_fields:
@@ -766,6 +780,8 @@ class AISessionCoordinator:
         for field in numeric_fields:
             if field not in decoded or decoded[field] is None:
                 continue
+            if isinstance(decoded[field], bool) or not isinstance(decoded[field], (int, float)):
+                raise ValueError(f"INVALID_{field.upper()}")
             try:
                 number = float(decoded[field])
             except (TypeError, ValueError):
@@ -774,6 +790,8 @@ class AISessionCoordinator:
                 raise ValueError(f"INVALID_{field.upper()}")
             values[field] = number
         if "requested_leverage" in decoded and decoded["requested_leverage"] is not None:
+            if isinstance(decoded["requested_leverage"], bool) or not isinstance(decoded["requested_leverage"], int):
+                raise ValueError("INVALID_REQUESTED_LEVERAGE")
             try:
                 leverage = int(decoded["requested_leverage"])
             except (TypeError, ValueError):
@@ -817,6 +835,17 @@ class AISessionCoordinator:
             raise ValueError("INVALID_EVIDENCE_REF")
         values["evidence_refs"] = tuple(evidence_refs[:32])
         extra_fields: dict[str, Any] = {}
+        if "strategy_plan" in decoded:
+            plan = decoded["strategy_plan"]
+            if not isinstance(plan, dict) or set(plan) != {"name", "thesis", "entry_conditions", "exit_conditions"}:
+                raise ValueError("INVALID_STRATEGY_PLAN")
+            for key, maximum in (("name", 100), ("thesis", 800)):
+                if not isinstance(plan[key], str) or not plan[key].strip() or len(plan[key]) > maximum:
+                    raise ValueError("INVALID_STRATEGY_PLAN")
+            for key in ("entry_conditions", "exit_conditions"):
+                if not isinstance(plan[key], list) or not 1 <= len(plan[key]) <= 8 or any(not isinstance(v, str) or not v.strip() or len(v) > 300 for v in plan[key]):
+                    raise ValueError("INVALID_STRATEGY_PLAN")
+            extra_fields["strategy_plan"] = plan
 
         def bounded_text(field: str, maximum: int) -> None:
             value = decoded.get(field)
@@ -833,6 +862,8 @@ class AISessionCoordinator:
         for field in ("take_profit_1", "take_profit_2", "confidence"):
             if field not in decoded or decoded[field] is None:
                 continue
+            if isinstance(decoded[field], bool) or not isinstance(decoded[field], (int, float)):
+                raise ValueError(f"INVALID_{field.upper()}")
             try:
                 number = float(decoded[field])
             except (TypeError, ValueError):
@@ -949,13 +980,13 @@ class AISessionCoordinator:
 
     @staticmethod
     def _aligned_scan_at(value: datetime) -> datetime:
-        """Return the current closed 5-minute boundary in UTC."""
+        """Return the current closed 15-minute boundary in UTC."""
         point = _as_utc(value).replace(second=0, microsecond=0)
-        return point.replace(minute=(point.minute // 5) * 5)
+        return point.replace(minute=(point.minute // 15) * 15)
 
     @classmethod
     def _next_aligned_scan(cls, value: datetime) -> datetime:
-        return cls._aligned_scan_at(value) + timedelta(minutes=5)
+        return cls._aligned_scan_at(value) + timedelta(minutes=15)
 
     def _calibrate_scope(
         self,
@@ -1016,7 +1047,7 @@ class AISessionCoordinator:
                     symbol=symbol,
                     as_of=as_of,
                     published_since=published_since,
-                    limit=20,
+                    limit=4,
                 )
             except Exception:
                 rows = []
@@ -1030,7 +1061,10 @@ class AISessionCoordinator:
                     {
                         "revision_id": str(revision_id),
                         "symbol": symbol,
+                        "symbols": list(item.get("affected_symbols") or [symbol]),
                         "title": str(item.get("title") or item.get("headline") or "")[:320],
+                        "summary": str(item.get("summary") or item.get("description") or "")[:1000],
+                        "url": str(item.get("url") or item.get("source_url") or "")[:500],
                         "published_at": item.get("published_at"),
                         "known_at": item.get("known_at"),
                         "source": str(item.get("source") or item.get("publisher") or "")[:160],
@@ -1045,7 +1079,7 @@ class AISessionCoordinator:
                 continue
             seen.add(identity)
             deduped.append(item)
-        return deduped[:64]
+        return deduped[:20]
 
     def _blocked_cycle(self, context: AICycleContext, reason: str) -> Any:
         block_stage = infer_block_stage(reason, getattr(context, "stage_block", None))
@@ -1056,8 +1090,8 @@ class AISessionCoordinator:
             decision_origin="SYSTEM",
             extra_fields={
                 "is_model_decision": False,
-                "model_called": False,
-                "model_result": "NOT_RUN",
+                "model_called": context.model_call_attempted,
+                "model_result": "INVALID_OR_DISCARDED" if context.model_call_attempted else "NOT_RUN",
                 "block_stage": block_stage,
                 "operational_state": "SYSTEM_BLOCKED",
                 "blocked_code": str(reason).split(":", 1)[0],
@@ -1095,6 +1129,16 @@ class AISessionCoordinator:
         return truth_service.refresh(account_id, trader, include_trades=False)
 
     def run_cycle_once(self, scheduled_at: str | datetime | None = None) -> Any:
+        if not self._cycle_lock.acquire(blocking=False):
+            raise RuntimeError("AI_CYCLE_ALREADY_RUNNING")
+        try:
+            if self._inflight_future is not None and not self._inflight_future.done():
+                raise RuntimeError("AI_MODEL_STILL_RUNNING")
+            return self._run_cycle_once(scheduled_at)
+        finally:
+            self._cycle_lock.release()
+
+    def _run_cycle_once(self, scheduled_at: str | datetime | None = None) -> Any:
         """Run one complete aligned cycle; manual callers may provide a schedule."""
         with self._lock:
             account_id = self._account_id
@@ -1148,77 +1192,17 @@ class AISessionCoordinator:
             self._record_result(result, context=context, scheduled_at=scheduled_text, started_at=cycle_started)
             return result
 
-        authorization = self._authorization(account_id, mode, as_of=now)
-        if authorization is None:
-            context = AICycleContext(
-                cycle_id=cycle_id,
-                account_id=account_id,
-                generation=int(session.get("generation") or 0),
-                started_at=_iso(now),
-                expires_at=_iso(now + timedelta(seconds=INTENT_TTL_SECONDS)),
-                allowed_instruments=(),
-                mode=mode,
-                venue=venue,
-                session_id=session.get("session_id"),
-            )
-            result = self._blocked_cycle(context, "AUTHORIZATION_REQUIRED")
-            self._record_result(result, context=context, scheduled_at=scheduled_text, started_at=cycle_started)
-            return result
-
-        # The coordinator is an AI_LED execution owner.  A strategy-scoped
-        # authorization, another venue, or another account is not a valid
-        # substitute and must be recorded as a blocked cycle.
-        auth_account = str(getattr(authorization, "account_id", ""))
-        auth_mode = str(getattr(authorization, "mode", "")).upper()
-        auth_venue = str(getattr(authorization, "venue", "")).strip().lower()
-        auth_path = str(getattr(authorization, "decision_path", "")).upper()
-        if (
-            auth_account != account_id
-            or auth_mode != mode.value
-            or auth_venue != venue.lower()
-            or auth_path != DecisionPath.AI_LED.value
-        ):
-            context = AICycleContext(
-                cycle_id=cycle_id,
-                account_id=account_id,
-                generation=int(session.get("generation") or 0),
-                started_at=_iso(now),
-                expires_at=_iso(now + timedelta(seconds=INTENT_TTL_SECONDS)),
-                allowed_instruments=(),
-                mode=mode,
-                venue=venue,
-                session_id=session.get("session_id"),
-                authorization_id=getattr(authorization, "authorization_id", None),
-                authorization_version=getattr(authorization, "version", None),
-            )
-            result = self._blocked_cycle(context, "AUTHORIZATION_SCOPE_MISMATCH")
-            self._record_result(result, context=context, scheduled_at=scheduled_text, started_at=cycle_started)
-            return result
+        # TradingAuthorization used to stop the model before it could inspect
+        # the market.  The account's Gate credential and downstream risk
+        # engine now own authorization; there is no local scope record to
+        # grant, expire or revoke here.
+        authorization = None
 
         # Gate TestNet is a remote-account execution environment.  Perform
         # this read-only truth check before calibration/model calls so a
         # missing credential or degraded private response cannot be turned
         # into a model WAIT or a local 10000-unit risk budget.
         account_truth = self._refresh_remote_account_truth(account_id, mode)
-        if mode is TradingMode.LIVE:
-            context = AICycleContext(
-                cycle_id=cycle_id,
-                account_id=account_id,
-                generation=int(session.get("generation") or 0),
-                started_at=_iso(now),
-                expires_at=_iso(now + timedelta(seconds=INTENT_TTL_SECONDS)),
-                allowed_instruments=(),
-                mode=mode,
-                venue=venue,
-                session_id=session.get("session_id"),
-                authorization_id=getattr(authorization, "authorization_id", None),
-                authorization_version=getattr(authorization, "version", None),
-                account_truth=account_truth,
-                stage_block="ACCOUNT",
-            )
-            result = self._blocked_cycle(context, "LIVE_EXECUTION_LOCKED")
-            self._record_result(result, context=context, scheduled_at=scheduled_text, started_at=cycle_started)
-            return result
         if mode is TradingMode.TESTNET and (
             str(account_truth.get("status") or "").upper() != "AVAILABLE"
             or account_truth.get("equity") is None
@@ -1269,6 +1253,15 @@ class AISessionCoordinator:
             return result
 
         symbols = self._allowed_symbols(authorization)
+        refresh = getattr(self.service, "refresh_ai_inputs", None)
+        if callable(refresh):
+            # Read public K-lines/news only. Failure remains missing evidence;
+            # no fabricated candidate or model WAIT is created here.
+            try:
+                refresh(symbols)
+            except Exception:
+                logger.exception("AI public input refresh failed")
+            now = _as_utc(self.clock())
         calibration = self._calibrate_scope(
             account_id=account_id,
             venue=venue,
@@ -1336,6 +1329,7 @@ class AISessionCoordinator:
             return result
 
         future: Future[Any] = self._executor.submit(self._model_output, context)
+        self._inflight_future = future
         with self._lock:
             self._active_context = context
             self._active_future = future
@@ -1367,11 +1361,6 @@ class AISessionCoordinator:
             self._correct_persisted_outcome(result)
             self._record_result(result, context=context, scheduled_at=scheduled_text, started_at=cycle_started)
             return result
-        if self._authorization(account_id, mode, as_of=_as_utc(self.clock())) is None:
-            result = self._blocked_cycle(context, "AUTHORIZATION_REVOKED_BEFORE_EXECUTION")
-            self._record_result(result, context=context, scheduled_at=scheduled_text, started_at=cycle_started)
-            return result
-
         engine = AILedDecisionEngine(
             store=self.store,
             execution_gateway=self.gateway,
@@ -1501,7 +1490,7 @@ class AISessionCoordinator:
             with self._lock:
                 self._next_scan_at = _iso(next_boundary)
             # The scheduler has no catch-up mode: if startup misses a close,
-            # wait for the next 5-minute UTC boundary instead of replaying a
+            # wait for the next 15-minute UTC boundary instead of replaying a
             # burst of stale cycles.
             wait_seconds = max(0.0, (next_boundary - now).total_seconds())
             if self._wake_event.wait(wait_seconds):

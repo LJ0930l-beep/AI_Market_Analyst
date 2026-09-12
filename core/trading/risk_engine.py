@@ -625,7 +625,10 @@ class RiskEngine:
                 position_entry = Decimal(str(position.get("entry", position.get("entry_price", 0))))
                 position_stop = Decimal(str(position.get("stop", position.get("stop_loss", 0))))
                 position_contract = Decimal(str(position.get("contract_size", 1)))
-                position_risk = max(Decimal("0"), abs(position_entry - position_stop) * remaining * position_contract)
+                if position_stop <= Decimal("0"):
+                    position_risk = position_entry * Decimal("0.05") * remaining * position_contract
+                else:
+                    position_risk = max(Decimal("0"), abs(position_entry - position_stop) * remaining * position_contract)
             except Exception:
                 continue
             existing_risk += position_risk
