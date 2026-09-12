@@ -286,7 +286,15 @@ def _restore_failure_destination(target: Path) -> Path:
 
 
 def _assert_restore_target_offline(target: Path) -> None:
-    """Fail closed when target WAL/SHM state could mix with a replacement."""
+    """Fail closed only when an active WAL/SHM state could mix with restore.
+
+    ``journal_mode=WAL`` is a persistent SQLite database preference, not
+    evidence that a process still owns the file.  An offline target produced
+    by this application legitimately retains that setting after all
+    connections close.  The WAL/SHM sidecars above are the relevant active
+    state; rejecting the database solely for its configured journal mode
+    makes ordinary offline restores impossible.
+    """
 
     for suffix in ("-wal", "-shm"):
         sidecar = Path(f"{target}{suffix}")
@@ -306,19 +314,13 @@ def _assert_restore_target_offline(target: Path) -> None:
             "restore requires an offline SQLite target; journal mode could not be inspected"
         ) from exc
     try:
-        mode_row = connection.execute("PRAGMA journal_mode").fetchone()
-        mode = str(mode_row[0]).lower() if mode_row else "unknown"
+        connection.execute("PRAGMA schema_version").fetchone()
     except sqlite3.Error as exc:
         raise BackupError(
             "restore requires an offline SQLite target; journal mode could not be inspected"
         ) from exc
     finally:
         connection.close()
-    if mode == "wal":
-        raise BackupError(
-            "restore requires an offline SQLite target; WAL journal mode is active. "
-            "Stop the owned launcher and close all database connections before retrying."
-        )
 
 
 def _quarantine_new_target(target: Path) -> Path | None:

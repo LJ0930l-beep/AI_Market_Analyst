@@ -11,8 +11,10 @@ data/*.bak
 *.bak
 *.log
 *.egg-info/
+node_modules/
 web/node_modules/
 web/dist/
+.workbuddy/
 
 # Local audit/build outputs, desktop backups, and unsafe ad-hoc installers.
 # Canonical acceptance evidence belongs under evidence/ and is tracked

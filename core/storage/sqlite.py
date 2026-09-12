@@ -186,15 +186,21 @@ class SQLiteStore(V2Store):
             return
         if str(self.path) != ":memory:":
             self.path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(str(self.path))
+        connection = sqlite3.connect(str(self.path), timeout=30.0)
         connection.row_factory = sqlite3.Row
         try:
+            if str(self.path) != ":memory:":
+                connection.execute("PRAGMA busy_timeout=30000")
             yield connection
             connection.commit()
         finally:
             connection.close()
 
     def initialize(self) -> None:
+        # Enable WAL mode for file databases to allow concurrent reads and writes.
+        if str(self.path) != ":memory:":
+            with self._connect() as wal_db:
+                wal_db.execute("PRAGMA journal_mode=WAL")
         # Preserve a consistent pre-V2 image before additive schema changes.
         if str(self.path) != ":memory:" and self.path.exists():
             with self._connect() as source:
@@ -202,7 +208,7 @@ class SQLiteStore(V2Store):
                 version = source.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] if exists else 0
                 backup = self.path.with_name(self.path.name + ".pre-v2.bak")
                 if (version or 0) < 14 and not backup.exists():
-                    with closing(sqlite3.connect(str(backup))) as destination:
+                    with closing(sqlite3.connect(str(backup), timeout=30.0)) as destination:
                         source.backup(destination)
         with self._connect() as db:
             db.executescript(
