@@ -11,6 +11,11 @@ import math
 from typing import Any
 
 from ..trading.account_scope import resolve_account_scope
+from ..trading.gate_account_truth import (
+    CAPITAL_BASIS_SOURCE as REMOTE_CAPITAL_SOURCE,
+    resolve_remote_capital_basis,
+)
+from ..trading.gate_accounts import GATE_TESTNET_ACCOUNT_TYPE
 
 
 INITIAL_SIMULATED_CAPITAL = 1000.0
@@ -937,6 +942,9 @@ def analyze_ai_trading_ledger(
         page_size=page_size,
     )
     initial_capital = INITIAL_SIMULATED_CAPITAL
+    account_config: dict[str, Any] = {}
+    expected_mode = None
+    expected_venue = None
     with store._connect() as db:
         has_accounts = db.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='accounts'"
@@ -948,31 +956,23 @@ def analyze_ai_trading_ledger(
                 raise ValueError("ACCOUNT_REQUIRED")
             if account_id:
                 account_row = db.execute(
-                    "SELECT initial_deposit FROM accounts WHERE account_id=?",
+                    "SELECT initial_deposit, mode, config_json FROM accounts WHERE account_id=?",
                     (account_id,),
                 ).fetchone()
-            if account_row:
-                initial_capital = float(account_row[0])
-            elif account_count:
+            if account_row is None and account_count:
                 raise ValueError(f"ACCOUNT_NOT_FOUND: Account '{account_id}' is not registered.")
-
-        expected_mode = None
-        expected_venue = None
-        if account_row:
-            account_record = db.execute(
-                "SELECT mode, config_json FROM accounts WHERE account_id=?",
-                (account_id,),
-            ).fetchone()
-            if account_record:
-                expected_mode = str(account_record[0]).upper()
-                try:
-                    account_config = json.loads(account_record[1] or "{}")
-                except (TypeError, ValueError, json.JSONDecodeError):
-                    account_config = {}
-                expected_venue = str(
-                    account_config.get("venue")
-                    or ("simulated" if expected_mode == "PAPER" else "gate")
-                ).lower()
+        if account_row is not None:
+            expected_mode = str(account_row["mode"] or "").upper() or None
+            try:
+                parsed_config = json.loads(account_row["config_json"] or "{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                parsed_config = {}
+            account_config = parsed_config if isinstance(parsed_config, dict) else {}
+            expected_venue = str(
+                account_config.get("venue")
+                or ("simulated" if expected_mode == "PAPER" else "gate")
+            ).lower()
+            initial_capital = float(account_row["initial_deposit"] or 0.0)
 
         decisions_rows = db.execute(
             "SELECT decision_id, symbol, status, payload_json, created_at FROM agent_trade_decisions ORDER BY created_at ASC"
@@ -985,6 +985,20 @@ def analyze_ai_trading_ledger(
         events_rows = db.execute(
             "SELECT event_id, position_id, payload_json, created_at FROM simulation_events ORDER BY created_at ASC"
         ).fetchall()
+
+    # A managed Gate account never publishes the local compatibility seed as
+    # starting capital or equity.  Only observed remote facts may be shown, so
+    # an unsynchronised account reports no capital instead of a fake 10000.
+    managed_gate = (
+        str(account_config.get("account_type") or "").upper() == GATE_TESTNET_ACCOUNT_TYPE
+        or expected_mode == "TESTNET"
+    )
+    capital_basis = resolve_remote_capital_basis(store, account_id or "") if managed_gate and account_id else {}
+    remote_capital_ready = managed_gate and str(capital_basis.get("status") or "").upper() == "AVAILABLE"
+    if remote_capital_ready:
+        initial_capital = float(capital_basis["baseline_equity"])
+    elif managed_gate:
+        initial_capital = 0.0
 
     def parse_payload(value):
         try:
@@ -1265,23 +1279,90 @@ def analyze_ai_trading_ledger(
         initial_capital=initial_capital,
     )
 
+    account_block: dict[str, Any] = {
+        "initial_capital_usdt": round(initial_capital, 2),
+        "current_equity_usdt": round(current_equity, 2),
+        "net_pnl_usdt": net_pnl,
+        "total_roi_pct": roi_total,
+        "margin_used_usdt": round(margin_used, 2),
+        "margin_available_usdt": max(0.0, round(current_equity - margin_used, 2)),
+        "win_rate_pct": win_rate,
+        "total_trades": len(trades),
+        "winning_trades": total_wins,
+        "losing_trades": total_losses,
+        "profit_factor": profit_factor,
+        "max_drawdown_pct": max_drawdown_pct,
+        "avg_leverage": avg_leverage_overall,
+        "leverage_range": "5x ~ 100x (规则建议评分 / 自适应)",
+        "equity_basis": "local_paper_ledger_realized_and_observed_fees",
+        "capital_source": "LOCAL_PAPER_LEDGER",
+        "capital_observed_at": None,
+    }
+    remote_equity_curve: list[dict[str, Any]] | None = None
+    if managed_gate:
+        remote_basis = capital_basis if isinstance(capital_basis, dict) else {}
+        if remote_capital_ready:
+            baseline = _projection_number(remote_basis.get("baseline_equity"))
+            account_block.update(
+                {
+                    "initial_capital_usdt": baseline,
+                    "initial_capital_basis": remote_basis.get("baseline_basis"),
+                    "initial_capital_observed_at": remote_basis.get("baseline_observed_at"),
+                    "current_equity_usdt": _projection_number(remote_basis.get("current_equity")),
+                    "net_pnl_usdt": _projection_number(remote_basis.get("net_pnl")),
+                    "total_roi_pct": _projection_number(remote_basis.get("roi_pct")),
+                    "realized_pnl_usdt": _projection_number(remote_basis.get("realized_pnl")),
+                    "unrealized_pnl_usdt": _projection_number(remote_basis.get("unrealized_pnl")),
+                    "cumulative_fees_usdt": _projection_number(remote_basis.get("cumulative_fees")),
+                    "max_drawdown_pct": _projection_number(remote_basis.get("max_drawdown_pct")),
+                    "margin_used_usdt": _projection_number(remote_basis.get("used_margin")),
+                    "margin_available_usdt": _projection_number(remote_basis.get("available_margin")),
+                    "equity_basis": "GATE_TESTNET_REMOTE_ACCOUNT_TRUTH",
+                    "capital_source": REMOTE_CAPITAL_SOURCE,
+                    "provider_source": remote_basis.get("provider_source"),
+                    "capital_observed_at": remote_basis.get("observed_at"),
+                    "capital_age_seconds": remote_basis.get("age_seconds"),
+                    "capital_stale": bool(remote_basis.get("stale")),
+                    "capital_error_code": None,
+                }
+            )
+            remote_equity_curve = [
+                {
+                    "time": point.get("time"),
+                    "equity": point.get("equity_usdt"),
+                    "pnl": (
+                        (point.get("equity_usdt") - baseline)
+                        if baseline is not None and point.get("equity_usdt") is not None
+                        else None
+                    ),
+                }
+                for point in (remote_basis.get("equity_series") or [])
+            ]
+        else:
+            account_block.update(
+                {
+                    "initial_capital_usdt": None,
+                    "current_equity_usdt": None,
+                    "net_pnl_usdt": None,
+                    "total_roi_pct": None,
+                    "realized_pnl_usdt": None,
+                    "unrealized_pnl_usdt": None,
+                    "cumulative_fees_usdt": None,
+                    "max_drawdown_pct": None,
+                    "margin_used_usdt": None,
+                    "margin_available_usdt": None,
+                    "equity_basis": "NOT_OBSERVED",
+                    "capital_source": None,
+                    "capital_observed_at": None,
+                    "capital_error_code": str(
+                        remote_basis.get("error_code") or "REMOTE_ACCOUNT_TRUTH_NOT_OBSERVED"
+                    ),
+                }
+            )
+            remote_equity_curve = []
+
     return {
-        "account": {
-            "initial_capital_usdt": round(initial_capital, 2),
-            "current_equity_usdt": round(current_equity, 2),
-            "net_pnl_usdt": net_pnl,
-            "total_roi_pct": roi_total,
-            "margin_used_usdt": round(margin_used, 2),
-            "margin_available_usdt": max(0.0, round(current_equity - margin_used, 2)),
-            "win_rate_pct": win_rate,
-            "total_trades": len(trades),
-            "winning_trades": total_wins,
-            "losing_trades": total_losses,
-            "profit_factor": profit_factor,
-            "max_drawdown_pct": max_drawdown_pct,
-            "avg_leverage": avg_leverage_overall,
-            "leverage_range": "5x ~ 100x (规则建议评分 / 自适应)",
-        },
+        "account": account_block,
         "style_dna": style_dna,
         "strategy_matrix": per_strategy_summary,
         "trades": sorted(trades, key=lambda x: x["opened_at"], reverse=True),
@@ -1295,7 +1376,7 @@ def analyze_ai_trading_ledger(
         "execution_data_quality": execution_projection["data_quality"],
         "execution_pagination": execution_projection["pagination"],
         "legacy_unscoped_positions": execution_projection["legacy_unscoped_positions"],
-        "equity_curve": equity_curve[-30:],
+        "equity_curve": remote_equity_curve[-30:] if remote_equity_curve is not None else equity_curve[-30:],
         "timezone": "Asia/Hong_Kong",
         "timezone_label": "中国香港时区 (HKT UTC+8)",
     }

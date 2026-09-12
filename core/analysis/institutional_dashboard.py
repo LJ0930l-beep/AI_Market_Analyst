@@ -16,7 +16,16 @@ import math
 from typing import Any
 
 from ..trading.account_scope import resolve_account_scope
+from ..trading.gate_account_truth import (
+    CAPITAL_BASIS_SOURCE,
+    resolve_remote_capital_basis,
+)
 
+
+LOCAL_LEDGER_SOURCE = "authoritative_local_execution_ledger"
+REMOTE_TRUTH_MISSING_SOURCE = "gate_remote_truth_not_observed"
+GATE_EQUITY_BASIS = "GATE_TESTNET_REMOTE_ACCOUNT_TRUTH"
+LOCAL_EQUITY_BASIS = "realized_and_observed_fees_only"
 
 STRATEGY_LABELS: dict[str, str] = {
     "ema_trend": "EMA 趋势跟随",
@@ -322,13 +331,78 @@ def _bar_event_map(db: Any, fill_rows: list[dict[str, Any]]) -> dict[str, dict[s
     return result
 
 
-def _empty(reason: str, scope: dict[str, str], *, status: str = "EMPTY", counts: dict[str, int] | None = None) -> dict[str, Any]:
+def _gate_capital_account(
+    capital: dict[str, Any],
+    *,
+    local_execution_net_pnl: float | None,
+) -> dict[str, Any]:
+    """Account capital block for a managed Gate account.
+
+    Every capital field is an observed remote snapshot fact.  The local
+    compatibility seed (``accounts.initial_deposit``, historically ``10000``)
+    is never published here, so an account that has not been synchronised
+    renders an explicit missing value instead of a fabricated balance.
+    """
+
+    observed = str(capital.get("status") or "").upper() == "AVAILABLE"
+    if not observed:
+        return {
+            "initial_capital_usdt": None,
+            "initial_capital_basis": "NOT_OBSERVED",
+            "initial_capital_observed_at": None,
+            "current_equity_usdt": None,
+            "available_margin_usdt": None,
+            "used_margin_usdt": None,
+            "realized_pnl_usdt": None,
+            "unrealized_pnl_usdt": None,
+            "net_pnl_usdt": None,
+            "cumulative_fees_usdt": None,
+            "cumulative_fees_basis": "NOT_OBSERVED",
+            "total_roi_pct": None,
+            "max_drawdown_pct": None,
+            "local_execution_net_pnl_usdt": local_execution_net_pnl,
+            "equity_basis": "NOT_OBSERVED",
+            "capital_source": None,
+            "provider_source": capital.get("provider_source"),
+            "truth_observed_at": capital.get("observed_at"),
+            "truth_age_seconds": capital.get("age_seconds"),
+            "truth_stale": True,
+            "truth_error_code": str(capital.get("error_code") or "REMOTE_ACCOUNT_TRUTH_NOT_OBSERVED"),
+            "truth_message_zh": capital.get("message_zh"),
+        }
+    return {
+        "initial_capital_usdt": capital.get("baseline_equity"),
+        "initial_capital_basis": capital.get("baseline_basis"),
+        "initial_capital_observed_at": capital.get("baseline_observed_at"),
+        "current_equity_usdt": capital.get("current_equity"),
+        "available_margin_usdt": capital.get("available_margin"),
+        "used_margin_usdt": capital.get("used_margin"),
+        "realized_pnl_usdt": capital.get("realized_pnl"),
+        "unrealized_pnl_usdt": capital.get("unrealized_pnl"),
+        "net_pnl_usdt": capital.get("net_pnl"),
+        "cumulative_fees_usdt": capital.get("cumulative_fees"),
+        "cumulative_fees_basis": capital.get("fee_evidence"),
+        "total_roi_pct": capital.get("roi_pct"),
+        "max_drawdown_pct": capital.get("max_drawdown_pct"),
+        "local_execution_net_pnl_usdt": local_execution_net_pnl,
+        "equity_basis": GATE_EQUITY_BASIS,
+        "capital_source": capital.get("source") or CAPITAL_BASIS_SOURCE,
+        "provider_source": capital.get("provider_source"),
+        "truth_observed_at": capital.get("observed_at"),
+        "truth_age_seconds": capital.get("age_seconds"),
+        "truth_stale": bool(capital.get("stale")),
+        "truth_error_code": None,
+        "truth_message_zh": None,
+    }
+
+
+def _empty(reason: str, scope: dict[str, str], *, status: str = "EMPTY", counts: dict[str, int] | None = None, source: str = LOCAL_LEDGER_SOURCE, account: dict[str, Any] | None = None, equity_drawdown: dict[str, Any] | None = None) -> dict[str, Any]:
     return {
         "status": status,
         "scope": scope,
         "data_quality": {
             "is_sample": False,
-            "source": "authoritative_local_execution_ledger",
+            "source": source,
             "status": "NO_FACTS" if status == "EMPTY" else "DEGRADED",
             "reason": reason,
             "counts": counts or {},
@@ -339,7 +413,7 @@ def _empty(reason: str, scope: dict[str, str], *, status: str = "EMPTY", counts:
             "message_zh": reason,
             "message_en": "No verified execution facts are available for this account scope." if status == "EMPTY" else "Some dashboard facts require reconciliation.",
         },
-        "account": {
+        "account": account or {
             "initial_capital_usdt": None,
             "current_equity_usdt": None,
             "realized_pnl_usdt": None,
@@ -349,7 +423,7 @@ def _empty(reason: str, scope: dict[str, str], *, status: str = "EMPTY", counts:
             "max_drawdown_pct": None,
             "equity_basis": "NOT_AVAILABLE",
         },
-        "equity_drawdown": {"series": [], "max_drawdown_pct": None},
+        "equity_drawdown": equity_drawdown or {"series": [], "max_drawdown_pct": None},
         "realized_pnl_bars": [],
         "strategy_bars": [
             {"strategy_id": key, "name": label, "trade_count": 0, "sample_size": 0, "win_count": 0, "win_rate_pct": None, "pnl_usdt": None}
@@ -385,6 +459,13 @@ def build_institutional_dashboard(
     if start and end and end < start:
         raise ValueError("DASHBOARD_TIME_RANGE_INVALID")
     bounded = max(1, min(int(limit), 500))
+
+    # A managed Gate account derives its capital, equity, drawdown and fees from
+    # observed remote facts only.  The local compatibility seed is not read
+    # here at all, so it can never be published as TestNet equity.
+    is_gate_scope = str(scope.get("provider") or "").strip().lower() == "gate"
+    capital = resolve_remote_capital_basis(store, account_id) if is_gate_scope else {}
+    remote_capital_ready = is_gate_scope and str(capital.get("status") or "").upper() == "AVAILABLE"
 
     with store._connect() as db:
         account_rows = _rows(db, "accounts", "SELECT account_id, mode, currency, initial_deposit, config_json, created_at FROM accounts WHERE account_id=?", (account_id,))
@@ -496,8 +577,23 @@ def build_institutional_dashboard(
         "qualified_candles": len(candle_rows),
     }
     if not any(counts.values()):
-        result = _empty("当前账户作用域尚无可验证的执行账本事实。", scope, counts=counts)
-        result["account"]["initial_capital_usdt"] = _number(account_row.get("initial_deposit"))
+        gate_account = _gate_capital_account(capital, local_execution_net_pnl=None) if is_gate_scope else None
+        if is_gate_scope and not remote_capital_ready:
+            reason = "当前 Gate 模拟盘账户尚无远端账户事实；本地种子存款不作为资金口径，请先在「AI 做单」中同步远端账户。"
+        else:
+            reason = "当前账户作用域尚无可验证的执行账本事实。"
+        result = _empty(
+            reason,
+            scope,
+            counts=counts,
+            source=CAPITAL_BASIS_SOURCE if remote_capital_ready else (REMOTE_TRUTH_MISSING_SOURCE if is_gate_scope else LOCAL_LEDGER_SOURCE),
+            account=gate_account,
+            equity_drawdown=(
+                {"series": capital.get("equity_series") or [], "max_drawdown_pct": capital.get("max_drawdown_pct")}
+                if remote_capital_ready
+                else None
+            ),
+        )
         result["scope"]["currency"] = account_row.get("currency") or "USDT"
         return result
 
@@ -554,25 +650,36 @@ def build_institutional_dashboard(
         fallback_realized = sum((_number(payload.get("realized_pnl"), 0.0) or 0.0) for _, payload in position_rows)
         gross_realized = fallback_realized + fill_fees
 
-    initial = _number(account_row.get("initial_deposit"))
-    net_pnl = gross_realized - fill_fees if not fee_unknown else None
-    current_equity = initial + net_pnl if initial is not None and net_pnl is not None else None
+    local_execution_net_pnl = gross_realized - fill_fees if not fee_unknown else None
     equity_series: list[dict[str, Any]] = []
     max_drawdown = 0.0
-    peak: float | None = initial
-    running = initial
-    if initial is not None:
-        equity_series.append({"time": _iso(_time(account_row.get("created_at")) or datetime.now(timezone.utc)), "equity_usdt": initial, "drawdown_pct": 0.0})
-    for point, delta, _kind in sorted(equity_events, key=lambda item: item[0]):
-        if running is None:
-            break
-        running += delta
-        if peak is None or running > peak:
-            peak = running
-        drawdown = ((peak - running) / peak * 100.0) if peak and peak > 0 else None
-        if drawdown is not None:
-            max_drawdown = max(max_drawdown, drawdown)
-        equity_series.append({"time": point.isoformat(), "equity_usdt": running, "drawdown_pct": drawdown})
+    if remote_capital_ready:
+        # The remote snapshot history is the account's real equity curve.  The
+        # local ledger delta curve is intentionally not built for this account:
+        # it would be anchored to the local seed balance.
+        equity_series = [dict(point) for point in capital.get("equity_series") or []]
+        max_drawdown = float(capital.get("max_drawdown_pct") or 0.0)
+        initial = capital.get("baseline_equity")
+        net_pnl = capital.get("net_pnl")
+        current_equity = capital.get("current_equity")
+    else:
+        initial = _number(account_row.get("initial_deposit"))
+        net_pnl = local_execution_net_pnl
+        current_equity = initial + net_pnl if initial is not None and net_pnl is not None else None
+        peak: float | None = initial
+        running = initial
+        if initial is not None:
+            equity_series.append({"time": _iso(_time(account_row.get("created_at")) or datetime.now(timezone.utc)), "equity_usdt": initial, "drawdown_pct": 0.0})
+        for point, delta, _kind in sorted(equity_events, key=lambda item: item[0]):
+            if running is None:
+                break
+            running += delta
+            if peak is None or running > peak:
+                peak = running
+            drawdown = ((peak - running) / peak * 100.0) if peak and peak > 0 else None
+            if drawdown is not None:
+                max_drawdown = max(max_drawdown, drawdown)
+            equity_series.append({"time": point.isoformat(), "equity_usdt": running, "drawdown_pct": drawdown})
 
     strategy_sample: dict[str, int] = defaultdict(int)
     for row in candidate_rows:
@@ -649,20 +756,19 @@ def build_institutional_dashboard(
     status = "AVAILABLE" if fill_rows or order_rows or position_rows or candidate_rows or cycle_rows else "EMPTY"
     if fee_unknown or any(not _scope_match(row, scope, _json(row.get("payload_json"))) for row in fill_source_rows):
         status = "DEGRADED"
-    result = {
-        "status": status,
-        "scope": {**scope, "currency": account_row.get("currency") or "USDT"},
-        "data_quality": {
-            "is_sample": False,
-            "source": "authoritative_local_execution_ledger",
-            "status": "DEGRADED" if status == "DEGRADED" else "AVAILABLE",
-            "counts": counts,
-            "fee_unknown_count": fee_unknown,
-            "unknown_fields": (["fee_amount"] if fee_unknown else []) + (["unrealized_pnl"] if position_rows else []),
-            "note_zh": "公开市场 K 线仅作为图表证据；成交、费用和盈亏只来自账户作用域账本。" if scope["provider"] == "gate" else "成交、费用和盈亏只来自账户作用域账本。",
-        },
-        "empty_state": None if status != "EMPTY" else {"code": "NOT_RUN", "message_zh": "当前账户尚无可验证的执行账本事实。", "message_en": "No verified execution facts are available for this account scope."},
-        "account": {
+    # An empty scope keeps its EMPTY status contract: the missing remote
+    # capital basis is reported through data_quality and empty_state instead of
+    # reclassifying an account that genuinely has no execution facts yet.
+    if remote_capital_ready:
+        capital_quality_source = CAPITAL_BASIS_SOURCE
+    elif is_gate_scope:
+        capital_quality_source = REMOTE_TRUTH_MISSING_SOURCE
+    else:
+        capital_quality_source = LOCAL_LEDGER_SOURCE
+    account_block = (
+        _gate_capital_account(capital, local_execution_net_pnl=local_execution_net_pnl)
+        if is_gate_scope
+        else {
             "initial_capital_usdt": initial,
             "current_equity_usdt": current_equity,
             "realized_pnl_usdt": gross_realized if gross_exit_by_identity or position_rows else None,
@@ -670,8 +776,37 @@ def build_institutional_dashboard(
             "cumulative_fees_usdt": None if fee_unknown else fill_fees,
             "total_roi_pct": (net_pnl / initial * 100.0) if net_pnl is not None and initial and initial > 0 else None,
             "max_drawdown_pct": max_drawdown if equity_series else None,
-            "equity_basis": "realized_and_observed_fees_only",
+            "local_execution_net_pnl_usdt": local_execution_net_pnl,
+            "equity_basis": LOCAL_EQUITY_BASIS,
+            "capital_source": LOCAL_LEDGER_SOURCE,
+        }
+    )
+    if is_gate_scope:
+        gate_note = (
+            "账户资金、权益、回撤与费用来自 Gate TestNet 私有 API 的远端账户事实；成交、决策与保护单来自账户作用域执行账本。"
+            if remote_capital_ready
+            else "未观测到 Gate 远端账户事实：账户资金与权益显示为空，本地种子存款不作为资金口径。请同步远端账户。"
+        )
+        quality_note = gate_note
+    else:
+        quality_note = "成交、费用和盈亏只来自账户作用域账本。"
+    result = {
+        "status": status,
+        "scope": {**scope, "currency": account_row.get("currency") or "USDT"},
+        "data_quality": {
+            "is_sample": False,
+            "source": capital_quality_source,
+            "status": "DEGRADED" if status == "DEGRADED" else "AVAILABLE",
+            "counts": counts,
+            "fee_unknown_count": fee_unknown,
+            "unknown_fields": (["fee_amount"] if fee_unknown else []) + (["unrealized_pnl"] if position_rows else []),
+            "capital_basis_status": str(capital.get("status") or "UNAVAILABLE").upper() if is_gate_scope else "LOCAL_PAPER",
+            "capital_observed_at": capital.get("observed_at") if remote_capital_ready else None,
+            "capital_stale": bool(capital.get("stale")) if remote_capital_ready else None,
+            "note_zh": quality_note,
         },
+        "empty_state": None if status != "EMPTY" else {"code": "NOT_RUN", "message_zh": "当前账户尚无可验证的执行账本事实。", "message_en": "No verified execution facts are available for this account scope."},
+        "account": account_block,
         "equity_drawdown": {"series": equity_series, "max_drawdown_pct": max_drawdown if equity_series else None},
         "realized_pnl_bars": [{"time": day, "pnl_usdt": value} for day, value in sorted(pnl_by_day.items()) if day in pnl_known_by_day],
         "strategy_bars": strategy_bars,

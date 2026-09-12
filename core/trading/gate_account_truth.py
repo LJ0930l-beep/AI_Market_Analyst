@@ -236,4 +236,193 @@ class GateAccountTruthService:
         return result
 
 
-__all__ = ["GateAccountTruthService"]
+CAPITAL_BASIS_SOURCE = "gate_testnet_remote_account_truth"
+CAPITAL_BASIS_BASELINE = "GATE_TESTNET_FIRST_AVAILABLE_REMOTE_SNAPSHOT"
+CAPITAL_BASIS_STALE_AFTER_SECONDS = 300.0
+
+
+def _finite(value: Any) -> Optional[float]:
+    """Return a finite float, or ``None``.  A bad value is never zero."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _unavailable_capital_basis(
+    error_code: str,
+    *,
+    snapshot_count: int = 0,
+    observed_at: Any = None,
+    provider_source: Any = None,
+    message_zh: Any = None,
+) -> Dict[str, Any]:
+    return {
+        "status": "UNAVAILABLE",
+        "source": None,
+        "provider_source": provider_source,
+        "observed_at": observed_at,
+        "age_seconds": None,
+        "stale": False,
+        "current_equity": None,
+        "available_margin": None,
+        "used_margin": None,
+        "unrealized_pnl": None,
+        "realized_pnl": None,
+        "baseline_equity": None,
+        "baseline_observed_at": None,
+        "baseline_basis": None,
+        "net_pnl": None,
+        "roi_pct": None,
+        "cumulative_fees": None,
+        "fee_evidence": "UNKNOWN",
+        "max_drawdown_pct": None,
+        "equity_series": [],
+        "snapshot_count": snapshot_count,
+        "error_code": error_code,
+        "message_zh": message_zh,
+    }
+
+
+def resolve_remote_capital_basis(
+    store: Any,
+    account_id: str,
+    *,
+    now: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    """Project the observed Gate capital basis for one managed account.
+
+    A managed Gate account must never publish the local
+    ``accounts.initial_deposit`` compatibility seed as equity or starting
+    capital: that value is a local artifact (for example ``10000``) and has no
+    exchange meaning.  This function therefore reads only persisted remote
+    observations and returns an explicit ``UNAVAILABLE`` when none exist, so a
+    caller can render "尚未同步" instead of a fabricated balance.
+
+    The baseline is the earliest remote snapshot whose equity is a finite,
+    non-negative number.  Earlier rows are skipped rather than plotted: an
+    older projection could pair a valid margin with a mangled equity.
+    """
+
+    canonical = canonical_account_id(store, str(account_id or "").strip()) or str(account_id or "").strip()
+    moment = now or datetime.now(timezone.utc)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+
+    with store._connect() as db:
+        exists = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='gate_remote_account_snapshots'"
+        ).fetchone()
+        if not exists:
+            return _unavailable_capital_basis("REMOTE_ACCOUNT_TRUTH_NOT_OBSERVED")
+        rows = [
+            dict(row)
+            for row in db.execute(
+                """SELECT observed_at, status, equity, available_margin, used_margin,
+                          unrealized_pnl, realized_pnl, source, error_code, message_zh, fills_json
+                   FROM gate_remote_account_snapshots
+                   WHERE account_id=?
+                   ORDER BY observed_at ASC, created_at ASC, snapshot_id ASC""",
+                (canonical,),
+            ).fetchall()
+        ]
+    if not rows:
+        return _unavailable_capital_basis("REMOTE_ACCOUNT_TRUTH_NOT_OBSERVED")
+
+    available = [row for row in rows if str(row.get("status") or "").upper() == "AVAILABLE"]
+    if not available:
+        latest = rows[-1]
+        return _unavailable_capital_basis(
+            str(latest.get("error_code") or "REMOTE_ACCOUNT_TRUTH_UNAVAILABLE"),
+            snapshot_count=len(rows),
+            observed_at=latest.get("observed_at"),
+            provider_source=latest.get("source"),
+            message_zh=latest.get("message_zh"),
+        )
+
+    plausible: list[tuple[Dict[str, Any], float]] = []
+    for row in available:
+        equity = _finite(row.get("equity"))
+        if equity is None or equity < 0:
+            continue
+        plausible.append((row, equity))
+    if not plausible:
+        latest = available[-1]
+        return _unavailable_capital_basis(
+            "REMOTE_ACCOUNT_EQUITY_NOT_PLAUSIBLE",
+            snapshot_count=len(rows),
+            observed_at=latest.get("observed_at"),
+            provider_source=latest.get("source"),
+            message_zh="远端快照未包含可信权益值，未使用本地种子存款替代。",
+        )
+
+    series: list[Dict[str, Any]] = []
+    peak: Optional[float] = None
+    max_drawdown = 0.0
+    for row, equity in plausible:
+        peak = equity if peak is None or equity > peak else peak
+        drawdown = ((peak - equity) / peak * 100.0) if peak and peak > 0 else None
+        if drawdown is not None and drawdown > max_drawdown:
+            max_drawdown = drawdown
+        series.append({"time": _iso(row.get("observed_at")), "equity_usdt": equity, "drawdown_pct": drawdown})
+
+    baseline_row, baseline_equity = plausible[0]
+    current_row, current_equity = plausible[-1]
+    observed_at = _iso(current_row.get("observed_at"))
+    age = (moment - datetime.fromisoformat(observed_at.replace("Z", "+00:00"))).total_seconds()
+
+    cumulative_fees: Optional[float] = None
+    fee_evidence = "UNKNOWN"
+    for row in reversed(rows):
+        try:
+            fills = json.loads(row.get("fills_json") or "[]")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if not isinstance(fills, list) or not fills:
+            continue
+        observed_fees = [
+            _finite(item.get("fee_cost"))
+            for item in fills
+            if isinstance(item, dict)
+        ]
+        observed_fees = [value for value in observed_fees if value is not None]
+        if not observed_fees:
+            fee_evidence = "OBSERVED_REMOTE_WITHOUT_FEE"
+            break
+        cumulative_fees = sum(observed_fees)
+        fee_evidence = "OBSERVED_REMOTE_FILLS"
+        break
+
+    net_pnl = current_equity - baseline_equity
+    roi = (net_pnl / baseline_equity * 100.0) if baseline_equity > 0 else None
+    return {
+        "status": "AVAILABLE",
+        "source": CAPITAL_BASIS_SOURCE,
+        "provider_source": current_row.get("source"),
+        "observed_at": observed_at,
+        "age_seconds": age,
+        "stale": age > CAPITAL_BASIS_STALE_AFTER_SECONDS,
+        "current_equity": current_equity,
+        "available_margin": _finite(current_row.get("available_margin")),
+        "used_margin": _finite(current_row.get("used_margin")),
+        "unrealized_pnl": _finite(current_row.get("unrealized_pnl")),
+        "realized_pnl": _finite(current_row.get("realized_pnl")),
+        "baseline_equity": baseline_equity,
+        "baseline_observed_at": _iso(baseline_row.get("observed_at")),
+        "baseline_basis": CAPITAL_BASIS_BASELINE,
+        "net_pnl": net_pnl,
+        "roi_pct": roi,
+        "cumulative_fees": cumulative_fees,
+        "fee_evidence": fee_evidence,
+        "max_drawdown_pct": max_drawdown if series else None,
+        "equity_series": series,
+        "snapshot_count": len(rows),
+        "error_code": None,
+        "message_zh": None,
+    }
+
+
+__all__ = ["GateAccountTruthService", "resolve_remote_capital_basis"]

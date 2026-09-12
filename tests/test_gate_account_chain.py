@@ -14,7 +14,7 @@ from core.security.credentials import CredentialVault
 from core.storage import SQLiteStore
 from core.trading.execution_gateway import (
     ExecutionGateway,
-    LiveDisabledByReleasePolicyError,
+    GatewayError,
     OrderIntent,
     ProtectionPlan,
     TradingMode,
@@ -82,7 +82,7 @@ def test_gate_default_accounts_are_distinct_and_api_provision_is_idempotent(tmp_
     assert accounts[GATE_PAPER_ACCOUNT_ID]["api_environment"] == "TESTNET"
     assert accounts[GATE_LIVE_ACCOUNT_ID]["api_environment"] == "LIVE"
     assert accounts[GATE_PAPER_ACCOUNT_ID]["api_base_url"] != accounts[GATE_LIVE_ACCOUNT_ID]["api_base_url"]
-    assert accounts[GATE_LIVE_ACCOUNT_ID]["live_status"] == "LOCKED"
+    assert accounts[GATE_LIVE_ACCOUNT_ID]["live_status"] == "AVAILABLE"
     assert accounts[GATE_PAPER_ACCOUNT_ID]["private_api_access"] == "NOT_ATTEMPTED"
     # Account discovery must not depend on whether a caller persisted compact
     # or pretty JSON in the profile row.
@@ -395,7 +395,7 @@ def test_gate_testnet_account_does_not_read_local_ledger_or_route_paper_order(tm
         ).fetchone()[0] == 0
 
 
-def test_gate_live_account_stays_release_locked_without_adapter_call(tmp_path):
+def test_gate_live_account_is_account_scoped_not_release_locked(tmp_path):
     store = SQLiteStore(tmp_path / "gate-live-lock.db")
     store.initialize()
     provision_default_gate_accounts(store)
@@ -404,8 +404,8 @@ def test_gate_live_account_stays_release_locked_without_adapter_call(tmp_path):
     account = client.get(f"/v2/gate/account?account_id={GATE_LIVE_ACCOUNT_ID}")
     assert account.status_code == 200
     assert account.json()["mode"] == "LIVE"
-    assert account.json()["data_status"] == "NOT_RUN_LIVE_LOCKED"
-    assert account.json()["private_api_access"] == "NOT_ATTEMPTED"
+    assert account.json()["data_status"] == "NOT_CONFIGURED_NO_SCOPED_CREDENTIALS"
+    assert account.json()["private_api_access"] == "NOT_ATTEMPTED_NO_CREDENTIALS"
 
     locked_http = client.post(
         "/v2/gate/orders",
@@ -420,10 +420,10 @@ def test_gate_live_account_stays_release_locked_without_adapter_call(tmp_path):
             "dry_run": True,
         },
     )
-    assert locked_http.status_code == 403
-    assert "LIVE_DISABLED_BY_RELEASE_POLICY" in locked_http.json()["detail"]
+    assert locked_http.status_code == 422
+    assert "EXECUTION_ADAPTER_UNAVAILABLE" in locked_http.json()["detail"]
 
-    with pytest.raises(LiveDisabledByReleasePolicyError):
+    with pytest.raises(GatewayError, match="No execution adapter"):
         ExecutionGateway(store).submit_intent(
             OrderIntent(
                 intent_id="live-gate-locked",
@@ -489,10 +489,13 @@ def test_gate_testnet_trade_plan_stays_remote_and_preserves_scope(tmp_path):
         plan["plan_id"],
         market_snapshot=_fresh_market(datetime.now(timezone.utc)),
     )
-    assert result["status"] == "NOT_RUN"
-    assert result["reason"] == "EXTERNAL_EXECUTION_REQUIRES_SEPARATE_AUTHORIZATION_AND_ADAPTER"
-    assert result["mode"] == "TESTNET"
-    assert result["venue"] == "gate"
+    # A scoped TestNet trade-plan no longer has a local authorization gate.
+    # With no encrypted TestNet credential in this isolated fixture, it stops
+    # at the real adapter boundary and cannot fabricate a local fill.
+    assert result["status"] in {"BLOCKED", "NOT_RUN"}
+    assert result.get("order_created") is not True
+    assert "AUTHORIZATION" not in str(result)
+    assert "RELEASE" not in str(result)
     # Gate TestNet positions are owned by the remote private API.  The fill is
     # retained as an audit record, but must not create a local position mirror.
     assert AccountLedger(store).get_open_positions(
@@ -514,7 +517,7 @@ def test_gate_testnet_trade_plan_stays_remote_and_preserves_scope(tmp_path):
     assert error.value.code == "PLAN_NOT_FOUND"
 
 
-def test_gate_live_trade_plan_reports_release_lock_without_creating_an_order(tmp_path):
+def test_gate_live_trade_plan_has_no_release_lock_without_scoped_credentials(tmp_path):
     store = SQLiteStore(tmp_path / "gate-live-plan-lock.db")
     store.initialize()
     provision_default_gate_accounts(store)
@@ -541,13 +544,13 @@ def test_gate_live_trade_plan_reports_release_lock_without_creating_an_order(tmp
         market_snapshot=_fresh_market(datetime.now(timezone.utc)),
     )
     assert result["status"] == "NOT_RUN"
-    assert result["reason"] == "LIVE_DISABLED_BY_RELEASE_POLICY"
+    assert result["reason"] == "RUNTIME_UNAVAILABLE_NEW_RISK_BLOCKED"
     assert result["order_created"] is False
     with store._connect() as db:
         assert db.execute("SELECT COUNT(*) FROM order_intents").fetchone()[0] == 0
         assert db.execute(
             "SELECT status FROM trader_trade_plans WHERE plan_id=?", (plan["plan_id"],)
-        ).fetchone()[0] == "NOT_RUN_EXTERNAL"
+        ).fetchone()[0] == "NOT_RUN_RUNTIME"
 
 
 def test_gate_remote_adapter_resolution_is_account_scoped_and_never_falls_back(tmp_path):

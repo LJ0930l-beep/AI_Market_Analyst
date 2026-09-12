@@ -79,6 +79,7 @@ def test_gate_testnet_remote_receipt_reconcile_cancel_and_symbol_mapping():
             self.fetch_calls = []
             self.trade_calls = []
             self.cancel_all_calls = []
+            self.leverage_calls = []
 
         def load_markets(self):
             return {
@@ -93,11 +94,12 @@ def test_gate_testnet_remote_receipt_reconcile_cancel_and_symbol_mapping():
                 }
             }
 
-        def set_leverage(self, leverage, symbol):
+        def set_leverage(self, leverage, symbol, params=None):
+            self.leverage_calls.append((leverage, symbol, params))
             return {"leverage": leverage, "symbol": symbol}
 
         def fetch_positions(self):
-            return [{"symbol": "BTC/USDT:USDT", "side": "LONG", "contracts": 1.0}]
+            return [{"symbol": "BTC/USDT:USDT", "side": "LONG", "contracts": 1.0, "marginMode": "cross"}]
 
         def create_order(self, **kwargs):
             self.create_calls.append(kwargs)
@@ -159,6 +161,7 @@ def test_gate_testnet_remote_receipt_reconcile_cancel_and_symbol_mapping():
     assert exchange.create_calls[0]["symbol"] == "BTC/USDT:USDT"
     assert exchange.create_calls[0]["side"] == "buy"
     assert exchange.create_calls[0]["params"]["text"] == "t-intent-remote-1"
+    assert exchange.leverage_calls == [(3, "BTC/USDT:USDT", {"marginMode": "cross"})]
 
     reconciled = trader.reconcile_order("gate-testnet-order-1", "BTCUSDT")
     assert reconciled["reconciled"] is True
@@ -181,6 +184,36 @@ def test_gate_testnet_remote_receipt_reconcile_cancel_and_symbol_mapping():
     assert closed["closed"] is True
     assert exchange.create_calls[-1]["symbol"] == "BTC/USDT:USDT"
     assert exchange.create_calls[-1]["params"]["reduceOnly"] is True
+
+
+def test_gate_leverage_uses_explicit_default_only_after_remote_empty_position_read():
+    class Exchange:
+        def __init__(self):
+            self.calls = []
+
+        def load_markets(self):
+            return {
+                "SOL/USDT:USDT": {
+                    "symbol": "SOL/USDT:USDT", "id": "SOL_USDT", "base": "SOL", "quote": "USDT",
+                    "settle": "USDT", "swap": True, "linear": True,
+                }
+            }
+
+        def fetch_positions(self, _symbols):
+            return []
+
+        def set_leverage(self, leverage, symbol, params=None):
+            self.calls.append((leverage, symbol, params))
+            return {"leverage": leverage, "symbol": symbol}
+
+    exchange = Exchange()
+    trader = GateLiveTrader("testnet-key", "testnet-secret", testnet=True, exchange=exchange, live_trading_enabled=True)
+    result = trader.set_leverage("SOLUSDT", 2)
+
+    assert result["acknowledged"] is True
+    assert result["margin_mode"] == "isolated"
+    assert result["margin_mode_source"] == "NO_EXISTING_POSITION_DEFAULT"
+    assert exchange.calls == [(2, "SOL/USDT:USDT", {"marginMode": "isolated"})]
 
 
 def test_gate_credentials_are_verified_before_direct_compatibility_write(tmp_path, monkeypatch):

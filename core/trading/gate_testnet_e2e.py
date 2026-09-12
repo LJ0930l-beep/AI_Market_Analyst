@@ -240,9 +240,7 @@ class GateTestnetE2EService:
             raise GateE2EError("ACCOUNT_REQUIRED", "TestNet 验收必须明确指定账户。")
         profile = get_gate_account_profile(self.store, account_id)
         if profile.get("account_type") != GATE_TESTNET_ACCOUNT_TYPE or profile.get("execution_mode") != "TESTNET":
-            raise GateE2EError("LIVE_DISABLED_BY_RELEASE_POLICY", "该验收脚本只允许 Gate 官方 TestNet，Live 永远锁定。", 403)
-        if request.get("confirm_testnet") is not True:
-            raise GateE2EError("TESTNET_CONFIRMATION_REQUIRED", "请明确确认这是会向 Gate TestNet 发送真实测试订单。")
+            raise GateE2EError("TESTNET_ACCOUNT_REQUIRED", "该验收脚本只允许 Gate 官方 TestNet 账户。", 422)
 
         symbol = _symbol(request.get("symbol"))
         side = str(request.get("side") or "").upper()
@@ -370,7 +368,10 @@ class GateTestnetE2EService:
 
             client_order_id = f"t-e2e-{hashlib.sha256((account_id + idem).encode()).hexdigest()[:20]}"
             entry_side = side
-            receipt = trader.place_order(symbol=symbol, side=entry_side, amount=float(amount), order_type="market", stop_loss=float(stop), take_profit=float(take_profit), leverage=leverage, reduce_only=False, client_order_id=client_order_id)
+            # Leverage is an independently reconciled mutable operation just
+            # above.  Do not repeat it in ``place_order``: Gate may reject a
+            # second mutation while a dual-mode position is being opened.
+            receipt = trader.place_order(symbol=symbol, side=entry_side, amount=float(amount), order_type="market", stop_loss=float(stop), take_profit=float(take_profit), leverage=None, reduce_only=False, client_order_id=client_order_id)
             if not isinstance(receipt, dict):
                 raise GateE2EError("GATE_ORDER_RESPONSE_SCHEMA_INVALID", "Gate TestNet 下单响应格式异常，必须对账。")
             result["orders_sent"] = 1
@@ -388,6 +389,19 @@ class GateTestnetE2EService:
                     if attempt < 4:
                         time.sleep(0.2)
             if str(reconciled.get("status") or "").upper() not in {"FILLED", "PARTIALLY_FILLED"} or _finite(reconciled.get("filled", reconciled.get("filled_quantity")), positive=True) is None:
+                # A zero-fill order must not be left behind merely because
+                # the post-submit fetch was delayed or unavailable.  This is
+                # scoped to the exact client-owned entry ID; it never cancels
+                # account-wide orders or touches pre-existing positions.
+                if order_id and _finite(reconciled.get("filled", reconciled.get("filled_quantity")), positive=True) is None and callable(getattr(trader, "cancel_order", None)):
+                    try:
+                        result["unfilled_entry_cancel"] = _safe_json(trader.cancel_order(str(order_id), symbol))
+                    except Exception as cancel_exc:
+                        result["unfilled_entry_cancel"] = {
+                            "cancelled": False,
+                            "error_code": "ENTRY_CANCEL_EXCEPTION",
+                            "error_type": type(cancel_exc).__name__,
+                        }
                 raise GateE2EError("REMOTE_ORDER_NOT_FILLED", "Gate TestNet 未确认入场成交；保持远端对账状态，未伪造本地成交。")
             result["entry_reconciliation"] = _safe_json(reconciled)
             result["stages"].append(self._stage("FILL_RECONCILED", "COMPLETED", message_zh="Gate TestNet 已返回具体成交数量，成交事实已确认。", evidence={"order_id": order_id, "status": reconciled.get("status"), "filled": reconciled.get("filled", reconciled.get("filled_quantity"))}))

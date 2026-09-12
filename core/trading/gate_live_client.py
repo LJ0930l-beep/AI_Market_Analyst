@@ -3,7 +3,8 @@
 Supports:
 1. Real account trade history retrieval (fetch_my_trades)
 2. Real account positions, balance, and margin tracking
-3. Explicit TestNet order execution with a release-locked Live adapter.
+3. Explicit TestNet and Live order execution through separately scoped
+   adapters and endpoints.
 """
 
 from datetime import datetime, timezone
@@ -235,6 +236,75 @@ class GateLiveTrader:
             return f"{compact[:-4]}/USDT:USDT"
         return raw
 
+    @staticmethod
+    def _position_margin_mode(position: Any) -> Optional[str]:
+        """Return Gate's unified margin mode without inferring one.
+
+        Gate rejects a leverage request that silently switches an open
+        position from cross to isolated (or the reverse).  CCXT defaults to
+        isolated when no mode is supplied, therefore the adapter must use
+        the mode observed from the remote position before it submits the
+        mutable leverage request.
+        """
+        if not isinstance(position, dict):
+            return None
+        values = [position.get("marginMode")]
+        raw = position.get("info")
+        if isinstance(raw, dict):
+            values.append(raw.get("margin_mode"))
+            values.append(raw.get("mode"))
+        for value in values:
+            normalized = str(value or "").strip().lower().replace("_", "-")
+            if normalized in {"cross", "cross-margin", "crossmargin"} or normalized.startswith("dual-"):
+                return "cross"
+            if normalized in {"isolated", "isolated-margin", "isolatedmargin"}:
+                return "isolated"
+        return None
+
+    def _remote_margin_mode(self, exchange: Any, exchange_symbol: str) -> tuple[Optional[str], bool]:
+        """Read the existing Gate position mode for a contract.
+
+        Prefer a non-zero position because dual-mode Gate accounts can return
+        an inactive long/short leg too.  A zero-size position still supplies
+        an authoritative configured mode when no active leg exists.  Failure
+        to observe this fact is deliberately not converted into a guessed
+        mode: changing leverage must not also change an unknown margin mode.
+        """
+        fetch_positions = getattr(exchange, "fetch_positions", None)
+        if not callable(fetch_positions):
+            return None, False
+        try:
+            try:
+                positions = fetch_positions([exchange_symbol])
+            except TypeError:
+                # Lightweight test adapters and older CCXT implementations
+                # expose a no-argument variant.
+                positions = fetch_positions()
+        except Exception:
+            return None, False
+        if not isinstance(positions, list):
+            return None, False
+        fallback: Optional[str] = None
+        for position in positions:
+            if not isinstance(position, dict):
+                continue
+            candidate_symbol = str(position.get("symbol") or "")
+            raw = position.get("info")
+            if not candidate_symbol and isinstance(raw, dict):
+                candidate_symbol = str(raw.get("contract") or "")
+            if _symbol_compact(candidate_symbol) != _symbol_compact(exchange_symbol):
+                continue
+            mode = self._position_margin_mode(position)
+            if mode is None:
+                continue
+            contracts = _optional_float(position.get("contracts"))
+            if contracts is None and isinstance(raw, dict):
+                contracts = _optional_float(raw.get("size"))
+            if contracts is not None and contracts != 0:
+                return mode, True
+            fallback = fallback or mode
+        return fallback, True
+
     def validate_credentials(self) -> Dict[str, Any]:
         """Verify the current environment with a read-only futures balance call."""
         endpoint = self.api_base_url
@@ -399,12 +469,11 @@ class GateLiveTrader:
             history.get("pnl"),
         )
 
-        position_margin = first_number(
-            account_info.get("position_margin"),
-            account_info.get("cross_initial_margin"),
-            account_info.get("init_margin"),
-        )
-        order_margin = first_number(account_info.get("order_margin"))
+        cross_pos_margin = first_number(account_info.get("cross_initial_margin"), account_info.get("position_initial_margin"))
+        plain_pos_margin = first_number(account_info.get("position_margin"), account_info.get("init_margin"))
+        position_margin = cross_pos_margin if (cross_pos_margin is not None and cross_pos_margin > 0) else (plain_pos_margin if plain_pos_margin is not None else cross_pos_margin)
+
+        order_margin = first_number(account_info.get("cross_order_margin"), account_info.get("order_margin"))
         if order_margin is None:
             bid_margin = first_number(account_info.get("bid_order_margin"))
             ask_margin = first_number(account_info.get("ask_order_margin"))
@@ -421,20 +490,35 @@ class GateLiveTrader:
             used = native_used if native_used is not None and native_used >= 0 else None
             used_basis = "GATE_NATIVE_USED" if used is not None else "UNKNOWN_NATIVE_MARGIN"
 
+        # In Gate single_currency cross-margin mode, the API returns total="0" while
+        # the true usable capital is in available / cross_available. Derive the total
+        # margin balance so risk engine does not treat a funded account as insolvent.
+        margin_balance = ((free or 0.0) + (used or 0.0)) if free is not None else None
+        if total is None or total <= 0 or (free is not None and total < free):
+            if margin_balance is not None and margin_balance > 0:
+                total = margin_balance
+
         explicit_equity = first_number(
             account_info.get("equity"),
             account_info.get("cross_margin_balance"),
             account_info.get("total_margin_balance"),
             account_info.get("unified_account_total_equity"),
         )
-        if explicit_equity is not None:
+        if explicit_equity is not None and explicit_equity > 0:
             equity = explicit_equity
             equity_basis = "GATE_NATIVE_EQUITY"
-        elif total is not None and unrealized is not None:
+        elif total is not None and total > 0:
             # Gate documents ``total`` as historical/account balance and
             # exposes current unrealised PNL separately.
-            equity = total + unrealized
+            if unrealized is not None:
+                equity = max(free or 0.0, total + unrealized)
+            else:
+                equity = max(free or 0.0, total)
             equity_basis = "GATE_TOTAL_PLUS_UNREALISED_PNL"
+        elif free is not None:
+            base = margin_balance or free
+            equity = max(free, base + (unrealized or 0.0))
+            equity_basis = "GATE_DERIVED_EQUITY"
         else:
             equity = total
             equity_basis = "GATE_TOTAL_ONLY" if total is not None else "UNKNOWN_EQUITY"
@@ -870,15 +954,44 @@ class GateLiveTrader:
 
     def set_leverage(self, symbol: str, leverage: Optional[int] = None) -> Dict[str, Any]:
         """Set position leverage on Gate.io futures."""
-        if leverage is None or not isinstance(leverage, int) or leverage < 1 or leverage > 100:
+        if leverage is None:
             return {"acknowledged": False, "error": "LEVERAGE_REQUIRED: explicit leverage in [1, 100] is required", "symbol": symbol, "leverage": None}
+        try:
+            leverage_int = int(round(float(leverage)))
+        except (TypeError, ValueError):
+            return {"acknowledged": False, "error": "LEVERAGE_REQUIRED: explicit leverage in [1, 100] is required", "symbol": symbol, "leverage": None}
+        if leverage_int < 1 or leverage_int > 100:
+            return {"acknowledged": False, "error": "LEVERAGE_REQUIRED: explicit leverage in [1, 100] is required", "symbol": symbol, "leverage": None}
+        leverage = leverage_int
         if not self.live_trading_enabled:
             return {"acknowledged": True, "dry_run": True, "symbol": symbol, "leverage": leverage}
         try:
             ex = self._get_exchange()
             exchange_symbol = self._exchange_symbol(ex, symbol)
-            res = ex.set_leverage(leverage, exchange_symbol)
-            return {"acknowledged": True, "dry_run": False, "symbol": symbol, "leverage": leverage, "result": res}
+            margin_mode, positions_observed = self._remote_margin_mode(ex, exchange_symbol)
+            if not positions_observed:
+                return {
+                    "acknowledged": False,
+                    "error_code": "GATE_MARGIN_MODE_UNAVAILABLE",
+                    "message_zh": "未能读取 Gate 远端保证金模式；为避免切换已有仓位的逐仓/全仓模式，未提交杠杆变更。",
+                    "symbol": symbol,
+                    "leverage": leverage,
+                }
+            # No existing position means there is no remote mode to preserve.
+            # Choose the explicit Gate isolated default rather than allowing
+            # CCXT to make an undocumented implicit choice.
+            margin_mode_source = "REMOTE_POSITION" if margin_mode is not None else "NO_EXISTING_POSITION_DEFAULT"
+            margin_mode = margin_mode or "isolated"
+            res = ex.set_leverage(leverage, exchange_symbol, {"marginMode": margin_mode})
+            return {
+                "acknowledged": True,
+                "dry_run": False,
+                "symbol": symbol,
+                "leverage": leverage,
+                "margin_mode": margin_mode,
+                "margin_mode_source": margin_mode_source,
+                "result": res,
+            }
         except Exception as exc:
             mapped = _map_gate_error(exc)
             return {"acknowledged": False, "error_code": mapped["code"], "message_zh": mapped["message_zh"], "symbol": symbol, "leverage": leverage}
@@ -900,8 +1013,9 @@ class GateLiveTrader:
 
         ``live_trading_enabled`` means the adapter is allowed to send to its
         explicitly configured environment.  The account factory enables it
-        for TestNet and keeps it disabled for Live; a disabled adapter is
-        validation-only and never fabricates a fill.
+        for either environment only after its account-scoped credential has
+        been selected; a disabled adapter is validation-only and never
+        fabricates a fill.
         """
         side_clean = side.upper()
         ccxt_side = "buy" if side_clean in {"LONG", "BUY"} else "sell"
@@ -986,6 +1100,7 @@ class GateLiveTrader:
             # Strict F01 Fix: A receipt with status 'open' and filled == 0 is ACKNOWLEDGED, NEVER LIVE_EXECUTED!
             if not isinstance(order, dict):
                 raise ValueError("GATE_RESPONSE_SCHEMA_INVALID")
+            raw_info = order.get("info") if isinstance(order.get("info"), dict) else {}
             raw_status = str(order.get("status") or "").lower()
             filled = _optional_float(order.get("filled")) or 0.0
             order_amount = _optional_float(order.get("amount")) or float(amount)
@@ -1011,6 +1126,13 @@ class GateLiveTrader:
                 "filled": filled,
                 "price": order.get("price"),
                 "average": order.get("average"),
+                # Preserve only decision-relevant remote receipt facts.  A
+                # transport acknowledgement is never a fill confirmation,
+                # but retaining these fields makes an immediate Gate cancel
+                # or reject observable instead of silently showing ACK.
+                "remote_status": raw_status or raw_info.get("status"),
+                "remote_finish_as": raw_info.get("finish_as"),
+                "remote_label": raw_info.get("label") or raw_info.get("code"),
                 "stop_loss": stop_loss,
                 "take_profit": take_profit,
                 "fills": fills,
@@ -1179,6 +1301,7 @@ class GateLiveTrader:
                 "symbol": symbol,
                 "status": final_status,
                 "filled": filled,
+                "amount": amount,
                 "average": order.get("average"),
             }
         except Exception as exc:

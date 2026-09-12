@@ -9,8 +9,8 @@ accounts:
 * ``gate_testnet``: canonical Gate official TestNet account.  It is remote,
   account-scoped, and never backed by a local fill simulator.
 * ``gate_paper``: input-only compatibility alias retained for old clients.
-* ``gate_live``: LIVE account metadata and encrypted credentials, still
-  subject to the existing release-policy lock in ``ExecutionGateway``.
+* ``gate_live``: LIVE account metadata and encrypted credentials.  It is
+  routed only to Gate's live endpoint and never shares the TestNet slot.
 
 Provisioning is explicit and idempotent.  It never validates credentials or
 calls a private exchange endpoint.
@@ -50,7 +50,6 @@ GATE_LIVE_ACCOUNT_ID = "gate_live"
 GATE_PAPER_API_BASE_URL = "https://api-testnet.gateapi.io/api/v4"
 GATE_LIVE_API_BASE_URL = "https://api.gateio.ws/api/v4"
 GATE_PROFILE_VERSION = "gate-account-v1"
-LIVE_RELEASE_LOCK = "RELEASE_POLICY_LOCK_M0_TO_M3"
 GATE_TESTNET_ACCOUNT_TYPE = "GATE_TESTNET"
 GATE_LIVE_ACCOUNT_TYPE = "GATE_LIVE"
 
@@ -102,11 +101,11 @@ def _default_profile_config(account_id: str, mode: str) -> Dict[str, Any]:
         "execution_adapter": "GATE_TESTNET_API" if is_testnet else "GATE_LIVE_API",
         "credential_scope": account_id,
         "remote_private_read": "EXPLICIT_ONLY",
-        "remote_orders": "TESTNET_ONLY" if is_testnet else "LIVE_LOCKED",
+        "remote_orders": "TESTNET" if is_testnet else "LIVE",
         "local_simulator": False,
-        "local_capital_authority": "DISABLED_REMOTE_ONLY" if is_testnet else "RELEASE_LOCKED",
-        "live_execution": "LOCKED_BY_RELEASE_POLICY" if mode_clean == "LIVE" else "TESTNET_ONLY",
-        "release_policy": LIVE_RELEASE_LOCK if mode_clean == "LIVE" else None,
+        "local_capital_authority": "DISABLED_REMOTE_ONLY",
+        "live_execution": "GATE_API" if mode_clean == "LIVE" else "TESTNET_ONLY",
+        "release_policy": None,
         "legacy_aliases": [LEGACY_GATE_PAPER_ACCOUNT_ID] if is_testnet else [],
         "canonical_account_id": GATE_TESTNET_ACCOUNT_ID if is_testnet else account_id,
     }
@@ -233,6 +232,19 @@ def get_gate_account_profile(store, account_id: str) -> Dict[str, Any]:
         ):
             if key not in config or (key == "execution_adapter" and config.get(key) == "LOCAL_PAPER_SIMULATOR"):
                 config[key] = defaults[key]
+        # Previous builds persisted a release lock in existing LIVE profile
+        # rows.  Treat those markers as stale profile metadata so a user does
+        # not need to delete/recreate a correctly scoped credential to use
+        # the current account model.
+        if mode == "LIVE":
+            if config.get("remote_orders") == "LIVE_LOCKED":
+                config["remote_orders"] = defaults["remote_orders"]
+            if config.get("local_capital_authority") == "RELEASE_LOCKED":
+                config["local_capital_authority"] = defaults["local_capital_authority"]
+            if config.get("live_execution") == "LOCKED_BY_RELEASE_POLICY":
+                config["live_execution"] = defaults["live_execution"]
+            if config.get("release_policy") == "RELEASE_POLICY_LOCK_M0_TO_M3":
+                config["release_policy"] = None
     return {
         "account_id": clean_id,
         "mode": mode,
@@ -282,7 +294,10 @@ def public_gate_account(store, account_id: str) -> Dict[str, Any]:
             "migration_status": credential_meta.get("migration_status", "CLEAN"),
             "updated_at": credential_meta.get("updated_at"),
         },
-        "live_status": "LOCKED" if profile["mode"] == "LIVE" else "AVAILABLE",
+        # Local release/authorization locks are deliberately absent.  This is
+        # an account profile status, not a claim that a remote credential has
+        # been verified or that Gate accepted an order.
+        "live_status": "AVAILABLE",
         "private_api_access": "NOT_ATTEMPTED",
     }
 
@@ -485,10 +500,10 @@ def build_gate_trader(store, account_id: str):
         secret,
         testnet=expected_testnet,
         api_base_url=profile["api_base_url"],
-        # Gate TestNet is the explicitly requested simulated exchange and may
-        # send to TestNet.  Live remains locked by the gateway and this second
-        # adapter flag.
-        live_trading_enabled=expected_testnet,
+        # The account profile determines the endpoint.  A verified scoped
+        # credential is sufficient for the adapter to send to that endpoint;
+        # TESTNET and LIVE credentials are never interchangeable.
+        live_trading_enabled=True,
     )
     # Expose non-secret scope metadata on the adapter so every downstream
     # caller can audit that the client belongs to the requested account and
@@ -570,7 +585,6 @@ __all__ = [
     "GATE_TESTNET_ACCOUNT_TYPE",
     "GATE_SETTLE_CURRENCY",
     "GATE_VENUE",
-    "LIVE_RELEASE_LOCK",
     "build_gate_trader",
     "get_gate_account_credentials",
     "get_gate_account_profile",
