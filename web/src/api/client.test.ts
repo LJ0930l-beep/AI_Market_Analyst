@@ -12,9 +12,9 @@ function response(body: unknown, status = 200): Response {
 }
 
 describe("ApiClient", () => {
-  it("uses the non-colliding development API prefix by default and preserves explicit or production bases", () => {
+  it("uses the non-colliding development API prefix and desktop loopback default", () => {
     expect(getApiBaseUrl(undefined, true)).toBe("/api");
-    expect(getApiBaseUrl(undefined, false)).toBe("");
+    expect(getApiBaseUrl(undefined, false)).toBe("http://127.0.0.1:18765");
     expect(getApiBaseUrl("http://127.0.0.1:8000///", true)).toBe("http://127.0.0.1:8000");
     expect(getRealtimeStreamUrl("BTCUSDT", "15m", "http://127.0.0.1:18765", false)).toBe("ws://127.0.0.1:18765/market/realtime/BTCUSDT/stream?timeframe=15m");
     expect(getRealtimeStreamUrl("BTCUSDT", "1h", "/api", true)).toContain("/api/market/realtime/BTCUSDT/stream?timeframe=1h");

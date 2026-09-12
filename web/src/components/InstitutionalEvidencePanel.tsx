@@ -58,27 +58,43 @@ export function InstitutionalEvidencePanel({ activeAccount }: InstitutionalEvide
   useEffect(() => {
     const controller = new AbortController();
     const account = activeAccount?.trim();
-    const requests = [
-      apiClient.v3<DataQualityResponse>("/data/quality", "GET", undefined, controller.signal),
-      account
-        ? apiClient.v3<RiskSummaryResponse>(`/risk/summary?account_id=${encodeURIComponent(account)}`, "GET", undefined, controller.signal)
-        : Promise.resolve(null),
-      account
-        ? apiClient.v3<EvidenceResponse>(`/ai/evidence?account_id=${encodeURIComponent(account)}`, "GET", undefined, controller.signal)
-        : Promise.resolve(null),
-    ] as const;
+    let cancelled = false;
 
-    void Promise.allSettled(requests).then((results) => {
-      if (controller.signal.aborted) return;
-      const [qualityResult, riskResult, evidenceResult] = results;
-      if (qualityResult.status === "fulfilled") setQuality(qualityResult.value);
-      if (riskResult.status === "fulfilled") setRisk(riskResult.value);
-      if (evidenceResult.status === "fulfilled") setEvidence(evidenceResult.value);
-      const failure = results.find((result) => result.status === "rejected");
-      setError(failure && failure.status === "rejected" ? requestError(failure.reason) : null);
-    });
+    const execute = async () => {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const [qualityRes, riskRes, evidenceRes] = await Promise.all([
+            apiClient.v3<DataQualityResponse>("/data/quality", "GET", undefined, controller.signal),
+            account
+              ? apiClient.v3<RiskSummaryResponse>(`/risk/summary?account_id=${encodeURIComponent(account)}`, "GET", undefined, controller.signal)
+              : Promise.resolve(null),
+            account
+              ? apiClient.v3<EvidenceResponse>(`/ai/evidence?account_id=${encodeURIComponent(account)}`, "GET", undefined, controller.signal)
+              : Promise.resolve(null),
+          ]);
+          if (!cancelled && !controller.signal.aborted) {
+            setQuality(qualityRes);
+            if (riskRes) setRisk(riskRes);
+            if (evidenceRes) setEvidence(evidenceRes);
+            setError(null);
+            return;
+          }
+        } catch (err) {
+          if (cancelled || controller.signal.aborted) return;
+          if (attempt < 2) {
+            await new Promise((r) => setTimeout(r, 800));
+          } else {
+            setError(requestError(err));
+          }
+        }
+      }
+    };
 
-    return () => controller.abort();
+    void execute();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, [activeAccount]);
 
   const latestMigration = quality?.migrations?.[0];

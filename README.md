@@ -1,6 +1,14 @@
-# AI Market Analyst V1.2.1
+# AI Market Analyst V2.0 — AI 自拟策略 + 新闻 + 技术面
 
-AI Market Analyst is a local-first bilingual Windows desktop terminal for public crypto market monitoring, deterministic Python triggers, auditable opportunity analysis and research charts. The V1.2.1 package/API contract is `1.2.1`, SQLite schema is `13`, and the owned desktop sidecar is loopback-only. V1.2, V1.1 and V1.0 records remain historical. It never connects an account, accepts an exchange secret, places an order, or stops Ollama, ComfyUI or another unrelated process.
+当前机器人主链路为：公开 K 线与新闻 → Qwen3.5:9b 自拟策略 → 严格 JSON → 固定风控 → 开仓或等待。现有六策略候选仅作参考；AI 模式下旧策略循环不单独调用模型做单。已有持仓仍由独立 PositionGuardian 保护。
+
+在交易控制台选择账户，再点击「启动 AI 自动做单」。每 15 分钟 UTC 边界运行一轮；首次启动保留历史 K 线校准门槛。启动按钮允许向所选账户自动提交订单，请核对账户的 PAPER / TESTNET / LIVE 标识。LIVE 是否可执行仍取决于既有适配器能力门禁；本次开发没有启用真实账户交易。
+
+新开仓要求有效新闻引用、15m/1h 已收盘 K 线、当前价格位于入场区间、有效止盈止损、扣费后盈亏比至少 2、AI 主观置信分数至少 70。单笔风险上限 0.25%，组合风险上限 1%，日亏损熔断 1.5%，杠杆上限 3 倍（未指定时 1 倍）。分数不等于胜率。
+
+实现、运行、验证和兼容边界见 [AI 新闻技术面机器人说明](docs/ai-news-trader-2026-09-12.md)。真实公开数据与本机模型联调记录见 [smoke evidence](evidence/ai_news_strategy_smoke.json)。它验证了结构化 WAIT 流程，不代表收益或真实资金执行已验证。
+
+以下是历史 V1.2.1 的安装和研究功能记录；涉及版本号、研究专用边界与当前 V2.0 不同时，以以上当前行为及 V2.0 文档为准。
 
 ## Quick start (Windows desktop)
 

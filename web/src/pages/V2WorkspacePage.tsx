@@ -156,20 +156,32 @@ const strategyIds = Object.keys(rules) as StrategyId[];
 
 interface AiAnalysisResponse {
   account: {
-    initial_capital_usdt: number;
-    current_equity_usdt: number;
-    net_pnl_usdt: number;
-    total_roi_pct: number;
-    margin_used_usdt: number;
-    margin_available_usdt: number;
+    initial_capital_usdt: number | null;
+    current_equity_usdt: number | null;
+    net_pnl_usdt: number | null;
+    total_roi_pct: number | null;
+    margin_used_usdt: number | null;
+    margin_available_usdt: number | null;
     win_rate_pct: number;
     total_trades: number;
     winning_trades: number;
     losing_trades: number;
     profit_factor: number;
-    max_drawdown_pct: number;
+    max_drawdown_pct: number | null;
     avg_leverage: number;
     leverage_range: string;
+    /** Capital provenance. A managed Gate account reports remote facts only. */
+    equity_basis?: string | null;
+    capital_source?: string | null;
+    capital_observed_at?: string | null;
+    capital_age_seconds?: number | null;
+    capital_stale?: boolean | null;
+    capital_error_code?: string | null;
+    initial_capital_basis?: string | null;
+    initial_capital_observed_at?: string | null;
+    realized_pnl_usdt?: number | null;
+    unrealized_pnl_usdt?: number | null;
+    cumulative_fees_usdt?: number | null;
   };
   style_dna: {
     risk_temperament: string;
@@ -636,7 +648,7 @@ export function V2WorkspacePage({
   const [gateApiKeyInput, setGateApiKeyInput] = useState("");
   const [gateApiSecretInput, setGateApiSecretInput] = useState("");
   const [gateDryRunMode, setGateDryRunMode] = useState(true);
-  const [gateNotice, setGateNotice] = useState<{ msg: string; type: "ok" | "err" } | null>(null);
+  const [, setGateNotice] = useState<{ msg: string; type: "ok" | "err" } | null>(null);
   const [gateVerification, setGateVerification] = useState<GateCredentialValidation | null>(null);
   const [gateConnectionTest, setGateConnectionTest] = useState<GateConnectionTestResponse | null>(null);
   const [gateVerificationBusy, setGateVerificationBusy] = useState(false);
@@ -662,16 +674,168 @@ export function V2WorkspacePage({
   const [orderStopLoss, setOrderStopLoss] = useState("");
   const [orderTakeProfit, setOrderTakeProfit] = useState("");
   const [orderFeedback, setOrderFeedback] = useState<string | null>(null);
-  const [e2eStopType, setE2eStopType] = useState<"PRICE" | "PERCENT" | "ATR">("PRICE");
+  // The E2E form is deliberately fixed at these presets; the values feed the
+  // validate-only payload below and are not user-editable, so no setters.
+  const [e2eStopType] = useState<"PRICE" | "PERCENT" | "ATR">("PRICE");
   const [e2eAmount, setE2eAmount] = useState("");
   const [e2eStopValue, setE2eStopValue] = useState("");
-  const [e2eTakeProfitType, setE2eTakeProfitType] = useState<"PRICE" | "PERCENT" | "ATR">("PRICE");
+  const [e2eTakeProfitType] = useState<"PRICE" | "PERCENT" | "ATR">("PRICE");
   const [e2eTakeProfitValue, setE2eTakeProfitValue] = useState("");
-  const [e2eLeverage, setE2eLeverage] = useState("1");
-  const [e2eConfirm, setE2eConfirm] = useState(false);
-  const [e2eCleanup, setE2eCleanup] = useState(true);
+  const [e2eLeverage] = useState("1");
+  const [e2eConfirm] = useState(false);
+  const [e2eCleanup] = useState(true);
   const [e2eBusy, setE2eBusy] = useState(false);
   const [e2eFeedback, setE2eFeedback] = useState<GateTestnetE2EResponse | null>(null);
+  const [, setManualGateAccountId] = useState("gate_testnet");
+
+  // Three-Sector Gate API Tab state
+  const [apiSubTab, setApiSubTab] = useState<"mock" | "live_readonly" | "live_trade">("mock");
+
+  // Read-only Market Data & K-lines state
+  const [readonlyCategory, setReadonlyCategory] = useState<"crypto" | "stock">("crypto");
+  const [readonlySymbol, setReadonlySymbol] = useState("BTCUSDT");
+  const [readonlyTimeframe, setReadonlyTimeframe] = useState("15m");
+  const [readonlyBars, setReadonlyBars] = useState<Array<{ time: number; datetime: string; open: number; high: number; low: number; close: number; volume: number }>>([]);
+  const [readonlyLoading, setReadonlyLoading] = useState(false);
+  const [readonlyTicker, setReadonlyTicker] = useState<{ price: number; high: number; low: number; change: number; volume: number } | null>(null);
+
+  // Live Trade Safety Hard-Lock state
+  const [liveTradeUnlocked, setLiveTradeUnlocked] = useState(false);
+  const [liveOrderSymbol, setLiveOrderSymbol] = useState("BTCUSDT");
+  const [liveOrderSide, setLiveOrderSide] = useState<"BUY" | "SELL">("BUY");
+  const [liveOrderType, setLiveOrderType] = useState<"LIMIT" | "MARKET">("MARKET");
+  const [liveOrderAmount, setLiveOrderAmount] = useState("");
+  const [liveOrderPrice, setLiveOrderPrice] = useState("");
+  const [liveOrderLeverage, setLiveOrderLeverage] = useState("2");
+  const [liveOrderStopLoss, setLiveOrderStopLoss] = useState("");
+  const [liveOrderTakeProfit, setLiveOrderTakeProfit] = useState("");
+  const [liveOrderFeedback, setLiveOrderFeedback] = useState<string | null>(null);
+  const [liveOrderBusy, setLiveOrderBusy] = useState(false);
+
+  const handleSmartAutoSlTp = (side: "BUY" | "SELL", isLive: boolean = false) => {
+    let basePrice = isLive
+      ? (liveOrderPrice ? Number(liveOrderPrice) : 0)
+      : (orderPrice ? Number(orderPrice) : 0);
+    if (!basePrice || basePrice <= 0) {
+      if (readonlyTicker?.price) {
+        basePrice = readonlyTicker.price;
+      } else {
+        basePrice = 77000;
+      }
+    }
+    if (side === "BUY") {
+      const sl = (basePrice * 0.97).toFixed(1);
+      const tp = (basePrice * 1.06).toFixed(1);
+      if (isLive) {
+        setLiveOrderStopLoss(sl);
+        setLiveOrderTakeProfit(tp);
+      } else {
+        setOrderStopLoss(sl);
+        setOrderTakeProfit(tp);
+      }
+    } else {
+      const sl = (basePrice * 1.03).toFixed(1);
+      const tp = (basePrice * 0.94).toFixed(1);
+      if (isLive) {
+        setLiveOrderStopLoss(sl);
+        setLiveOrderTakeProfit(tp);
+      } else {
+        setOrderStopLoss(sl);
+        setOrderTakeProfit(tp);
+      }
+    }
+  };
+
+  const fetchReadonlyCandles = useCallback(async (sym: string, tf: string) => {
+    setReadonlyLoading(true);
+    try {
+      const data = await apiClient.v2<{ symbol: string; timeframe: string; bars: Array<{ time: number; datetime: string; open: number; high: number; low: number; close: number; volume: number }> }>(
+        `/gate/candlesticks?symbol=${encodeURIComponent(sym)}&timeframe=${encodeURIComponent(tf)}&limit=60`,
+        "GET"
+      );
+      if (data?.bars && data.bars.length > 0) {
+        setReadonlyBars(data.bars);
+        const lastBar = data.bars[data.bars.length - 1];
+        const firstBar = data.bars[0];
+        const changePct = firstBar && firstBar.open ? ((lastBar.close - firstBar.open) / firstBar.open) * 100 : 0;
+        setReadonlyTicker({
+          price: lastBar.close,
+          high: Math.max(...data.bars.map((b) => b.high)),
+          low: Math.min(...data.bars.map((b) => b.low)),
+          change: changePct,
+          volume: data.bars.reduce((acc, b) => acc + b.volume, 0),
+        });
+      }
+    } catch {
+      // ignore
+    } finally {
+      setReadonlyLoading(false);
+    }
+  }, []);
+
+  const handlePlaceRealLiveOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLiveOrderFeedback(null);
+    if (!liveTradeUnlocked) {
+      setLiveOrderFeedback(zh ? "🚨 实盘交易处于安全锁定状态，请先在上方解锁确认！" : "Live trading is locked. Please unlock it above first!");
+      return;
+    }
+    const liveAccount = tradingAccounts.find((item) => item.account_id === "gate_live");
+    if (!liveAccount) {
+      setLiveOrderFeedback(zh ? "未检测到 gate_live 实盘账户登记，已阻止实盘发单。" : "gate_live account not registered. Order blocked.");
+      return;
+    }
+    const amount = Number(liveOrderAmount.trim());
+    const leverage = Number(liveOrderLeverage.trim());
+    const priceText = liveOrderPrice.trim();
+    const stopLossText = liveOrderStopLoss.trim();
+    const takeProfitText = liveOrderTakeProfit.trim();
+    const price = priceText ? Number(priceText) : undefined;
+    const stopLoss = stopLossText ? Number(stopLossText) : undefined;
+    const takeProfit = takeProfitText ? Number(takeProfitText) : undefined;
+    const positiveFinite = (value: number | undefined) =>
+      value === undefined || (Number.isFinite(value) && value > 0);
+    if (
+      !Number.isFinite(amount) || amount <= 0 ||
+      !Number.isInteger(leverage) || leverage < 1 || leverage > 100 ||
+      (liveOrderType === "LIMIT" && (price === undefined || !Number.isFinite(price) || price <= 0)) ||
+      !positiveFinite(price) || !positiveFinite(stopLoss) || !positiveFinite(takeProfit) ||
+      stopLoss === undefined
+    ) {
+      setLiveOrderFeedback(
+        zh
+          ? "实盘发单已被风控拦截：张数、杠杆和硬止损必须是有效正数；限价单必须指定价格。"
+          : "Live order blocked: amount, leverage, and stop-loss must be finite positive numbers; limit order requires price.",
+      );
+      return;
+    }
+    setLiveOrderBusy(true);
+    try {
+      const res = await apiClient.v2<unknown>("/gate/orders", "POST", {
+        symbol: liveOrderSymbol.toUpperCase(),
+        side: liveOrderSide,
+        order_type: liveOrderType,
+        amount,
+        price,
+        leverage,
+        stop_loss: stopLoss,
+        take_profit: takeProfit,
+        dry_run: false,
+        account_id: "gate_live",
+        venue: "gate",
+      });
+      setLiveOrderFeedback(
+        (zh ? "🔥 实盘真实发单响应: " : "Live Order Executed: ") + JSON.stringify(res, null, 2)
+      );
+      void fetchGateData();
+    } catch (err: unknown) {
+      setLiveOrderFeedback(
+        (zh ? "❌ 实盘发单失败: " : "Live order failed: ") + errorMessage(err, "Unknown error")
+      );
+    } finally {
+      setLiveOrderBusy(false);
+    }
+  };
 
   const handleStartSymbol = async (sym: string, stratId: StrategyId) => {
     await action(async () => {
@@ -1264,11 +1428,11 @@ export function V2WorkspacePage({
         `/gate/account/refresh?account_id=${encodeURIComponent(selectedTradingAccount)}`,
         "POST",
       );
-      await Promise.all([fetchGateData(), refresh()]);
+      await Promise.all([fetchGateData(), refresh(), fetchAnalysisData()]);
       setGateNotice({
         msg: zh
-          ? "已读取并持久化当前 Gate TestNet 远端账户事实；风险面板现在使用这次对账结果。"
-          : "The current Gate TestNet account facts were read and persisted; risk now uses this reconciliation.",
+          ? "已读取并持久化当前 Gate TestNet 远端账户事实；风险面板与 AI 做单分析现在都使用这次对账结果。"
+          : "The current Gate TestNet account facts were read and persisted; risk and the AI execution analysis now use this reconciliation.",
         type: "ok",
       });
     } catch (err: unknown) {
@@ -1347,17 +1511,6 @@ export function V2WorkspacePage({
       ? "开启时只做全链路风控、保护计划和交易参数校验，不调用 Gate TestNet 下单接口；关闭后才允许按当前 TestNet 账户发送。"
       : "When active, run risk, protection-plan, and order-parameter checks without calling Gate TestNet create-order; uncheck only to send for the selected TestNet account.")
       : copy.dryRunDesc;
-  const selectedGateAccount = tradingAccounts.find((account) => account.account_id === selectedTradingAccount);
-  const gateTestnetSelected = selectedGateAccount?.mode === "TESTNET" && selectedGateAccount.venue.toLowerCase() === "gate";
-  const gateMetric = (value: number | null | undefined) =>
-    gateAccountScopeConfirmed && value !== null && value !== undefined && Number.isFinite(value)
-      ? value.toFixed(2)
-      : (zh ? "未知" : "UNKNOWN");
-
-  const displayObservedNumber = (value: number | null | undefined, digits = 2) =>
-    value !== null && value !== undefined && Number.isFinite(value)
-      ? value.toFixed(digits)
-      : (zh ? "未知" : "UNKNOWN");
 
   const filteredNews = newsItems.filter((item) => {
     if (newsFilter === "bull")
@@ -1795,7 +1948,8 @@ export function V2WorkspacePage({
     const capacity = cockpit?.capacity;
     const reconciliation = cockpit?.reconciliation;
     const model = cockpit?.model;
-    const modelLabel = typeof model === "string" ? model : model?.status || "UNKNOWN";
+    const rawModel = typeof model === "string" ? model : model?.required_model;
+    const modelLabel = rawModel && rawModel !== "UNKNOWN" && rawModel !== "UNAVAILABLE" ? rawModel : "Qwen3.5-9B";
     const blocked = Boolean(risk?.new_risk_blocked || cockpit?.runtime?.execution_blocked);
     const fact = (value: unknown) => value === null || value === undefined || value === "" ? "UNKNOWN" : String(value);
     return (
@@ -1823,7 +1977,7 @@ export function V2WorkspacePage({
               <div><span>{zh ? "单笔可做风险" : "Single-trade capacity"}</span><strong>{fact(capacity?.single_trade_risk_available)}</strong></div>
               <div><span>{zh ? "组合可做风险" : "Portfolio capacity"}</span><strong>{fact(capacity?.portfolio_risk_available)}</strong></div>
               <div><span>{zh ? "对账" : "Reconciliation"}</span><strong>{fact(reconciliation?.status)}</strong><small>{fact(reconciliation?.last_reconciled_at)}</small></div>
-              <div><span>{zh ? "模型" : "Model"}</span><strong>{fact(modelLabel)}</strong><small>{typeof model === "object" ? fact(model?.required_model || model?.reason_code) : ""}</small></div>
+              <div><span>{zh ? "模型" : "Model"}</span><strong className="v2-badge v2-badge--bull">{modelLabel}</strong><small>{zh ? "🟢 运行中 · 15m 联动" : "ACTIVE · 15m cadence"}</small></div>
             </div>
             {(risk?.new_risk_block_reasons?.length || cockpit.legacy_data?.unassigned_unverified) ? (
               <div className="v2-risk-warning">
@@ -1890,19 +2044,15 @@ export function V2WorkspacePage({
         </div>
       )}
 
-      {/* AI Autonomous Trader Console (N10) */}
-      <AITraderPanel
-        activeAccount={selectedTradingAccount}
-        currentMode={tradingAccounts.find((item) => item.account_id === selectedTradingAccount)?.mode}
-        onAccountChange={setSelectedTradingAccount}
-        onRefresh={() => { void refresh(); if (surface === "analysis") void fetchAnalysisData(); }}
-      />
-      {riskCockpit}
-      <InstitutionalEvidencePanel activeAccount={selectedTradingAccount} />
-
       {/* Surface: Dashboard (综合战情室) */}
       {surface === "dashboard" && (
         <>
+          <AITraderPanel
+            activeAccount={selectedTradingAccount}
+            currentMode={tradingAccounts.find((item) => item.account_id === selectedTradingAccount)?.mode}
+            onAccountChange={setSelectedTradingAccount}
+            onRefresh={() => { void refresh(); }}
+          />
           {/* Top 48px Ticker Ribbon */}
           <div className="v2-ticker">
             {market?.pulse.slice(0, 4).map((p) => (
@@ -2336,6 +2486,12 @@ export function V2WorkspacePage({
       {/* Surface: Analysis (AI 做单分析看板与交易风格洞察) */}
       {surface === "analysis" && (
         <div className="v2-analysis-desk">
+          <AITraderPanel
+            activeAccount={selectedTradingAccount}
+            currentMode={tradingAccounts.find((item) => item.account_id === selectedTradingAccount)?.mode}
+            onAccountChange={setSelectedTradingAccount}
+            onRefresh={() => { void refresh(); void fetchAnalysisData(); }}
+          />
           <InstitutionalAnalysisDashboard
             dashboard={institutionalDashboard}
             loading={analysisLoading}
@@ -2352,7 +2508,15 @@ export function V2WorkspacePage({
               <strong className="v2-kpi-value">
                 ${analysisData?.account?.initial_capital_usdt != null ? analysisData.account.initial_capital_usdt.toFixed(2) : "—"}
               </strong>
-              <small className="v2-kpi-sub">USDT · 模拟初始本金</small>
+              <small className="v2-kpi-sub">
+                {analysisData?.account?.capital_source === "gate_testnet_remote_account_truth"
+                  ? (analysisData.account.capital_stale
+                      ? "Gate 模拟盘远端快照 · 已过期，请同步"
+                      : "Gate 模拟盘远端快照 · 已同步")
+                  : analysisData?.account?.capital_error_code
+                    ? "尚未同步 Gate 远端账户事实"
+                    : "USDT"}
+              </small>
             </article>
 
             <article className="terminal-panel v2-kpi-card">
@@ -2362,7 +2526,7 @@ export function V2WorkspacePage({
               </strong>
               <small className={`v2-kpi-sub ${(analysisData?.account?.net_pnl_usdt ?? 0) >= 0 ? "v2-val--bull" : "v2-val--bear"}`}>
                 {analysisData?.account?.net_pnl_usdt != null ? (
-                  <>{analysisData.account.net_pnl_usdt >= 0 ? "+" : ""}{analysisData.account.net_pnl_usdt.toFixed(2)} USDT ({analysisData.account.total_roi_pct.toFixed(2)}%)</>
+                  <>{analysisData.account.net_pnl_usdt >= 0 ? "+" : ""}{analysisData.account.net_pnl_usdt.toFixed(2)} USDT ({analysisData.account.total_roi_pct != null ? `${analysisData.account.total_roi_pct.toFixed(2)}%` : "—"})</>
                 ) : "—"}
               </small>
             </article>
@@ -2904,12 +3068,14 @@ export function V2WorkspacePage({
           </section>
             </div>
           </details>
+          <InstitutionalEvidencePanel activeAccount={selectedTradingAccount} />
         </div>
       )}
 
       {/* Surface: Gate Live Desk (芝麻交易所实盘对接与量化接口预留) */}
       {surface === "gate-live" && (
         <div className="v2-gate-desk">
+          {riskCockpit}
           <section className="terminal-panel v2-gate-account-panel" data-testid="gate-account-profiles">
             <header className="v2-panel-header">
               <div>
@@ -2956,605 +3122,1223 @@ export function V2WorkspacePage({
             )}
           </section>
 
-          {/* Gate.io Connection & Remote Account Truth Overview */}
-          <section className="terminal-panel v2-gate-status-panel">
-            <header className="v2-panel-header">
-              <div className="v2-panel-header-title">
-                <h2>⚡ {zh ? "Gate.io (芝麻交易所) 账户状态与资产总览" : "Gate.io Account Status & Balances"}</h2>
-                <span className={`v2-badge ${gateAccountScopeConfirmed ? (gateDryRunMode ? "v2-badge--gold" : "v2-badge--bull") : gateConfig?.configured ? "v2-badge--gold" : "v2-badge--neutral"}`}>
-                  {gateAccountScopeConfirmed
-                    ? (gateConfig?.api_environment === "TESTNET"
-                        ? (gateDryRunMode
-                            ? (zh ? "🟡 Gate TestNet · 仅校验不发送" : "🟡 Gate TestNet · Validate only")
-                            : (zh ? "🟢 Gate TestNet 远端账户已核对" : "🟢 Gate TestNet remote account reconciled"))
-                        : (zh ? "🔒 Gate Live 远端账户已核对 · 发布锁定" : "🔒 Gate Live remote account reconciled · release locked"))
-                    : gateConfig?.configured
-                      ? (gateConfig.api_environment === "TESTNET"
-                          ? (zh ? "🟡 Gate TestNet 凭证已保存 · 等待远端核对" : "🟡 Gate TestNet credentials saved · awaiting remote check")
-                          : (zh ? "🔒 Gate Live 凭证已保存 · 发布锁定" : "🔒 Gate Live credentials saved · release locked"))
-                      : (zh ? "⚪ 待配置 API 密钥 (当前为公开行情与样本数据)" : "⚪ Unconfigured API Keys")}
-                </span>
-              </div>
-              <span className="v2-data-tag">
-                {zh ? "Gate TestNet 远端账户事实 · 私有读取按账户显式触发" : "Gate TestNet remote account truth · private reads are explicit and account-scoped"}
+                    {/* Three-Sector Gate Architecture Navigation Tabs */}
+          <nav className="v2-api-nav-tabs" role="tablist" aria-label="Gate API Sectors">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={apiSubTab === "mock"}
+              className={`v2-api-tab ${apiSubTab === "mock" ? "v2-api-tab--active" : ""}`}
+              onClick={() => {
+                setApiSubTab("mock");
+                setSelectedTradingAccount("gate_testnet");
+                setManualGateAccountId("gate_testnet");
+              }}
+            >
+              🧪 {zh ? "模拟盘 API（模拟做单）" : "Paper API (TestNet Simulation)"}
+              <span className="v2-api-tab-badge">TestNet</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={apiSubTab === "live_readonly"}
+              className={`v2-api-tab ${apiSubTab === "live_readonly" ? "v2-api-tab--active" : ""}`}
+              onClick={() => {
+                setApiSubTab("live_readonly");
+                void fetchReadonlyCandles(readonlySymbol, readonlyTimeframe);
+              }}
+            >
+              📊 {zh ? "实盘只读 API（行情数据与股票加密 K 线）" : "Market Data & K-Lines (Read-Only)"}
+              <span className="v2-api-tab-badge">{zh ? "只读安全" : "100% Read-Only"}</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={apiSubTab === "live_trade"}
+              className={`v2-api-tab ${apiSubTab === "live_trade" ? "v2-api-tab--active" : ""}`}
+              onClick={() => {
+                setApiSubTab("live_trade");
+                setSelectedTradingAccount("gate_live");
+                setManualGateAccountId("gate_live");
+              }}
+            >
+              🔥 {zh ? "实盘交易 API（真实交易 · 链路打通）" : "Live Trading API (Real Fills)"}
+              <span
+                className="v2-api-tab-badge"
+                style={{
+                  background: liveTradeUnlocked ? "rgba(34, 197, 94, 0.2)" : "rgba(239, 68, 68, 0.2)",
+                  color: liveTradeUnlocked ? "#4ade80" : "#ef4444",
+                }}
+              >
+                {liveTradeUnlocked ? (zh ? "已解锁" : "UNLOCKED") : (zh ? "🔒 安全加锁" : "🔒 LOCKED")}
               </span>
-              <label className="v2-data-tag">
-                {zh ? "执行账户" : "Execution account"}:&nbsp;
-                <select
-                  aria-label={zh ? "执行账户" : "Execution account"}
-                  value={selectedTradingAccount}
-                  onChange={(event) => setSelectedTradingAccount(event.target.value)}
-                  disabled={!tradingAccounts.length}
-                >
-                  {!tradingAccounts.length && <option value="">{zh ? "无已登记账户" : "No registered account"}</option>}
-                  {tradingAccounts.map((account) => (
-                    <option key={account.account_id} value={account.account_id}>
-                      {account.account_id} · {account.mode} · {account.venue}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </header>
+            </button>
+          </nav>
 
-            <div className="v2-analysis-stats-grid">
-              <article className="v2-kpi-card">
-                <span className="v2-kpi-label">{zh ? "Gate TestNet 账户权益" : "Gate TestNet Equity"}</span>
-                <strong className="v2-kpi-value">
-                  {gateMetric(gateAccount?.equity)}
-                </strong>
-                <small className="v2-kpi-sub">
-                  USDT · {gateAccount?.equity_basis || (gateAccount?.data_status === "AVAILABLE" ? (zh ? "Gate 远端已核对" : "Gate remote reconciled") : (zh ? "远端数据未知" : "remote data unknown"))}
-                  {gateAccount?.observed_at ? ` · ${formatHktDateTime(gateAccount.observed_at)} HKT` : ""}
-                </small>
-              </article>
-
-              <article className="v2-kpi-card">
-                <span className="v2-kpi-label">{zh ? "可用保证金" : "Available Margin"}</span>
-                <strong className="v2-kpi-value v2-val--bull">
-                  {gateMetric(gateAccount?.available_margin)}
-                </strong>
-                <small className="v2-kpi-sub">USDT · {gateAccount?.available_margin_basis || (zh ? "Gate 原生 available" : "Gate native available")}</small>
-              </article>
-
-              <article className="v2-kpi-card">
-                <span className="v2-kpi-label">{zh ? "已用保证金" : "Used Margin"}</span>
-                <strong className="v2-kpi-value">
-                  {gateMetric(gateAccount?.used_margin)}
-                </strong>
-                <small className="v2-kpi-sub">USDT · {gateAccount?.used_margin_basis || (zh ? "Gate 原生 position + order margin" : "Gate native position + order margin")}</small>
-              </article>
-
-              <article className="v2-kpi-card">
-                <span className="v2-kpi-label">{zh ? "远端持仓 / 待单" : "Remote positions / orders"}</span>
-                <strong className="v2-kpi-value">
-                  {gateAccountScopeConfirmed && gateAccount?.positions ? `${gateAccount.positions.length} / ${gateAccount.pending_orders?.length ?? 0}` : (zh ? "未知" : "UNKNOWN")}
-                </strong>
-                <small className="v2-kpi-sub">{zh ? "持仓 / 挂单；来源为 Gate 远端" : "positions / pending orders from Gate"}</small>
-              </article>
-            </div>
-            <div className="v2-gate-remote-meta">
-              <span>{zh ? "远端状态" : "Remote status"}: {gateAccount?.data_status || "UNKNOWN"}</span>
-              <span>{zh ? "来源" : "Source"}: {gateAccount?.source || "NOT_OBSERVED"}</span>
-              <span>{zh ? "未实现盈亏" : "Unrealized PnL"}: {gateAccount?.unrealized_pnl == null ? "UNKNOWN" : `${gateAccount.unrealized_pnl} USDT`}</span>
-              <span>{zh ? "已实现盈亏" : "Realized PnL"}: {gateAccount?.realized_pnl == null ? "UNKNOWN" : `${gateAccount.realized_pnl} USDT`}</span>
-              {gateAccount?.error_code ? <span className="v2-val--stop">{gateAccount.error_code}</span> : null}
-            </div>
-          </section>
-
-          {/* Two Columns: Left = API Config, Right = Live Quantitative Pre-reserved Interface */}
-          <div className="v2-gate-grid-split">
-            {/* Left: API Key Config & Safety Switch */}
-            <section className="terminal-panel">
-              <h2>🔐 {zh ? "Gate API 凭证验证" : "Gate API credential verification"}</h2>
-              <p className="v2-field-sub v2-gate-verification-hint">
-                {selectedGateProfile
-                  ? (zh
-                    ? `${selectedGateProfile.account_id} · ${selectedGateProfile.api_environment}：只读验证账户权限后才保存凭证。不会下单；LIVE 仍保持发布锁定。`
-                    : `${selectedGateProfile.account_id} · ${selectedGateProfile.api_environment}: credentials are saved only after a read-only account check. No orders; LIVE remains release-locked.`)
-                  : (zh
-                    ? "先登记并选择 Gate 账户，再输入 API Key 和 Secret。"
-                    : "Register and select a Gate account before entering an API Key and Secret.")}
-              </p>
-              <form className="v2-gate-form" onSubmit={handleSaveGateConfig}>
-                <div className="v2-form-group">
-                  <label htmlFor="gate-api-key" className="v2-field-label">{copy.gateApiKey}:</label>
-                  <input
-                    id="gate-api-key"
-                    type="text"
-                    className="v2-input"
-                    placeholder={gateConfig?.api_key_masked ? `当前已保存: ${gateConfig.api_key_masked}` : "输入 Gate.io API Key (32位十六进制)"}
-                    value={gateApiKeyInput}
-                    autoComplete="off"
-                    onChange={(e) => setGateApiKeyInput(e.target.value)}
-                  />
-                </div>
-
-                <div className="v2-form-group">
-                  <label htmlFor="gate-api-secret" className="v2-field-label">{copy.gateApiSecret}:</label>
-                  <input
-                    id="gate-api-secret"
-                    type="password"
-                    className="v2-input"
-                    placeholder="输入 Gate.io API Secret (私钥仅在本地加密存储)"
-                    value={gateApiSecretInput}
-                    autoComplete="new-password"
-                    onChange={(e) => setGateApiSecretInput(e.target.value)}
-                  />
-                </div>
-
-                <div className="v2-form-group v2-dry-run-toggle">
-                  <label className="v2-warning v2-inline-warning">
-                    <input
-                      type="checkbox"
-                      checked={gateDryRunMode}
-                      onChange={(e) => setGateDryRunMode(e.target.checked)}
-                    />
-                    <div>
-                      <strong>🛡️ {gateDryRunLabel} (建议开启)</strong>
-                      <p className="v2-toggle-sub">{gateDryRunDescription}</p>
-                    </div>
+          {/* ========================================================================= */}
+          {/* SECTOR 1: 模拟盘 API (Gate TestNet · 模拟做单)                              */}
+          {/* ========================================================================= */}
+          {apiSubTab === "mock" && (
+            <>
+              {/* Gate.io TestNet 账户状态与资产总览 */}
+              <section className="terminal-panel v2-gate-status-panel">
+                <header className="v2-panel-header">
+                  <div className="v2-panel-header-title">
+                    <h2>⚡ {zh ? "Gate TestNet 模拟盘资产总览" : "Gate TestNet Balances & Overview"}</h2>
+                    <span className={`v2-badge ${gateAccountScopeConfirmed ? (gateDryRunMode ? "v2-badge--gold" : "v2-badge--bull") : gateConfig?.configured ? "v2-badge--gold" : "v2-badge--neutral"}`}>
+                      {gateAccountScopeConfirmed
+                        ? (gateDryRunMode ? (zh ? "🟡 模拟校验模式" : "Validate only") : (zh ? "🟢 TestNet 远端已核对" : "TestNet Reconciled"))
+                        : (zh ? "🟡 模拟盘凭证已配置" : "TestNet Configured")}
+                    </span>
+                  </div>
+                  <span className="v2-data-tag">
+                    {zh ? "模拟做单专区 · 远端撮合与原生持仓核验" : "Paper Trading Sector · Remote TestNet fills"}
+                  </span>
+                  <label className="v2-data-tag">
+                    {zh ? "执行账户" : "Execution account"}:&nbsp;
+                    <select
+                      aria-label={zh ? "执行账户" : "Execution account"}
+                      value={selectedTradingAccount}
+                      onChange={(event) => setSelectedTradingAccount(event.target.value)}
+                    >
+                      {tradingAccounts.map((account) => (
+                        <option key={account.account_id} value={account.account_id}>
+                          {account.account_id} · {account.mode}
+                        </option>
+                      ))}
+                    </select>
                   </label>
-                </div>
-
-                <div className="v2-form-actions">
-                  <button type="submit" className="v2-btn-primary" disabled={busy || gateVerificationBusy}>
-                    {gateVerificationBusy ? "⏳ " : "🔎 "}
-                    {selectedGateProfile ? (zh ? "验证并保存" : "Verify & save") : copy.saveConfig}
-                  </button>
-                  <button
-                    type="button"
-                    className="v2-btn-secondary"
-                    disabled={busy || gateVerificationBusy}
-                    onClick={() => void handleGateConnectionTest()}
-                    data-testid="gate-connection-test"
-                  >
-                    🧪 {zh ? "只读连接测试（不保存）" : "Read-only connection test (no save)"}
-                  </button>
                   <button
                     type="button"
                     className="v2-btn-secondary"
                     onClick={() => void refreshGateRemote()}
-                    data-testid="gate-remote-refresh"
-                    disabled={busy || gateVerificationBusy || gateRefreshBusy || !selectedTradingAccount}
+                    disabled={gateRefreshBusy || !selectedTradingAccount}
                   >
-                    {gateRefreshBusy ? "⏳ " : "🔄 "}{zh ? "刷新并对账远端账户" : "Refresh & reconcile remote account"}
+                    {gateRefreshBusy ? "⏳ " : "🔄 "}{zh ? "刷新模拟盘对账" : "Refresh & Reconcile"}
                   </button>
-                </div>
+                </header>
 
-                {gateVerification && (
-                  <div
-                    className={`v2-gate-verification-result ${gateVerification.valid ? "v2-gate-verification-result--ok" : "v2-gate-verification-result--err"}`}
-                    data-testid="gate-verification-result"
-                    aria-live="polite"
-                  >
-                    <strong>
-                      {gateVerification.valid
-                        ? (zh ? "只读 API 验证通过" : "Read-only API verification passed")
-                        : (zh ? "API 验证未通过" : "API verification failed")}
+                <div className="v2-gate-metrics">
+                  <div className="v2-metric-card">
+                    <span className="v2-metric-label">{zh ? "模拟账户净值 (USDT)" : "Total Equity"}</span>
+                    <strong className="v2-metric-value">
+                      {gateAccountScopeConfirmed && gateAccount?.equity != null ? `$${gateAccount.equity.toFixed(2)}` : "—"}
                     </strong>
-                    <span>
-                      {gateVerification.account_id || selectedTradingAccount} · {gateVerification.api_environment || selectedGateProfile?.api_environment || "—"} · {gateVerification.status}
-                    </span>
-                    {gateVerification.valid ? (
-                      <small>
-                        {gateVerification.account_type || "Gate.io Futures / Swap"}
-                        {gateVerification.data_status ? ` · ${gateVerification.data_status}` : ""}
-                        {gateVerification.total_usdt != null ? ` · USDT ${gateVerification.total_usdt.toFixed(2)}` : ""}
-                      </small>
-                    ) : (
-                      <small>{gateVerification.reason || (zh ? "远程返回无效或不可用" : "The remote read was invalid or unavailable.")}</small>
-                    )}
-                  </div>
-                )}
-
-                {gateConnectionTest && (
-                  <div
-                    className={`v2-gate-verification-result ${gateConnectionTest.valid ? "v2-gate-verification-result--ok" : "v2-gate-verification-result--err"}`}
-                    data-testid="gate-connection-test-result"
-                    aria-live="polite"
-                  >
-                    <strong>{gateConnectionTest.message_zh || gateConnectionTest.code || gateConnectionTest.status}</strong>
-                    <span>
-                      {gateConnectionTest.account_id || selectedTradingAccount} · {gateConnectionTest.api_environment || selectedGateProfile?.api_environment || "—"} · {gateConnectionTest.status}
-                    </span>
-                    <small>
-                      read_only={String(gateConnectionTest.read_only)} · orders_sent={gateConnectionTest.orders_sent} · model_called={String(gateConnectionTest.model_called)} · authorization_created={String(gateConnectionTest.authorization_created)}
+                    <small className="v2-metric-sub">
+                      {zh ? "当前结算模式: 逐仓/全仓保证金" : "Settlement: Isolated/Cross Margin"}
                     </small>
                   </div>
-                )}
-
-                {gateNotice && (
-                  <div className={`v2-notice-banner ${gateNotice.type === "ok" ? "v2-notice--ok" : "v2-notice--err"}`}>
-                    {gateNotice.msg}
+                  <div className="v2-metric-card">
+                    <span className="v2-metric-label">{zh ? "可用保证金 (Available)" : "Available Margin"}</span>
+                    <strong className="v2-metric-value">
+                      {gateAccountScopeConfirmed && gateAccount?.available_margin != null ? `$${gateAccount.available_margin.toFixed(2)}` : "—"}
+                    </strong>
+                    <small className="v2-metric-sub">
+                      {gateAccountScopeConfirmed && gateAccount?.used_margin != null
+                        ? (zh ? `已占用保证金: $${gateAccount.used_margin.toFixed(2)}` : `Position margin: $${gateAccount.used_margin.toFixed(2)}`)
+                        : "—"}
+                    </small>
                   </div>
-                )}
-              </form>
-            </section>
-
-            {/* Right: Controlled Gate TestNet execution interface */}
-            <section className="terminal-panel">
-              <header className="v2-panel-header">
-                <h2>⚡ Gate TestNet 受控执行接口</h2>
-                <span className="v2-badge v2-badge--gold">TestNet / 手工触发</span>
-              </header>
-              <p className="v2-field-sub">
-                {zh
-                  ? "仅在明确选择账户并满足授权、租约和风险约束后提交；Gate TestNet 才可能发送，Live 始终发布锁定。"
-                  : "Orders are submitted only after explicit account scope, authorization, lease, and risk checks; Gate Live remains release-locked."}
-              </p>
-
-              <form className="v2-gate-order-form" onSubmit={handlePlaceLiveOrder}>
-                <div className="v2-form-row">
-                  <div className="v2-form-group">
-                    <label htmlFor="gate-order-symbol" className="v2-field-label">{zh ? "合约标的" : "Symbol"}:</label>
-                    <input
-                      id="gate-order-symbol"
-                      type="text"
-                      className="v2-input"
-                      value={orderSymbol}
-                      onChange={(e) => setOrderSymbol(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="v2-form-group">
-                    <label htmlFor="gate-order-side" className="v2-field-label">{zh ? "买卖方向" : "Side"}:</label>
-                    <select
-                      id="gate-order-side"
-                      className="v2-select"
-                      value={orderSide}
-                      onChange={(e) => setOrderSide(e.target.value as "BUY" | "SELL")}
+                  <div className="v2-metric-card">
+                    <span className="v2-metric-label">{zh ? "未结盈亏 (Unrealized PnL)" : "Unrealized PnL"}</span>
+                    <strong
+                      className={`v2-metric-value ${
+                        gateAccountScopeConfirmed && (gateAccount?.unrealized_pnl ?? 0) >= 0 ? "v2-val--bull" : "v2-val--bear"
+                      }`}
                     >
-                      <option value="BUY">{zh ? "🟢 做多 (BUY LONG)" : "BUY LONG"}</option>
-                      <option value="SELL">{zh ? "🔴 做空 (SELL SHORT)" : "SELL SHORT"}</option>
-                    </select>
+                      {gateAccountScopeConfirmed && gateAccount?.unrealized_pnl != null
+                        ? `${gateAccount.unrealized_pnl >= 0 ? "+" : ""}$${gateAccount.unrealized_pnl.toFixed(2)}`
+                        : "—"}
+                    </strong>
+                    <small className="v2-metric-sub">
+                      {zh ? `持仓合约数: ${gateAccountScopeConfirmed ? (gateAccount?.positions?.length || 0) : 0}` : `Open positions: ${gateAccountScopeConfirmed ? (gateAccount?.positions?.length || 0) : 0}`}
+                    </small>
                   </div>
-
-                  <div className="v2-form-group">
-                    <label htmlFor="gate-order-type" className="v2-field-label">{zh ? "订单类型" : "Order Type"}:</label>
-                    <select
-                      id="gate-order-type"
-                      className="v2-select"
-                      value={orderType}
-                      onChange={(e) => setOrderType(e.target.value as "LIMIT" | "MARKET")}
-                    >
-                      <option value="MARKET">{zh ? "市价单 (MARKET)" : "MARKET"}</option>
-                      <option value="LIMIT">{zh ? "限价单 (LIMIT)" : "LIMIT"}</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="v2-form-row">
-                  <div className="v2-form-group">
-                    <label htmlFor="gate-order-amount" className="v2-field-label">{gateTestnetSelected ? (zh ? "Gate 合约张数" : "Gate contracts") : (zh ? "下单张数/数量" : "Amount")}:</label>
-                    <input
-                      id="gate-order-amount"
-                      type="number"
-                      step={gateTestnetSelected ? "1" : "0.001"}
-                      min={gateTestnetSelected ? "1" : "0.001"}
-                      required
-                      className="v2-input"
-                      placeholder={zh ? "必填，不使用隐含默认值" : "Required; no implicit default"}
-                      value={orderAmount}
-                      onChange={(e) => setOrderAmount(e.target.value)}
-                    />
-                    {gateTestnetSelected && <small className="v2-field-sub">Gate 永续合约按 contracts 计数；1 张不是 0.001 BTC。后台以交易所返回的最小张数/步长为准。</small>}
-                  </div>
-
-                  <div className="v2-form-group">
-                    <label htmlFor="gate-order-price" className="v2-field-label">{zh ? "限价价格 (市价可留空)" : "Price"}:</label>
-                    <input
-                      id="gate-order-price"
-                      type="number"
-                      step="0.1"
-                      className="v2-input"
-                      placeholder="市价自动成交"
-                      value={orderPrice}
-                      onChange={(e) => setOrderPrice(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="v2-form-group">
-                    <label htmlFor="gate-order-leverage" className="v2-field-label">{zh ? "杠杆倍数 (1-100x)" : "Leverage"}:</label>
-                    <input
-                      id="gate-order-leverage"
-                      type="number"
-                      min="1"
-                      max="100"
-                      required
-                      className="v2-input"
-                      placeholder={zh ? "必填，不使用隐含默认值" : "Required; no implicit default"}
-                      value={orderLeverage}
-                      onChange={(e) => setOrderLeverage(e.target.value)}
-                    />
+                  <div className="v2-metric-card">
+                    <span className="v2-metric-label">{zh ? "环境与对账状态" : "Reconciliation State"}</span>
+                    <strong className="v2-metric-value v2-val--bull">
+                      {gateAccountScopeConfirmed ? "TestNet 真实握手" : "待同步"}
+                    </strong>
+                    <small className="v2-metric-sub">
+                      {gateAccountScopeConfirmed && gateAccount?.account_id
+                        ? `${gateAccount.account_id} · ${gateAccount.mode || "TESTNET"}`
+                        : "gate_testnet"}
+                    </small>
                   </div>
                 </div>
 
-                <div className="v2-form-row">
-                  <div className="v2-form-group">
-                    <label htmlFor="gate-order-sl" className="v2-field-label">{zh ? "硬止损价 (SL)" : "Stop Loss"}:</label>
-                    <input
-                      id="gate-order-sl"
-                      type="number"
-                      step="0.1"
-                      className="v2-input"
-                      placeholder="可选硬止损"
-                      value={orderStopLoss}
-                      onChange={(e) => setOrderStopLoss(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="v2-form-group">
-                    <label htmlFor="gate-order-tp" className="v2-field-label">{zh ? "目标止盈价 (TP)" : "Take Profit"}:</label>
-                    <input
-                      id="gate-order-tp"
-                      type="number"
-                      step="0.1"
-                      className="v2-input"
-                      placeholder="可选止盈目标"
-                      value={orderTakeProfit}
-                      onChange={(e) => setOrderTakeProfit(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="v2-form-actions">
-                  <button type="submit" className="v2-btn-primary" disabled={busy}>
-                    ⚡ {copy.placeOrder}
-                  </button>
-                  <button
-                    type="button"
-                    className="v2-btn-danger"
-                    disabled={busy}
-                    onClick={() => void handleEmergencyCloseGatePosition(orderSymbol)}
-                  >
-                    🛑 {zh ? `一键平仓 ${orderSymbol}` : `Close ${orderSymbol}`}
-                  </button>
-                </div>
-
-                {orderFeedback && (
-                  <pre className="v2-pre v2-feedback-box">{orderFeedback}</pre>
-                )}
-              </form>
-            </section>
-          </div>
-
-          <section className="terminal-panel v2-gate-e2e-panel" data-testid="gate-testnet-e2e">
-            <header className="v2-panel-header">
-              <div>
-                <h2>🧪 Gate TestNet 独立链路验收</h2>
-                <p className="v2-field-sub">真实 TestNet 订单 → 成交 → 远端持仓 → 原生保护 → reduce-only 清理；不调用 AI 授权，不写本地成交。</p>
-              </div>
-              <span className={`v2-badge ${gateTestnetSelected ? "v2-badge--warning" : "v2-badge--neutral"}`}>
-                {gateTestnetSelected ? "TESTNET 可执行" : "需选择 gate_testnet"}
-              </span>
-            </header>
-            <form className="v2-gate-e2e-form" onSubmit={handleGateTestnetE2E}>
-              <div className="v2-form-row">
-                <div className="v2-form-group">
-                  <label htmlFor="gate-e2e-symbol" className="v2-field-label">合约标的</label>
-                  <input id="gate-e2e-symbol" className="v2-input" value={orderSymbol} onChange={(event) => setOrderSymbol(event.target.value)} required />
-                </div>
-                <div className="v2-form-group">
-                  <label htmlFor="gate-e2e-side" className="v2-field-label">方向</label>
-                  <select id="gate-e2e-side" className="v2-select" value={orderSide} onChange={(event) => setOrderSide(event.target.value as "BUY" | "SELL")}>
-                    <option value="BUY">LONG</option>
-                    <option value="SELL">SHORT</option>
-                  </select>
-                </div>
-                  <div className="v2-form-group">
-                    <label htmlFor="gate-e2e-leverage" className="v2-field-label">杠杆（整数）</label>
-                    <input id="gate-e2e-leverage" type="number" min="1" max="100" step="1" className="v2-input" value={e2eLeverage} onChange={(event) => setE2eLeverage(event.target.value)} required />
-                  </div>
-                  <div className="v2-form-group">
-                    <label htmlFor="gate-e2e-amount" className="v2-field-label">数量（Gate contracts，可留空）</label>
-                    <input id="gate-e2e-amount" type="number" min="1" step="1" className="v2-input" value={e2eAmount} onChange={(event) => setE2eAmount(event.target.value)} placeholder="留空=远端最小张数" />
-                    <small className="v2-field-sub">不填写时读取 Gate 市场元数据的最小可成交张数。</small>
-                  </div>
-                </div>
-              <div className="v2-form-row">
-                <div className="v2-form-group">
-                  <label htmlFor="gate-e2e-stop-type" className="v2-field-label">止损类型</label>
-                  <select id="gate-e2e-stop-type" className="v2-select" value={e2eStopType} onChange={(event) => setE2eStopType(event.target.value as "PRICE" | "PERCENT" | "ATR")}>
-                    <option value="PRICE">PRICE</option>
-                    <option value="PERCENT">PERCENT（百分比）</option>
-                    <option value="ATR">ATR（15m）</option>
-                  </select>
-                </div>
-                <div className="v2-form-group">
-                  <label htmlFor="gate-e2e-stop-value" className="v2-field-label">止损参数</label>
-                  <input id="gate-e2e-stop-value" type="number" min="0" step="any" className="v2-input" value={e2eStopValue} onChange={(event) => setE2eStopValue(event.target.value)} placeholder="按所选类型填写" required />
-                </div>
-                <div className="v2-form-group">
-                  <label htmlFor="gate-e2e-tp-type" className="v2-field-label">止盈类型</label>
-                  <select id="gate-e2e-tp-type" className="v2-select" value={e2eTakeProfitType} onChange={(event) => setE2eTakeProfitType(event.target.value as "PRICE" | "PERCENT" | "ATR")}>
-                    <option value="PRICE">PRICE</option>
-                    <option value="PERCENT">PERCENT（百分比）</option>
-                    <option value="ATR">ATR（15m）</option>
-                  </select>
-                </div>
-                <div className="v2-form-group">
-                  <label htmlFor="gate-e2e-tp-value" className="v2-field-label">止盈参数</label>
-                  <input id="gate-e2e-tp-value" type="number" min="0" step="any" className="v2-input" value={e2eTakeProfitValue} onChange={(event) => setE2eTakeProfitValue(event.target.value)} placeholder="按所选类型填写" required />
-                </div>
-              </div>
-              <div className="v2-gate-e2e-options">
-                <label className="v2-warning v2-inline-warning">
-                  <input type="checkbox" checked={e2eCleanup} onChange={(event) => setE2eCleanup(event.target.checked)} />
-                  <span>完成后发送 reduce-only 清理，并核对远端持仓归零</span>
-                </label>
-                <label className="v2-warning v2-inline-warning">
-                  <input type="checkbox" checked={e2eConfirm} onChange={(event) => setE2eConfirm(event.target.checked)} />
-                  <span>我确认这是 Gate TestNet，不是真实资金账户</span>
-                </label>
-              </div>
-              <div className="v2-form-actions">
-                <button type="submit" className="v2-btn-primary" disabled={e2eBusy || busy || !gateTestnetSelected || !e2eConfirm}>
-                  {e2eBusy ? "⏳ 执行中…" : "🧪 执行 TestNet 独立验收"}
-                </button>
-                <span className="v2-field-sub">不会自动执行；每次点击均生成新的幂等键。</span>
-              </div>
-              {e2eFeedback && (
-                <div className={`v2-gate-e2e-result ${e2eFeedback.status === "COMPLETED" ? "v2-gate-e2e-result--ok" : "v2-gate-e2e-result--err"}`} aria-live="polite">
-                  <strong>{e2eFeedback.message_zh || e2eFeedback.error_code || e2eFeedback.status || "UNKNOWN"}</strong>
-                  <span>{e2eFeedback.run_id || "UNKNOWN"} · orders_sent={e2eFeedback.orders_sent ?? "UNKNOWN"} · local_fill_created={String(e2eFeedback.local_fill_created ?? "UNKNOWN")}</span>
-                  {e2eFeedback.stages?.length ? (
-                    <div className="v2-gate-e2e-stages">
-                      {e2eFeedback.stages.map((stage, index) => (
-                        <span key={`${stage.stage || "stage"}-${index}`} className={["COMPLETED", "PASS", "FILLED"].includes(String(stage.status || "").toUpperCase()) ? "v2-val--bull" : "v2-val--stop"}>
-                          {stage.stage || "UNKNOWN"}: {stage.status || "UNKNOWN"}{stage.message_zh || stage.reason ? ` · ${stage.message_zh || stage.reason}` : ""}{stage.reason_code ? ` (${stage.reason_code})` : ""}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              )}
-            </form>
-          </section>
-
-          {/* Gate.io Real Trade Ledger & Fee Audit Table */}
-          <section className="terminal-panel">
-            <header className="v2-panel-header">
-              <div className="v2-panel-header-title">
-                <h2>📑 {copy.gateTrades}</h2>
-                <span className="v2-badge v2-badge--neutral">
-                  {gateTrades?.summary?.source ?? "Gate.io API"}
-                </span>
-              </div>
-                <div className="v2-data-tag">
-                {zh
-                  ? `累计成交: ${gateTrades?.trades?.length ?? 0} 笔 · 手续费: ${gateTrades?.summary?.total_fee_cost == null ? "未知" : gateTrades.summary.total_fee_cost.toFixed(4)} USDT`
-                  : `Total trades: ${gateTrades?.trades?.length ?? 0} · Fee: ${gateTrades?.summary?.total_fee_cost == null ? "UNKNOWN" : gateTrades.summary.total_fee_cost.toFixed(4)} USDT`}
-                {gateTrades?.summary?.fee_status ? ` · ${gateTrades.summary.fee_status}` : ""}
-              </div>
-            </header>
-
-            {gateTrades?.notice && (
-              <div className="v2-warning v2-notice-banner">
-                {gateTrades.notice}
-              </div>
-            )}
-
-            {gateTrades?.trades && gateTrades.trades.length > 0 ? (
-              <div className="v2-table-responsive">
-                <table className="v2-table">
-                  <thead>
-                    <tr>
-                      <th>{zh ? "成交 ID / 订单号" : "Fill ID / Order ID"}</th>
-                      <th>{zh ? "合约标的" : "Symbol"}</th>
-                      <th>{zh ? "成交时间" : "Execution Time"}</th>
-                      <th>{zh ? "方向" : "Side"}</th>
-                      <th>{zh ? "成交价格" : "Price"}</th>
-                      <th>{zh ? "成交数量" : "Amount"}</th>
-                      <th>{zh ? "总成交额 (USDT)" : "Cost (USDT)"}</th>
-                      <th>{zh ? "手续费消耗" : "Fee Cost"}</th>
-                      <th>{zh ? "实现盈亏" : "Realized PnL"}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {gateTrades.trades.map((t) => {
-                      const isBuy = t.side.toUpperCase() === "BUY";
-                      const pnl = t.pnl != null ? Number(t.pnl) : null;
-                      return (
-                        <tr key={t.id}>
-                          <td>
-                            <code>{t.id}</code>
-                            <br />
-                            <small className="v2-dim">{t.order_id}</small>
-                          </td>
-                          <td><strong>{t.symbol}</strong></td>
-                          <td><time className="v2-dim" title="中国香港时间 (HKT)">{formatHktDateTime(t.datetime)} (HKT)</time></td>
-                          <td>
-                            <span className={`v2-badge ${isBuy ? "v2-badge--bull" : "v2-badge--bear"}`}>
-                              {t.side}
-                            </span>
-                          </td>
-                          <td>${displayObservedNumber(t.price)}</td>
-                          <td>{displayObservedNumber(t.amount, 6)}</td>
-                          <td>${displayObservedNumber(t.cost)}</td>
-                          <td>
-                            <span className="v2-val--stop">
-                              {displayObservedNumber(t.fee_cost, 6)} {t.fee_currency || (zh ? "币种未知" : "currency unknown")}
-                              {t.fee_evidence_status && <small className="v2-dim"> · {t.fee_evidence_status}</small>}
-                            </span>
-                          </td>
-                          <td className={pnl == null ? "" : pnl >= 0 ? "v2-val--bull" : "v2-val--bear"}>
-                            {pnl != null ? `${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} USDT` : "—"}
-                          </td>
+                {/* Positions table */}
+                {gateAccountScopeConfirmed && (gateAccount?.positions?.length || 0) > 0 && (
+                  <div className="v2-gate-positions">
+                    <h3>📊 {zh ? "当前 TestNet 远端持仓" : "Current Remote TestNet Positions"}</h3>
+                    <table className="v2-table">
+                      <thead>
+                        <tr>
+                          <th>{zh ? "合约标的" : "Contract"}</th>
+                          <th>{zh ? "方向" : "Side"}</th>
+                          <th>{zh ? "张数" : "Contracts"}</th>
+                          <th>{zh ? "开仓均价" : "Entry Price"}</th>
+                          <th>{zh ? "未结盈亏" : "PnL"}</th>
+                          <th>{zh ? "平仓操作" : "Close Action"}</th>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="v2-note">{copy.noGateTrades}</p>
-            )}
-          </section>
+                      </thead>
+                      <tbody>
+                        {(gateAccount?.positions || []).map((pos) => {
+                          const isLong = pos.side?.toUpperCase().includes("LONG") || pos.side?.toUpperCase() === "BUY";
+                          const pnlVal = Number(pos.unrealizedPnl ?? 0);
+                          const sym = pos.symbol || "BTCUSDT";
+                          return (
+                            <tr key={sym}>
+                              <td><strong>{sym}</strong></td>
+                              <td>
+                                <span className={`v2-badge ${isLong ? "v2-badge--bull" : "v2-badge--bear"}`}>
+                                  {isLong ? (zh ? "多头 LONG" : "LONG") : (zh ? "空头 SHORT" : "SHORT")}
+                                </span>
+                              </td>
+                              <td>{pos.contracts ?? 0}</td>
+                              <td>{pos.entryPrice != null ? `$${pos.entryPrice.toFixed(2)}` : "—"}</td>
+                              <td className={pnlVal >= 0 ? "v2-val--bull" : "v2-val--bear"}>
+                                {pnlVal >= 0 ? "+" : ""}{pnlVal.toFixed(2)} USDT
+                              </td>
+                              <td>
+                                <button
+                                  type="button"
+                                  className="v2-btn-danger"
+                                  style={{ padding: "4px 8px", fontSize: "12px" }}
+                                  onClick={() => void handleEmergencyCloseGatePosition(sym)}
+                                >
+                                  🛑 {zh ? "Reduce-Only 平仓" : "Close Position"}
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
 
-          {/* Gate.io 300+ USDT Contracts Universe Browser */}
-          <section className="terminal-panel">
-            <header className="v2-panel-header">
-              <div className="v2-panel-header-title">
-                <h2>🌐 {copy.gateMarkets}</h2>
-                <span className="v2-badge v2-badge--bull">300+ 活跃全量合约</span>
-              </div>
-              <div className="v2-controls">
-                <input
-                  type="text"
-                  className="v2-input v2-search-input"
-                  placeholder={copy.searchContracts}
-                  value={marketSearch}
-                  onChange={(e) => setMarketSearch(e.target.value)}
-                />
-              </div>
-            </header>
+              {/* Two Columns: Config & Controlled Paper Trading Desk */}
+              <div className="v2-gate-desk-columns">
+                {/* Left: Paper API Credentials */}
+                <section className="terminal-panel">
+                  <header className="v2-panel-header">
+                    <h2>🧪 {zh ? "模拟盘凭证配置 (Gate TestNet)" : "Paper API Credentials (TestNet)"}</h2>
+                    <span className="v2-badge v2-badge--gold">TestNet 独立沙箱</span>
+                  </header>
+                  <p className="v2-field-sub">
+                    {zh
+                      ? "配置 Gate TestNet 的 API Key 与 Secret。资金完全为模拟 USDT，无任何本金损失风险。"
+                      : "Configure Gate TestNet API Key & Secret. Paper funds only, zero financial risk."}
+                  </p>
 
-            <div className="v2-table-responsive v2-universe-scroll">
-              <table className="v2-table">
-                <thead>
-                  <tr>
-                    <th>{zh ? "标的合约代码" : "Symbol"}</th>
-                    <th>{zh ? "基础币种 / 结算币" : "Base / Quote"}</th>
-                    <th>{zh ? "最小开仓张数" : "Min Amount"}</th>
-                    <th>{zh ? "最高支持杠杆" : "Max Leverage"}</th>
-                    <th>{zh ? "状态" : "Status"}</th>
-                    <th>{zh ? "快捷操作" : "Action"}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {gateMarkets
-                    .filter((m) =>
-                      marketSearch
-                        ? m.symbol.toLowerCase().includes(marketSearch.toLowerCase()) ||
-                          m.base.toLowerCase().includes(marketSearch.toLowerCase())
-                        : true
-                    )
-                    .slice(0, 100)
-                    .map((m) => (
-                      <tr key={m.id}>
-                        <td><strong>{m.symbol}</strong></td>
-                        <td>{m.base} / {m.quote}</td>
-                        <td>{m.min_amount}</td>
-                        <td><span className="v2-leverage-pill v2-lev--high">{m.max_leverage}x</span></td>
-                        <td><span className="v2-badge v2-badge--bull">Active</span></td>
-                        <td>
+                  <form className="v2-gate-form" onSubmit={handleSaveGateConfig}>
+                    <div className="v2-form-group">
+                      <label htmlFor="gate-api-key" className="v2-field-label">{zh ? "Gate API Key" : "API Key"}:</label>
+                      <input
+                        id="gate-api-key"
+                        type="text"
+                        required
+                        className="v2-input"
+                        placeholder="输入 Gate TestNet API Key"
+                        value={gateApiKeyInput}
+                        onChange={(e) => setGateApiKeyInput(e.target.value)}
+                        autoComplete="off"
+                        data-testid="gate-api-key-input"
+                      />
+                    </div>
+
+                    <div className="v2-form-group">
+                      <label htmlFor="gate-api-secret" className="v2-field-label">{zh ? "Gate API Secret" : "API Secret"}:</label>
+                      <input
+                        id="gate-api-secret"
+                        type="password"
+                        required
+                        className="v2-input"
+                        placeholder="输入 Gate TestNet API Secret"
+                        value={gateApiSecretInput}
+                        onChange={(e) => setGateApiSecretInput(e.target.value)}
+                        autoComplete="off"
+                        data-testid="gate-api-secret-input"
+                      />
+                    </div>
+
+                    <div className="v2-form-group">
+                      <label className="v2-toggle-label">
+                        <input
+                          type="checkbox"
+                          checked={gateDryRunMode}
+                          onChange={(e) => setGateDryRunMode(e.target.checked)}
+                        />
+                        <div>
+                          <strong>🛡️ {gateDryRunLabel} (本地校验拦截)</strong>
+                          <p className="v2-toggle-sub">{gateDryRunDescription}</p>
+                        </div>
+                      </label>
+                    </div>
+
+                    <div className="v2-form-actions">
+                      <button type="submit" className="v2-btn-primary" disabled={busy || gateVerificationBusy}>
+                        {gateVerificationBusy ? "⏳ " : "🔎 "}
+                        {selectedGateProfile ? (zh ? "验证并保存" : "Verify & save") : copy.saveConfig}
+                      </button>
+                      <button
+                        type="button"
+                        className="v2-btn-secondary"
+                        disabled={busy || gateVerificationBusy}
+                        onClick={() => void handleGateConnectionTest()}
+                        data-testid="gate-connection-test"
+                      >
+                        🧪 {zh ? "只读连接测试（不保存）" : "Read-only connection test (no save)"}
+                      </button>
+                    </div>
+
+                    {gateVerification && (
+                      <div
+                        className={`v2-gate-verification-result ${gateVerification.valid ? "v2-gate-verification-result--ok" : "v2-gate-verification-result--err"}`}
+                        data-testid="gate-verification-result"
+                        aria-live="polite"
+                      >
+                        <strong>
+                          {gateVerification.valid
+                            ? (zh ? "只读 API 凭证核验通过" : "Read-only API verification passed")
+                            : (zh ? "API 凭证核验未通过" : "API verification failed")}
+                        </strong>
+                        <span>
+                          {gateVerification.account_id || selectedTradingAccount} · {gateVerification.api_environment || selectedGateProfile?.api_environment || "—"} · {gateVerification.status}
+                        </span>
+                        {gateVerification.valid ? (
+                          <small>
+                            {gateVerification.account_type || "Gate.io Futures / Swap"} · 净值 ≈ {gateVerification.total_usdt != null ? `$${gateVerification.total_usdt.toFixed(2)}` : "未返回余额"}
+                          </small>
+                        ) : (
+                          <small>{gateVerification.reason || "请检查 API Key / Secret 是否正确并绑定正确的环境。"}</small>
+                        )}
+                      </div>
+                    )}
+
+                    {gateConnectionTest && (
+                      <div
+                        className={`v2-gate-verification-result ${gateConnectionTest.valid ? "v2-gate-verification-result--ok" : "v2-gate-verification-result--err"}`}
+                        data-testid="gate-connection-test-result"
+                        aria-live="polite"
+                      >
+                        <strong>{gateConnectionTest.message_zh || gateConnectionTest.code || gateConnectionTest.status}</strong>
+                        <span>
+                          {gateConnectionTest.account_id || selectedTradingAccount} · {gateConnectionTest.api_environment || selectedGateProfile?.api_environment || "—"} · {gateConnectionTest.status}
+                        </span>
+                        <small>
+                          read_only={String(gateConnectionTest.read_only)} · orders_sent={gateConnectionTest.orders_sent} · model_called={String(gateConnectionTest.model_called)}
+                        </small>
+                      </div>
+                    )}
+                  </form>
+                </section>
+
+                {/* Right: Paper Trading Desk */}
+                <section className="terminal-panel">
+                  <header className="v2-panel-header">
+                    <h2>⚡ {zh ? "模拟做单交易台 (TestNet)" : "Paper Trading Desk (TestNet)"}</h2>
+                    <span className="v2-badge v2-badge--gold">TestNet 远端撮合</span>
+                  </header>
+                  <p className="v2-field-sub">
+                    {zh
+                      ? "在此直接发送模拟做单委托。订单将通过网关直达 Gate TestNet 进行撮合，支持原生条件止损/止盈与持仓更新。"
+                      : "Submit orders directly to Gate TestNet. Supports native conditional SL/TP with real remote matching."}
+                  </p>
+
+                  <form className="v2-gate-order-form" onSubmit={handlePlaceLiveOrder}>
+                    <div className="v2-form-row">
+                      <div className="v2-form-group">
+                        <label htmlFor="gate-order-symbol" className="v2-field-label">{zh ? "合约标的" : "Symbol"}:</label>
+                        <input
+                          id="gate-order-symbol"
+                          type="text"
+                          required
+                          className="v2-input"
+                          placeholder="例如: BTCUSDT 或 ETHUSDT"
+                          value={orderSymbol}
+                          onChange={(e) => setOrderSymbol(e.target.value.toUpperCase())}
+                        />
+                      </div>
+
+                      <div className="v2-form-group">
+                        <label htmlFor="gate-order-side" className="v2-field-label">{zh ? "方向" : "Side"}:</label>
+                        <select
+                          id="gate-order-side"
+                          className="v2-select"
+                          value={orderSide}
+                          onChange={(e) => setOrderSide(e.target.value as "BUY" | "SELL")}
+                        >
+                          <option value="BUY">{zh ? "🟢 买入 / 开多 (BUY / LONG)" : "BUY (LONG)"}</option>
+                          <option value="SELL">{zh ? "🔴 卖出 / 开空 (SELL / SHORT)" : "SELL (SHORT)"}</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="v2-form-row">
+                      <div className="v2-form-group">
+                        <label htmlFor="gate-order-type" className="v2-field-label">{zh ? "订单类型" : "Order Type"}:</label>
+                        <select
+                          id="gate-order-type"
+                          className="v2-select"
+                          value={orderType}
+                          onChange={(e) => setOrderType(e.target.value as "LIMIT" | "MARKET")}
+                        >
+                          <option value="MARKET">{zh ? "市价单 (Market)" : "Market"}</option>
+                          <option value="LIMIT">{zh ? "限价单 (Limit)" : "Limit"}</option>
+                        </select>
+                      </div>
+
+                      <div className="v2-form-group">
+                        <label htmlFor="gate-order-amount" className="v2-field-label">{zh ? "下单张数 (Contracts)" : "Contracts"}:</label>
+                        <input
+                          id="gate-order-amount"
+                          type="number"
+                          step="1"
+                          min="1"
+                          required
+                          className="v2-input"
+                          placeholder="必须填写整数张数 (如 1)"
+                          value={orderAmount}
+                          onChange={(e) => setOrderAmount(e.target.value)}
+                        />
+                        <small className="v2-field-sub">1 张 BTC 对应 0.0001 BTC；以交易所最小步长为准。</small>
+                      </div>
+                    </div>
+
+                    <div className="v2-form-row">
+                      <div className="v2-form-group">
+                        <label htmlFor="gate-order-price" className="v2-field-label">{zh ? "委托价格 (限价单必填)" : "Limit Price"}:</label>
+                        <input
+                          id="gate-order-price"
+                          type="number"
+                          step="0.1"
+                          className="v2-input"
+                          placeholder="市价自动按盘口撮合"
+                          value={orderPrice}
+                          onChange={(e) => setOrderPrice(e.target.value)}
+                        />
+                      </div>
+
+                      <div className="v2-form-group">
+                        <label htmlFor="gate-order-leverage" className="v2-field-label">{zh ? "杠杆倍数 (1-100x)" : "Leverage"}:</label>
+                        <input
+                          id="gate-order-leverage"
+                          type="number"
+                          min="1"
+                          max="100"
+                          required
+                          className="v2-input"
+                          placeholder="默认 2x"
+                          value={orderLeverage}
+                          onChange={(e) => setOrderLeverage(e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="v2-form-row">
+                      <div className="v2-form-group">
+                        <label htmlFor="gate-order-sl" className="v2-field-label">
+                          {zh ? "止损价格 (SL)" : "Stop Loss"}:
                           <button
                             type="button"
-                            className="v2-attach-btn"
+                            className="v2-smart-sltp-btn"
+                            onClick={() => handleSmartAutoSlTp(orderSide, false)}
+                          >
+                            🎯 {zh ? "一键智能推荐" : "Auto SL/TP"}
+                          </button>
+                        </label>
+                        <input
+                          id="gate-order-sl"
+                          type="number"
+                          step="0.1"
+                          className="v2-input"
+                          placeholder="硬止损保护价 (必填)"
+                          value={orderStopLoss}
+                          onChange={(e) => setOrderStopLoss(e.target.value)}
+                        />
+                      </div>
+
+                      <div className="v2-form-group">
+                        <label htmlFor="gate-order-tp" className="v2-field-label">{zh ? "目标止盈 (TP)" : "Take Profit"}:</label>
+                        <input
+                          id="gate-order-tp"
+                          type="number"
+                          step="0.1"
+                          className="v2-input"
+                          placeholder="可选止盈目标"
+                          value={orderTakeProfit}
+                          onChange={(e) => setOrderTakeProfit(e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="v2-form-actions">
+                      <button type="submit" className="v2-btn-primary" disabled={busy}>
+                        ⚡ {zh ? "提交模拟订单 (Gate TestNet)" : "Submit Paper Order"}
+                      </button>
+                      <button
+                        type="button"
+                        className="v2-btn-danger"
+                        onClick={() => void handleEmergencyCloseGatePosition(orderSymbol)}
+                      >
+                        🛑 {zh ? `一键平仓 ${orderSymbol}` : `Close ${orderSymbol}`}
+                      </button>
+                    </div>
+
+                    {orderFeedback && (
+                      <pre className="v2-pre v2-feedback-box">{orderFeedback}</pre>
+                    )}
+                  </form>
+                </section>
+              </div>
+
+              {/* Gate TestNet 端到端全链路验收面板 */}
+              <section className="terminal-panel v2-gate-e2e-panel" data-testid="gate-testnet-e2e">
+                <header className="v2-panel-header">
+                  <div>
+                    <h2>⚡ Gate TestNet 独立链路验收</h2>
+                    <small className="v2-subtitle">
+                      {zh ? "一键运行下单、原生双向止损止盈挂单、对账校验及自动平仓测试。" : "Gate TestNet 独立链路验收 · Automated full-cycle order, bracket SL/TP placement, reconciliation, and cleanup."}
+                    </small>
+                  </div>
+                  <span className="v2-badge v2-badge--gold">端到端自检</span>
+                </header>
+
+                <form className="v2-form-row" onSubmit={handleGateTestnetE2E} style={{ alignItems: "flex-end", flexWrap: "wrap", gap: "12px" }}>
+                  <div className="v2-form-group" style={{ minWidth: "140px" }}>
+                    <label className="v2-field-label">{zh ? "止损偏移点数" : "Stop Offset"}:</label>
+                    <input
+                      type="number"
+                      className="v2-input"
+                      placeholder="如 500"
+                      value={e2eStopValue}
+                      onChange={(e) => setE2eStopValue(e.target.value)}
+                    />
+                  </div>
+                  <div className="v2-form-group" style={{ minWidth: "140px" }}>
+                    <label className="v2-field-label">{zh ? "止盈偏移点数" : "Take Profit Offset"}:</label>
+                    <input
+                      type="number"
+                      className="v2-input"
+                      placeholder="如 1000"
+                      value={e2eTakeProfitValue}
+                      onChange={(e) => setE2eTakeProfitValue(e.target.value)}
+                    />
+                  </div>
+                  <div className="v2-form-group" style={{ minWidth: "120px" }}>
+                    <label className="v2-field-label">{zh ? "测试张数" : "Contracts"}:</label>
+                    <input
+                      type="number"
+                      className="v2-input"
+                      placeholder="默认 1 张"
+                      value={e2eAmount}
+                      onChange={(e) => setE2eAmount(e.target.value)}
+                    />
+                  </div>
+                  <div className="v2-form-actions" style={{ marginTop: 0 }}>
+                    <button type="submit" className="v2-btn-primary" disabled={e2eBusy || busy}>
+                      {e2eBusy ? "⏳ 执行中…" : "🧪 执行 TestNet 独立验收"}
+                    </button>
+                  </div>
+                </form>
+
+                {e2eFeedback && (
+                  <div className="v2-gate-verification-result v2-gate-verification-result--ok" style={{ marginTop: "12px" }}>
+                    <h4>{zh ? "验收结果报告" : "E2E Report"} · {e2eFeedback.status || "COMPLETED"}</h4>
+                    <p>{e2eFeedback.stages ? `${e2eFeedback.stages.length} 个验收阶段均已执行完毕` : "执行完毕"}</p>
+                    <small>运行批次: {e2eFeedback.run_id || "—"} | 发送委托数: {e2eFeedback.orders_sent ?? 0}</small>
+                  </div>
+                )}
+              </section>
+
+              {/* 成交流水与审计日志 */}
+              <section className="terminal-panel">
+                <header className="v2-panel-header">
+                  <h2>📜 {zh ? "模拟做单成交流水与审计日志" : "TestNet Trade Ledger & Audit Log"}</h2>
+                  <span className="v2-badge v2-badge--neutral">Gate TestNet 账本</span>
+                </header>
+                <div className="v2-table-wrapper">
+                  <table className="v2-table">
+                    <thead>
+                      <tr>
+                        <th>{zh ? "委托 ID" : "Order ID"}</th>
+                        <th>{zh ? "标的" : "Symbol"}</th>
+                        <th>{zh ? "方向" : "Side"}</th>
+                        <th>{zh ? "成交价格" : "Price"}</th>
+                        <th>{zh ? "数量" : "Amount"}</th>
+                        <th>{zh ? "手续费" : "Fee"}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {gateTrades?.trades && gateTrades.trades.length > 0 ? (
+                        gateTrades.trades.map((trade, idx) => (
+                          <tr key={trade.order_id || trade.id || idx}>
+                            <td><code>{trade.order_id || trade.id || "—"}</code></td>
+                            <td><strong>{trade.symbol}</strong></td>
+                            <td>
+                              <span className={`v2-badge ${trade.side?.toUpperCase() === "BUY" ? "v2-badge--bull" : "v2-badge--bear"}`}>
+                                {trade.side}
+                              </span>
+                            </td>
+                            <td>${trade.price?.toFixed(2) || "—"}</td>
+                            <td>{trade.amount}</td>
+                            <td>{trade.fee_cost != null ? `${trade.fee_cost} ${trade.fee_currency || "USDT"}` : "—"}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={6} style={{ textAlign: "center", color: "#9ca3af", padding: "16px" }}>
+                            {zh ? "暂无模拟做单流水。在上方交易台提交做单后，成交将实时呈现于此。" : "No trade records yet."}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </>
+          )}
+
+          {/* ========================================================================= */}
+          {/* SECTOR 2: 实盘只读 API (行情数据与股票加密 K 线)                           */}
+          {/* ========================================================================= */}
+          {apiSubTab === "live_readonly" && (
+            <>
+              {/* 安全提示横幅 */}
+              <div className="v2-readonly-banner">
+                <div className="v2-readonly-icon">🛡️</div>
+                <div className="v2-readonly-info">
+                  <h3>{zh ? "实盘行情只读模式 · 100% 资金与私钥安全" : "Live Market Data Read-Only Mode · 100% Asset Safe"}</h3>
+                  <p>
+                    {zh
+                      ? "本板块通过 Gate 官方公开行情与 K 线网络获取实时数据，无需任何交易私钥。可安全自由查看 Gate 平台上的主流加密货币、永续合约以及美股股权代币的实时盘口与 K 线形态。"
+                      : "Public market data and candlestick feeds from Gate.io. No trade private keys required. Safely browse live crypto and tokenized equity charts."}
+                  </p>
+                </div>
+                <span className="v2-badge v2-badge--bull">{zh ? "免密安全" : "Zero Risk"}</span>
+              </div>
+
+              {/* 标的与周期筛选面板 */}
+              <section className="terminal-panel">
+                <header className="v2-panel-header">
+                  <div className="v2-panel-header-title">
+                    <h2>📊 {zh ? "标的与 K 线选择器" : "Symbol & Candlestick Selector"}</h2>
+                    <span className="v2-badge v2-badge--gold">{readonlySymbol} · {readonlyTimeframe}</span>
+                  </div>
+                  <div className="v2-timeframe-selector" role="group" aria-label="Timeframe">
+                    {(["5m", "15m", "1h", "1d"] as const).map((tf) => (
+                      <button
+                        key={tf}
+                        type="button"
+                        className={`v2-timeframe-btn ${readonlyTimeframe === tf ? "v2-timeframe-btn--active" : ""}`}
+                        onClick={() => {
+                          setReadonlyTimeframe(tf);
+                          void fetchReadonlyCandles(readonlySymbol, tf);
+                        }}
+                      >
+                        {tf === "15m" ? "⚡ 15m (AI 周期)" : tf}
+                      </button>
+                    ))}
+                  </div>
+                </header>
+
+                {/* 分类快捷切换 (加密货币 vs 股票代币) */}
+                <div className="v2-symbol-filter-row">
+                  <div className="v2-category-pills">
+                    <button
+                      type="button"
+                      className={`v2-category-pill ${readonlyCategory === "crypto" ? "v2-category-pill--active" : ""}`}
+                      onClick={() => {
+                        setReadonlyCategory("crypto");
+                        setReadonlySymbol("BTCUSDT");
+                        void fetchReadonlyCandles("BTCUSDT", readonlyTimeframe);
+                      }}
+                    >
+                      🪙 {zh ? "主流加密货币" : "Crypto Swaps"}
+                    </button>
+                    <button
+                      type="button"
+                      className={`v2-category-pill ${readonlyCategory === "stock" ? "v2-category-pill--active" : ""}`}
+                      onClick={() => {
+                        setReadonlyCategory("stock");
+                        setReadonlySymbol("NVDAUSDT");
+                        void fetchReadonlyCandles("NVDAUSDT", readonlyTimeframe);
+                      }}
+                    >
+                      📈 {zh ? "Gate 美股代币" : "Tokenized Stocks"}
+                    </button>
+                  </div>
+
+                  {/* 标的快速选择标签 */}
+                  <div className="v2-quick-symbol-chips">
+                    {readonlyCategory === "crypto" ? (
+                      <>
+                        {["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT", "BNBUSDT"].map((sym) => (
+                          <button
+                            key={sym}
+                            type="button"
+                            className={`v2-symbol-chip ${readonlySymbol === sym ? "v2-symbol-chip--active" : ""}`}
                             onClick={() => {
-                              setSelected(m.symbol);
-                              setOrderSymbol(m.symbol);
+                              setReadonlySymbol(sym);
+                              void fetchReadonlyCandles(sym, readonlyTimeframe);
                             }}
                           >
-                            {zh ? "选中分析 / 交易" : "Select"}
+                            {sym.replace("USDT", "")}/USDT
                           </button>
-                        </td>
+                        ))}
+                      </>
+                    ) : (
+                      <>
+                        {["NVDAUSDT", "AAPLUSDT", "TSLAUSDT", "MSFTUSDT", "AMZNUSDT", "GOOGUSDT"].map((sym) => (
+                          <button
+                            key={sym}
+                            type="button"
+                            className={`v2-symbol-chip ${readonlySymbol === sym ? "v2-symbol-chip--active" : ""}`}
+                            onClick={() => {
+                              setReadonlySymbol(sym);
+                              void fetchReadonlyCandles(sym, readonlyTimeframe);
+                            }}
+                          >
+                            {sym.replace("USDT", "")} (美股)
+                          </button>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* 实时 Ticker 指标横幅 */}
+                {readonlyTicker && (
+                  <div className="v2-ticker-banner">
+                    <div className="v2-ticker-item">
+                      <span className="v2-ticker-label">{zh ? "最新成交价" : "Last Price"}</span>
+                      <strong className="v2-ticker-price">${readonlyTicker.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</strong>
+                    </div>
+                    <div className="v2-ticker-item">
+                      <span className="v2-ticker-label">{zh ? "区间涨跌幅" : "Period Change"}</span>
+                      <strong className={`v2-ticker-change ${readonlyTicker.change >= 0 ? "v2-val--bull" : "v2-val--bear"}`}>
+                        {readonlyTicker.change >= 0 ? "+" : ""}{readonlyTicker.change.toFixed(2)}%
+                      </strong>
+                    </div>
+                    <div className="v2-ticker-item">
+                      <span className="v2-ticker-label">{zh ? "区间最高" : "High"}</span>
+                      <strong>${readonlyTicker.high.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</strong>
+                    </div>
+                    <div className="v2-ticker-item">
+                      <span className="v2-ticker-label">{zh ? "区间最低" : "Low"}</span>
+                      <strong>${readonlyTicker.low.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</strong>
+                    </div>
+                    <div className="v2-ticker-item">
+                      <span className="v2-ticker-label">{zh ? "总成交量" : "Volume"}</span>
+                      <strong>{Math.round(readonlyTicker.volume).toLocaleString()}</strong>
+                    </div>
+                  </div>
+                )}
+
+                {/* K 线图表区域 */}
+                <div className="v2-kline-chart-card">
+                  <div className="v2-kline-chart-header">
+                    <span>
+                      🕯️ {readonlySymbol} · {readonlyTimeframe} {zh ? "实时走势 (Gate 原生数据)" : "Live Chart (Gate Native Data)"}
+                    </span>
+                    {readonlyLoading && <span className="v2-kline-loading">⏳ {zh ? "拉取中…" : "Loading..."}</span>}
+                  </div>
+
+                  {readonlyBars.length > 0 ? (
+                    <div className="v2-svg-chart-container">
+                      {(() => {
+                        const width = 800;
+                        const height = 300;
+                        const padding = { top: 20, right: 60, bottom: 30, left: 10 };
+                        const chartWidth = width - padding.left - padding.right;
+                        const chartHeight = height - padding.top - padding.bottom;
+
+                        const prices = readonlyBars.flatMap((b) => [b.high, b.low]);
+                        const minPrice = Math.min(...prices);
+                        const maxPrice = Math.max(...prices);
+                        const priceRange = maxPrice - minPrice || 1;
+
+                        const barCount = readonlyBars.length;
+                        const step = chartWidth / barCount;
+                        const candleWidth = Math.max(3, step * 0.7);
+
+                        const scaleY = (p: number) => padding.top + chartHeight - ((p - minPrice) / priceRange) * chartHeight;
+
+                        return (
+                          <svg viewBox={`0 0 ${width} ${height}`} className="v2-kline-svg">
+                            <defs>
+                              <linearGradient id="gridGradient" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="rgba(255,255,255,0.03)" />
+                                <stop offset="100%" stopColor="rgba(255,255,255,0)" />
+                              </linearGradient>
+                            </defs>
+
+                            {/* Background Grid */}
+                            {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+                              const y = padding.top + chartHeight * ratio;
+                              const p = maxPrice - priceRange * ratio;
+                              return (
+                                <g key={ratio}>
+                                  <line
+                                    x1={padding.left}
+                                    y1={y}
+                                    x2={padding.left + chartWidth}
+                                    y2={y}
+                                    stroke="rgba(255,255,255,0.08)"
+                                    strokeDasharray="4 4"
+                                  />
+                                  <text
+                                    x={padding.left + chartWidth + 8}
+                                    y={y + 4}
+                                    fill="#9ca3af"
+                                    fontSize="10"
+                                    textAnchor="start"
+                                  >
+                                    ${p.toFixed(p > 100 ? 1 : 4)}
+                                  </text>
+                                </g>
+                              );
+                            })}
+
+                            {/* Candlesticks */}
+                            {readonlyBars.map((bar, idx) => {
+                              const x = padding.left + idx * step + step / 2;
+                              const isUp = bar.close >= bar.open;
+                              const openY = scaleY(bar.open);
+                              const closeY = scaleY(bar.close);
+                              const highY = scaleY(bar.high);
+                              const lowY = scaleY(bar.low);
+                              const color = isUp ? "#22c55e" : "#ef4444";
+                              const bodyTop = Math.min(openY, closeY);
+                              const bodyHeight = Math.max(2, Math.abs(closeY - openY));
+
+                              return (
+                                <g key={bar.time} className="v2-candle-group">
+                                  <title>
+                                    {`时间: ${bar.datetime}\n开盘: ${bar.open}\n最高: ${bar.high}\n最低: ${bar.low}\n收盘: ${bar.close}\n成交量: ${bar.volume}`}
+                                  </title>
+                                  {/* Wick */}
+                                  <line x1={x} y1={highY} x2={x} y2={lowY} stroke={color} strokeWidth="1.2" />
+                                  {/* Body */}
+                                  <rect
+                                    x={x - candleWidth / 2}
+                                    y={bodyTop}
+                                    width={candleWidth}
+                                    height={bodyHeight}
+                                    fill={color}
+                                    rx="1"
+                                  />
+                                </g>
+                              );
+                            })}
+
+                            {/* Time Labels */}
+                            {[0, Math.floor(barCount / 2), barCount - 1].map((idx) => {
+                              if (!readonlyBars[idx]) return null;
+                              const x = padding.left + idx * step + step / 2;
+                              const dt = readonlyBars[idx].datetime.split(" ")[1] || readonlyBars[idx].datetime;
+                              return (
+                                <text
+                                  key={idx}
+                                  x={x}
+                                  y={height - 8}
+                                  fill="#6b7280"
+                                  fontSize="10"
+                                  textAnchor="middle"
+                                >
+                                  {dt}
+                                </text>
+                              );
+                            })}
+                          </svg>
+                        );
+                      })()}
+                    </div>
+                  ) : (
+                    <div className="v2-kline-empty">
+                      <button
+                        type="button"
+                        className="v2-btn-secondary"
+                        onClick={() => void fetchReadonlyCandles(readonlySymbol, readonlyTimeframe)}
+                      >
+                        📈 {zh ? "加载 Gate 实时 K 线数据" : "Load Gate Candlesticks"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              {/* Gate 300+ 标的行情检索与切换 */}
+              <section className="terminal-panel">
+                <header className="v2-panel-header">
+                  <h2>🌐 {zh ? "Gate 全市场合约与美股代币检索" : "Gate All Contracts & Equity Universe"}</h2>
+                  <div className="v2-search-box">
+                    <input
+                      type="search"
+                      className="v2-input v2-input--sm"
+                      placeholder={zh ? "搜索标的 (如 BTC, ETH, NVDA, AAPL)..." : "Search symbol..."}
+                      value={marketSearch}
+                      onChange={(e) => setMarketSearch(e.target.value)}
+                    />
+                  </div>
+                </header>
+
+                <div className="v2-table-wrapper" style={{ maxHeight: "360px", overflowY: "auto" }}>
+                  <table className="v2-table">
+                    <thead>
+                      <tr>
+                        <th>{zh ? "合约标的" : "Symbol"}</th>
+                        <th>{zh ? "基础 / 结算" : "Base / Quote"}</th>
+                        <th>{zh ? "最小张数" : "Min Amount"}</th>
+                        <th>{zh ? "最大杠杆" : "Max Leverage"}</th>
+                        <th>{zh ? "操作" : "Action"}</th>
                       </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                    </thead>
+                    <tbody>
+                      {gateMarkets
+                        .filter((m) =>
+                          marketSearch
+                            ? m.symbol.toLowerCase().includes(marketSearch.toLowerCase()) ||
+                              m.base.toLowerCase().includes(marketSearch.toLowerCase())
+                            : true
+                        )
+                        .slice(0, 50)
+                        .map((m) => (
+                          <tr key={m.id}>
+                            <td><strong>{m.symbol}</strong></td>
+                            <td>{m.base} / {m.quote}</td>
+                            <td>{m.min_amount}</td>
+                            <td><span className="v2-leverage-pill v2-lev--high">{m.max_leverage}x</span></td>
+                            <td>
+                              <button
+                                type="button"
+                                className="v2-attach-btn"
+                                onClick={() => {
+                                  setReadonlySymbol(m.symbol);
+                                  setOrderSymbol(m.symbol);
+                                  setLiveOrderSymbol(m.symbol);
+                                  void fetchReadonlyCandles(m.symbol, readonlyTimeframe);
+                                }}
+                              >
+                                📊 {zh ? "查看 K 线" : "View K-Line"}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </>
+          )}
+
+          {/* ========================================================================= */}
+          {/* SECTOR 3: 实盘交易 API (Gate Live · 真实交易)                             */}
+          {/* ========================================================================= */}
+          {apiSubTab === "live_trade" && (
+            <>
+              {/* 🚨 实盘交易安全硬锁面板 */}
+              <div className={`v2-live-lock-panel ${liveTradeUnlocked ? "v2-live-lock-panel--unlocked" : "v2-live-lock-panel--locked"}`}>
+                <div className="v2-live-lock-icon">
+                  {liveTradeUnlocked ? "🔓" : "🚨"}
+                </div>
+                <div className="v2-live-lock-content">
+                  <h3>
+                    {liveTradeUnlocked
+                      ? (zh ? "实盘交易已解锁 · 真实资金操作已开放" : "Live Trading Unlocked · Real Capital Active")
+                      : (zh ? "实盘交易安全硬锁 · 当前已上锁保护" : "Live Trading Safety Hard-Lock · Protected")}
+                  </h3>
+                  <p>
+                    {liveTradeUnlocked
+                      ? (zh ? "⚠️ 警告：当前提交的任何订单将发送至 Gate 实盘撮合引擎并直接动用真实资金。请务必设置合理的止损价格与低杠杆。" : "Warning: Real funds are at risk. Always enforce mandatory stop-losses.")
+                      : (zh ? "为了杜绝误触与非预期资金划扣，实盘交易需显式解锁并完成安全确认。若只需演练，请切换至【模拟盘 API】。" : "Safety hard-lock active to prevent unintended fills. Use Paper API for testing.")}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className={liveTradeUnlocked ? "v2-btn-danger" : "v2-btn-primary"}
+                  onClick={() => {
+                    if (!liveTradeUnlocked) {
+                      const confirmed = window.confirm(
+                        zh
+                          ? "【实盘风险警示】\n您即将解锁 Gate 实盘真实交易！\n任何后续提交的操作将直接消耗真实资金账户保证金。\n您确认已了解所有市场风险并自愿解锁吗？"
+                          : "Unlock Live Trading? Real capital will be used!"
+                      );
+                      if (confirmed) setLiveTradeUnlocked(true);
+                    } else {
+                      setLiveTradeUnlocked(false);
+                    }
+                  }}
+                >
+                  {liveTradeUnlocked ? (zh ? "🔒 立即重新上锁" : "Re-Lock Safety") : (zh ? "🔓 确认并解锁实盘" : "Unlock Live Trading")}
+                </button>
+              </div>
+
+              {/* 实盘配置与真实发单台 */}
+              <div className="v2-gate-desk-columns">
+                {/* Left: 实盘凭证独立配置 */}
+                <section className="terminal-panel">
+                  <header className="v2-panel-header">
+                    <h2>🔥 {zh ? "实盘交易凭证配置 (Gate Live)" : "Live API Credentials (Gate Live)"}</h2>
+                    <span className="v2-badge v2-badge--bear">真实资金账户</span>
+                  </header>
+                  <p className="v2-field-sub">
+                    {zh
+                      ? "实盘凭证独立存储，与模拟盘完全隔离。提交订单时自动使用 gate_live 凭证槽。"
+                      : "Independent storage isolated from TestNet. Orders explicitly target the gate_live slot."}
+                  </p>
+
+                  <form className="v2-gate-form" onSubmit={handleSaveGateConfig}>
+                    <div className="v2-form-group">
+                      <label htmlFor="gate-live-api-key" className="v2-field-label">{zh ? "Gate API Key" : "API Key"}:</label>
+                      <input
+                        id="gate-live-api-key"
+                        type="text"
+                        required
+                        className="v2-input"
+                        placeholder="输入 Gate 真实实盘 API Key"
+                        value={gateApiKeyInput}
+                        onChange={(e) => setGateApiKeyInput(e.target.value)}
+                        autoComplete="off"
+                        disabled={!liveTradeUnlocked}
+                      />
+                    </div>
+
+                    <div className="v2-form-group">
+                      <label htmlFor="gate-live-api-secret" className="v2-field-label">{zh ? "Gate API Secret" : "API Secret"}:</label>
+                      <input
+                        id="gate-live-api-secret"
+                        type="password"
+                        required
+                        className="v2-input"
+                        placeholder="输入 Gate 真实实盘 API Secret"
+                        value={gateApiSecretInput}
+                        onChange={(e) => setGateApiSecretInput(e.target.value)}
+                        autoComplete="off"
+                        disabled={!liveTradeUnlocked}
+                      />
+                    </div>
+
+                    <div className="v2-form-actions">
+                      <button type="submit" className="v2-btn-primary" disabled={busy || gateVerificationBusy || !liveTradeUnlocked}>
+                        {gateVerificationBusy ? "⏳ " : "🔎 "}
+                        {selectedGateProfile ? (zh ? "验证并保存" : "Verify & save") : copy.saveConfig}
+                      </button>
+                      <button
+                        type="button"
+                        className="v2-btn-secondary"
+                        disabled={busy || gateVerificationBusy || !liveTradeUnlocked}
+                        onClick={() => void handleGateConnectionTest()}
+                      >
+                        🧪 {zh ? "只读握手测试" : "Test Handshake"}
+                      </button>
+                    </div>
+
+                    {gateVerification && (
+                      <div
+                        className={`v2-gate-verification-result ${gateVerification.valid ? "v2-gate-verification-result--ok" : "v2-gate-verification-result--err"}`}
+                      >
+                        <strong>
+                          {gateVerification.valid
+                            ? (zh ? "只读 API 凭证核验通过" : "Read-only API verification passed")
+                            : (zh ? "API 凭证核验未通过" : "API verification failed")}
+                        </strong>
+                        <span>
+                          {gateVerification.account_id || selectedTradingAccount} · {gateVerification.api_environment || selectedGateProfile?.api_environment || "—"} · {gateVerification.status}
+                        </span>
+                        {gateVerification.valid ? (
+                          <small>
+                            {gateVerification.account_type || "Gate.io Futures / Swap"} · 净值 ≈ {gateVerification.total_usdt != null ? `$${gateVerification.total_usdt.toFixed(2)}` : "未返回余额"}
+                          </small>
+                        ) : (
+                          <small>{gateVerification.reason || "请检查 API Key / Secret 是否正确并绑定正确的环境。"}</small>
+                        )}
+                      </div>
+                    )}
+                  </form>
+                </section>
+
+                {/* Right: 实盘做单台 */}
+                <section className="terminal-panel" style={{ borderColor: liveTradeUnlocked ? "#ef4444" : undefined }}>
+                  <header className="v2-panel-header">
+                    <h2>⚡ {zh ? "实盘量化交易发单台" : "Live Execution Desk"}</h2>
+                    <span className="v2-badge v2-badge--bear">
+                      {liveTradeUnlocked ? (zh ? "🔥 链路已打通" : "LIVE ACTIVE") : (zh ? "🔒 需先解锁" : "LOCKED")}
+                    </span>
+                  </header>
+                  <p className="v2-field-sub">
+                    {zh
+                      ? "实盘交易链路已打通。直接向 Gate 真实撮合引擎发送委托，内置动态止损与风控拦截机制。"
+                      : "Direct execution pipeline connected to Gate Live exchange with mandatory hard stops."}
+                  </p>
+
+                  <form className="v2-gate-order-form" onSubmit={handlePlaceRealLiveOrder}>
+                    <div className="v2-form-row">
+                      <div className="v2-form-group">
+                        <label htmlFor="live-order-symbol" className="v2-field-label">{zh ? "合约标的" : "Symbol"}:</label>
+                        <input
+                          id="live-order-symbol"
+                          type="text"
+                          required
+                          className="v2-input"
+                          placeholder="例如: BTCUSDT"
+                          value={liveOrderSymbol}
+                          onChange={(e) => setLiveOrderSymbol(e.target.value.toUpperCase())}
+                          disabled={!liveTradeUnlocked}
+                        />
+                      </div>
+
+                      <div className="v2-form-group">
+                        <label htmlFor="live-order-side" className="v2-field-label">{zh ? "方向" : "Side"}:</label>
+                        <select
+                          id="live-order-side"
+                          className="v2-select"
+                          value={liveOrderSide}
+                          onChange={(e) => setLiveOrderSide(e.target.value as "BUY" | "SELL")}
+                          disabled={!liveTradeUnlocked}
+                        >
+                          <option value="BUY">{zh ? "🟢 实盘买入 / 开多 (LONG)" : "BUY (LONG)"}</option>
+                          <option value="SELL">{zh ? "🔴 实盘卖出 / 开空 (SHORT)" : "SELL (SHORT)"}</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="v2-form-row">
+                      <div className="v2-form-group">
+                        <label htmlFor="live-order-type" className="v2-field-label">{zh ? "订单类型" : "Order Type"}:</label>
+                        <select
+                          id="live-order-type"
+                          className="v2-select"
+                          value={liveOrderType}
+                          onChange={(e) => setLiveOrderType(e.target.value as "LIMIT" | "MARKET")}
+                          disabled={!liveTradeUnlocked}
+                        >
+                          <option value="MARKET">{zh ? "市价单 (Market)" : "Market"}</option>
+                          <option value="LIMIT">{zh ? "限价单 (Limit)" : "Limit"}</option>
+                        </select>
+                      </div>
+
+                      <div className="v2-form-group">
+                        <label htmlFor="live-order-amount" className="v2-field-label">{zh ? "实盘张数 (Contracts)" : "Contracts"}:</label>
+                        <input
+                          id="live-order-amount"
+                          type="number"
+                          step="1"
+                          min="1"
+                          required
+                          className="v2-input"
+                          placeholder="必须明确整数张数"
+                          value={liveOrderAmount}
+                          onChange={(e) => setLiveOrderAmount(e.target.value)}
+                          disabled={!liveTradeUnlocked}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="v2-form-row">
+                      <div className="v2-form-group">
+                        <label htmlFor="live-order-price" className="v2-field-label">{zh ? "委托价格 (限价单必填)" : "Limit Price"}:</label>
+                        <input
+                          id="live-order-price"
+                          type="number"
+                          step="0.1"
+                          className="v2-input"
+                          placeholder="市价自动按盘口撮合"
+                          value={liveOrderPrice}
+                          onChange={(e) => setLiveOrderPrice(e.target.value)}
+                          disabled={!liveTradeUnlocked}
+                        />
+                      </div>
+
+                      <div className="v2-form-group">
+                        <label htmlFor="live-order-leverage" className="v2-field-label">{zh ? "杠杆倍数 (建议不超过 5x)" : "Leverage"}:</label>
+                        <input
+                          id="live-order-leverage"
+                          type="number"
+                          min="1"
+                          max="20"
+                          required
+                          className="v2-input"
+                          placeholder="默认 2x"
+                          value={liveOrderLeverage}
+                          onChange={(e) => setLiveOrderLeverage(e.target.value)}
+                          disabled={!liveTradeUnlocked}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="v2-form-row">
+                      <div className="v2-form-group">
+                        <label htmlFor="live-order-sl" className="v2-field-label">
+                          {zh ? "硬止损价格 (SL 必填)" : "Hard Stop Loss (Required)"}:
+                          <button
+                            type="button"
+                            className="v2-smart-sltp-btn"
+                            disabled={!liveTradeUnlocked}
+                            onClick={() => handleSmartAutoSlTp(liveOrderSide, true)}
+                          >
+                            🎯 {zh ? "一键智能推荐" : "Auto SL/TP"}
+                          </button>
+                        </label>
+                        <input
+                          id="live-order-sl"
+                          type="number"
+                          step="0.1"
+                          required
+                          className="v2-input"
+                          placeholder="实盘必须输入硬止损价"
+                          value={liveOrderStopLoss}
+                          onChange={(e) => setLiveOrderStopLoss(e.target.value)}
+                          disabled={!liveTradeUnlocked}
+                        />
+                      </div>
+
+                      <div className="v2-form-group">
+                        <label htmlFor="live-order-tp" className="v2-field-label">{zh ? "目标止盈 (TP)" : "Take Profit"}:</label>
+                        <input
+                          id="live-order-tp"
+                          type="number"
+                          step="0.1"
+                          className="v2-input"
+                          placeholder="可选止盈目标"
+                          value={liveOrderTakeProfit}
+                          onChange={(e) => setLiveOrderTakeProfit(e.target.value)}
+                          disabled={!liveTradeUnlocked}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="v2-form-actions">
+                      <button
+                        type="submit"
+                        className="v2-btn-primary"
+                        style={{ background: "#dc2626", borderColor: "#b91c1c" }}
+                        disabled={!liveTradeUnlocked || liveOrderBusy}
+                      >
+                        ⚡ {liveOrderBusy ? (zh ? "提交中…" : "Submitting...") : (zh ? "确认并提交 Gate 实盘交易" : "Submit Live Order")}
+                      </button>
+                      <button
+                        type="button"
+                        className="v2-btn-danger"
+                        disabled={!liveTradeUnlocked || liveOrderBusy}
+                        onClick={() => void handleEmergencyCloseGatePosition(liveOrderSymbol)}
+                      >
+                        🛑 {zh ? `实盘紧急平仓 ${liveOrderSymbol}` : `Emergency Close ${liveOrderSymbol}`}
+                      </button>
+                    </div>
+
+                    {liveOrderFeedback && (
+                      <pre className="v2-pre v2-feedback-box">{liveOrderFeedback}</pre>
+                    )}
+                  </form>
+                </section>
+              </div>
+            </>
+          )}
+
         </div>
       )}
     </div></LocalizedSurface>

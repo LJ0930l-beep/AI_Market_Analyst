@@ -19,17 +19,33 @@ export interface InstitutionalDashboard {
     fee_unknown_count?: number;
     unknown_fields?: string[];
     note_zh?: string;
+    capital_basis_status?: string;
+    capital_observed_at?: string | null;
+    capital_stale?: boolean | null;
   };
   empty_state?: { code?: string; message_zh?: string; message_en?: string } | null;
   account?: {
     initial_capital_usdt?: number | null;
+    initial_capital_basis?: string | null;
+    initial_capital_observed_at?: string | null;
     current_equity_usdt?: number | null;
+    available_margin_usdt?: number | null;
+    used_margin_usdt?: number | null;
     realized_pnl_usdt?: number | null;
+    unrealized_pnl_usdt?: number | null;
     net_pnl_usdt?: number | null;
     cumulative_fees_usdt?: number | null;
+    cumulative_fees_basis?: string | null;
     total_roi_pct?: number | null;
     max_drawdown_pct?: number | null;
+    local_execution_net_pnl_usdt?: number | null;
     equity_basis?: string;
+    capital_source?: string | null;
+    provider_source?: string | null;
+    truth_observed_at?: string | null;
+    truth_age_seconds?: number | null;
+    truth_stale?: boolean;
+    truth_error_code?: string | null;
   };
   equity_drawdown?: { series?: Array<{ time: string; equity_usdt?: number | null; drawdown_pct?: number | null }>; max_drawdown_pct?: number | null };
   realized_pnl_bars?: Array<{ time: string; pnl_usdt?: number | null }>;
@@ -241,6 +257,13 @@ export function InstitutionalAnalysisDashboard({ dashboard, loading = false, err
   const account = dashboard.account || {};
   const counts = dashboard.data_quality?.counts || {};
   const empty = dashboard.empty_state;
+  // A managed Gate account whose remote facts were never observed reports no
+  // capital at all — the local seed balance is deliberately not shown.
+  const capitalMissing = account.equity_basis === "NOT_OBSERVED";
+  const capitalStale =
+    !capitalMissing &&
+    account.equity_basis === "GATE_TESTNET_REMOTE_ACCOUNT_TRUTH" &&
+    Boolean(account.truth_stale);
   return (
     <section className={`v2-institutional-dashboard is-${status.toLowerCase()}`} aria-label={zh ? "机构级 AI 做单审计看板" : "Institutional AI execution audit dashboard"}>
       <header className="v2-institutional-dashboard__header">
@@ -250,8 +273,46 @@ export function InstitutionalAnalysisDashboard({ dashboard, loading = false, err
       <div className="v2-institutional-quality" role="status"><span>{dashboard.data_quality?.is_sample ? "FIXTURE" : "LIVE LEDGER FACTS"}</span><small>{dashboard.data_quality?.source || "authoritative_local_execution_ledger"}</small><small>{dashboard.data_quality?.note_zh || (zh ? "没有观测到的字段不会被填成零。" : "Unobserved fields are not filled with zeros.")}</small></div>
       {empty && <EmptyState text={empty.message_zh || (zh ? "当前账户尚无可验证事实。" : empty.message_en || "No verified facts.")} code={empty.code || "NOT_RUN"} />}
       {error && <div className="v2-institutional-error" role="alert">{error}</div>}
+      {capitalMissing && (
+        <div className="v2-institutional-error" role="note">
+          {zh
+            ? "尚未同步 Gate 模拟盘远端账户事实：资金与权益保持为空，本地种子存款不作为资金口径。请在「AI 做单」中点击「刷新模拟盘对账」。"
+            : "Gate TestNet remote account facts are not synchronised: capital and equity stay blank and the local seed is not used. Use \"Refresh & Reconcile\" on the AI desk."}
+        </div>
+      )}
+      {capitalStale && (
+        <div className="v2-institutional-quality" role="note">
+          <span>{zh ? "远端快照已过期" : "Remote snapshot is stale"}</span>
+          <small>{`${zh ? "观测于" : "observed"} ${shortTime(account.truth_observed_at)}`}</small>
+          <small>{zh ? "点击「刷新模拟盘对账」拉取最新账户事实" : "Use Refresh & Reconcile to pull fresh account facts"}</small>
+        </div>
+      )}
       <div className="v2-institutional-kpis">
-        {[ [zh ? "初始资本" : "Initial capital", finite(account.initial_capital_usdt) ? `${account.initial_capital_usdt.toFixed(2)} USDT` : "—", ""], [zh ? "当前权益" : "Current equity", finite(account.current_equity_usdt) ? `${account.current_equity_usdt.toFixed(2)} USDT` : "—", account.equity_basis || ""], [zh ? "净盈亏" : "Net PnL", money(account.net_pnl_usdt), ""], [zh ? "已实现盈亏" : "Realized PnL", money(account.realized_pnl_usdt), ""], [zh ? "累计费用" : "Fees", money(account.cumulative_fees_usdt), dashboard.data_quality?.fee_unknown_count ? `${dashboard.data_quality.fee_unknown_count} unknown` : ""], [zh ? "最大回撤" : "Max drawdown", pct(account.max_drawdown_pct), ""] ].map(([label, value, sub]) => <article key={label} className="v2-institutional-kpi"><span>{label}</span><strong>{value}</strong><small>{sub || "observed ledger"}</small></article>)}
+        {[
+          {
+            label: zh ? "起算权益（远端）" : "Baseline equity",
+            value: finite(account.initial_capital_usdt) ? `${account.initial_capital_usdt.toFixed(2)} USDT` : "—",
+            sub: account.initial_capital_observed_at ? shortTime(account.initial_capital_observed_at) : account.initial_capital_basis || "—",
+          },
+          {
+            label: zh ? "当前权益" : "Current equity",
+            value: finite(account.current_equity_usdt) ? `${account.current_equity_usdt.toFixed(2)} USDT` : "—",
+            sub: account.equity_basis || "observed ledger",
+          },
+          { label: zh ? "净盈亏" : "Net PnL", value: money(account.net_pnl_usdt), sub: zh ? "远端权益变动" : "remote equity delta" },
+          { label: zh ? "已实现盈亏" : "Realized PnL", value: money(account.realized_pnl_usdt), sub: zh ? "Gate 账户累计" : "Gate account cumulative" },
+          {
+            label: zh ? "可用保证金" : "Available margin",
+            value: finite(account.available_margin_usdt) ? `${account.available_margin_usdt.toFixed(2)} USDT` : "—",
+            sub: finite(account.used_margin_usdt) ? `${zh ? "已用" : "used"} ${account.used_margin_usdt.toFixed(2)}` : "—",
+          },
+          {
+            label: zh ? "累计费用" : "Fees",
+            value: money(account.cumulative_fees_usdt),
+            sub: account.cumulative_fees_basis || (dashboard.data_quality?.fee_unknown_count ? `${dashboard.data_quality.fee_unknown_count} unknown` : "—"),
+          },
+          { label: zh ? "最大回撤" : "Max drawdown", value: pct(account.max_drawdown_pct), sub: zh ? "远端权益曲线" : "remote equity curve" },
+        ].map(({ label, value, sub }) => <article key={label} className="v2-institutional-kpi"><span>{label}</span><strong>{value}</strong><small>{sub}</small></article>)}
       </div>
       <div className="v2-institutional-grid v2-institutional-grid--wide">
         <Panel title={zh ? "权益 / 回撤" : "Equity / drawdown"} eyebrow="01"><EquityChart series={dashboard.equity_drawdown?.series} zh={zh} /></Panel>

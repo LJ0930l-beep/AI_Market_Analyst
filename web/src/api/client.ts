@@ -276,11 +276,12 @@ export function getApiBaseUrl(
     typeof window !== "undefined" &&
     (window.location.hostname === "tauri.localhost" ||
       window.location.protocol === "tauri:" ||
+      window.location.protocol === "https:" ||
       "__TAURI_INTERNALS__" in window)
   ) {
     return "http://127.0.0.1:18765";
   }
-  return isDevelopment ? "/api" : "";
+  return isDevelopment ? "/api" : "http://127.0.0.1:18765";
 }
 
 export function getRealtimeStreamUrl(

@@ -370,7 +370,7 @@ fn start_owned_sidecar(app: &AppHandle) -> Result<(), String> {
         .env("AIMA_INSTANCE_ID", identity.instance_id.clone())
         .env("AIMA_OWNERSHIP_TOKEN", identity.ownership_token.clone())
         .env("AIMA_PACKAGED_SIDECAR", "1")
-        .env("API_CORS_ORIGINS", "tauri://localhost,http://tauri.localhost")
+        .env("API_CORS_ORIGINS", "https://tauri.localhost,tauri://localhost,http://tauri.localhost")
         .env("ALLOW_FIXTURE_FALLBACK", "0");
     let (mut events, child) = command
         .spawn()
@@ -531,6 +531,10 @@ fn main() {
         .manage(OwnedSidecar::new())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
+        // A second launch must never create a duplicate instance (which would
+        // start a second owned sidecar and contend for the same SQLite
+        // database).  Instead it focuses the existing window, including when
+        // that window was hidden to the tray while monitoring was active.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main_window(app);
         }))

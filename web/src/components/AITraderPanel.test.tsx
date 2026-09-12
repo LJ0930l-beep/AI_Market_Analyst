@@ -12,9 +12,7 @@ describe("AI trader durable plan console", () => {
       if (path === "/accounts") {
         return { accounts: [{ account_id: "paper_test", mode: "PAPER", venue: "simulated" }] } as never;
       }
-      if (path.startsWith("/trading-authorizations/active")) {
-        return { authorization: null } as never;
-      }
+      if (path.startsWith("/qwen-market-scans/status")) return { running: true, latest: null } as never;
       if (path.startsWith("/ai-session/status")) {
         return {
           session: { state: "RUNNING", generation: 4 },
@@ -44,7 +42,7 @@ describe("AI trader durable plan console", () => {
         } as never;
       }
       if (method === "POST" && path.startsWith("/ai-session/pause")) {
-        return { state: "PAUSED" } as never;
+        return { running: false } as never;
       }
       return {} as never;
     });
@@ -56,8 +54,9 @@ describe("AI trader durable plan console", () => {
     expect(screen.getByTestId("trade-plans-panel")).toHaveTextContent("leverage 3");
     expect(screen.getByTestId("trade-plans-panel")).toHaveTextContent("WAITING_TRIGGER");
 
-    fireEvent.click(screen.getByRole("button", { name: /Pause AI/i }));
-    await waitFor(() => expect(v2).toHaveBeenCalledWith("/ai-session/pause?account_id=paper_test", "POST"));
+    fireEvent.click(screen.getByRole("button", { name: /Pause AI trading/i }));
+    await waitFor(() => expect(v2).toHaveBeenCalledWith("/ai-session/pause?account_id=paper_test", "POST", undefined));
+    expect(v2.mock.calls.some(([path]) => path.startsWith('/qwen-market-scans/'))).toBe(false);
   });
 
   it("does not render a missing protection count as zero", async () => {
@@ -65,7 +64,7 @@ describe("AI trader durable plan console", () => {
       if (path === "/accounts") {
         return { accounts: [{ account_id: "paper_unknown", mode: "PAPER", venue: "simulated" }] } as never;
       }
-      if (path.startsWith("/trading-authorizations/active")) return { authorization: null } as never;
+      if (path.startsWith("/qwen-market-scans/status")) return { running: false, latest: null } as never;
       if (path.startsWith("/ai-session/status")) {
         return { session: { state: "RUNNING", generation: 1 }, model_status: { status: "UNVERIFIED" } } as never;
       }
@@ -78,10 +77,11 @@ describe("AI trader durable plan console", () => {
     await waitFor(() => expect(screen.getByText("PROTECTED POSITIONS").parentElement).toHaveTextContent("UNKNOWN"));
   });
 
-  it("renders a system block separately from a model WAIT", async () => {
+  it("does not surface legacy system-blocked cycles as a Qwen decision", async () => {
     vi.spyOn(apiClient, "v2").mockImplementation(async (path: string) => {
       if (path === "/accounts") return { accounts: [{ account_id: "paper_trace", mode: "PAPER", venue: "simulated" }] } as never;
-      if (path.startsWith("/trading-authorizations/active")) return { authorization: null } as never;
+      if (path.startsWith("/qwen-market-scans/status")) return { running: false, latest: null } as never;
+      if (path.startsWith("/ai-session/cycles")) return { cycles: [{ action: 'SYSTEM_BLOCKED', decision_origin: 'SYSTEM', model_called: false, reason: 'SMART_MODEL_UNAVAILABLE' }] } as never;
       if (path.startsWith("/ai-session/status")) {
         return {
           session: { state: "PAUSED", generation: 3 },
@@ -107,10 +107,26 @@ describe("AI trader durable plan console", () => {
 
     render(<MemoryRouter><AITraderPanel currentMode="PAPER" activeAccount="paper_trace" /></MemoryRouter>);
 
-    const card = await screen.findByTestId("ai-cycle-card");
-    expect(card).toHaveTextContent("SYSTEM · 系统阻断");
-    expect(card).toHaveTextContent("NOT_RUN");
-    expect(card).toHaveTextContent("Qwen3.5-9B 未运行");
-    expect(card).not.toHaveTextContent("MODEL · Qwen3.5-9B");
+    const card = await screen.findByTestId("ai-decision-cycle-card");
+    await waitFor(() => expect(card).toHaveTextContent("SYSTEM_BLOCKED"));
+    expect(card).toHaveTextContent("系统检查");
+    expect(card).toHaveTextContent("未调用");
+    expect(card).not.toHaveTextContent("AI 决策");
+    expect(card).not.toHaveTextContent("AUTHORIZATION_REQUIRED");
+  });
+
+  it("starts the selected trading account and renders the model JSON", async () => {
+    const v2 = vi.spyOn(apiClient, 'v2').mockImplementation(async (path: string) => {
+      if (path === '/accounts') return { accounts: [{ account_id: 'paper_ai', mode: 'PAPER', venue: 'simulated' }] } as never;
+      if (path.startsWith('/ai-session/status')) return { session: { state: 'IDLE', generation: 1 } } as never;
+      if (path.startsWith('/trade-plans')) return { plans: [] } as never;
+      if (path.startsWith('/ai-session/cycles')) return { cycles: [{ action: 'WAIT', decision_origin: 'MODEL', model_called: true, reason: '等待新闻确认', payload: { strategy_plan: { name: '自拟趋势策略' } } }] } as never;
+      return {} as never;
+    });
+    render(<MemoryRouter><AITraderPanel currentMode="PAPER" activeAccount="paper_ai" /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByTestId('ai-decision-cycle-card')).toHaveTextContent('自拟趋势策略'));
+    fireEvent.click(screen.getByRole('button', { name: /Start AI trading/ }));
+    await waitFor(() => expect(v2).toHaveBeenCalledWith('/ai-session/start?account_id=paper_ai', 'POST', undefined));
+    expect(v2.mock.calls.some(([path]) => path.startsWith('/qwen-market-scans/'))).toBe(false);
   });
 });

@@ -126,7 +126,7 @@ describe("V2 task workspace",()=>{
     expect(screen.getByText(/Register default pair/)).toBeInTheDocument();
     expect(screen.getByText(/private APIs are accessed only by an explicit/i)).toBeInTheDocument();
     expect(screen.getByTestId("gate-testnet-e2e")).toHaveTextContent("Gate TestNet 独立链路验收");
-    expect(screen.getByRole("button", { name: /执行 TestNet 独立验收/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /执行 TestNet 独立验收/ })).not.toBeDisabled();
   });
   it("verifies and saves credentials in the selected Gate account slot",async()=>{
     const verifyCalls: Array<{path:string; method:string; body:unknown}> = [];

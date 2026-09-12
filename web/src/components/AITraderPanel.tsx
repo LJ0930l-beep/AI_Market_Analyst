@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { AuthorizationWizardModal } from './AuthorizationWizardModal';
+import React, { useState, useEffect, useRef } from 'react';
 import { apiClient } from '../api/client';
-import { LocalizedSurface } from '../i18n';
+import { LocalizedSurface, useI18n } from '../i18n';
 import { Link } from 'react-router-dom';
 import { rememberTradingAccount } from '../tradingAccountSelection';
 
@@ -51,16 +50,6 @@ interface TradePlanRecord {
   updated_at?: string;
 }
 
-interface AuthorizationRecord {
-  authorization_id: string;
-  status?: string;
-  expires_at?: string;
-}
-
-interface AuthorizationResponse {
-  authorization?: AuthorizationRecord | null;
-}
-
 interface SessionRecord {
   state?: string;
   generation?: number;
@@ -68,43 +57,7 @@ interface SessionRecord {
 
 interface SessionStatusResponse {
   session?: SessionRecord | null;
-  latest_cycle?: CycleRecord | null;
-  latest_model_cycle?: CycleRecord | null;
-  latest_system_event?: CycleRecord | null;
   protection_summary?: { active_positions?: number | null };
-  last_market_event_at?: string | null;
-  market_freshness?: { status?: string };
-  model_status?: unknown;
-}
-
-interface CycleRecord {
-  cycle_id?: string;
-  session_id?: string;
-  generation?: number;
-  latency_ms?: number;
-  timestamp?: string;
-  action?: string;
-  reason?: string;
-  rejection_code?: string;
-  decision_origin?: 'MODEL' | 'SYSTEM' | string;
-  operational_state?: string;
-  model_called?: boolean;
-  model_result?: string;
-  block_stage?: string | null;
-  human_message?: string | null;
-  model_id?: string | null;
-  stage_trace?: StageTraceRecord[];
-}
-
-interface StageTraceRecord {
-  stage?: string;
-  status?: string;
-  started_at?: string | null;
-  finished_at?: string | null;
-  duration_ms?: number | null;
-  reason_code?: string | null;
-  human_message?: string | null;
-  evidence?: Record<string, unknown>;
 }
 
 interface GateRemoteAccount {
@@ -130,38 +83,19 @@ interface GateRemoteAccount {
   error_code?: string | null;
 }
 
-interface StrategyCandidateRecord {
-  candidate_id?: string;
-  symbol?: string;
-  strategy_id?: string;
-  strategy_version?: string;
-  status?: string;
-  side?: string | null;
-  entry_price?: number | null;
-  stop_price?: number | null;
-  take_profit?: number | null;
-  rule_score?: number | null;
-  calibrated_probability?: number | null;
-  calibration_sample_size?: number | null;
-  rationale?: string | null;
-  conditions?: unknown[];
-  trigger_completion_pct?: number | null;
-  entry_zone?: Record<string, unknown> | null;
-  invalidation?: string | null;
-  targets?: unknown[];
-  rr?: number | null;
-  evidence?: unknown[];
-  signal_time?: string | null;
-  expires_at?: string | null;
-  context_timeframe?: Record<string, unknown> | null;
-  market_regime?: string | null;
-  direction_bias?: string | null;
-  trigger_status?: string | null;
-}
-
 interface DiagnosticsResponse {
   archive_path?: string;
   secret_scan?: string;
+}
+
+interface AIDecisionCycle {
+  cycle_id?: string;
+  action?: string;
+  reason?: string;
+  decision_origin?: string;
+  model_called?: boolean;
+  timestamp?: string;
+  payload?: Record<string, unknown>;
 }
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -183,68 +117,44 @@ function displayNumber(value: unknown, suffix = ''): string {
   return Number.isFinite(numeric) ? `${numeric.toLocaleString(undefined, { maximumFractionDigits: 4 })}${suffix}` : 'UNKNOWN';
 }
 
-function stageLabel(stage: string | undefined): string {
-  const labels: Record<string, string> = {
-    ACCOUNT: '账户事实',
-    AUTHORIZATION: '授权范围',
-    MARKET_DATA: '行情数据',
-    NEWS_EVENTS: '新闻与事件',
-    KLINE_CONTEXT: 'K线上下文',
-    STRATEGY_SCAN: '策略扫描',
-    AI_MODEL: 'Qwen3.5-9B 判断',
-    RISK: '风险引擎',
-    EXECUTION: 'Gate TestNet 执行',
-    RECONCILIATION: '远端对账',
-  };
-  return labels[String(stage || '')] || String(stage || 'UNKNOWN');
-}
-
-function humanizeCode(value: unknown): string {
-  const code = String(value || 'UNKNOWN').trim().toUpperCase();
-  const labels: Record<string, string> = {
-    SYSTEM_BLOCKED: '系统阻断',
-    SESSION_NOT_RUNNING: '会话未运行',
-    SMART_MODEL_UNAVAILABLE: '模型不可用',
-    AUTHORIZATION_REQUIRED: '缺少交易授权',
-    RUNTIME_EXECUTION_BLOCKED: '运行时未放行',
-    REMOTE_ACCOUNT_TRUTH_UNAVAILABLE: '远端账户事实不可用',
-    WAIT: '观望',
-    NOT_RUN: '未调用',
-    MODEL_DECISION: '模型已决策',
-    UNKNOWN: '未知',
-  };
-  return `${labels[code] || code} (${code})`;
-}
-
 export const AITraderPanel: React.FC<AITraderPanelProps> = ({
   currentMode,
   activeAccount,
   onRefresh,
   onAccountChange,
 }) => {
+  const { language } = useI18n();
+  const chinese = language === 'zh-CN';
   const [accounts, setAccounts] = useState<TradingAccountSummary[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string>(canonicalAccountId(activeAccount));
   const [selectedMode, setSelectedMode] = useState<string>((currentMode || '').trim().toUpperCase());
   const [accountsLoading, setAccountsLoading] = useState(true);
-  const [isWizardOpen, setIsWizardOpen] = useState(false);
-  const [activeAuth, setActiveAuth] = useState<AuthorizationRecord | null>(null);
-  const [loading, setLoading] = useState(false);
   const [sessionActionLoading, setSessionActionLoading] = useState(false);
   const [exportingDiag, setExportingDiag] = useState(false);
   const [diagMessage, setDiagMessage] = useState<string | null>(null);
-  const [recentCycle, setRecentCycle] = useState<CycleRecord | null>(null);
   const [sessionState, setSessionState] = useState<string>('NOT_CHECKED');
   const [generation, setGeneration] = useState<number>(0);
-  const [modelStatus, setModelStatus] = useState<unknown>('NOT_CHECKED');
   // A missing status is not an empty protection set.  Keep it UNKNOWN until
   // the scoped runtime reports an authoritative count.
   const [protectionCount, setProtectionCount] = useState<number | null>(null);
-  const [marketFreshness, setMarketFreshness] = useState<string>('NOT_CHECKED');
   const [tradePlans, setTradePlans] = useState<TradePlanRecord[]>([]);
   const [tradePlansState, setTradePlansState] = useState<string>('NOT_CHECKED');
   const [gateRemoteAccount, setGateRemoteAccount] = useState<GateRemoteAccount | null>(null);
-  const [strategyCandidates, setStrategyCandidates] = useState<StrategyCandidateRecord[]>([]);
-  const [candidateState, setCandidateState] = useState<string>('NOT_CHECKED');
+  const [latestCycle, setLatestCycle] = useState<AIDecisionCycle | null>(null);
+  const requestSequence = useRef(0);
+
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    if (activeAccount) {
+      const canonical = canonicalAccountId(activeAccount);
+      setSelectedAccount(canonical);
+      const acc = accounts.find((item) => item.account_id === canonical);
+      if (acc) {
+        setSelectedMode(String(acc.mode || '').toUpperCase());
+      }
+    }
+  }, [activeAccount, accounts]);
 
   useEffect(() => {
     let mounted = true;
@@ -258,9 +168,14 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
         if (!mounted) return;
         setAccounts(nextAccounts);
         const preferred = canonicalAccountId(activeAccount) && nextAccounts.find((item: TradingAccountSummary) => item.account_id === canonicalAccountId(activeAccount));
-        const selected = preferred || nextAccounts[0];
-        setSelectedAccount(selected?.account_id || '');
-        setSelectedMode(String(selected?.mode || currentMode || '').toUpperCase());
+        const selected = preferred || nextAccounts.find((item) => item.account_id === 'gate_testnet') || nextAccounts[0];
+        if (selected) {
+          setSelectedAccount(selected.account_id);
+          setSelectedMode(String(selected.mode || currentMode || '').toUpperCase());
+          if (!activeAccount) {
+            onAccountChange?.(selected.account_id);
+          }
+        }
       } catch {
         if (mounted && !activeAccount) {
           setAccounts([]);
@@ -275,38 +190,28 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
     return () => {
       mounted = false;
     };
-  }, [activeAccount, currentMode]);
+  }, [activeAccount, currentMode, onAccountChange]);
 
   const fetchActiveAuthAndSession = async () => {
+    const requestId = ++requestSequence.current;
     const accountId = selectedAccount.trim();
     if (!accountId) {
-      setActiveAuth(null);
-      setRecentCycle(null);
       setSessionState('UNSCOPED');
       setGeneration(0);
       setProtectionCount(null);
-      setModelStatus('NOT_CHECKED');
-      setMarketFreshness('NOT_CHECKED');
       setTradePlans([]);
       setTradePlansState('UNSCOPED');
       setGateRemoteAccount(null);
-      setStrategyCandidates([]);
-      setCandidateState('UNSCOPED');
+      setLatestCycle(null);
       return;
     }
     try {
-      const data = await apiClient.v2<AuthorizationResponse>(
-        `/trading-authorizations/active?account_id=${encodeURIComponent(accountId)}`,
-        'GET',
-        undefined,
-      );
-      setActiveAuth(data.authorization ?? null);
-
       const status = await apiClient.v2<SessionStatusResponse>(
         `/ai-session/status?account_id=${encodeURIComponent(accountId)}`,
         'GET',
         undefined,
       );
+      if (requestId !== requestSequence.current) return;
       if (status.session) {
         setSessionState(typeof status.session.state === 'string' && status.session.state ? status.session.state : 'NOT_REPORTED');
         setGeneration(Number.isFinite(Number(status.session.generation)) ? Number(status.session.generation) : 0);
@@ -314,94 +219,64 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
         setSessionState('NOT_REPORTED');
         setGeneration(0);
       }
-      setRecentCycle(status.latest_cycle ?? status.latest_system_event ?? status.latest_model_cycle ?? null);
       const reportedProtectionCount = status.protection_summary?.active_positions;
       setProtectionCount(
-        Number.isFinite(Number(reportedProtectionCount)) && Number(reportedProtectionCount) >= 0
+        reportedProtectionCount != null && Number.isFinite(Number(reportedProtectionCount)) && Number(reportedProtectionCount) >= 0
           ? Number(reportedProtectionCount)
           : null,
       );
-      setMarketFreshness(typeof status.market_freshness?.status === 'string' && status.market_freshness.status ? status.market_freshness.status : 'NOT_REPORTED');
-      setModelStatus(status.model_status ?? 'NOT_REPORTED');
 
       const plans = await apiClient.v2<{ plans?: TradePlanRecord[] }>(
         `/trade-plans?account_id=${encodeURIComponent(accountId)}&limit=20`,
         'GET',
         undefined,
       );
+      if (requestId !== requestSequence.current) return;
       const scopedPlans = Array.isArray(plans.plans) ? plans.plans : [];
       setTradePlans(scopedPlans);
       setTradePlansState(scopedPlans.length ? 'DURABLE' : 'NO_DURABLE_PLANS');
 
-      const [remoteAccount, candidateResponse] = await Promise.all([
-        apiClient.v2<GateRemoteAccount>(
-          `/gate/account?account_id=${encodeURIComponent(accountId)}`,
-          'GET',
-          undefined,
-        ).catch(() => null),
-        apiClient.v2<{ candidates?: StrategyCandidateRecord[] }>(
-          `/ai-session/candidates?account_id=${encodeURIComponent(accountId)}&limit=12`,
-          'GET',
-          undefined,
-        ).catch(() => null),
-      ]);
+      const remoteAccount = await apiClient.v2<GateRemoteAccount>(
+        `/gate/account?account_id=${encodeURIComponent(accountId)}`,
+        'GET',
+        undefined,
+      ).catch(() => null);
+      if (requestId !== requestSequence.current) return;
       setGateRemoteAccount(remoteAccount);
-      const candidates = Array.isArray(candidateResponse?.candidates) ? candidateResponse.candidates : [];
-      setStrategyCandidates(candidates);
-      setCandidateState(candidateResponse ? (candidates.length ? 'PERSISTED' : 'NO_CANDIDATES') : 'UNAVAILABLE');
+      const cycles = await apiClient.v2<{ cycles?: AIDecisionCycle[] }>(`/ai-session/cycles?account_id=${encodeURIComponent(accountId)}&limit=1`, 'GET', undefined).catch(() => null);
+      if (requestId !== requestSequence.current) return;
+      setLatestCycle(cycles?.cycles?.[0] || null);
     } catch {
-      setActiveAuth(null);
-      setRecentCycle(null);
+      if (requestId !== requestSequence.current) return;
       setSessionState('UNAVAILABLE');
       setGeneration(0);
       setProtectionCount(null);
-      setMarketFreshness('UNAVAILABLE');
-      setModelStatus('UNAVAILABLE');
       setTradePlans([]);
       setTradePlansState('UNAVAILABLE');
       setGateRemoteAccount(null);
-      setStrategyCandidates([]);
-      setCandidateState('UNAVAILABLE');
+      setLatestCycle(null);
     }
   };
 
   useEffect(() => {
+    setLatestCycle(null);
+    setSessionState('NOT_CHECKED');
     fetchActiveAuthAndSession();
     const interval = setInterval(fetchActiveAuthAndSession, 5000);
-    return () => clearInterval(interval);
+    return () => { clearInterval(interval); requestSequence.current += 1; };
   }, [selectedAccount]);
 
   const handleSessionAction = async (action: 'start' | 'pause' | 'resume' | 'terminate') => {
-    if (!selectedAccount) {
-      setDiagMessage('No registered trading account is available for this action.');
-      return;
-    }
     setSessionActionLoading(true);
     try {
-      await apiClient.v2(`/ai-session/${action}?account_id=${encodeURIComponent(selectedAccount)}`, 'POST');
+      const endpoint = `/ai-session/${action}?account_id=${encodeURIComponent(selectedAccount)}`;
+      await apiClient.v2(endpoint, 'POST', undefined);
       await fetchActiveAuthAndSession();
       if (onRefresh) onRefresh();
     } catch (err: unknown) {
       setDiagMessage(errorMessage(err, `AI session ${action} failed`));
     } finally {
       setSessionActionLoading(false);
-    }
-  };
-
-  const handleRevoke = async () => {
-    if (!activeAuth) return;
-    setLoading(true);
-    try {
-      await apiClient.v2(
-        `/trading-authorizations/${activeAuth.authorization_id}/revoke?account_id=${encodeURIComponent(selectedAccount)}&reason=USER_REVOKED`,
-        'POST',
-      );
-      await fetchActiveAuthAndSession();
-      if (onRefresh) onRefresh();
-    } catch (err: unknown) {
-      setDiagMessage(errorMessage(err, 'Authorization revoke failed'));
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -423,38 +298,8 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
     return `${acc.slice(0, 3)}***${acc.slice(-3)}`;
   };
 
-  const getRemainingTimeStr = () => {
-    if (!activeAuth || !activeAuth.expires_at) return 'None';
-    const expiry = new Date(activeAuth.expires_at).getTime();
-    const now = Date.now();
-    const diffSec = Math.max(0, Math.floor((expiry - now) / 1000));
-    if (diffSec === 0) return 'EXPIRED';
-    const hrs = Math.floor(diffSec / 3600);
-    const mins = Math.floor((diffSec % 3600) / 60);
-    return `${hrs}h ${mins}m`;
-  };
 
-  const modelStatusLabel = typeof modelStatus === 'string'
-    ? modelStatus
-    : modelStatus && typeof modelStatus === 'object' && 'status' in modelStatus
-    ? String((modelStatus as { status?: unknown }).status || 'UNVERIFIED')
-    : 'UNVERIFIED';
   const displayMode = selectedMode || 'UNSCOPED';
-  const isSystemBlocked = Boolean(
-    recentCycle && (
-      recentCycle.decision_origin === 'SYSTEM' ||
-      recentCycle.operational_state === 'SYSTEM_BLOCKED' ||
-      (recentCycle.model_called === false && (recentCycle.model_result === 'NOT_RUN' || Boolean(recentCycle.block_stage)))
-    ),
-  );
-  const modelWasCalled = recentCycle?.model_called === true;
-  const cycleActionLabel = isSystemBlocked
-    ? 'SYSTEM_BLOCKED · AI 未运行'
-    : modelWasCalled
-      ? `AI 已调用 · ${humanizeCode(recentCycle?.model_result || recentCycle?.action)}`
-      : 'AI 调用状态未确认';
-  const cycleActionColor = isSystemBlocked ? '#f85149' : recentCycle?.action === 'WAIT' ? '#e3b341' : '#3fb950';
-  const stageTrace = Array.isArray(recentCycle?.stage_trace) ? recentCycle.stage_trace : [];
   const remoteStatus = String(gateRemoteAccount?.data_status || gateRemoteAccount?.capability_status || 'UNKNOWN');
   const remoteIsAvailable = remoteStatus === 'AVAILABLE';
 
@@ -550,8 +395,9 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
           <Link to="/ai-analysis" onClick={() => rememberTradingAccount(selectedAccount)}>查看本账户做单分析</Link>
           {sessionState === 'RUNNING' ? (
             <button
+              data-no-translate
               onClick={() => handleSessionAction('pause')}
-              disabled={sessionActionLoading || !selectedAccount}
+              disabled={sessionActionLoading}
               style={{
                 padding: '5px 10px',
                 backgroundColor: '#d29922',
@@ -563,12 +409,13 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
                 cursor: 'pointer',
               }}
             >
-              ⏸️ Pause AI
+              {chinese ? '⏸️ 暂停 AI 做单' : '⏸️ Pause AI trading'}
             </button>
           ) : sessionState === 'PAUSED' ? (
             <button
+              data-no-translate
               onClick={() => handleSessionAction('resume')}
-              disabled={sessionActionLoading || !selectedAccount}
+              disabled={sessionActionLoading}
               style={{
                 padding: '5px 10px',
                 backgroundColor: '#238636',
@@ -580,12 +427,13 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
                 cursor: 'pointer',
               }}
             >
-              ▶️ Resume AI
+              {chinese ? '▶️ 恢复 AI 做单' : '▶️ Resume AI trading'}
             </button>
           ) : (
             <button
+              data-no-translate
               onClick={() => handleSessionAction('start')}
-              disabled={sessionActionLoading || !selectedAccount}
+              disabled={sessionActionLoading || accountsLoading || !selectedAccount || ['NOT_CHECKED', 'UNAVAILABLE', 'NOT_REPORTED'].includes(sessionState)}
               style={{
                 padding: '5px 10px',
                 backgroundColor: '#238636',
@@ -597,12 +445,13 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
                 cursor: 'pointer',
               }}
             >
-              🚀 Launch AI Session
+              {chinese ? '🚀 启动 AI 自动做单' : '🚀 Start AI trading'}
             </button>
           )}
 
           {sessionState !== 'TERMINATED' && sessionState !== 'IDLE' && (
             <button
+              data-no-translate
               onClick={() => handleSessionAction('terminate')}
               disabled={sessionActionLoading}
               style={{
@@ -616,7 +465,7 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
                 cursor: 'pointer',
               }}
             >
-              ⏹️ Stop
+              {chinese ? '⏹️ 停止 AI 做单' : '⏹️ Stop AI trading'}
             </button>
           )}
 
@@ -636,20 +485,19 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
             {exportingDiag ? 'Exporting...' : '📦 Diagnostics'}
           </button>
           <button
-              onClick={() => setIsWizardOpen(true)}
-              disabled={!selectedAccount || accountsLoading}
+            onClick={() => setCollapsed((prev) => !prev)}
             style={{
-              padding: '5px 12px',
-              backgroundColor: '#1f6feb',
-              border: '1px solid rgba(240, 246, 252, 0.1)',
+              padding: '5px 10px',
+              backgroundColor: '#21262d',
+              border: '1px solid #388bfd',
               borderRadius: 6,
-              color: '#ffffff',
+              color: '#58a6ff',
               fontSize: 12,
-              fontWeight: 600,
               cursor: 'pointer',
+              fontWeight: 600,
             }}
           >
-            🛡️ Scope Wizard
+            {collapsed ? '▼ 展开控制台' : '▲ 收起'}
           </button>
         </div>
       </div>
@@ -669,7 +517,9 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
         </div>
       )}
 
-      {/* Status Bar */}
+      {!collapsed && (
+        <>
+          {/* Status Bar */}
       <div
         style={{
           display: 'grid',
@@ -682,22 +532,16 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
         }}
       >
         <div>
-          <div style={{ fontSize: 11, color: '#8b949e' }}>AUTHORIZATION STATUS</div>
+          <div style={{ fontSize: 11, color: '#8b949e' }}>EXECUTION ACCOUNT</div>
           <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>
-            {activeAuth ? (
-              <span style={{ color: activeAuth.status === 'ACTIVE' ? '#3fb950' : '#f85149' }}>
-                {activeAuth.status}
-              </span>
-            ) : (
-              <span style={{ color: '#8b949e' }}>NO ACTIVE SCOPE</span>
-            )}
+            <span style={{ color: selectedAccount ? '#3fb950' : '#8b949e' }}>{selectedAccount || 'UNSCOPED'}</span>
           </div>
         </div>
 
         <div>
-          <div style={{ fontSize: 11, color: '#8b949e' }}>EXPIRY COUNTDOWN</div>
+          <div style={{ fontSize: 11, color: '#8b949e' }}>SESSION STATE</div>
           <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2, color: '#c9d1d9' }}>
-            {getRemainingTimeStr()}
+            {sessionState}
           </div>
         </div>
 
@@ -708,24 +552,8 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-          {activeAuth && activeAuth.status === 'ACTIVE' && (
-            <button
-              onClick={handleRevoke}
-              disabled={loading}
-              style={{
-                padding: '4px 10px',
-                backgroundColor: '#da3633',
-                border: 'none',
-                borderRadius: 4,
-                color: '#ffffff',
-                fontSize: 11,
-                cursor: 'pointer',
-              }}
-            >
-              Revoke Scope
-            </button>
-          )}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', color: '#8b949e', fontSize: 11 }}>
+          凭证、远端事实与风险引擎生效
         </div>
       </div>
 
@@ -752,46 +580,32 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
         </div>
       </section>
 
-      <section className="v2-ai-candidates-card" data-testid="ai-strategy-candidates">
+      <section className="v2-ai-cycle-card" data-testid="ai-decision-cycle-card" data-no-translate>
         <div className="v2-ai-section-header">
           <div>
-            <h3>策略候选 · 可读交易条件</h3>
-            <p>Python 负责事实与约束，候选只提供给 Qwen3.5-9B 做最终判断；概率缺失保持 UNKNOWN。</p>
+            <h3>Qwen3.5-9B · 新闻与技术面决策</h3>
+            <p>每 15 分钟：K 线与新闻 → AI 自拟策略 → JSON 决策 → 固定风控 → 开仓或等待。启动后会在下一个周期运行，可向当前所选账户自动提交订单。</p>
+            <p>单笔风险上限 0.25% · 组合风险上限 1% · 日亏损熔断 1.5% · 杠杆上限 3 倍 · 扣费后盈亏比至少 2。AI 置信分数不代表胜率。</p>
           </div>
-          <span className="v2-badge v2-badge--neutral">{candidateState}</span>
+          <span className={`v2-badge ${sessionState === 'RUNNING' ? 'v2-badge--bull' : 'v2-badge--neutral'}`}>
+            {sessionState}
+          </span>
         </div>
-        {strategyCandidates.length === 0 ? (
-          <p className="v2-ai-muted">暂无可核验候选。缺数据时显示 UNKNOWN，不把 NO_TRIGGER 冒充为系统成功。</p>
-        ) : (
-          <div className="v2-ai-candidate-list">
-            {strategyCandidates.slice(0, 6).map((candidate) => {
-              const conditions = Array.isArray(candidate.conditions) ? candidate.conditions : [];
-              const targets = Array.isArray(candidate.targets) ? candidate.targets : [];
-              return (
-                <article className="v2-ai-candidate" key={candidate.candidate_id || `${candidate.symbol}-${candidate.strategy_id}`}>
-                  <div className="v2-ai-candidate-heading">
-                    <strong>{candidate.symbol || 'UNKNOWN'} · {candidate.strategy_id || 'UNKNOWN'}</strong>
-                    <span className="v2-badge v2-badge--neutral">{candidate.trigger_status || candidate.status || 'UNKNOWN'}</span>
-                  </div>
-                  <div className="v2-ai-candidate-facts">
-                    <span>方向：{candidate.side || candidate.direction_bias || 'UNKNOWN'}</span>
-                    <span>规则分：{displayNumber(candidate.rule_score)}</span>
-                    <span>校准概率：{displayNumber(candidate.calibrated_probability)}</span>
-                    <span>样本：{displayNumber(candidate.calibration_sample_size)}</span>
-                    <span>RR：{displayNumber(candidate.rr)}</span>
-                  </div>
-                  <p>{candidate.rationale || '暂无文字理由。'}</p>
-                  <div className="v2-ai-candidate-contract">
-                    <span>入场区：{candidate.entry_zone ? JSON.stringify(candidate.entry_zone) : 'UNKNOWN'}</span>
-                    <span>止损：{candidate.invalidation || displayNumber(candidate.stop_price)}</span>
-                    <span>目标：{targets.length ? targets.map((target) => JSON.stringify(target)).join(' · ') : displayNumber(candidate.take_profit)}</span>
-                  </div>
-                  {conditions.length ? <small>条件：{conditions.slice(0, 3).map((condition) => JSON.stringify(condition)).join(' · ')}</small> : null}
-                </article>
-              );
-            })}
-          </div>
-        )}
+        {latestCycle ? (
+          <>
+            <div className="v2-ai-cycle-summary">
+              <div><span>本轮结果</span><strong>{latestCycle.action || 'UNKNOWN'}</strong></div>
+              <div><span>决策来源</span><strong>{latestCycle.decision_origin === 'MODEL' ? 'AI 决策' : '系统检查'}</strong></div>
+              <div><span>模型调用</span><strong>{latestCycle.model_called ? '已调用' : '未调用'}</strong></div>
+              <div><span>时间</span><strong>{latestCycle.timestamp || 'UNKNOWN'}</strong></div>
+            </div>
+            <p>{latestCycle.reason}</p>
+            <details className="v2-ai-raw-details" open>
+              <summary>策略、新闻、技术面与执行 JSON</summary>
+              <pre>{JSON.stringify(latestCycle.payload || latestCycle, null, 2)}</pre>
+            </details>
+          </>
+        ) : <p className="v2-ai-muted">当前账户暂无决策记录。启动 AI 自动做单后，下一周期会记录开仓、等待或具体阻断原因。</p>}
       </section>
 
       {/* Durable plan contract: show the exact stored conditions and the
@@ -861,91 +675,9 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
           </div>
         )}
       </div>
-
-      {/* Recent Cycle: system blocks and model decisions are intentionally
-          rendered as different operational states. */}
-      {recentCycle ? (
-        <section className={`v2-ai-cycle-card ${isSystemBlocked ? 'v2-ai-cycle-card--blocked' : ''}`} data-testid="ai-cycle-card">
-          <div className="v2-ai-section-header">
-            <div>
-              <h3>最近一次 AI 运行结果 · {recentCycle.cycle_id || 'UNKNOWN'}</h3>
-              <p>{recentCycle.timestamp || 'UNKNOWN'} · 延迟 {displayNumber(recentCycle.latency_ms, ' ms')}</p>
-            </div>
-           <span className={`v2-badge ${isSystemBlocked ? 'v2-badge--bear' : recentCycle.action === 'WAIT' ? 'v2-badge--gold' : 'v2-badge--bull'}`}>
-              {cycleActionLabel}
-            </span>
-          </div>
-          <div className={`v2-ai-cycle-verdict ${isSystemBlocked ? 'v2-ai-cycle-verdict--blocked' : modelWasCalled ? 'v2-ai-cycle-verdict--model' : ''}`}>
-            <strong>{isSystemBlocked ? '系统未放行，AI 未被调用' : modelWasCalled ? 'AI 已调用，以下为模型结论' : 'AI 调用状态未确认'}</strong>
-            <span>
-              {isSystemBlocked
-                ? `${stageLabel(recentCycle.block_stage || undefined)} · ${humanizeCode(recentCycle.reason || recentCycle.rejection_code)}`
-                : modelWasCalled
-                  ? `${recentCycle.model_id || '模型身份未记录'} · ${humanizeCode(recentCycle.model_result || recentCycle.action)}`
-                  : '没有可核验的模型调用回执，不能把系统状态当成模型决策。'}
-            </span>
-          </div>
-          <div className="v2-ai-cycle-summary">
-            <div><span>决策来源</span><strong>{isSystemBlocked ? 'SYSTEM · 系统阻断' : modelWasCalled ? `MODEL · ${recentCycle.model_id || '已记录模型'}` : 'UNKNOWN · 未确认'}</strong></div>
-            <div><span>模型调用</span><strong>{recentCycle.model_called ? '已调用' : '未调用'}</strong></div>
-            <div><span>模型结果</span><strong>{humanizeCode(recentCycle.model_result || (isSystemBlocked ? 'NOT_RUN' : recentCycle.action))}</strong></div>
-            <div><span>运行状态</span><strong>{humanizeCode(recentCycle.operational_state || (isSystemBlocked ? 'SYSTEM_BLOCKED' : 'MODEL_DECISION'))}</strong></div>
-          </div>
-          <div className="v2-ai-cycle-reason" style={{ borderColor: cycleActionColor }}>
-            <span>{isSystemBlocked ? `阻断阶段：${stageLabel(recentCycle.block_stage || undefined)}` : '最终判断理由'}</span>
-            <p>{recentCycle.human_message || recentCycle.reason || 'UNKNOWN'}</p>
-          </div>
-          {recentCycle.rejection_code && <div className="v2-ai-error-text">拒绝码：{recentCycle.rejection_code}</div>}
-
-          <div className="v2-ai-pipeline" aria-label="AI execution pipeline">
-            <div className="v2-ai-pipeline-heading">
-              <strong>端到端阶段追踪</strong>
-              <span>{stageTrace.length ? `${stageTrace.length} stages` : 'NOT_RECORDED'}</span>
-            </div>
-            {stageTrace.length ? (
-              <div className="v2-ai-pipeline-grid">
-                {stageTrace.map((stage, index) => {
-                  const status = String(stage.status || 'UNKNOWN').toUpperCase();
-                  return (
-                    <div className={`v2-ai-stage v2-ai-stage--${status.toLowerCase()}`} key={`${stage.stage || 'stage'}-${index}`}>
-                      <div className="v2-ai-stage-topline">
-                        <span>{String(index + 1).padStart(2, '0')} · {stageLabel(stage.stage)}</span>
-                        <strong>{status}</strong>
-                      </div>
-                      <p>{stage.human_message || stage.reason_code || '—'}</p>
-                      {stage.duration_ms != null ? <small>{displayNumber(stage.duration_ms, ' ms')}</small> : null}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : <p className="v2-ai-muted">阶段证据尚未记录。</p>}
-          </div>
-          <details className="v2-ai-raw-details">
-            <summary>Developer Diagnostics · Raw JSON（折叠）</summary>
-            <pre>{JSON.stringify(recentCycle, null, 2)}</pre>
-          </details>
-        </section>
-      ) : (
-        <div className="v2-ai-empty-card">
-          <div>
-            <strong>AI 尚未运行</strong>
-            <span>当前没有可核验的 autonomous cycle；这不是模型 WAIT。</span>
-          </div>
-          <div>行情：{marketFreshness} · 模型：{modelStatusLabel}</div>
-        </div>
+      </>
       )}
 
-      <AuthorizationWizardModal
-        isOpen={isWizardOpen}
-        onClose={() => setIsWizardOpen(false)}
-        accountId={selectedAccount}
-        mode={selectedMode === 'TESTNET' || selectedMode === 'LIVE' || selectedAccount === 'gate_testnet' ? 'TESTNET' : 'PAPER'}
-        venue={accounts.find((item) => item.account_id === selectedAccount)?.venue}
-        onSuccess={(auth) => {
-          setActiveAuth(auth);
-          if (onRefresh) onRefresh();
-        }}
-      />
     </div></LocalizedSurface>
   );
 };
