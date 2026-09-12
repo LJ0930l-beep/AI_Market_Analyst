@@ -218,7 +218,13 @@ fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
         let _ = window.unminimize();
+        let _ = window.set_always_on_top(true);
         let _ = window.set_focus();
+        let win = window.clone();
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(300));
+            let _ = win.set_always_on_top(false);
+        });
     }
 }
 
