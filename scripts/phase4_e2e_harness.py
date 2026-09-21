@@ -21,6 +21,7 @@ from core.settlement import SettlementService
 from core.signals import Action, SignalProposal, build_signal, signal_from_payload
 from core.storage import SQLiteStore
 from core.instruments import instrument_for
+from core.model_routing import DEFAULT_MODEL
 
 
 MODEL_ID = "p4-e2e-model"
@@ -31,31 +32,33 @@ RUN_ID = "p4-e2e-replay-with-errors"
 class E2EInjectedConsultTransport:
     """Deterministic local streaming transport; never calls a model or network."""
 
-    provider_name = "e2e_local_qwen"
-    model_name = "qwen-e2e-fixture"
+    provider_name = "e2e_injected_fixture"
+    model_name = "injected-fixture-only"
 
     async def stream(self, messages):
         language = "zh-CN" if "默认使用中文" in messages[0]["content"] else "en"
         if language == "zh-CN":
             yield "确定性 "
-            yield "Qwen 测试回答。"
+            yield "注入式 E2E 测试回答。"
         else:
             yield "Deterministic "
-            yield "Qwen test answer."
+            yield "injected E2E test answer."
 
 
 class E2EInjectedModelHealth:
     """Health-only model dependency; analysis remains model-disabled."""
 
-    provider_name = "e2e_local_qwen"
+    provider_name = "e2e_injected_fixture"
 
     def health(self):
         return {
             "provider": self.provider_name,
-            "available": True,
-            "model_id": "qwen-e2e-fixture",
-            "model_available": True,
-            "models": ["qwen-e2e-fixture"],
+            "available": False,
+            "model_id": None,
+            "actual_model_id": None,
+            "model_identity_source": "injected_fixture",
+            "model_available": False,
+            "models": [],
             "capability": "injected_test_not_live_model_proof",
         }
 
@@ -430,8 +433,8 @@ def main() -> None:
     consult_service = QwenConsultService(
         ConsultConfig(
             enabled=True,
-            base_url="http://127.0.0.1:11434",
-            model_name="qwen-e2e-fixture",
+            base_url="http://127.0.0.1:8080/v1",
+            model_name=DEFAULT_MODEL,
             first_token_timeout_seconds=2.0,
             stream_idle_timeout_seconds=2.0,
             total_timeout_seconds=5.0,

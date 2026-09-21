@@ -168,13 +168,17 @@ def ema(values, period):
 
 
 def atr(bars, period=14):
-    if len(bars) < period + 1:
-        return 1.0
+    if not bars:
+        return 0.0
+    if len(bars) < 2:
+        return max(bars[0].high - bars[0].low, bars[0].close * 0.005)
     trs = [
         max(b.high - b.low, abs(b.high - p.close), abs(b.low - p.close))
-        for p, b in zip(bars[-period - 1:-1], bars[-period:])
+        for p, b in zip(bars[:-1], bars[1:])
     ]
-    return mean(trs) if trs else 1.0
+    if len(trs) > period:
+        trs = trs[-period:]
+    return mean(trs) if trs else max(bars[-1].high - bars[-1].low, bars[-1].close * 0.005)
 
 
 def rsi(closes, period=14):
@@ -213,8 +217,22 @@ def _as_datetime(value: Any) -> datetime | None:
     if isinstance(value, datetime):
         return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
     if value:
+        if isinstance(value, (int, float)) and isfinite(float(value)):
+            # Gate's native derivative endpoints use Unix milliseconds, while
+            # CCXT commonly uses milliseconds too. Keep seconds usable for
+            # provider adapters and deterministic tests.
+            timestamp = float(value)
+            if abs(timestamp) >= 100_000_000_000:
+                timestamp /= 1000.0
+            try:
+                return datetime.fromtimestamp(timestamp, tz=timezone.utc)
+            except (OverflowError, OSError, ValueError):
+                return None
         try:
-            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            text = str(value).strip()
+            if text.isdigit():
+                return _as_datetime(int(text))
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
         except (TypeError, ValueError):
             return None
         return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
@@ -390,9 +408,28 @@ class BaseStrategy(ABC):
             key=lambda b: b.timestamp,
         )
 
-        if len(closed) < self.warmup_bars or len({b.timestamp for b in closed}) != len(closed):
+        if len(closed) < self.warmup_bars:
             self.last_status = "WARMING_UP"
             self.last_reason = f"Insufficient warmup bars ({len(closed)} < {self.warmup_bars})"
+            return None
+
+        # A repeated timestamp is a data-identity defect, not a warmup deficit:
+        # the caller handed us more than one bar series for the same symbol
+        # (for example Gate's traded price, mark price and index price for one
+        # 15m bar, or a legacy mirror of it).  Both conditions used to share one
+        # branch, so this case was reported as "Insufficient warmup bars
+        # (112 < 60)" -- a message that contradicted itself, because the bar
+        # count was already above the warmup threshold.  That hid the real
+        # defect and sent readers looking for missing history instead of a
+        # mixed-identity read.
+        distinct_bars = {b.timestamp for b in closed}
+        if len(distinct_bars) != len(closed):
+            self.last_status = "WARMING_UP"
+            self.last_reason = (
+                f"Duplicate bar timestamps ({len(closed)} rows over "
+                f"{len(distinct_bars)} distinct bars): the series mixes more than "
+                f"one bar identity for symbol {getattr(self, 'signal_timeframe', '')}"
+            )
             return None
 
         # Check for stale data (last closed bar older than 2 periods + 5m)
@@ -421,8 +458,19 @@ class BaseStrategy(ABC):
 
         side, stop, reason = match
         entry = closed[-1].close
-        distance = abs(entry - stop)
         sign = 1 if side == "LONG" else -1
+
+        # Enforce minimum stop distance: max(1.5×ATR, 0.3% of entry)
+        # Inspired by Freqtrade/Jesse consensus: stops < 1.5×ATR are noise.
+        # Cap at 10% of entry so extreme volatility/small assets don't produce negative stops.
+        atr_val = atr(closed)
+        min_stop_distance = min(max(1.5 * atr_val, entry * 0.003), entry * 0.10)
+        raw_distance = abs(entry - stop)
+        if raw_distance < min_stop_distance:
+            stop = entry - sign * min_stop_distance
+            reason = reason + f"；止损已按最小安全距离扩展至 {min_stop_distance:.6g}（1.5×ATR={1.5*atr_val:.6g}, 0.3%={entry*0.003:.6g}）"
+
+        distance = abs(entry - stop)
         if distance <= 0 or sign * (entry - stop) <= 0:
             self.last_status = "INVALID_STOP_DISTANCE"
             self.last_reason = f"Invalid stop placement: entry={entry}, stop={stop}"
@@ -587,10 +635,12 @@ class EMATrend(BaseStrategy):
                 "slope": round(fast_slope, 4),
             }
             self._last_confidence = min(0.95, round(0.72 + min(volume_ratio, 3.0) * 0.08, 2))
+            # Stop at EMA50 minus 1.5×ATR (upgraded from 1.2×ATR per Freqtrade/Jesse best practice)
+            long_stop = slow[-1] - 1.5 * atr_val
             return (
                 "LONG",
-                slow[-1] - 1.2 * atr_val,
-                f"收盘价向上突破走升EMA20({fast[-1]:.2f})，放量{volume_ratio:.2f}倍(阈值{vol_threshold})，RSI={rsi_val:.1f}健康未超买；止损设于EMA50下方1.2ATR处",
+                long_stop,
+                f"收盘价向上突破走升EMA20({fast[-1]:.2f})，放量{volume_ratio:.2f}倍(阈值{vol_threshold})，RSI={rsi_val:.1f}健康未超买；止损设于EMA50下方1.5ATR处",
             )
         if closes[-2] >= fast[-2] and closes[-1] < fast[-1] < fast[-2] and environment_ok_short and short_rsi_ok:
             self._last_indicators = {
@@ -602,10 +652,12 @@ class EMATrend(BaseStrategy):
                 "slope": round(fast_slope, 4),
             }
             self._last_confidence = min(0.95, round(0.72 + min(volume_ratio, 3.0) * 0.08, 2))
+            # Stop at EMA50 plus 1.5×ATR (upgraded from 1.2×ATR)
+            short_stop = slow[-1] + 1.5 * atr_val
             return (
                 "SHORT",
-                slow[-1] + 1.2 * atr_val,
-                f"收盘价向下跌破走低EMA20({fast[-1]:.2f})，放量{volume_ratio:.2f}倍(阈值{vol_threshold})，RSI={rsi_val:.1f}未超卖；止损设于EMA50上方1.2ATR处",
+                short_stop,
+                f"收盘价向下跌破走低EMA20({fast[-1]:.2f})，放量{volume_ratio:.2f}倍(阈值{vol_threshold})，RSI={rsi_val:.1f}未超卖；止损设于EMA50上方1.5ATR处",
             )
         return None
 
@@ -660,17 +712,22 @@ class BollingerSqueeze(BaseStrategy):
             "mid_band": round(mid, 2),
         }
         self._last_confidence = min(0.95, round(0.75 + min(vol_ratio, 2.5) * 0.08, 2))
+        atr_val = atr(bars)
         if bars[-1].close > mid + width:
+            # Stop at mid band or 1.5×ATR below entry, whichever gives more room
+            long_stop = min(mid, bars[-1].close - max(1.5 * atr_val, width))
             return (
                 "LONG",
-                mid,
-                f"布林带紧密内敛于Keltner通道蓄势挤压；首根K线向上强势放量突破上轨({mid+width:.2f})，放量{vol_ratio:.2f}倍，止损布林中轨",
+                long_stop,
+                f"布林带紧密内敛于Keltner通道蓄势挤压；首根K线向上强势放量突破上轨({mid+width:.2f})，放量{vol_ratio:.2f}倍，止损布林中轨或1.5ATR保护位",
             )
         if bars[-1].close < mid - width:
+            # Stop at mid band or 1.5×ATR above entry, whichever gives more room
+            short_stop = max(mid, bars[-1].close + max(1.5 * atr_val, width))
             return (
                 "SHORT",
-                mid,
-                f"布林带紧密内敛于Keltner通道蓄势挤压；首根K线向下强势放量突破下轨({mid-width:.2f})，放量{vol_ratio:.2f}倍，止损布林中轨",
+                short_stop,
+                f"布林带紧密内敛于Keltner通道蓄势挤压；首根K线向下强势放量突破下轨({mid-width:.2f})，放量{vol_ratio:.2f}倍，止损布林中轨或1.5ATR保护位",
             )
         return None
 
@@ -690,13 +747,45 @@ class LiquiditySweep(BaseStrategy):
     }
 
     def match(self, bars, context):
-        small = context.get("closed_5m", [])
-        end = bars[-1].timestamp + timedelta(minutes=15)
+        signal_minutes = {"5m": 5, "15m": 15}.get(str(self.signal_timeframe).lower())
+        if signal_minutes is None:
+            self.last_status = "UNSUPPORTED"
+            self.last_reason = f"Liquidity sweep requires a 5m or 15m signal timeframe, got {self.signal_timeframe}"
+            return None
+
+        signal_step = timedelta(minutes=signal_minutes)
+        lower_step = timedelta(minutes=5)
+        last_signal_bar = bars[-1]
+        end = last_signal_bar.timestamp + signal_step
+        explicit_signal_end = _as_datetime(getattr(last_signal_bar, "bar_end", None))
+        if explicit_signal_end is not None and explicit_signal_end != end:
+            self.last_status = "GAP_DETECTED"
+            self.last_reason = "Signal bar end does not match its effective timeframe"
+            return None
+
+        def lower_bar_end(bar: Any) -> datetime:
+            explicit_end = _as_datetime(getattr(bar, "bar_end", None))
+            return explicit_end or (bar.timestamp + lower_step)
+
+        # CandidateScanner normally supplies only point-in-time closed bars;
+        # retain the same invariant here for direct strategy/replay callers.
+        # A lower-timeframe candle must have closed by the signal-bar boundary,
+        # must not be marked open, and the confirming pair must be contiguous.
         small = sorted(
-            (b for b in small if b.timestamp + timedelta(minutes=5) <= end),
-            key=lambda b: b.timestamp,
+            (
+                bar
+                for bar in context.get("closed_5m", [])
+                if getattr(bar, "is_closed", None) is not False
+                and lower_bar_end(bar) <= end
+                and lower_bar_end(bar) == bar.timestamp + lower_step
+            ),
+            key=lambda bar: bar.timestamp,
         )
-        if len(small) < 2 or small[-1].timestamp + timedelta(minutes=5) != end:
+        if (
+            len(small) < 2
+            or small[-1].timestamp + lower_step != end
+            or small[-2].timestamp + lower_step != small[-1].timestamp
+        ):
             return None
         a, b = small[-2:]
         last = bars[-1]
@@ -720,10 +809,14 @@ class LiquiditySweep(BaseStrategy):
                 "atr": round(atr_val, 2),
             }
             self._last_confidence = 0.88
+            # Stop beyond wick extreme with sufficient ATR breathing room
+            # Upgraded from 0.1×ATR to max(1.5×ATR, wick_dist + 0.5×ATR)
+            wick_dist = abs(min(last.open, last.close) - last.low)
+            long_stop_dist = max(1.5 * atr_val, wick_dist + 0.5 * atr_val)
             return (
                 "LONG",
-                last.low - atr_val * 0.1,
-                f"猎杀前4小时密集多头止损流动性({low:.2f})，长下影Pinbar拒绝并强势收回，5m级别看涨吞没结构破坏确立；止损仅设影线极值外0.1ATR",
+                last.low - long_stop_dist + wick_dist,
+                f"猎杀前4小时密集多头止损流动性({low:.2f})，长下影Pinbar拒绝并强势收回，5m级别看涨吞没结构破坏确立；止损设于影线极值外{long_stop_dist - wick_dist:.1f}（≥1.5ATR安全距离）",
             )
         if (
             last.high > high > last.close
@@ -740,10 +833,13 @@ class LiquiditySweep(BaseStrategy):
                 "atr": round(atr_val, 2),
             }
             self._last_confidence = 0.88
+            # Stop beyond wick extreme with sufficient ATR breathing room
+            wick_dist = abs(last.high - max(last.open, last.close))
+            short_stop_dist = max(1.5 * atr_val, wick_dist + 0.5 * atr_val)
             return (
                 "SHORT",
-                last.high + atr_val * 0.1,
-                f"猎杀前4小时密集空头止损流动性({high:.2f})，长上影Pinbar拒绝并强势收回，5m级别看跌吞没结构破坏确立；止损仅设影线极值外0.1ATR",
+                last.high + short_stop_dist - wick_dist,
+                f"猎杀前4小时密集空头止损流动性({high:.2f})，长上影Pinbar拒绝并强势收回，5m级别看跌吞没结构破坏确立；止损设于影线极值外{short_stop_dist - wick_dist:.1f}（≥1.5ATR安全距离）",
             )
         return None
 
@@ -774,7 +870,15 @@ class FundingExtreme(BaseStrategy):
             self.last_reason = "OI or funding rate history missing (AT17)"
             return None
 
-        end = bars[-1].timestamp + timedelta(minutes=15)
+        signal_minutes = {"5m": 5, "15m": 15}.get(str(self.signal_timeframe).lower())
+        if signal_minutes is None:
+            self.last_status = "UNSUPPORTED"
+            self.last_reason = f"Funding extreme requires a 5m or 15m signal timeframe, got {self.signal_timeframe}"
+            return None
+        # CandidateScanner may apply the selected strategy profile's cadence
+        # to a class whose default is 15m. Never let 5m decisions see funding
+        # or OI observations that arrived after their own closed-bar boundary.
+        end = bars[-1].timestamp + timedelta(minutes=signal_minutes)
         # Normalize before ordering so malformed provider rows cannot make a
         # valid replay crash while the ``None`` sentinel is being sorted.
         rates = [item for item in (_normalise_funding_point(item) for item in rates) if item is not None]

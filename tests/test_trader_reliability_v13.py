@@ -509,7 +509,9 @@ def test_v13_c_runtime_lease_loss_cancels_ai_and_pauses_session(v13_store: SQLit
 
     class BlockingProvider:
         provider_name = "local-test-provider"
-        model_id = "qwen3.5:9b"
+        model_id = "Bonsai-2-27B-PTQ1_0"
+        context_length = 8192
+        max_tokens = 1000
         # A deterministic fixture digest satisfies the calibration identity
         # check without pretending to be a production model artifact.
         weight_digest = "b" * 64
@@ -523,28 +525,35 @@ def test_v13_c_runtime_lease_loss_cancels_ai_and_pauses_session(v13_store: SQLit
             return {
                 "available": True,
                 "model_available": True,
-                "model_id": "qwen3.5:9b",
-                "models": ["qwen3.5:9b"],
+                "model_id": "Bonsai-2-27B-PTQ1_0",
+                "actual_model_id": r"D:\RJ\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                "model_identity_source": "verified_manifest",
+                "models": [r"D:\RJ\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"],
+                "context_length": self.context_length,
             }
 
         def generate_json(self, *_args, **_kwargs):
-            if _kwargs.get("prompt_version") == "ai_calibration_operation_profile_v1":
-                return {
+            if _kwargs.get("prompt_version") in {"ai_calibration_operation_profile_v1", "ai_calibration_operation_profile_v2"}:
+                answer = {
                     "risk_regime": "fixture",
                     "entry_style": "CONSERVATIVE",
                     "order_preference": "AUTO",
                     "max_concurrent_positions": 1,
                     "notes_zh": "deterministic calibration fixture",
                 }
+                actual = r"D:\RJ\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"
+                return answer, json.dumps(answer), {"model_id": "Bonsai-2-27B-PTQ1_0", "model_version": actual, "actual_model_id": actual, "model_identity_source": "request_bound_to_verified_manifest", "verified_manifest_model_id": actual}
             self.entered.set()
             self.release.wait(5)
-            return {
+            answer = {
                 "action": "OPEN_LONG",
                 "instrument_id": "BTCUSDT",
                 "reason": "local lease-fence test",
                 "stop_price": 90.0,
                 "evidence_refs": ["local-fixture"],
             }
+            actual = r"D:\RJ\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"
+            return answer, json.dumps(answer), {"model_id": "Bonsai-2-27B-PTQ1_0", "model_version": actual, "actual_model_id": actual, "model_identity_source": "request_bound_to_verified_manifest", "verified_manifest_model_id": actual}
 
         def cancel_generation(self, *_args, **_kwargs):
             self.cancelled.set()
@@ -566,15 +575,10 @@ def test_v13_c_runtime_lease_loss_cancels_ai_and_pauses_session(v13_store: SQLit
     cycle_thread = None
     try:
         runtime.start(account_id="lease_cycle", enable_ai=True)
-        # The production coordinator intentionally waits for the next aligned
-        # five-minute boundary.  Trigger this one cycle explicitly so the
-        # test can hold a model call in-flight without weakening that timing
-        # contract or waiting five minutes.
-        cycle_thread = Thread(
-            target=runtime.ai_coordinator.run_cycle_once,
-            kwargs={"scheduled_at": now},
-            daemon=True,
-        )
+        # Scheduling waits for the strategy boundary. Exercise fencing with
+        # an explicit test cycle while the scheduler remains armed.
+        from threading import Thread
+        cycle_thread = Thread(target=runtime.ai_coordinator.run_cycle_once)
         cycle_thread.start()
         assert provider.entered.wait(2), "AI provider did not enter an in-flight generation"
         time.sleep(1.2)
@@ -949,7 +953,7 @@ def test_v13_g_ai_scorecard_links_receipts_but_not_profit_claims(v13_store: SQLi
         payload = {
             "account_id": "ai_a",
             "action": "WAIT",
-            "model_id": "qwen3.5:9b",
+            "model_id": "Bonsai-2-27B-PTQ1_0",
             "model_version": "local-config-1",
             "model_digest": "digest-a",
             "prompt_version": "prompt-v1",
@@ -993,7 +997,11 @@ def test_v13_g_ai_scorecard_links_receipts_but_not_profit_claims(v13_store: SQLi
     assert TraderCapabilityService(v13_store).ai_scorecard("ai_b")["status"] == UNKNOWN
 
 
-def test_v13_h_api_runtime_to_gateway_fill_guardian_ledger_attribution(v13_store: SQLiteStore) -> None:
+def test_v13_h_api_runtime_to_gateway_fill_guardian_ledger_attribution(v13_store: SQLiteStore, monkeypatch: pytest.MonkeyPatch) -> None:
+    # This test covers ledger/API attribution, not the host's local model
+    # installation. Keep model readiness deterministic across developer hosts.
+    from core.model_client import model_client
+    monkeypatch.setattr(model_client, "is_healthy", lambda: False)
     ledger = AccountLedger(v13_store)
     _account(ledger, "e2e_a")
     now = datetime.now(timezone.utc)

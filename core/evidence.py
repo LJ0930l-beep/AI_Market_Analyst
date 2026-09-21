@@ -157,7 +157,7 @@ def model_weight_digest(
     """Read a target model's adapter-provided weight digest.
 
     A provider may have a fast model as its default (the Ollama adapter does),
-    while an AI-led cycle is required to use the Smart 9B model.  Do not reuse
+    while an AI-led cycle is required to use the verified Bonsai 2 27B model. Do not reuse
     an unlabelled digest from a different default model; ask providers that
     support it for a health manifest for the requested target instead.
     """
@@ -170,11 +170,6 @@ def model_weight_digest(
         or getattr(provider, "default_model", None)
     )
     provider_model = str(provider_model).strip() if provider_model else None
-    if not model_name or not provider_model or provider_model == model_name:
-        for name in ("weight_digest", "model_weight_digest", "digest"):
-            digest = validate_weight_digest(getattr(provider, name, None))
-            if digest:
-                return digest, "OBSERVED_PROVIDER_DIGEST"
     result = health_result
     if result is None:
         health = getattr(provider, "health", None)
@@ -195,6 +190,15 @@ def model_weight_digest(
             return None, "UNKNOWN_NOT_PROVIDED"
         for name in ("weight_digest", "model_weight_digest", "digest"):
             digest = validate_weight_digest(result.get(name))
+            if digest:
+                status = str(result.get("digest_status") or "").strip().upper()
+                return digest, status if status.startswith("OBSERVED_") else "OBSERVED_PROVIDER_DIGEST"
+    # A requested-model health manifest is authoritative over an unscoped
+    # provider attribute: multi-model adapters commonly expose their default
+    # weight digest there even when the call targets a different model.
+    if not model_name or not provider_model or provider_model == model_name:
+        for name in ("weight_digest", "model_weight_digest", "digest"):
+            digest = validate_weight_digest(getattr(provider, name, None))
             if digest:
                 return digest, "OBSERVED_PROVIDER_DIGEST"
     return None, "UNKNOWN_NOT_PROVIDED"

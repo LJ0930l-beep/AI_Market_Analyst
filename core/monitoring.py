@@ -1,7 +1,7 @@
 """Python-owned crypto monitoring pipeline for V1.2.
 
 The module keeps all financial calculations, trigger decisions, dedupe,
-cooldown, and output validation on the backend.  Ollama is called only after a
+cooldown, and output validation on the backend. Bonsai ModelClient is called only after a
 closed-bar trigger has passed the deterministic gate, and the Smart tier is
 never replaced by the Fast tier when it is unavailable.
 """
@@ -22,7 +22,7 @@ from .ai.contracts import LLMError
 from .ai.ollama import OllamaProvider
 from .alerts import AlertReconciler
 from .instruments import AssetType, Instrument
-from .model_routing import DEFAULT_SMART_MODEL, ModelRoutingConfig
+from .model_routing import DEFAULT_SMART_MODEL, ModelRoutingConfig, is_bonsai_model_identity, is_verified_bonsai_receipt
 from .providers.base import Bar, MarketProvider, ProviderError
 from .providers.runtime import MarketDataBundle, ProviderChain, build_default_provider, fetch_market_data
 from .signals import Action, SignalProposal
@@ -490,10 +490,8 @@ class OpportunityAnalysis:
     def __post_init__(self) -> None:
         if self.bias not in {"LONG_WATCH", "SHORT_WATCH", "WAIT"}:
             raise ValueError("bias must be LONG_WATCH, SHORT_WATCH, or WAIT")
-        if not 0.0 <= self.confidence <= 1.0 or not math.isfinite(self.confidence):
-            raise ValueError("confidence must be in [0, 1]")
-        if self.model_id != DEFAULT_SMART_MODEL and not self.model_id.endswith(":9b"):
-            raise ValueError("OpportunityAnalysis requires the Smart 9B model")
+        if not is_bonsai_model_identity(self.model_id):
+            raise ValueError("OpportunityAnalysis requires the Bonsai 2 27B model")
         if self.timeframe not in SUPPORTED_TIMEFRAMES:
             raise ValueError("opportunity timeframe is unsupported")
         if self.data_as_of.tzinfo is None or self.re_evaluate_at.tzinfo is None:
@@ -666,7 +664,7 @@ def _opportunity_messages(
         "instructions": "Return JSON only, with exactly the output_schema fields. Use bias LONG_WATCH, SHORT_WATCH, or WAIT. If the evidence does not justify a directional watch, choose WAIT and set watch_zone, invalidation_price, and targets to null/empty values. For LONG_WATCH use low <= high, stop below the entry zone, and targets above it; for SHORT_WATCH use stop above the entry zone and targets below it. Python validates every level. Do not invent news; state missing evidence. Keep evidence concise.",
     }
     return [
-        {"role": "system", "content": "You are the Smart 9B opportunity explanation layer. Never place orders or claim certainty. The Python backend owns calculations, levels, risk, and trigger policy."},
+        {"role": "system", "content": "You are the Bonsai 2 27B opportunity explanation layer. Never place orders or claim certainty. The Python backend owns calculations, levels, risk, and trigger policy."},
         {"role": "user", "content": json.dumps(evidence, ensure_ascii=False, sort_keys=True)},
     ]
 
@@ -677,8 +675,8 @@ class SmartOpportunityAnalyzer:
     def __init__(self, llm_provider: object | None, *, smart_model: str | None = None) -> None:
         self.llm_provider = llm_provider
         self.smart_model = smart_model or ModelRoutingConfig.from_env().smart_model
-        if not self.smart_model.lower().endswith(":9b"):
-            raise ValueError("OpportunityAnalysis requires a configured Smart 9B model")
+        if not is_bonsai_model_identity(self.smart_model):
+            raise ValueError("OpportunityAnalysis requires the manifest-verified Bonsai 2 27B reasoning model")
 
     def _check_available(self) -> None:
         if self.llm_provider is None:
@@ -690,13 +688,14 @@ class SmartOpportunityAnalyzer:
             except Exception as exc:
                 raise SmartModelUnavailable() from exc
             if isinstance(status, Mapping):
-                models = status.get("models")
-                # An Ollama health response with no exact model inventory is
-                # not evidence that the required 9B is installed.  Fail
-                # closed so the Smart tier can never be relabelled as Fast.
-                if isinstance(models, list) and self.smart_model not in {str(item) for item in models}:
-                    raise SmartModelUnavailable()
-                if status.get("available") is False or status.get("model_available") is False:
+                actual_model_id = status.get("actual_model_id")
+                if (
+                    status.get("available") is not True
+                    or status.get("model_available") is not True
+                    or status.get("model_id") != DEFAULT_SMART_MODEL
+                    or status.get("model_identity_source") != "verified_manifest"
+                    or not is_bonsai_model_identity(actual_model_id)
+                ):
                     raise SmartModelUnavailable()
 
     def analyze(
@@ -752,8 +751,10 @@ class SmartOpportunityAnalyzer:
         mutable = dict(payload)
         supplied_model = mutable.get("model_id")
         if supplied_model is not None and str(supplied_model) != self.smart_model:
-            raise MonitoringError("Smart output model_id does not match the configured 9B model", code="SMART_MODEL_MISMATCH")
+            raise MonitoringError("Smart output model_id does not match the configured Bonsai model", code="SMART_MODEL_MISMATCH")
         mutable["model_id"] = self.smart_model
+        if not is_verified_bonsai_receipt(metadata):
+            raise MonitoringError("Smart model inference identity could not be verified", code="SMART_MODEL_IDENTITY_UNVERIFIED")
         mutable.setdefault("prompt_version", OPPORTUNITY_PROMPT_VERSION)
         analysis = OpportunityAnalysis.from_payload(
             mutable,

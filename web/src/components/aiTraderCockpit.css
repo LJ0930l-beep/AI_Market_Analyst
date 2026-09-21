@@ -1,0 +1,622 @@
+.ai-cockpit {
+  --cockpit-bg: #050811;
+  --cockpit-panel: rgba(11, 17, 31, .58);
+  --cockpit-line: rgba(111, 133, 166, .2);
+  --cockpit-text: #e9eef7;
+  --cockpit-muted: #8794a9;
+  --cockpit-cyan: #4ce6c1;
+  --cockpit-violet: #8c7cff;
+  --cockpit-amber: #f1b458;
+  --cockpit-red: #ff6179;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-bottom: 20px;
+  padding: clamp(18px, 2vw, 28px);
+  overflow: hidden;
+  color: var(--cockpit-text);
+  background:
+    radial-gradient(circle at 8% 2%, rgba(76, 230, 193, .11), transparent 28%),
+    radial-gradient(circle at 88% 4%, rgba(140, 124, 255, .1), transparent 30%),
+    linear-gradient(145deg, rgba(7,11,20,.66) 0%, rgba(5,8,17,.55) 66%, rgba(7,10,18,.62) 100%);
+  backdrop-filter: blur(16px) saturate(118%);
+  border: 1px solid rgba(111, 133, 166, .17);
+  border-radius: 18px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .28), inset 0 1px rgba(255, 255, 255, .025);
+  font-family: "Segoe UI Variable", "Microsoft YaHei", sans-serif;
+}
+
+.ai-cockpit::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .14;
+  background-image:
+    linear-gradient(rgba(87, 112, 146, .13) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(87, 112, 146, .13) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: linear-gradient(to bottom, black, transparent 64%);
+}
+
+.ai-cockpit__topline,
+.ai-command-deck,
+.ai-cockpit > section,
+.ai-cockpit > div {
+  position: relative;
+  z-index: 1;
+}
+
+.ai-cockpit__topline {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+}
+
+.ai-cockpit__identity { display: grid; gap: 8px; }
+.ai-cockpit__identity h2 { margin: 0; font: 650 clamp(23px, 2.2vw, 34px)/1.05 "Segoe UI Variable", "Microsoft YaHei", sans-serif; letter-spacing: -.04em; }
+.ai-cockpit__eyebrow { color: var(--cockpit-cyan); font: 600 10px/1.3 "Cascadia Code", Consolas, monospace; letter-spacing: .16em; }
+.ai-cockpit__chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.ai-cockpit__chips span { padding: 5px 9px; color: var(--cockpit-muted); background: rgba(11, 17, 31, .72); border: 1px solid var(--cockpit-line); border-radius: 999px; font: 600 10px/1 "Cascadia Code", Consolas, monospace; }
+.ai-cockpit__chips [data-tone="active"] { color: var(--cockpit-cyan); border-color: rgba(76, 230, 193, .35); }
+.ai-cockpit__chips [data-tone="short"] { color: var(--cockpit-red); border-color: rgba(255, 97, 121, .35); }
+.ai-cockpit__account { width: min(320px, 100%); padding: 7px 10px; color: var(--cockpit-text); background: #090e18; border: 1px solid var(--cockpit-line); border-radius: 8px; }
+
+.ai-cockpit__actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.ai-cockpit__analysis-link { margin-right: 4px; color: #aeb9ca; font-size: 12px; text-decoration: none; }
+.ai-cockpit__analysis-link:hover { color: var(--cockpit-cyan); }
+.ai-cockpit__button, .ai-cockpit__icon-button { min-height: 35px; padding: 7px 12px; color: var(--cockpit-text); background: rgba(15, 23, 40, .9); border: 1px solid var(--cockpit-line); border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 650; transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
+.ai-cockpit__button:hover:not(:disabled), .ai-cockpit__icon-button:hover:not(:disabled) { transform: translateY(-1px); border-color: rgba(76, 230, 193, .55); }
+.ai-cockpit__button:disabled, .ai-cockpit__icon-button:disabled { opacity: .45; cursor: wait; }
+.ai-cockpit__button--start { color: #02100d; background: linear-gradient(135deg, #73efd1, #3bcba9); border-color: transparent; box-shadow: 0 9px 26px rgba(76, 230, 193, .18); }
+.ai-cockpit__button--pause { color: #1c1201; background: var(--cockpit-amber); border-color: transparent; }
+.ai-cockpit__button--stop { color: #ffdce3; border-color: rgba(255, 97, 121, .38); }
+.ai-cockpit__icon-button { color: var(--cockpit-muted); }
+.ai-cockpit__notice { padding: 10px 13px; color: #c4bcff; background: rgba(140, 124, 255, .09); border: 1px solid rgba(140, 124, 255, .3); border-radius: 9px; font-size: 12px; }
+.ai-cockpit__risk-lock{display:flex;align-items:center;gap:12px;min-width:0;padding:12px 14px;border:1px solid rgba(241,180,88,.38);border-radius:10px;background:rgba(74,48,13,.42);box-shadow:0 0 30px rgba(241,180,88,.08)}
+.ai-cockpit__risk-lock>i{width:9px;height:9px;border-radius:50%;background:var(--cockpit-amber);box-shadow:0 0 0 0 rgba(241,180,88,.45);animation:ai-risk-breathe 1.8s ease-out infinite}
+.ai-cockpit__risk-lock div{display:grid;gap:3px;min-width:0}.ai-cockpit__risk-lock strong{color:#ffd08a;font-size:12px}.ai-cockpit__risk-lock span{color:#bda77f;font-size:10px;overflow-wrap:anywhere}
+
+.ai-command-deck {
+  display: grid;
+  grid-template-columns: minmax(190px, .72fr) minmax(300px, 1.35fr) minmax(350px, 1.6fr);
+  min-height: 265px;
+  overflow: hidden;
+  background: linear-gradient(115deg, rgba(12, 19, 34, .61), rgba(8, 13, 25, .48));
+  border: 1px solid var(--cockpit-line);
+  border-radius: 15px;
+}
+
+.ai-decision-core {
+  --tone: var(--cockpit-cyan);
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 245px;
+  overflow: hidden;
+  border-right: 1px solid var(--cockpit-line);
+}
+.ai-decision-core[data-tone="short"], .ai-command-deck__action[data-tone="short"] { --tone: var(--cockpit-red); }
+.ai-decision-core[data-tone="blocked"], .ai-command-deck__action[data-tone="blocked"] { --tone: var(--cockpit-amber); }
+.ai-decision-core[data-tone="neutral"], .ai-command-deck__action[data-tone="neutral"] { --tone: var(--cockpit-violet); }
+.ai-decision-core::before { content: ""; position: absolute; width: 190px; height: 190px; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--tone) 14%, transparent), transparent 67%); filter: blur(7px); animation: ai-core-breathe 3.8s ease-in-out infinite; }
+.ai-decision-core__orbit { position: absolute; width: 156px; height: 156px; border: 1px solid color-mix(in srgb, var(--tone) 34%, transparent); border-radius: 50%; box-shadow: inset 0 0 30px rgba(255,255,255,.02), 0 0 30px color-mix(in srgb, var(--tone) 10%, transparent); }
+.ai-decision-core__orbit::before { content: ""; position: absolute; inset: -8px; border-radius: 50%; background: conic-gradient(var(--tone) calc(var(--score) * 1%), rgba(91, 109, 138, .12) 0); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 0); mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 0); transform: rotate(-90deg); }
+.ai-decision-core__orbit::after { content: ""; position: absolute; inset: 14px; border: 1px dashed rgba(159, 177, 204, .22); border-radius: 50%; animation: ai-core-spin 18s linear infinite; }
+.ai-decision-core__orbit span { position: absolute; width: 5px; height: 5px; border-radius: 50%; background: var(--tone); box-shadow: 0 0 12px var(--tone); }
+.ai-decision-core__orbit span:nth-child(1) { top: 11px; left: 32px; }
+.ai-decision-core__orbit span:nth-child(2) { right: -3px; top: 74px; }
+.ai-decision-core__orbit span:nth-child(3) { bottom: 17px; left: 23px; }
+.ai-decision-core__center { z-index: 1; display: grid; place-items: center; }
+.ai-decision-core__center small { color: var(--cockpit-muted); font-size: 11px; }
+.ai-decision-core__center strong { margin: 4px 0 -2px; color: var(--tone); font: 680 43px/1 "Cascadia Code", Consolas, monospace; letter-spacing: -.08em; text-shadow: 0 0 24px color-mix(in srgb, var(--tone) 28%, transparent); }
+.ai-decision-core__center span { color: var(--cockpit-muted); font-size: 9px; }
+
+.ai-command-deck__decision { display: flex; flex-direction: column; justify-content: center; padding: 30px clamp(24px, 3vw, 44px); border-right: 1px solid var(--cockpit-line); }
+.ai-command-deck__label { color: var(--cockpit-muted); font: 600 9px/1.3 "Cascadia Code", Consolas, monospace; letter-spacing: .14em; }
+.ai-command-deck__action { --tone: var(--cockpit-cyan); margin-top: 13px; color: var(--tone); font: 700 clamp(26px, 3.3vw, 48px)/.95 "Segoe UI Variable", sans-serif; letter-spacing: -.055em; text-shadow: 0 0 30px color-mix(in srgb, var(--tone) 18%, transparent); }
+.ai-command-deck__decision h3 { margin: 8px 0 6px; color: #cbd4e3; font: 600 16px/1.2 "Cascadia Code", Consolas, monospace; }
+.ai-command-deck__decision p { max-width: 620px; margin: 7px 0 18px; color: #99a7bb; font-size: 12px; line-height: 1.75; }
+.ai-command-deck__pulse { display: flex; align-items: center; gap: 8px; color: #b6c1d1; font: 500 10px/1.4 "Cascadia Code", Consolas, monospace; }
+.ai-command-deck__pulse i { width: 6px; height: 6px; border-radius: 50%; background: var(--cockpit-cyan); box-shadow: 0 0 0 0 rgba(76, 230, 193, .42); animation: ai-status-pulse 1.9s ease-out infinite; }
+
+.ai-command-deck__telemetry { display: grid; grid-template-columns: 1fr 1fr; align-content: center; gap: 1px; padding: 1px; background: rgba(111, 133, 166, .13); }
+.ai-command-deck__telemetry > div { display: flex; flex-direction: column; justify-content: center; min-height: 108px; padding: 20px; background: rgba(7, 12, 23, .56); }
+.ai-command-deck__telemetry span { color: var(--cockpit-muted); font: 600 9px/1.3 "Cascadia Code", Consolas, monospace; letter-spacing: .1em; }
+.ai-command-deck__telemetry strong { margin: 8px 0 4px; overflow-wrap: anywhere; color: #dce4ef; font: 650 13px/1.3 "Cascadia Code", Consolas, monospace; }
+.ai-command-deck__telemetry strong[data-tone="active"] { color: var(--cockpit-cyan); }
+.ai-command-deck__telemetry small { color: #68768c; font-size: 10px; line-height: 1.4; }
+
+.ai-cockpit .v2-ai-remote-card,
+.ai-cockpit .v2-ai-cycle-card,
+.ai-cockpit .ai-cycle-plan,
+.ai-cockpit [data-testid="trade-plans-panel"] { background: var(--cockpit-panel) !important; border-color: var(--cockpit-line) !important; border-radius: 13px !important; }
+.ai-cockpit .v2-ai-remote-card,
+.ai-cockpit .v2-ai-cycle-card,
+.ai-cockpit .ai-cycle-plan { padding: clamp(18px, 2vw, 26px); }
+.ai-cockpit .v2-ai-cycle-summary { gap: 1px; overflow: hidden; border-radius: 10px; background: rgba(111, 133, 166, .15); }
+.ai-cockpit .v2-ai-cycle-summary > div { border: 0; border-radius: 0; background: #090f1b; }
+.ai-cockpit .ai-cycle-timeline details { border: 1px solid var(--cockpit-line); border-left: 3px solid var(--cockpit-cyan); border-radius: 9px; background: rgba(7, 12, 22, .76); transition: background .2s ease, transform .2s ease; }
+.ai-cockpit .ai-cycle-timeline details:hover { background: rgba(13, 21, 37, .92); transform: translateX(2px); }
+
+@keyframes ai-core-spin { to { transform: rotate(360deg); } }
+@keyframes ai-core-breathe { 50% { transform: scale(1.08); opacity: .7; } }
+@keyframes ai-status-pulse { 70%, 100% { box-shadow: 0 0 0 9px rgba(76, 230, 193, 0); } }
+@keyframes ai-risk-breathe { 70%,100% { box-shadow:0 0 0 10px rgba(241,180,88,0) } }
+
+@media (max-width: 1180px) {
+  .ai-command-deck { grid-template-columns: 210px 1fr; }
+  .ai-command-deck__decision { border-right: 0; }
+  .ai-command-deck__telemetry { grid-column: 1 / -1; }
+}
+
+@media (max-width: 760px) {
+  .ai-cockpit { padding: 14px; border-radius: 12px; }
+  .ai-cockpit__topline { flex-direction: column; }
+  .ai-cockpit__actions { justify-content: flex-start; }
+  .ai-command-deck { grid-template-columns: 1fr; }
+  .ai-decision-core { min-height: 215px; border-right: 0; border-bottom: 1px solid var(--cockpit-line); }
+  .ai-command-deck__decision { padding: 24px; }
+  .ai-command-deck__telemetry { grid-column: auto; grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-decision-core::before,
+  .ai-decision-core__orbit::after,
+  .ai-command-deck__pulse i { animation: none; }
+  .ai-cockpit__button, .ai-cockpit__icon-button, .ai-cockpit .ai-cycle-timeline details { transition: none; }
+}
+
+/* Clearer live-state hierarchy: movement follows runtime facts, not decoration. */
+.ai-cockpit {
+  --cockpit-panel: rgba(11, 17, 31, .42);
+  background:
+    radial-gradient(circle at 8% 2%, rgba(76, 230, 193, .1), transparent 28%),
+    radial-gradient(circle at 88% 4%, rgba(140, 124, 255, .08), transparent 30%),
+    linear-gradient(145deg, rgba(7, 11, 20, .49) 0%, rgba(5, 8, 17, .4) 66%, rgba(7, 10, 18, .46) 100%);
+}
+.ai-cockpit__run-rail {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  background: rgba(111, 133, 166, .22);
+  border: 1px solid var(--cockpit-line);
+  border-radius: 12px;
+}
+.ai-cockpit__run-rail > div {
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 86px;
+  padding: 14px 17px;
+  background: rgba(8, 14, 26, .49);
+}
+.ai-cockpit__run-rail span {
+  color: var(--cockpit-muted);
+  font: 600 9px/1.4 "Cascadia Code", Consolas, monospace;
+  letter-spacing: .08em;
+}
+.ai-cockpit__run-rail strong {
+  overflow: hidden;
+  color: #e1e8f2;
+  font: 650 13px/1.35 "Cascadia Code", Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-cockpit__run-rail strong[data-tone="active"] { color: var(--cockpit-cyan); }
+.ai-cockpit__run-rail strong[data-tone="warning"] { color: var(--cockpit-amber); }
+.ai-cockpit__run-rail small { color: #78869b; font-size: 10px; line-height: 1.4; overflow-wrap: anywhere; }
+.ai-command-deck { background: linear-gradient(115deg, rgba(12, 19, 34, .48), rgba(8, 13, 25, .37)); }
+.ai-command-deck__telemetry > div { background: rgba(7, 12, 23, .39); }
+.ai-command-deck__confidence { color: #92a2b8; font: 500 10px/1.5 "Cascadia Code", Consolas, monospace; }
+.ai-decision-core::before,
+.ai-decision-core__orbit::after { animation: none; }
+.ai-command-deck__pulse i { background: #748399; box-shadow: none; animation: none; }
+.ai-cockpit[data-state="running"] .ai-decision-core::before { animation: ai-core-breathe 3.8s ease-in-out infinite; }
+.ai-cockpit[data-state="running"] .ai-decision-core__orbit::after { animation: ai-core-spin 28s linear infinite; }
+.ai-cockpit[data-state="running"] .ai-command-deck__pulse i {
+  background: var(--cockpit-cyan);
+  box-shadow: 0 0 0 0 rgba(76, 230, 193, .42);
+  animation: ai-status-pulse 1.9s ease-out infinite;
+}
+.ai-cockpit :is(button, a, select, summary):focus-visible {
+  outline: 2px solid var(--cockpit-cyan);
+  outline-offset: 3px;
+}
+
+@media (max-width: 980px) {
+  .ai-cockpit__run-rail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 520px) {
+  .ai-cockpit__run-rail { grid-template-columns: 1fr; }
+  .ai-cockpit__run-rail > div { min-height: 70px; }
+}
+@media (max-width: 760px) {
+  .ai-command-deck__telemetry { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 420px) {
+  .ai-command-deck__telemetry { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-cockpit *,
+  .ai-cockpit *::before,
+  .ai-cockpit *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+
+/* =========================================================
+   Redesigned AIDecisionHistory (3-Factor Overview & Scrollable Deck)
+   ========================================================= */
+.ai-decision-panel {
+  display: grid;
+  gap: 14px;
+  background: rgba(13, 19, 31, 0.78) !important;
+  border: 1px solid rgba(70, 81, 106, 0.45) !important;
+  backdrop-filter: blur(12px);
+  border-radius: 8px !important;
+  padding: 16px 18px !important;
+}
+
+/* 3-Factor Fixed Banner (Analogous to Macro Factors) */
+.ai-factors-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  background: rgba(9, 14, 24, 0.65);
+  border: 1px solid rgba(48, 62, 86, 0.5);
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.ai-factor-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 8px 10px;
+  background: rgba(18, 25, 40, 0.55);
+  border: 1px solid rgba(59, 74, 101, 0.25);
+  border-radius: 4px;
+}
+
+.ai-factor-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #8da2c0;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.ai-factor-val {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f1f5f9;
+  font-family: var(--data, "Cascadia Code", Consolas, monospace);
+  line-height: 1.3;
+}
+
+.ai-factor-val-note {
+  font-size: 11px;
+  font-weight: 500;
+  color: #8da2c0;
+  margin-left: 4px;
+}
+
+.ai-factor-sub {
+  font-size: 10px;
+  color: #64748b;
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ai-factor-action-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ai-action-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 3px;
+  letter-spacing: 0.05em;
+  font-family: var(--data, "Cascadia Code", Consolas, monospace);
+}
+
+.ai-action-badge--buy {
+  background: rgba(0, 192, 135, 0.18);
+  color: #34d399;
+  border: 1px solid rgba(0, 192, 135, 0.4);
+}
+
+.ai-action-badge--sell {
+  background: rgba(255, 59, 105, 0.18);
+  color: #fb7185;
+  border: 1px solid rgba(255, 59, 105, 0.4);
+}
+
+.ai-action-badge--wait {
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.ai-factor-strategy-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: #cbd5e1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Active Plan Card */
+.ai-active-plan-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, rgba(20, 31, 48, 0.7), rgba(12, 18, 30, 0.8));
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.ai-active-plan-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ai-active-plan-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-active-plan-title strong {
+  font-size: 13px;
+  color: #f8fafc;
+}
+
+.ai-plan-action-tag {
+  font-size: 11px;
+  padding: 1px 6px;
+  background: rgba(234, 179, 8, 0.15);
+  color: #facc15;
+  border-radius: 3px;
+  border: 1px solid rgba(234, 179, 8, 0.35);
+}
+
+.ai-plan-order-tag {
+  font-size: 11px;
+  padding: 1px 6px;
+  background: rgba(56, 189, 248, 0.12);
+  color: #7dd3fc;
+  border-radius: 3px;
+  border: 1px solid rgba(56, 189, 248, 0.32);
+}
+
+.ai-plan-thesis {
+  font-size: 12px;
+  color: #94a3b8;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.ai-plan-price-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(7, 12, 22, 0.6);
+  border-radius: 4px;
+  border: 1px solid rgba(48, 62, 86, 0.3);
+}
+
+.ai-plan-price-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ai-price-label {
+  font-size: 10px;
+  color: #64748b;
+}
+
+.ai-price-val {
+  font-size: 12px;
+  font-weight: 700;
+  color: #e2e8f0;
+  font-family: var(--data, "Cascadia Code", Consolas, monospace);
+}
+
+.ai-price-val--entry { color: #38bdf8; }
+.ai-price-val--stop { color: #f43f5e; }
+.ai-price-val--tp { color: #10b981; }
+
+.ai-plan-cond-row {
+  display: flex;
+  gap: 6px;
+  font-size: 11px;
+  color: #a0aec0;
+  line-height: 1.4;
+}
+
+.ai-cond-tag {
+  color: #38bdf8;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+/* Scrollable Timeline List */
+.ai-timeline-container {
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.ai-timeline-scroll {
+  display: grid;
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(56, 189, 248, 0.3) rgba(15, 23, 42, 0.5);
+  background: rgba(10, 15, 26, 0.55);
+  border: 1px solid rgba(48, 62, 86, 0.4);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.ai-timeline-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.ai-timeline-scroll::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.4);
+  border-radius: 3px;
+}
+.ai-timeline-scroll::-webkit-scrollbar-thumb {
+  background: rgba(56, 189, 248, 0.25);
+  border-radius: 3px;
+}
+.ai-timeline-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(56, 189, 248, 0.5);
+}
+
+.ai-timeline-node {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  background: rgba(15, 23, 38, 0.65);
+  border: 1px solid rgba(48, 62, 86, 0.35);
+  border-radius: 4px;
+  transition: all 0.18s ease;
+}
+
+.ai-timeline-node:hover {
+  background: rgba(22, 33, 54, 0.8);
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+.ai-timeline-node__main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ai-timeline-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.ai-timeline-badge--model {
+  background: rgba(0, 192, 135, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(0, 192, 135, 0.35);
+}
+
+.ai-timeline-badge--sys {
+  background: rgba(234, 179, 8, 0.12);
+  color: #eab308;
+  border: 1px solid rgba(234, 179, 8, 0.3);
+}
+
+.ai-timeline-badge--risk {
+  background: rgba(244, 63, 94, 0.15);
+  color: #f43f5e;
+  border: 1px solid rgba(244, 63, 94, 0.35);
+}
+
+.ai-timeline-action {
+  font-size: 11px;
+  color: #e2e8f0;
+  font-family: var(--data, "Cascadia Code", Consolas, monospace);
+}
+
+.ai-timeline-msg {
+  font-size: 11px;
+  color: #94a3b8;
+  flex: 1 1 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-timeline-time {
+  font-size: 10px;
+  color: #64748b;
+  font-family: var(--data, "Cascadia Code", Consolas, monospace);
+}
+
+.ai-timeline-toggle-btn {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(70, 81, 106, 0.4);
+  color: #94a3b8;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ai-timeline-toggle-btn:hover {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: #38bdf8;
+  color: #38bdf8;
+}
+
+.ai-timeline-detail {
+  padding: 8px 10px;
+  background: rgba(8, 12, 20, 0.85);
+  border-radius: 4px;
+  border: 1px solid rgba(48, 62, 86, 0.3);
+  margin-top: 4px;
+}
+
+.ai-timeline-detail-meta {
+  display: flex;
+  gap: 14px;
+  font-size: 10px;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+
+.ai-timeline-json {
+  max-height: 200px;
+  overflow: auto;
+  font-size: 10px;
+  font-family: var(--data, "Cascadia Code", Consolas, monospace);
+  color: #94a3b8;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+}
+
+@media (max-width: 860px) {
+  .ai-factors-grid {
+    grid-template-columns: 1fr;
+  }
+  .ai-plan-price-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

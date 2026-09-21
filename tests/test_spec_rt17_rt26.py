@@ -53,6 +53,7 @@ from core.trading.ai_led_engine import (
     AICycleResult,
     AIActionType,
 )
+from core.model_routing import DEFAULT_SMART_MODEL
 from core.trading.session_manager import RuntimeLease, SessionManager
 from core.trading.testnet_capabilities import TestnetCapabilityService
 from core.data_migration import DataMigrator, LegacyAccountStatus
@@ -103,7 +104,7 @@ def test_setup(temp_store):
         risk_engine=risk_engine,
         ledger=ledger,
         guardian=guardian,
-        agent_policy_id="ai_led_qwen9b",
+        agent_policy_id="ai_led_bonsai_27b",
     )
     return {
         "store": temp_store,
@@ -126,6 +127,21 @@ def _seed_price(store, symbol: str, price: float):
                VALUES (?, '15m', ?, ?, ?, ?, ?, ?, ?, 'test', ?, 1, ?)""",
             (symbol, now_iso, end.isoformat(), price, price + 10.0, price - 10.0, price, 100.0, now_iso, now_iso),
         )
+
+
+def _with_verified_bonsai_receipt(ctx: AICycleContext) -> AICycleContext:
+    """Mark a fixture decision as a completed Bonsai call for execution tests."""
+    artifact = r"D:\test-models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"
+    ctx.model_id = DEFAULT_SMART_MODEL
+    ctx.model_version = artifact
+    ctx.model_inference_settings = {
+        "actual_model_id": artifact,
+        "model_identity_source": "request_bound_to_verified_manifest",
+        "verified_manifest_model_id": artifact,
+    }
+    ctx.model_call_attempted = True
+    ctx.model_call_completed = True
+    return ctx
 
 
 # ============================================================================
@@ -213,7 +229,7 @@ def test_rt18_ai_led_independent_paper_order_no_rule_signals(test_setup):
 
     engine.model_runner = mock_buyer
     now = datetime.now(timezone.utc)
-    ctx = AICycleContext(
+    ctx = _with_verified_bonsai_receipt(AICycleContext(
         cycle_id="cycle_rt18_ai_led",
         account_id=account_id,
         generation=1,
@@ -222,7 +238,7 @@ def test_rt18_ai_led_independent_paper_order_no_rule_signals(test_setup):
         allowed_instruments=("BTCUSDT",),
         max_risk_fraction=0.0025,
         mode=TradingMode.PAPER,
-    )
+    ))
 
     result = engine.execute_cycle(ctx)
     assert result.status == "EXECUTED", result.reason

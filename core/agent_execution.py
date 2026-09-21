@@ -8,8 +8,13 @@ import hashlib
 import json
 import math
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal, ROUND_DOWN
+from decimal import ROUND_DOWN, Decimal
 
+from .model_routing import (
+    DEFAULT_SMART_MODEL,
+    is_trusted_bonsai_provider,
+    is_verified_bonsai_receipt,
+)
 from .trading.execution_gateway import (
     ControlMode,
     DecisionPath,
@@ -349,7 +354,16 @@ class SimulationEngine:
 
 class AgentDecisionService:
     def __init__(self, store, model, *, gateway=None):
-        self.store, self.model = store, model
+        self.store = store
+        self.model_trust_error = (
+            "MODEL_PROVIDER_NOT_TRUSTED"
+            if model is not None and not is_trusted_bonsai_provider(model)
+            else None
+        )
+        # Do not retain or call injected adapters. They can claim any model id
+        # or fabricate a receipt, so only the exact pinned Bonsai provider may
+        # enter the trading decision path.
+        self.model = model if self.model_trust_error is None else None
         self.gateway = gateway or ExecutionGateway(store)
         with store._connect() as db:
             for row in db.execute(
@@ -412,7 +426,7 @@ class AgentDecisionService:
             if facts.get("freshness") != "fresh":
                 raise ValueError("STALE_FACTS")
             if self.model is None:
-                raise ValueError("SMART_MODEL_UNAVAILABLE")
+                raise ValueError(self.model_trust_error or "SMART_MODEL_UNAVAILABLE")
             messages = [
                 {
                     "role": "system",
@@ -423,14 +437,19 @@ class AgentDecisionService:
                     "content": json.dumps({"proposal": p, "facts": facts}),
                 },
             ]
+            input_hash = hashlib.sha256(
+                json.dumps(messages, sort_keys=True, ensure_ascii=False).encode("utf-8")
+            ).hexdigest()
             response = self.model.generate_json(
                 messages,
-                model_name="qwen3.5:9b",
+                model_name=DEFAULT_SMART_MODEL,
                 prompt_version="agent_v2",
-                input_hash=identity,
+                input_hash=input_hash,
                 temperature=0.0,
             )
-            verdict = response[0] if isinstance(response, tuple) else response
+            if not isinstance(response, tuple) or len(response) != 3:
+                raise ValueError("MODEL_RESPONSE_CONTRACT_INVALID")
+            verdict, raw_response, receipt = response
             if (
                 not isinstance(verdict, dict)
                 or verdict.get("decision")
@@ -440,6 +459,27 @@ class AgentDecisionService:
                 or not isinstance(verdict.get("counterevidence"), list)
             ):
                 raise ValueError("INVALID_MODEL_JSON")
+            if not isinstance(raw_response, str) or len(raw_response) > 12000:
+                raise ValueError("MODEL_RESPONSE_CONTRACT_INVALID")
+            try:
+                decoded_response = json.loads(raw_response)
+            except (TypeError, ValueError):
+                raise ValueError("MODEL_RESPONSE_CONTRACT_INVALID") from None
+            if decoded_response != verdict:
+                raise ValueError("MODEL_RESPONSE_CONTRACT_INVALID")
+            if not is_verified_bonsai_receipt(
+                receipt,
+                expected_prompt_version="agent_v2",
+                expected_input_hash=input_hash,
+            ):
+                raise ValueError("MODEL_RECEIPT_INVALID")
+            record["model_receipt"] = {
+                key: receipt.get(key)
+                for key in (
+                    "model_id", "actual_model_id", "model_version", "model_identity_source",
+                    "verified_manifest_model_id", "prompt_version", "input_hash", "parse_status",
+                )
+            }
             record["verdict"] = verdict
             if not authorized():
                 raise ValueError("MONITORING_CANCELLED_OR_UNSUBSCRIBED")
@@ -451,7 +491,7 @@ class AgentDecisionService:
                 <= 120
             ):
                 raise ValueError("FACTS_EXPIRED_DURING_MODEL_CALL")
-            record["model_id"] = "qwen3.5:9b"
+            record["model_id"] = DEFAULT_SMART_MODEL
             if verdict["decision"] != "EXECUTE_TRADE":
                 record["status"] = verdict["decision"]
             else:

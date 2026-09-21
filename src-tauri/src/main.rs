@@ -368,6 +368,8 @@ fn start_owned_sidecar(app: &AppHandle) -> Result<(), String> {
                 identity.instance_id.clone(),
                 "--ownership-token".to_string(),
                 identity.ownership_token.clone(),
+                "--owner-pid".to_string(),
+                std::process::id().to_string(),
             ]
         })
         .env("AIMA_SIDECAR_BOUND_PORT", port.to_string())

@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from apps.api.main import create_app
 from core.instruments import instrument_for
+from core.model_routing import DEFAULT_MODEL
 from core.providers import Bar, ProviderError, Quote
 from core.storage import SQLiteStore
 
@@ -41,7 +42,13 @@ class FakePublicProvider:
 
 class FakeSmartProvider:
     def health(self):
-        return {"available": True, "model_available": True, "models": ["qwen3.5:9b"]}
+        return {
+            "available": True,
+            "model_available": True,
+            "model_id": DEFAULT_MODEL,
+            "actual_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+            "model_identity_source": "verified_manifest",
+        }
 
     def generate_json(self, _messages, **_kwargs):
         return {
@@ -57,7 +64,13 @@ class FakeSmartProvider:
             "news_context": [],
             "event_risk": False,
             "missing_evidence": ["news unavailable in API test"],
-        }, "{}", {"latency_ms": 1.0}
+        }, "{}", {
+            "latency_ms": 1.0,
+            "model_id": DEFAULT_MODEL,
+            "actual_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+            "verified_manifest_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+            "model_identity_source": "request_bound_to_verified_manifest",
+        }
 
 
 class FailingProvider:
@@ -120,8 +133,8 @@ def test_v12_crypto_api_is_explicit_and_uses_persisted_cache(tmp_path: Path) -> 
     assert any(event["status"] == "ANALYZED" for event in client.get("/triggers").json()["events"])
     opportunities = client.get("/monitoring/opportunities", params={"symbol": "BTCUSDT"})
     assert opportunities.status_code == 200
-    assert opportunities.json()["model_tier"] == "smart_9b_only"
-    assert opportunities.json()["analyses"][0]["model_id"] == "qwen3.5:9b"
+    assert opportunities.json()["model_tier"] == "bonsai_27b_only"
+    assert opportunities.json()["analyses"][0]["model_id"] == "Bonsai-2-27B-PTQ1_0"
 
     chart = client.get("/chart/BTCUSDT/bars", params={"timeframe": "15m", "limit": 60})
     assert chart.status_code == 200

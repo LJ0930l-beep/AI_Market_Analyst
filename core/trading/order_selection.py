@@ -17,8 +17,8 @@ from typing import Any
 
 ORDER_SELECTION_POLICY_VERSION = "order_selection_v1"
 MIN_LIMIT_TTL_SECONDS = 60
-MAX_LIMIT_TTL_SECONDS = 300
-DEFAULT_LIMIT_TTL_SECONDS = 240
+MAX_LIMIT_TTL_SECONDS = 1800
+DEFAULT_LIMIT_TTL_SECONDS = 900
 
 
 def _decimal(value: Any) -> Decimal | None:
@@ -188,16 +188,109 @@ class OrderSelectionPolicy:
 
         if request.pending_candidate:
             return OrderSelectionDecision(None, preference, None, ttl, None, "DUPLICATE_PENDING_CANDIDATE", "同一候选已有未决订单，禁止重复挂单。", evidence)
-        if preference in {"MARKET", "AUTO"} and market_ok:
-            return OrderSelectionDecision("market", preference, None, ttl, None, "MARKET_EVIDENCE_OK", "行情新鲜、价差、滑点、深度和入场区间均满足市价条件。", evidence)
+
+        # 提高限价单权限：如果明确指定了限价支撑/阻力点位且与当前市价存在回踩间距，优先下发限价预埋单
+        is_pullback_limit = (
+            preference == "AUTO"
+            and requested_limit is not None
+            and quote is not None
+            and quote > 0
+            and abs(float(requested_limit) - float(quote)) / float(quote) > 0.0008
+        )
+        prefer_limit = preference == "LIMIT" or is_pullback_limit
+
+        if not prefer_limit and preference in {"MARKET", "AUTO"} and market_ok:
+            return OrderSelectionDecision("market", preference, None, ttl, None, "MARKET_EVIDENCE_OK", "时间周期对齐且价格处于合理突破位置，满足市价开单条件。", evidence)
         if preference == "MARKET" and not market_ok and limit_value is None:
-            return OrderSelectionDecision(None, preference, None, ttl, None, "MARKET_EVIDENCE_INSUFFICIENT", "市价证据不足，且没有可验证的限价。", evidence)
+            return OrderSelectionDecision(None, preference, None, ttl, None, "MARKET_EVIDENCE_INSUFFICIENT", "市价证据不足或未处于合理进场位置，且没有可验证的限价。", evidence)
         if limit_value is None:
             return OrderSelectionDecision(None, preference, None, ttl, None, "LIMIT_PRICE_UNAVAILABLE", "无法依据可验证 tick 生成限价，阻断下单。", evidence)
         expires_at = (now + timedelta(seconds=ttl)).isoformat()
-        reason_code = "LIMIT_FORCED_BY_EVIDENCE" if preference == "AUTO" else "LIMIT_REQUESTED"
-        reason = "市价证据不足，按方向量化为限价并设置有限 TTL。" if preference == "AUTO" else "按 AI/用户偏好使用方向量化限价。"
+        if is_pullback_limit:
+            reason_code = "LIMIT_PREFERRED_PULLBACK"
+            reason = "识别到关键支撑/阻力回踩位，优先下发限价预埋单并设置有限 TTL。"
+        elif preference == "AUTO":
+            reason_code = "LIMIT_FORCED_BY_EVIDENCE"
+            reason = "市价证据不足或偏离突破位，按方向量化为限价并设置有限 TTL。"
+        elif preference == "MARKET":
+            reason_code = "MARKET_FALLBACK_LIMIT"
+            reason = "市价证据不足，按可验证价格降级为限价并设置有限 TTL。"
+        else:
+            reason_code = "LIMIT_REQUESTED"
+            reason = "按策略/用户偏好使用方向量化限价。"
         return OrderSelectionDecision("limit", preference, float(limit_value), ttl, expires_at, reason_code, reason, evidence)
+
+
+@dataclass(frozen=True)
+class TradeThrottleConfig:
+    min_hold_duration_seconds: float = 5400.0  # 90 minutes
+    noise_close_hold_duration_seconds: float = 10800.0  # 3 hours
+    reentry_cooldown_seconds: float = 7200.0  # 2 hours
+    early_close_stop_loss_bypass_pct: float = -3.0  # Loss <= -3% bypasses hold gate
+    early_close_take_profit_bypass_pct: float = 8.0  # Profit >= 8% bypasses hold gate
+    noise_loss_floor_pct: float = -2.0  # Inside [-2%, +3%] requires 3h hold
+    noise_profit_ceiling_pct: float = 3.0
+
+
+class TradeThrottlePolicy:
+    """Industrial throttle gates ported from NOFX autopilot for position and order safety."""
+
+    @staticmethod
+    def check_open_throttle(
+        symbol: str,
+        *,
+        has_open_position: bool,
+        last_closed_at: datetime | None = None,
+        now: datetime | None = None,
+        cooldown_seconds: float = 7200.0,
+    ) -> tuple[bool, str, str]:
+        """Verify open action against existing position and re-entry cooldown."""
+        if has_open_position:
+            return False, "STRATEGY_MAX_POSITIONS", f"Trade throttle: {symbol} 已有同标的持仓，禁止重复加仓或双向冲突开仓。"
+        now_dt = now or datetime.now(timezone.utc)
+        if last_closed_at is not None:
+            age_seconds = (now_dt - last_closed_at).total_seconds()
+            if 0 <= age_seconds < cooldown_seconds:
+                remaining_min = int(round((cooldown_seconds - age_seconds) / 60.0))
+                return False, "STRATEGY_REENTRY_COOLDOWN", f"Trade throttle: {symbol} 刚平仓不久，进入重入冷却期（剩余约 {remaining_min} 分钟），防止追涨杀跌磨损。"
+        return True, "ALLOWED", "开仓频控检查通过。"
+
+    @staticmethod
+    def check_close_throttle(
+        symbol: str,
+        *,
+        entry_time: datetime | None,
+        price_pnl_pct: float,
+        now: datetime | None = None,
+        config: TradeThrottleConfig | None = None,
+    ) -> tuple[bool, str, str]:
+        """Noise-band and minimum hold gate preventing AI from panic-closing prematurely."""
+        cfg = config or TradeThrottleConfig()
+        if entry_time is None:
+            return True, "ALLOWED", "无入场时间戳，放行平仓。"
+        now_dt = now or datetime.now(timezone.utc)
+        held_seconds = max(0.0, (now_dt - entry_time).total_seconds())
+
+        # Check hard stop or strong take-profit bypass
+        if price_pnl_pct <= cfg.early_close_stop_loss_bypass_pct:
+            return True, "ALLOWED", f"价格触及硬止损阈值 ({price_pnl_pct:.2f}% <= {cfg.early_close_stop_loss_bypass_pct}%)，放行紧急止损。"
+        if price_pnl_pct >= cfg.early_close_take_profit_bypass_pct:
+            return True, "ALLOWED", f"价格触及强力止盈阈值 ({price_pnl_pct:.2f}% >= {cfg.early_close_take_profit_bypass_pct}%)，放行锁定利润。"
+
+        # Min hold duration check
+        if held_seconds < cfg.min_hold_duration_seconds:
+            remaining_min = int(round((cfg.min_hold_duration_seconds - held_seconds) / 60.0))
+            held_min = int(round(held_seconds / 60.0))
+            return False, "THROTTLE_MIN_HOLD_ACTIVE", f"Trade throttle: {symbol} 持仓仅 {held_min} 分钟（当前价格盈亏 {price_pnl_pct:.2f}%），未达最小持仓时长（{int(cfg.min_hold_duration_seconds//60)}分钟），防止微小波动频繁换手磨损手续费（剩余约 {remaining_min} 分钟）。"
+
+        # Noise-band check (if held >= 90m but < 3h and PnL is within noise band [-2%, +3%])
+        if held_seconds < cfg.noise_close_hold_duration_seconds:
+            if cfg.noise_loss_floor_pct <= price_pnl_pct <= cfg.noise_profit_ceiling_pct:
+                remaining_min = int(round((cfg.noise_close_hold_duration_seconds - held_seconds) / 60.0))
+                held_min = int(round(held_seconds / 60.0))
+                return False, "THROTTLE_NOISE_CLOSE_BLOCKED", f"Trade throttle: {symbol} 持仓 {held_min} 分钟，浮动盈亏 {price_pnl_pct:.2f}% 仍处于噪音震荡区间 [{cfg.noise_loss_floor_pct}%, {cfg.noise_profit_ceiling_pct}%]，请持满 3 小时再做平盘处理（剩余约 {remaining_min} 分钟）。"
+
+        return True, "ALLOWED", "平仓频控检查通过。"
 
 
 __all__ = [
@@ -208,4 +301,6 @@ __all__ = [
     "OrderSelectionDecision",
     "OrderSelectionInput",
     "OrderSelectionPolicy",
+    "TradeThrottleConfig",
+    "TradeThrottlePolicy",
 ]

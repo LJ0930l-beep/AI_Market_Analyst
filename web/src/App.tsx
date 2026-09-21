@@ -4,6 +4,7 @@ import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-d
 import { apiClient as defaultApiClient, type ApplicationShellApiClient } from "./api/client";
 import type { HealthResponse } from "./api/types";
 import { HealthStatus, type BackendHealthState } from "./components/HealthStatus";
+import { AmbientEffects, AmbientEffectsProvider, AmbientMotionToggle } from "./components/AmbientEffects";
 import { TimeProvenanceRail } from "./components/TimeProvenanceRail";
 import { emptyDashboardProvenance, type DashboardProvenance } from "./pages/DashboardPage";
 import { V2WorkspacePage } from "./pages/V2WorkspacePage";
@@ -44,14 +45,12 @@ interface NavigationItem {
 }
 
 const navigationItems: NavigationItem[] = [
-  { label: "nav.dashboard", secondary: "nav.dashboard", to: "/", icon: "⌂", end: true },
-  { label: "v2.monitor", secondary: "v2.monitor", to: "/monitor", icon: "◉" },
-  { label: "v2.strategies", secondary: "v2.strategies", to: "/strategies", icon: "⌁" },
-  { label: "v2.aiAnalysis", secondary: "v2.aiAnalysis", to: "/ai-analysis", icon: "📊" },
-  { label: "v2.gateLiveDesk", secondary: "v2.gateLiveDesk", to: "/gate-live", icon: "⚡" },
-  { label: "v2.intel", secondary: "v2.intel", to: "/intel", icon: "≡" },
-  { label: "nav.consult", secondary: "nav.consult", to: "/consult", icon: "✦" },
-  { label: "nav.settings", secondary: "nav.settings", to: "/settings", icon: "⚙" },
+  { label: "nav.dashboard", secondary: "nav.dashboardHint", to: "/", icon: "⌂", end: true },
+  { label: "v2.strategies", secondary: "nav.strategiesHint", to: "/strategies", icon: "⌁" },
+  { label: "v2.aiAnalysis", secondary: "nav.analysisHint", to: "/ai-analysis", icon: "📊" },
+  { label: "v2.gateLiveDesk", secondary: "nav.exchangeHint", to: "/gate-live", icon: "⚡" },
+  { label: "v2.intel", secondary: "nav.intelHint", to: "/intel", icon: "≡" },
+  { label: "nav.settings", secondary: "nav.settingsHint", to: "/settings", icon: "⚙" },
 ];
 
 export interface ApplicationShellProps {
@@ -84,15 +83,19 @@ function DesktopNavigation({ healthState, health }: { healthState: BackendHealth
   const { t } = useI18n();
   return (
     <aside className="nav-ledger">
-      <div className="brand-lockup">
-        <span className="brand-lockup__sigil" aria-hidden="true">L</span>
-        <div><p className="brand-lockup__eyebrow">{t("shell.aiMarketAnalyst")}</p><p className="brand-lockup__title">{t("shell.researchDesk")}</p><p className="brand-lockup__meta">{t("shell.localFirst")}</p></div>
+      <div className="nav-ledger__top">
+        <div className="brand-lockup">
+          <span className="brand-lockup__sigil" aria-hidden="true">L</span>
+          <div><p className="brand-lockup__eyebrow">{t("shell.aiMarketAnalyst")}</p><p className="brand-lockup__title">{t("shell.researchDesk")}</p><p className="brand-lockup__meta">{t("shell.localFirst")}</p></div>
+        </div>
+        <nav aria-label={t("shell.primaryNavigation")}>
+          <p className="nav-heading">{t("shell.workspace")}</p>
+          <NavigationLinks />
+        </nav>
       </div>
-      <nav aria-label={t("shell.primaryNavigation")}>
-        <p className="nav-heading">{t("shell.workspace")}</p>
-        <NavigationLinks />
-      </nav>
-      <HealthStatus state={healthState} health={health} />
+      <div className="nav-ledger__bottom">
+        <HealthStatus state={healthState} health={health} />
+      </div>
     </aside>
   );
 }
@@ -399,6 +402,7 @@ function ApplicationShellContent({ apiClient = defaultApiClient }: ApplicationSh
 
   return (
     <div className="app-frame" data-i18n-root="true">
+      <AmbientEffects />
       <DesktopNotificationBridge enabled={!desktopOwned || desktopReady} />
       <a className="skip-link" href="#main-content">
         {t("shell.skipToContent")}
@@ -417,6 +421,7 @@ function ApplicationShellContent({ apiClient = defaultApiClient }: ApplicationSh
               </div>
               <div className="workspace-header__controls">
                 <p className="workspace-header__note">{t("shell.orientation")}</p>
+                <AmbientMotionToggle />
                 <LanguageSelector />
               </div>
             </header>
@@ -446,7 +451,9 @@ function ApplicationShellContent({ apiClient = defaultApiClient }: ApplicationSh
 export function ApplicationShell(props: ApplicationShellProps) {
   return (
     <I18nProvider>
-      <ApplicationShellContent {...props} />
+      <AmbientEffectsProvider>
+        <ApplicationShellContent {...props} />
+      </AmbientEffectsProvider>
     </I18nProvider>
   );
 }

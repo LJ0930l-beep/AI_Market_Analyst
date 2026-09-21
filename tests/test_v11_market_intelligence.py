@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
+from unittest.mock import patch
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -13,7 +15,7 @@ from apps.api.main import create_app
 from core.consult import ConsultConfig, QwenConsultService
 from core.instruments import instrument_for
 from core.market_intelligence import build_market_intelligence
-from core.model_routing import ModelRoutingConfig, route_model
+from core.model_routing import DEFAULT_MODEL, DEFAULT_SMART_MODEL, ModelRoutingConfig, route_model
 from core.providers import FixtureProvider
 from core.quant import build_quant_snapshot
 from core.signals import Action, build_signal
@@ -21,8 +23,8 @@ from core.storage import SQLiteStore
 
 
 class FakeBriefTransport:
-    provider_name = "fixture_local_qwen"
-    model_name = "fixture-smart"
+    provider_name = "fixture_local_bonsai"
+    model_name = DEFAULT_MODEL
 
     async def stream(self, _messages):
         yield "Evidence-limited daily brief."
@@ -31,12 +33,12 @@ class FakeBriefTransport:
 def config() -> ConsultConfig:
     return ConsultConfig(
         enabled=True,
-        base_url="http://127.0.0.1:11434",
-        model_name="fixture-smart",
+        base_url="http://127.0.0.1:8080/v1",
+        model_name=DEFAULT_MODEL,
         max_message_chars=20_000,
         max_total_message_chars=24_000,
-        fast_model_name="fixture-fast",
-        smart_model_name="fixture-smart",
+        fast_model_name=DEFAULT_MODEL,
+        smart_model_name=DEFAULT_MODEL,
     )
 
 
@@ -78,11 +80,18 @@ class V11MarketIntelligenceTests(unittest.TestCase):
         return now
 
     def test_router_is_deterministic_and_server_owned(self) -> None:
-        routing = ModelRoutingConfig("qwen-fast", "qwen-smart")
-        self.assertEqual(route_model(routing, preference="auto", task="watchlist_scan").model_id, "qwen-fast")
+        routing = ModelRoutingConfig()
+        self.assertEqual(route_model(routing, preference="auto", task="watchlist_scan").model_id, DEFAULT_SMART_MODEL)
         deep = route_model(routing, preference="auto", task="assistant")
-        self.assertEqual((deep.model_id, deep.tier.value, deep.reason), ("qwen-smart", "smart", "auto_smart_for_deep_research_task"))
-        self.assertEqual(route_model(routing, preference="fast", task="daily_brief").model_id, "qwen-fast")
+        self.assertEqual((deep.model_id, deep.tier.value, deep.reason), (DEFAULT_SMART_MODEL, "smart", "auto_smart_for_deep_research_task"))
+        self.assertEqual(route_model(routing, preference="fast", task="daily_brief").model_id, DEFAULT_SMART_MODEL)
+        with self.assertRaises(ValueError):
+            ModelRoutingConfig("qwen-fast", "qwen-smart")
+        with patch.dict(os.environ, {"FAST_MODEL": "qwen3.5:4b", "SMART_MODEL": "qwen3.5:9b"}, clear=False):
+            rejected = ModelRoutingConfig.from_env()
+            self.assertEqual(rejected.fast_model, DEFAULT_SMART_MODEL)
+            self.assertEqual(rejected.smart_model, DEFAULT_SMART_MODEL)
+            self.assertEqual(rejected.capability()["rejected_overrides"], ["FAST_MODEL", "SMART_MODEL"])
 
     def test_v11_settings_and_brief_survive_restart(self) -> None:
         self.assertEqual(self.store.schema_version(), 14)
@@ -126,7 +135,7 @@ class V11MarketIntelligenceTests(unittest.TestCase):
         generated = client.post("/daily-brief/generate", json={"language": "en", "model_preference": "auto"})
         self.assertEqual(generated.status_code, 200)
         brief = generated.json()["brief"]
-        self.assertEqual(brief["model_id"], "fixture-smart")
+        self.assertEqual(brief["model_id"], DEFAULT_MODEL)
         self.assertEqual(brief["model_tier"], "smart")
         after = self.store.counts()
         self.assertEqual(after["daily_briefs"], before["daily_briefs"] + 1)

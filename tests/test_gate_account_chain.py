@@ -29,6 +29,7 @@ from core.trading.gate_accounts import (
 )
 from core.trading.gate_account_truth import GateAccountTruthService
 from core.trading.ledger import AccountLedger
+from core.trading.decision_memory import record_decision_memory, update_memory_outcome
 from core.trading.trader_capabilities import TraderCapabilityError, TraderCapabilityService
 
 
@@ -680,3 +681,87 @@ def test_scale_in_existing_position_preserves_active_protection_without_name_err
     assert position["remaining_contracts"] == pytest.approx(3.0)
     assert position["protection_status"] == "ACTIVE"
     assert position["protected"] is True
+
+
+def test_ai_strategy_api_get_and_put(tmp_path):
+    store = SQLiteStore(tmp_path / "strategy_api.db")
+    store.initialize()
+    provision_default_gate_accounts(store)
+    client = _v2_client(store)
+
+    # 1. GET active strategy and templates
+    response = client.get("/v2/ai-strategy?account_id=gate_testnet")
+    assert response.status_code == 200
+    data = response.json()
+    assert "active" in data
+    assert "templates" in data
+    assert len(data["templates"]) == 4
+    template_ids = [t["id"] for t in data["templates"]]
+    assert "aggressive_impulse" in template_ids
+    assert "aggressive_breakout" in template_ids
+    assert "conservative_pullback" in template_ids
+    assert "conservative_defense" in template_ids
+
+    # 2. PUT update strategy
+    active = data["active"]
+    put_res = client.put(
+        "/v2/ai-strategy?account_id=gate_testnet",
+        json={
+            "name": active["name"],
+            "sections": active["sections"],
+            "execution": {**active["execution"], "leverage": 5},
+            "template_id": "aggressive_breakout",
+            "expected_revision": active["revision"],
+        },
+    )
+    assert put_res.status_code == 200
+    updated = put_res.json()["active"]
+    assert updated["revision"] == active["revision"] + 1
+    assert updated["execution"]["leverage"] == 5
+
+
+def test_ai_decision_memory_api_exposes_only_saved_strategy_attribution(tmp_path):
+    store = SQLiteStore(tmp_path / "memory_api.db")
+    store.initialize()
+    provision_default_gate_accounts(store)
+    memory = record_decision_memory(
+        store,
+        account_id="gate_testnet",
+        provider="gate",
+        environment="testnet",
+        cycle_id="cycle-memory-attribution",
+        session_id="session-1",
+        candidate_id="candidate-1",
+        symbol="BTCUSDT",
+        action="OPEN_LONG",
+        cycle_status="COMPLETED",
+        decision_at=datetime(2026, 9, 20, tzinfo=timezone.utc),
+        reason="closed-bar breakout",
+        payload={
+            "strategy_template_id": "aggressive_breakout_15m",
+            "strategy_name": "趋势加速",
+            "strategy_style": "AGGRESSIVE",
+            "raw_model_response": "must not leak",
+        },
+    )
+    update_memory_outcome(
+        store,
+        memory["memory_id"],
+        outcome_status="WIN",
+        outcome_pnl=4.2,
+        lesson_zh="BTCUSDT 已平仓：净盈亏 +4.20 USDT。",
+        evidence={"basis": "LOCAL_FILL_MIRROR_NET_OF_FEES", "position_id": "position-1", "gross_realized": 5.0, "fees": .8, "net_realized": 4.2, "fill_count": 2},
+    )
+
+    response = _v2_client(store).get("/v2/ai-session/memory?account_id=gate_testnet")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] == 1
+    item = body["items"][0]
+    assert item["strategy_template_id"] == "aggressive_breakout_15m"
+    assert item["strategy_name"] == "趋势加速"
+    assert item["strategy_style"] == "AGGRESSIVE"
+    assert item["outcome_evidence"] == {"basis": "LOCAL_FILL_MIRROR_NET_OF_FEES", "position_id": "position-1", "gross_realized": 5.0, "fees": .8, "fill_count": 2}
+    assert "payload" not in item
+    assert "raw_model_response" not in str(body)

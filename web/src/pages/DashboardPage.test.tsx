@@ -25,7 +25,7 @@ describe("DashboardPage V1.1", () => {
     expect(client.marketIntelligence).toHaveBeenCalledTimes(1);
     expect(client.analysis).not.toHaveBeenCalled();
     expect(client.followPrediction).not.toHaveBeenCalled();
-    await waitFor(() => expect(provenance).toHaveBeenCalledWith(expect.objectContaining({ model: "qwen3.5:4b", state: "active" })));
+    await waitFor(() => expect(provenance).toHaveBeenCalledWith(expect.objectContaining({ model: "Bonsai-2-27B-PTQ1_0", state: "active" })));
   });
 
   it("generates Daily Brief only after the explicit action and displays its audited route", async () => {
@@ -34,7 +34,7 @@ describe("DashboardPage V1.1", () => {
     const brief = await screen.findByRole("heading", { name: "AI Daily Brief" });
     const region = brief.closest("section");
     if (!region) throw new Error("brief region missing");
-    expect(within(region).getByText(/Saved evidence is constructive/)).toBeInTheDocument();
+    expect(await within(region).findByText(/Saved evidence is constructive/)).toBeInTheDocument();
     fireEvent.click(within(region).getByRole("button", { name: "Generate brief" }));
     await waitFor(() => expect(client.generateDailyBrief).toHaveBeenCalledWith("en", "auto"));
     expect(client.predictions).not.toHaveBeenCalled();
@@ -64,7 +64,7 @@ describe("DashboardPage V1.1", () => {
     const empty = { ...fakeMarketIntelligence, pulse: fakeMarketIntelligence.pulse.map((item) => ({ ...item, price: null, change_pct: null, status: "unavailable" })), calendar: { ...fakeMarketIntelligence.calendar, status: "unavailable", events: [] }, watchlist: [], latest_signal: null, news: { status: "unavailable", items: [], missing_reasons: ["none"] }, daily_brief: null };
     renderPage(createFakeClient({ marketIntelligence: vi.fn().mockResolvedValue(empty) }));
     expect(await screen.findByText("No point-in-time event evidence is stored.")).toBeInTheDocument();
-    expect(screen.getByText("No saved brief. Generate one explicitly when Qwen is available.")).toBeInTheDocument();
+    expect(screen.getByText("No saved brief. Generate one explicitly when the local model is available.")).toBeInTheDocument();
     expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(1);
   });
 });

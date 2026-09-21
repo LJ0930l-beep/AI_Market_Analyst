@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import tempfile
 import threading
@@ -5,6 +6,7 @@ import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -145,7 +147,7 @@ class NvidiaSmiRunner:
 
 class SchedulerCoreTests(unittest.TestCase):
     def test_local_resource_probe_is_read_only_bounded_and_conservative(self):
-        healthy_runner = NvidiaSmiRunner("123, Ollama, 100\n")
+        healthy_runner = NvidiaSmiRunner("")
         healthy = LocalResourceProbe(command_runner=healthy_runner, timeout_seconds=0.25).probe()
         self.assertTrue(healthy.available)
         self.assertEqual(healthy.capability, "nvidia_smi")
@@ -176,12 +178,55 @@ class SchedulerCoreTests(unittest.TestCase):
         self.assertEqual(unavailable.capability, "probe_unavailable")
         self.assertEqual(unavailable.reason, "gpu_probe_unavailable")
 
-    def test_local_resource_probe_treats_ollama_as_allowed_and_reports_unknown_compute_process(self):
-        ollama = LocalResourceProbe(command_runner=NvidiaSmiRunner("123, /usr/bin/ollama, 100\n")).probe()
-        self.assertTrue(ollama.available)
-        unknown = LocalResourceProbe(command_runner=NvidiaSmiRunner("456, custom_gpu_worker, 100\n")).probe()
-        self.assertFalse(unknown.available)
-        self.assertEqual(unknown.reason, "gpu_competition")
+    def _probe_with_managed_bonsai(self, process_rows: str, *, managed_pid: int = 123) -> ResourceProbeResult:
+        with tempfile.TemporaryDirectory() as directory:
+            pid_file = Path(directory) / "bonsai_server.pid"
+            pid_file.write_text(str(managed_pid), encoding="utf-8")
+            executable = Path(r"D:\app\runtime\llama-server.exe")
+            return LocalResourceProbe(
+                command_runner=NvidiaSmiRunner(process_rows),
+                managed_bonsai_pid_file=pid_file,
+                managed_bonsai_executable_path=executable,
+            ).probe()
+
+    def test_local_resource_probe_only_exempts_bonsai_when_pid_and_exact_path_match(self):
+        managed = self._probe_with_managed_bonsai(
+            r"123, D:\app\runtime\llama-server.exe, [N/A]" + "\n"
+        )
+        self.assertTrue(managed.available)
+
+        for process_rows in (
+            # Matching executable path but a PID different from the runner's PID file.
+            r"456, D:\app\runtime\llama-server.exe, [N/A]" + "\n",
+            # Matching PID but another llama-server binary must remain a competitor.
+            r"123, D:\other\llama-server.exe, [N/A]" + "\n",
+            # A basename-only row cannot prove executable ownership.
+            "123, llama-server.exe, [N/A]\n",
+            # Ollama is a competing GPU process too; it is not implicitly trusted.
+            "789, C:\\Program Files\\Ollama\\ollama.exe, [N/A]\n",
+        ):
+            with self.subTest(process_rows=process_rows):
+                result = self._probe_with_managed_bonsai(process_rows)
+                self.assertFalse(result.available)
+                self.assertEqual(result.reason, "gpu_competition")
+
+    def test_managed_bonsai_paths_follow_runner_pid_file_and_only_read_binary_dir_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project_root = Path(directory)
+            config_file = project_root / "infra" / "bonsai" / "config.env"
+            config_file.parent.mkdir(parents=True)
+            config_file.write_text(
+                "SOME_CREDENTIAL=must-not-be-loaded\nBONSAI_BIN_DIR=infra\\bonsai\\bin\n",
+                encoding="utf-8",
+            )
+            with patch.dict(os.environ):
+                os.environ.pop("BONSAI_BIN_DIR", None)
+                pid_file, executable = LocalResourceProbe._managed_bonsai_paths(project_root)
+            self.assertEqual(pid_file, project_root / "logs" / "bonsai_server.pid")
+            self.assertEqual(
+                executable,
+                (project_root / "infra" / "bonsai" / "bin" / "llama-server.exe").resolve(),
+            )
 
     def test_session_policy_handles_dst_weekend_close_crypto_and_explicit_always(self):
         equity = instrument_for("AAPL")

@@ -1,23 +1,106 @@
-"""Ollama HTTP adapter with finite timeouts, retries, and raw-response tracing."""
+"""Compatibility provider adapter pinned to the local Bonsai ModelClient."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import threading
 import time
-from datetime import datetime, timezone
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
-
 from ..context import MarketContext
-from ..model_routing import DEFAULT_FAST_MODEL
+from ..model_routing import DEFAULT_SMART_MODEL, bonsai_manifest_entry_matches, is_bonsai_model_identity
 from .contracts import LLMCallMetadata, LLMError, ModelSignalResponse, SignalPolicy
 from .prompts import PROMPT_VERSION, build_prompt_messages, build_repair_messages
 from ..trading.model_schemas import SIGNAL_SCHEMA
+from ..model_client import model_client
+
+
+_MODEL_DIGEST_LOCK = threading.Lock()
+_MODEL_DIGEST_CACHE: dict[tuple[str, int, int], str] = {}
+
+
+def _local_model_digest(path: str) -> str | None:
+    """Hash the exact local GGUF artifact once per stable file identity.
+
+    llama-server's current ``/v1/models`` response omits a digest. Only hash a
+    concrete local file path returned by that manifest; never hash an alias,
+    model name, URL, or empty payload as a stand-in for model weights.
+    """
+    normalized = os.path.abspath(os.path.expanduser(path))
+    if not os.path.isabs(normalized) or not os.path.isfile(normalized):
+        return None
+    try:
+        before = os.stat(normalized)
+    except OSError:
+        return None
+    key = (os.path.normcase(normalized), int(before.st_size), int(before.st_mtime_ns))
+    with _MODEL_DIGEST_LOCK:
+        cached = _MODEL_DIGEST_CACHE.get(key)
+        if cached:
+            return cached
+        digest = hashlib.sha256()
+        try:
+            with open(normalized, "rb") as source:
+                for chunk in iter(lambda: source.read(8 * 1024 * 1024), b""):
+                    digest.update(chunk)
+            after = os.stat(normalized)
+        except OSError:
+            return None
+        if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+            return None
+        value = digest.hexdigest()
+        _MODEL_DIGEST_CACHE.clear()
+        _MODEL_DIGEST_CACHE[key] = value
+        return value
+
+
+def _manifest_model_identity(model: dict[str, object]) -> str:
+    for field in ("id", "name", "model"):
+        value = model.get(field)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _model_alias_matches(target: str, model: dict[str, object]) -> bool:
+    """Match the configured alias to one manifest entry without substitution."""
+    return bonsai_manifest_entry_matches(model, requested_model=target)
+
+
+def _positive_context_length(model: dict[str, object]) -> int | None:
+    meta = model.get("meta")
+    value = meta.get("n_ctx") if isinstance(meta, dict) else model.get("context_length")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _normalize_keep_alive(value: object) -> str | int | float | None:
+    """Return an Ollama ``keep_alive`` value, or ``None`` to omit the field.
+
+    Ollama accepts a duration string (``"30m"``, ``"1h"``), the literal
+    ``-1``/``"-1"`` for "never unload", or a number of seconds.  ``None``
+    leaves the server default (about five minutes) in place, which is the
+    right answer for call paths that must not pin a multi-gigabyte model.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    text = str(value).strip()
+    if not text:
+        return None
+    # Numeric strings are seconds in Ollama's protocol.  Keeping them numeric
+    # matters for "-1", which would otherwise be read as a malformed duration.
+    if text.lstrip("-").isdigit():
+        return int(text)
+    return text
 
 
 class OllamaProvider:
-    provider_name = "ollama"
+    provider_name = "bonsai_llama_server"
 
     def __init__(
         self,
@@ -32,11 +115,19 @@ class OllamaProvider:
         quantization: str | None = None,
         think: bool | None = None,
         prompt_version: str = PROMPT_VERSION,
+        keep_alive: str | int | float | None = None,
+        auto_start: bool = False,
     ) -> None:
-        self.base_url = (base_url or os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434")).rstrip("/")
-        self.model_name = model_name or os.environ.get("OLLAMA_MODEL", DEFAULT_FAST_MODEL)
+        # OLLAMA_* variables are compatibility leftovers only. They are never
+        # used as a route or model override; any stale values are surfaced in
+        # health while inference stays pinned to Bonsai's configured client.
+        default_base_url = os.environ.get("BONSAI_BASE_URL") or model_client.base_url
+        default_base_url = default_base_url.rstrip("/")
+        default_model_name = os.environ.get("BONSAI_MODEL_NAME") or DEFAULT_SMART_MODEL
+        self.base_url = (base_url or default_base_url).rstrip("/")
+        self.model_name = model_name or default_model_name
         self.default_model = self.model_name
-        self.timeout = timeout if timeout is not None else float(os.environ.get("OLLAMA_TIMEOUT_SEC", "45"))
+        self.timeout = timeout if timeout is not None else float(os.environ.get("OLLAMA_TIMEOUT_SEC", "120"))
         self.context_length = context_length or int(os.environ.get("OLLAMA_CONTEXT_LENGTH", "8192"))
         self.temperature = temperature if temperature is not None else float(os.environ.get("OLLAMA_TEMPERATURE", "0.2"))
         self.max_tokens = max_tokens or int(os.environ.get("OLLAMA_MAX_TOKENS", "700"))
@@ -46,132 +137,134 @@ class OllamaProvider:
         self.think = think_value in {"1", "true", "yes", "on"}
         self.prompt_version = prompt_version
         self.max_response_chars = int(os.environ.get("OLLAMA_MAX_RESPONSE_CHARS", "12000"))
-        # Populated only from the provider's manifest/tag response.  The
-        # model name and version are identity fields, never a weight digest.
+        # Retained as an adapter option for older call signatures. The active
+        # Bonsai OpenAI-compatible route does not send Ollama keep_alive.
+        self.keep_alive = _normalize_keep_alive(
+            keep_alive if keep_alive is not None else os.environ.get("OLLAMA_KEEP_ALIVE")
+        )
+        self.auto_start = bool(auto_start)
+        self.rejected_legacy_overrides = [
+            name
+            for name, value, expected in (
+                ("OLLAMA_BASE_URL", os.environ.get("OLLAMA_BASE_URL"), model_client.base_url),
+                ("OLLAMA_MODEL", os.environ.get("OLLAMA_MODEL"), DEFAULT_SMART_MODEL),
+            )
+            if value and value.strip() != expected
+        ]
+        # Populated only from a provider manifest or the SHA-256 of the exact
+        # local model artifact returned by the inference server.
         self.weight_digest: str | None = None
 
-    def _request(self, method: str, path: str, payload: dict[str, object] | None = None) -> dict[str, object]:
-        body = json.dumps(payload).encode("utf-8") if payload is not None else None
-        last_error: Exception | None = None
-        for attempt in range(self.retries + 1):
-            try:
-                request = Request(
-                    f"{self.base_url}{path}",
-                    data=body,
-                    method=method,
-                    headers={"Accept": "application/json", "Content-Type": "application/json"},
-                )
-                with urlopen(request, timeout=self.timeout) as response:
-                    if response.status != 200:
-                        raise LLMError(f"Ollama returned HTTP {response.status}", code="model_http_error")
-                    decoded = json.loads(response.read().decode("utf-8"))
-                    if not isinstance(decoded, dict):
-                        raise LLMError("Ollama response must be a JSON object", code="model_invalid_envelope")
-                    return decoded
-            except LLMError:
-                raise
-            except HTTPError as exc:
-                # Ollama/Qwen 3.5 currently rejects some JSON-schema grammar
-                # combinations with HTTP 400.  Keep that distinction so the
-                # caller can use the provider's JSON mode plus local strict
-                # validation instead of retrying the same invalid grammar.
-                try:
-                    error_body = exc.read(2000).decode("utf-8", errors="replace")
-                except Exception:
-                    error_body = ""
-                if exc.code == 400 and "failed to parse grammar" in error_body.lower():
-                    raise LLMError(
-                        "Ollama rejected the supplied JSON schema grammar",
-                        code="MODEL_SCHEMA_UNSUPPORTED",
-                        raw_response=error_body,
-                    ) from exc
-                last_error = RuntimeError(f"HTTP {exc.code}: {error_body[:240]}")
-                if attempt < self.retries:
-                    time.sleep(0.25 * (attempt + 1))
-            except Exception as exc:  # pragma: no cover - network dependent
-                last_error = exc
-                if attempt < self.retries:
-                    time.sleep(0.25 * (attempt + 1))
-        raise LLMError(f"Ollama unavailable: {last_error}", code="MODEL_UNAVAILABLE") from last_error
+    def _route_error(self, requested_model: str | None = None) -> str | None:
+        if self.model_name != DEFAULT_SMART_MODEL or (requested_model is not None and requested_model != DEFAULT_SMART_MODEL):
+            return "MODEL_NOT_ALLOWED"
+        if self.base_url.rstrip("/") != model_client.base_url.rstrip("/"):
+            return "MODEL_ENDPOINT_NOT_ALLOWED"
+        return model_client._configuration_error(requested_model or self.model_name)
 
-    def _request_json_with_schema_compat(
-        self,
-        payload: dict[str, object],
-        *,
-        schema: dict[str, object] | None,
-    ) -> tuple[dict[str, object], str]:
-        """Request structured JSON and record any provider compatibility downgrade.
+    def _uses_model_client_bridge(self) -> bool:
+        """Whether this adapter is pinned to the configured Bonsai API."""
+        return self._route_error() is None
 
-        The application still validates the decoded object against its domain
-        contract.  The fallback is narrow: it is used only after Ollama
-        explicitly rejects the grammar, never after an arbitrary network or
-        model error.  This keeps Qwen 3.5 usable on affected Ollama builds
-        while preserving an auditable distinction from native schema grammar.
-        """
-
+    def _local_server_reachable(self, *, timeout: float = 1.0) -> bool:
         try:
-            return self._request("POST", "/api/chat", payload), "strict_json_schema" if schema else "json_object"
-        except LLMError as exc:
-            if not schema or exc.code != "MODEL_SCHEMA_UNSUPPORTED":
-                raise
-            fallback_payload = {**payload, "format": "json"}
-            # JSON mode alone does not transmit the rejected grammar. Carry
-            # the schema as trusted instructions so the first compatibility
-            # response can satisfy exactly the same local contract.
-            fallback_payload["messages"] = [*payload.get("messages", []), {
-                "role": "system",
-                "content": "只输出符合以下 JSON Schema 的 JSON。解释字段保持简体中文。省略不需要的可选字段，不添加额外字段。\n" + json.dumps(schema, ensure_ascii=False, separators=(",", ":")),
-            }]
-            envelope = self._request("POST", "/api/chat", fallback_payload)
-            return envelope, "json_mode_local_validation"
+            return self._uses_model_client_bridge() and model_client.is_healthy(timeout=timeout)
+        except Exception:
+            return False
+
+    def loaded_models(self) -> list[dict[str, object]]:
+        """The llama.cpp Bonsai server has no Ollama residency endpoint."""
+        return []
 
     def health(self, *, model_name: str | None = None) -> dict[str, object]:
         target_model = model_name or self.model_name
-        try:
-            payload = self._request("GET", "/api/tags")
-            models = payload.get("models", [])
-            names = [item.get("name") for item in models if isinstance(item, dict) and isinstance(item.get("name"), str)]
-            selected = next((item for item in models if isinstance(item, dict) and item.get("name") == target_model), {})
-            raw_digest = selected.get("digest") if isinstance(selected, dict) else None
-            digest = str(raw_digest or "").strip().lower()
-            if digest.startswith("sha256:"):
-                digest = digest[7:]
-            self.weight_digest = digest if len(digest) == 64 and all(char in "0123456789abcdef" for char in digest) else None
+        route_error = self._route_error(target_model)
+        if route_error:
+            self.weight_digest = None
             return {
-                "provider": self.provider_name,
-                "available": True,
+                "provider": "bonsai_llama_server",
+                "available": False,
                 "model_id": target_model,
-                "model_available": target_model in names,
-                "models": names,
-                "weight_digest": self.weight_digest,
-                "digest_status": "OBSERVED_PROVIDER_DIGEST" if self.weight_digest else "UNKNOWN_NOT_PROVIDED",
-                "context_length": self.context_length,
-                "temperature": self.temperature,
-                "max_tokens": self.max_tokens,
-                "quantization": self.quantization,
-                "think": self.think,
+                "actual_model_id": None,
+                "model_identity_source": None,
+                "model_available": False,
+                "error_code": route_error,
+                "weight_digest": None,
+                "digest_status": "UNKNOWN_NOT_PROVIDED",
+                "context_length": None,
+                "models": [],
+                "rejected_legacy_overrides": list(self.rejected_legacy_overrides),
             }
-        except LLMError as exc:
+        if not model_client.is_healthy():
+            self.weight_digest = None
             return {
-                "provider": self.provider_name,
+                "provider": "bonsai_llama_server",
                 "available": False,
                 "model_id": target_model,
                 "model_available": False,
-                "error_code": exc.code,
+                "models": [],
                 "weight_digest": None,
                 "digest_status": "UNKNOWN_NOT_PROVIDED",
-                "quantization": self.quantization,
-                "think": self.think,
+                "context_length": None,
+                "error_code": "MODEL_UNAVAILABLE",
+                "rejected_legacy_overrides": list(self.rejected_legacy_overrides),
             }
-
-    @staticmethod
-    def _content(payload: dict[str, object]) -> str:
-        message = payload.get("message")
-        if isinstance(message, dict) and isinstance(message.get("content"), str):
-            return message["content"]
-        if isinstance(payload.get("response"), str):
-            return str(payload["response"])
-        raise LLMError("Ollama response has no message content", code="model_invalid_envelope")
+        try:
+            manifest = model_client.list_models(timeout=2.0)
+        except Exception as exc:
+            self.weight_digest = None
+            return {
+                "provider": "bonsai_llama_server",
+                "available": True,
+                "model_id": target_model,
+                "model_available": False,
+                "models": [],
+                "weight_digest": None,
+                "digest_status": "UNKNOWN_NOT_PROVIDED",
+                "context_length": None,
+                "error_code": "MODEL_MANIFEST_UNAVAILABLE",
+                "manifest_error": f"{type(exc).__name__}: {exc}"[:240],
+                "rejected_legacy_overrides": list(self.rejected_legacy_overrides),
+            }
+        rows = [row for row in manifest if isinstance(row, dict)]
+        names = list(dict.fromkeys(identity for row in rows if (identity := _manifest_model_identity(row))))
+        matching = [row for row in rows if _model_alias_matches(target_model, row)]
+        selected = matching[0] if len(matching) == 1 else {}
+        context_length = _positive_context_length(selected) if selected else None
+        actual_model_id = _manifest_model_identity(selected) if selected else None
+        digest = None
+        if selected:
+            supplied_digest = str(selected.get("digest") or "").strip().lower()
+            if supplied_digest.startswith("sha256:"):
+                supplied_digest = supplied_digest[7:]
+            if len(supplied_digest) == 64 and all(char in "0123456789abcdef" for char in supplied_digest):
+                digest = supplied_digest
+            elif actual_model_id and actual_model_id.lower().endswith(".gguf"):
+                digest = _local_model_digest(actual_model_id)
+        self.weight_digest = digest
+        return {
+            "provider": "bonsai_llama_server",
+            "available": True,
+            "model_id": target_model,
+            "actual_model_id": actual_model_id,
+            "model_identity_source": "verified_manifest",
+            "model_available": len(matching) == 1,
+            "models": names,
+            "weight_digest": digest,
+            "digest_status": "OBSERVED_LOCAL_ARTIFACT_SHA256" if digest else "UNKNOWN_NOT_PROVIDED",
+            "context_length": context_length,
+            "configured_context_length": self.context_length,
+            "rejected_legacy_overrides": list(self.rejected_legacy_overrides),
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "quantization": (
+                str((selected.get("meta") or {}).get("ftype"))
+                if isinstance(selected.get("meta"), dict) and (selected.get("meta") or {}).get("ftype")
+                else "UNKNOWN_NOT_PROVIDED"
+            ),
+            "think": self.think,
+            "server_recovered": False,
+        }
 
     def generate_json(
         self,
@@ -182,58 +275,75 @@ class OllamaProvider:
         input_hash: str,
         temperature: float | None = None,
         schema: dict[str, object] | None = None,
+        max_tokens: int | None = None,
+        reasoning_effort: str | None = None,
     ) -> tuple[dict[str, object], str, dict[str, object]]:
-        """Run a bounded structured call against an explicitly selected tier.
+        """Run one structured call through the verified Bonsai ModelClient.
 
-        This is intentionally separate from ``analyze_market``: V1.2 callers
-        must name the Smart model and receive a hard error if that model is not
-        installed.  The adapter never substitutes ``self.model_name``.
+        The manifest is checked immediately before inference. If the server
+        omits a completion model id, metadata explicitly binds the requested
+        alias to that verified manifest; it never claims the completion itself
+        returned the identity.
         """
-
+        route_error = self._route_error(model_name)
+        if route_error:
+            raise LLMError(route_error, code=route_error)
+        health = self.health(model_name=model_name)
+        if not health.get("available") or not health.get("model_available"):
+            raise LLMError(
+                str(health.get("error_code") or "MODEL_UNAVAILABLE"),
+                code=str(health.get("error_code") or "MODEL_UNAVAILABLE"),
+            )
+        output_tokens = self.max_tokens if max_tokens is None else max_tokens
+        if isinstance(output_tokens, bool) or not isinstance(output_tokens, int) or not 1 <= output_tokens <= 2048:
+            raise LLMError("MODEL_MAX_TOKENS_INVALID", code="MODEL_MAX_TOKENS_INVALID")
         started = time.perf_counter()
-        payload = {
-            "model": model_name,
-            "messages": messages,
-            "stream": False,
-            # Ollama accepts a JSON schema object here.  Plain JSON is kept
-            # only for legacy callers that have no strict contract; all
-            # institutional callers pass a closed schema.
-            "format": schema or "json",
-            "think": self.think,
-            "options": {
-                "temperature": self.temperature if temperature is None else max(0.0, min(float(temperature), 2.0)),
-                "num_ctx": self.context_length,
-                "num_predict": self.max_tokens,
-            },
-        }
         try:
-            envelope, schema_enforcement = self._request_json_with_schema_compat(payload, schema=schema)
-            raw = self._content(envelope)
-            if len(raw) > self.max_response_chars:
-                raise LLMError("Ollama response exceeds output limit", code="output_too_long", raw_response=raw[: self.max_response_chars])
-            try:
-                decoded = json.loads(raw)
-            except (json.JSONDecodeError, TypeError, ValueError) as exc:
-                raise LLMError(f"invalid structured JSON: {exc}", code="parse_error", raw_response=raw) from exc
-            if not isinstance(decoded, dict):
-                raise LLMError("structured model output must be an object", code="parse_error", raw_response=raw)
-            elapsed = (time.perf_counter() - started) * 1000.0
-            metadata = {
-                "model_id": model_name,
-                "model_version": str(envelope.get("model") or model_name),
-                "prompt_version": prompt_version,
-                "input_hash": input_hash,
-                "latency_ms": round(elapsed, 3),
-                "raw_response": raw,
-                "parse_status": "valid",
-                "input_tokens_est": sum(len(item.get("content", "")) for item in messages) // 4,
-                "output_chars": len(raw),
-                "schema_version": schema_enforcement,
-                "schema_enforcement": schema_enforcement,
-            }
-            return decoded, raw, metadata
-        except LLMError:
-            raise
+            decoded = model_client.structured_analysis(
+                messages,
+                schema=schema,
+                mode="FAST",
+                max_tokens=output_tokens,
+                temperature_override=(
+                    self.temperature
+                    if temperature is None
+                    else max(0.0, min(float(temperature), 2.0))
+                ),
+                model_name=model_name,
+                reasoning_effort=reasoning_effort,
+                timeout_sec=self.timeout,
+                retries=self.retries,
+            )
+        except Exception as exc:
+            raise LLMError(f"Bonsai inference error: {exc}", code="MODEL_INFERENCE_ERROR") from exc
+        if not isinstance(decoded, dict):
+            raise LLMError("structured model output must be an object", code="parse_error")
+        response_model = model_client.last_response_model
+        if response_model is not None and not is_bonsai_model_identity(response_model):
+            raise LLMError("MODEL_RESPONSE_IDENTITY_MISMATCH", code="MODEL_RESPONSE_IDENTITY_MISMATCH")
+        raw = json.dumps(decoded, ensure_ascii=False)
+        elapsed = (time.perf_counter() - started) * 1000.0
+        actual_model_id = response_model or str(health.get("actual_model_id") or "")
+        metadata = {
+            "model_id": DEFAULT_SMART_MODEL,
+            "model_version": actual_model_id or None,
+            "actual_model_id": actual_model_id or None,
+            "model_identity_source": "completion_response" if response_model else "request_bound_to_verified_manifest",
+            "verified_manifest_model_id": health.get("actual_model_id"),
+            "prompt_version": prompt_version,
+            "input_hash": input_hash,
+            "latency_ms": round(elapsed, 3),
+            "raw_response": raw,
+            "parse_status": "valid",
+            "input_tokens_est": sum(len(item.get("content", "")) for item in messages) // 4,
+            "output_chars": len(raw),
+            "reasoning_effort": reasoning_effort,
+            # The ModelClient uses the OpenAI-compatible JSON-object mode;
+            # schema contracts are still validated by domain callers.
+            "schema_version": "json_object",
+            "schema_enforcement": "json_object",
+        }
+        return decoded, raw, metadata
 
     def analyze_market(
         self,
@@ -243,43 +353,32 @@ class OllamaProvider:
         repair: bool = False,
         repair_error: str | None = None,
     ) -> tuple[ModelSignalResponse, LLMCallMetadata]:
-        started = time.perf_counter()
         messages = build_repair_messages(context, policy, repair_error or "previous output was invalid") if repair else build_prompt_messages(context, policy)
-        payload = {
-            "model": self.model_name,
-            "messages": messages,
-            "stream": False,
-            "format": SIGNAL_SCHEMA,
-            "think": self.think,
-            "options": {
-                "temperature": self.temperature,
-                "num_ctx": self.context_length,
-                "num_predict": self.max_tokens,
-            },
-        }
+        decoded, raw, receipt = self.generate_json(
+            messages,
+            model_name=self.model_name,
+            prompt_version=self.prompt_version,
+            input_hash=context.input_hash(),
+            temperature=self.temperature,
+            schema=SIGNAL_SCHEMA,
+        )
         try:
-            envelope, schema_enforcement = self._request_json_with_schema_compat(payload, schema=SIGNAL_SCHEMA)
-            raw = self._content(envelope)
-            if len(raw) > self.max_response_chars:
-                raise LLMError("Ollama response exceeds output limit", code="output_too_long", raw_response=raw[: self.max_response_chars])
-            try:
-                decoded = json.loads(raw)
-                response = ModelSignalResponse.from_dict(decoded)
-            except (json.JSONDecodeError, TypeError, ValueError) as exc:
-                raise LLMError(f"invalid structured JSON: {exc}", code="parse_error", raw_response=raw) from exc
-            elapsed = (time.perf_counter() - started) * 1000.0
-            metadata = LLMCallMetadata(
-                model_id=self.model_name,
-                model_version=str(envelope.get("model") or self.model_name),
-                prompt_version=self.prompt_version,
-                input_hash=context.input_hash(),
-                latency_ms=round(elapsed, 3),
-                raw_response=raw,
-                parse_status="repair_valid" if repair else "valid",
-                input_tokens_est=sum(len(item["content"]) for item in messages) // 4,
-                output_chars=len(raw),
-                schema_enforcement=schema_enforcement,
-            )
-            return response, metadata
-        except LLMError:
-            raise
+            response = ModelSignalResponse.from_dict(decoded)
+        except (TypeError, ValueError) as exc:
+            raise LLMError(f"invalid structured JSON: {exc}", code="parse_error", raw_response=raw) from exc
+        metadata = LLMCallMetadata(
+            model_id=DEFAULT_SMART_MODEL,
+            model_version=str(receipt.get("actual_model_id") or "") or None,
+            prompt_version=self.prompt_version,
+            input_hash=context.input_hash(),
+            latency_ms=float(receipt["latency_ms"]),
+            raw_response=raw,
+            parse_status="repair_valid" if repair else "valid",
+            input_tokens_est=int(receipt.get("input_tokens_est") or 0),
+            output_chars=len(raw),
+            schema_enforcement=str(receipt.get("schema_enforcement") or "json_object"),
+            actual_model_id=str(receipt.get("actual_model_id") or "") or None,
+            model_identity_source=str(receipt.get("model_identity_source") or "") or None,
+            verified_manifest_model_id=str(receipt.get("verified_manifest_model_id") or "") or None,
+        )
+        return response, metadata

@@ -1,0 +1,30 @@
+{
+  "freed_bytes": 9984447494,
+  "freed_gb": 9.3,
+  "deleted_files": [
+    {
+      "path": "D:\\RJ\\ollama-models\\manifests\\registry.ollama.ai\\library\\qwen3.5\\4b",
+      "size_gb": 0.0
+    },
+    {
+      "path": "D:\\RJ\\ollama-models\\manifests\\registry.ollama.ai\\library\\qwen3.5\\9b",
+      "size_gb": 0.0
+    },
+    {
+      "path": "D:\\RJ\\ollama-models\\blobs\\sha256-81fb60c7daa80fc1123380b98970b320ae233409f0f71a72ed7b9b0d62f40490",
+      "size_gb": 3.157
+    },
+    {
+      "path": "D:\\RJ\\ollama-models\\blobs\\sha256-dec52a44569a2a25341c4e4d3fee25846eed4f6f0b936278e3a3c900bb99d37c",
+      "size_gb": 6.142
+    },
+    {
+      "path": "D:\\RJ\\ollama-models\\blobs\\sha256-7339fa418c9ad3e8e12e74ad0fd26a9cc4be8703f9c110728a992b193be85cb2",
+      "size_gb": 0.0
+    },
+    {
+      "path": "D:\\RJ\\ollama-models\\blobs\\sha256-9371364b27a52acac9d87f88bd93c9db1174d8d6ec57f6888925cdc1788871ff",
+      "size_gb": 0.0
+    }
+  ]
+}

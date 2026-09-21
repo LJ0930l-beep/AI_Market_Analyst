@@ -254,14 +254,22 @@ class LocalResourceProbe:
         command_runner: Callable[[list[str], float], str] | None = None,
         timeout_seconds: float = 2.0,
         minimum_free_memory_mb: int = 1024,
+        managed_bonsai_pid_file: Path | str | None = None,
+        managed_bonsai_executable_path: Path | str | None = None,
     ) -> None:
         if timeout_seconds <= 0:
             raise ValueError("resource probe timeout must be positive")
         if minimum_free_memory_mb < 0:
             raise ValueError("minimum free GPU memory cannot be negative")
+        if (managed_bonsai_pid_file is None) != (managed_bonsai_executable_path is None):
+            raise ValueError("managed Bonsai PID file and executable path must be configured together")
         self.command_runner = command_runner or self._run_command
         self.timeout_seconds = float(timeout_seconds)
         self.minimum_free_memory_mb = int(minimum_free_memory_mb)
+        self.managed_bonsai_pid_file = Path(managed_bonsai_pid_file) if managed_bonsai_pid_file is not None else None
+        self.managed_bonsai_executable_path = (
+            Path(managed_bonsai_executable_path) if managed_bonsai_executable_path is not None else None
+        )
 
     @staticmethod
     def _run_command(command: list[str], timeout_seconds: float) -> str:
@@ -321,10 +329,8 @@ class LocalResourceProbe:
         return values
 
     @staticmethod
-    def _competition_reason(process_name: str) -> str | None:
+    def _competition_reason(process_name: str) -> str:
         normalized = process_name.replace("\\", "/").rsplit("/", 1)[-1].lower()
-        if "ollama" in normalized:
-            return None
         if "comfyui" in normalized:
             return "comfyui_gpu_competition"
         if normalized.startswith("python") or "python" in normalized:
@@ -332,6 +338,59 @@ class LocalResourceProbe:
         if "blender" in normalized:
             return "blender_gpu_competition"
         return "gpu_competition"
+
+    @staticmethod
+    def _managed_bonsai_paths(project_root: Path | None = None) -> tuple[Path, Path]:
+        """Resolve the same PID file and executable path used by the Bonsai runner."""
+
+        root = project_root or Path(__file__).resolve().parents[1]
+        configured_bin_dir = os.environ.get("BONSAI_BIN_DIR")
+        if configured_bin_dir is None:
+            config_file = root / "infra" / "bonsai" / "config.env"
+            try:
+                with config_file.open("r", encoding="utf-8") as config_stream:
+                    for line in config_stream:
+                        if "=" not in line or line.lstrip().startswith("#"):
+                            continue
+                        key, value = line.split("=", 1)
+                        if key.strip() == "BONSAI_BIN_DIR":
+                            configured_bin_dir = value.strip()
+                            break
+            except OSError:
+                configured_bin_dir = None
+        if not configured_bin_dir:
+            configured_bin_dir = str(root / "infra" / "bonsai" / "bin")
+        configured_bin_path = Path(configured_bin_dir)
+        if not configured_bin_path.is_absolute():
+            configured_bin_path = root / configured_bin_path
+        return root / "logs" / "bonsai_server.pid", (configured_bin_path / "llama-server.exe").resolve()
+
+    def _managed_bonsai_identity(self) -> tuple[int, str] | None:
+        try:
+            if self.managed_bonsai_pid_file is None and self.managed_bonsai_executable_path is None:
+                default_pid_file, default_executable_path = self._managed_bonsai_paths()
+            else:
+                default_pid_file = self.managed_bonsai_pid_file
+                default_executable_path = self.managed_bonsai_executable_path
+            pid = int(default_pid_file.read_text(encoding="utf-8").strip())
+            if pid <= 0:
+                return None
+            expected_path = os.path.normcase(os.path.abspath(str(default_executable_path)))
+            return pid, expected_path
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+
+    @staticmethod
+    def _is_managed_bonsai_process(process: dict[str, object], identity: tuple[int, str] | None) -> bool:
+        if identity is None:
+            return False
+        managed_pid, managed_path = identity
+        try:
+            process_pid = int(str(process["pid"]).strip())
+        except (KeyError, ValueError, TypeError):
+            return False
+        process_path = os.path.normcase(os.path.abspath(str(process.get("name", "")).strip()))
+        return process_pid == managed_pid and process_path == managed_path
 
     def _probe_unavailable(self, detail: str) -> ResourceProbeResult:
         return ResourceProbeResult(
@@ -368,9 +427,12 @@ class LocalResourceProbe:
         except Exception as exc:  # bounded command/parsing failure is a safe unavailable result
             return self._probe_unavailable(str(exc))
 
+        managed_identity = self._managed_bonsai_identity()
         for process in processes:
+            if self._is_managed_bonsai_process(process, managed_identity):
+                continue
             reason = self._competition_reason(str(process["name"]))
-            if reason is not None:
+            if reason:
                 return ResourceProbeResult(
                     False,
                     reason=reason,

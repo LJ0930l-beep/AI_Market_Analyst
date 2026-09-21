@@ -1,0 +1,60 @@
+{
+  "contract": "ai_news_technical_v1",
+  "model": "Bonsai-2-27B-PTQ1_0",
+  "external_orders": false,
+  "scope": "PUBLIC_DATA_REAL_MODEL_ISOLATED_PAPER",
+  "tested_at": "2026-09-20T09:45:16.329040+00:00",
+  "news_refresh": {
+    "status": "AVAILABLE",
+    "provider": "google_news_rss",
+    "fetched_at": "2026-09-20T09:45:17.953306+00:00",
+    "requested_symbols": [
+      "BTCUSDT"
+    ],
+    "available_symbols": 1,
+    "event_count": 12,
+    "results": [
+      {
+        "symbol": "BTCUSDT",
+        "status": "AVAILABLE",
+        "event_count": 12,
+        "provider": "google_news_rss"
+      }
+    ],
+    "model_called": false,
+    "order_created": false
+  },
+  "technical_status": "READY",
+  "news_count": 4,
+  "strategy_template_id": "conservative_pullback",
+  "account_truth_source": "LOCAL_PAPER_LEDGER",
+  "paper_equity": 10000.0,
+  "model_health": {
+    "provider": "bonsai_llama_server",
+    "available": true,
+    "model_id": "Bonsai-2-27B-PTQ1_0",
+    "actual_model_id": "D:\\RJ\\models\\bonsai2\\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+    "model_identity_source": "verified_manifest",
+    "model_available": true,
+    "models": [
+      "D:\\RJ\\models\\bonsai2\\Ternary-Bonsai-2-27B-PTQ1_0.gguf"
+    ],
+    "weight_digest": "53107f530aa52eb00912263ab1ee29bd199261c87cd7b4ad4ca1318c1fe33ee3",
+    "digest_status": "OBSERVED_LOCAL_ARTIFACT_SHA256",
+    "context_length": 8192,
+    "configured_context_length": 8192,
+    "rejected_legacy_overrides": [],
+    "temperature": 0,
+    "max_tokens": 1000,
+    "quantization": "PTQ1_0 - 1.75 bpw ternary (group 128)",
+    "think": false,
+    "server_recovered": false,
+    "status": "READY",
+    "required_model": "Bonsai-2-27B-PTQ1_0",
+    "reason_code": null,
+    "checked_at": "2026-09-20T09:45:20.268991+00:00"
+  },
+  "status": "FAILED",
+  "error": "ValueError: MODEL_REPAIR_CHANGED_DECISION",
+  "model_raw_response": "{\"action\": \"WAIT\", \"instrument_id\": \"UNKNOWN\", \"reason\": \"未提供有效标的、价格或市场事实，无法生成交易决策，因此保持等待。\", \"confidence\": null}"
+}

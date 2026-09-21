@@ -15,6 +15,15 @@ from typing import Any
 
 from .institutional_schema import ensure_institutional_trader_schema
 
+# Only a decision that actually opened exposure can have a market outcome.
+ENTRY_ACTIONS = ("OPEN_LONG", "OPEN_SHORT")
+# A settled position whose net result sits inside this band is booked FLAT.
+# The band exists so fee and rounding noise never reads as a win or a loss.
+FLAT_BAND_USDT = 0.01
+# Closed quantity must match opened quantity to this relative tolerance before
+# an outcome is considered final.  A partially closed position is still open.
+QUANTITY_MATCH_TOLERANCE = 0.005
+
 
 def _iso(value: Any = None) -> str:
     point = value if isinstance(value, datetime) else datetime.now(timezone.utc)
@@ -34,6 +43,169 @@ def _safe_summary(action: str, status: str, reason: str, symbol: str | None = No
     if clean_reason:
         parts.append(f"原因={clean_reason}")
     return "；".join(parts)
+
+
+def _number(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number == number and number not in (float("inf"), float("-inf")) else None
+
+
+def _position_id_for_cycle(db: Any, account_id: str, cycle_id: str) -> str | None:
+    """Find the position opened by one AI cycle.
+
+    ``order_intents`` carries the position id assigned at placement time;
+    ``trade_fills`` carries it once the exchange acknowledges the fill.  Both
+    are checked because a rejected placement writes neither, and a LIMIT entry
+    can fill in a later cycle than the one that decided it.
+    """
+    for table in ("order_intents", "trade_fills"):
+        exists = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+        ).fetchone()
+        if exists is None:
+            continue
+        row = db.execute(
+            f"""SELECT position_id FROM {table}
+                WHERE account_id=? AND cycle_id=?
+                  AND position_id IS NOT NULL AND position_id<>''
+                LIMIT 1""",
+            (account_id, cycle_id),
+        ).fetchone()
+        if row is not None and row["position_id"]:
+            return str(row["position_id"])
+    return None
+
+
+def _position_settlement(db: Any, account_id: str, position_id: str) -> dict[str, Any] | None:
+    """Net realised result of one position, or ``None`` while it is still open.
+
+    ``gross = (sell notional) - (buy notional)`` is direction agnostic: a long
+    buys then sells, a short sells then buys, so the same expression yields the
+    correct sign for both.  Fees are subtracted to give the net figure the
+    prompt should quote.
+    """
+    exists = db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='trade_fills'"
+    ).fetchone()
+    if exists is None:
+        return None
+    rows = db.execute(
+        """SELECT side, quantity, price, contract_size, fee_amount FROM trade_fills
+           WHERE account_id=? AND position_id=?""",
+        (account_id, position_id),
+    ).fetchall()
+    if not rows:
+        return None
+    bought = sold = 0.0
+    buy_notional = sell_notional = 0.0
+    fees = 0.0
+    for row in rows:
+        quantity = _number(row["quantity"]) or 0.0
+        price = _number(row["price"]) or 0.0
+        contract = _number(row["contract_size"]) or 1.0
+        fees += abs(_number(row["fee_amount"]) or 0.0)
+        notional = quantity * price * contract
+        side = str(row["side"] or "").upper()
+        if side in {"BUY", "LONG"}:
+            bought += quantity
+            buy_notional += notional
+        elif side in {"SELL", "SHORT"}:
+            sold += quantity
+            sell_notional += notional
+    if bought <= 0 or sold <= 0:
+        return None
+    if abs(bought - sold) > max(bought, sold) * QUANTITY_MATCH_TOLERANCE:
+        # Still open, or only partially closed: the result is not final yet.
+        return None
+    gross = sell_notional - buy_notional
+    return {
+        "gross_realized": round(gross, 8),
+        "fees": round(fees, 8),
+        "net_realized": round(gross - fees, 8),
+        "matched_quantity": round(min(bought, sold), 8),
+        "fill_count": len(rows),
+    }
+
+
+def reconcile_decision_outcomes(store: Any, account_id: str, *, limit: int = 20) -> dict[str, Any]:
+    """Backfill the realised outcome of entry decisions that have since closed.
+
+    The strategy book tells the model what it *intends* to do; this is what
+    tells it what *happened*.  Before this ran, ``memory_for_prompt`` returned a
+    permanently null ``outcome_status``/``outcome_pnl``, so the model could see
+    its own past decisions but never whether they made or lost money.
+
+    Only entry decisions with no recorded outcome are considered.  A decision
+    whose position is still open, or whose placement never produced a position,
+    is left untouched — this function never invents a number.
+    """
+    considered = 0
+    pending = 0
+    resolved: list[dict[str, Any]] = []
+    settlements: list[dict[str, Any]] = []
+    with store._connect() as db:
+        ensure_institutional_trader_schema(db)
+        rows = db.execute(
+            """SELECT memory_id, cycle_id, symbol, action, decision_at
+               FROM ai_decision_memory
+               WHERE account_id=? AND outcome_status IS NULL
+                 AND action IN (?, ?)
+               ORDER BY decision_at ASC, memory_id ASC LIMIT ?""",
+            (account_id, ENTRY_ACTIONS[0], ENTRY_ACTIONS[1], max(1, min(int(limit), 20))),
+        ).fetchall()
+        for row in rows:
+            considered += 1
+            position_id = _position_id_for_cycle(db, account_id, str(row["cycle_id"]))
+            if not position_id:
+                pending += 1
+                continue
+            settlement = _position_settlement(db, account_id, position_id)
+            if settlement is None:
+                pending += 1
+                continue
+            net = float(settlement["net_realized"])
+            status = "WIN" if net > FLAT_BAND_USDT else ("LOSS" if net < -FLAT_BAND_USDT else "FLAT")
+            symbol = str(row["symbol"] or "UNKNOWN")
+            settlements.append({
+                "memory_id": str(row["memory_id"]),
+                "symbol": symbol,
+                "position_id": position_id,
+                "outcome_status": status,
+                "outcome_pnl": net,
+                "settlement": settlement,
+                "lesson_zh": (
+                    f"{symbol} 已平仓：净盈亏 {net:+.2f} USDT"
+                    f"（毛 {settlement['gross_realized']:+.2f} / 费用 {settlement['fees']:.2f}）。"
+                ),
+            })
+    for item in settlements:
+        written = update_memory_outcome(
+            store,
+            item["memory_id"],
+            outcome_status=item["outcome_status"],
+            outcome_pnl=item["outcome_pnl"],
+            lesson_zh=item["lesson_zh"],
+            evidence={
+                "basis": "LOCAL_FILL_MIRROR_NET_OF_FEES",
+                "position_id": item["position_id"],
+                "symbol": item["symbol"],
+                **item["settlement"],
+            },
+        )
+        if written:
+            resolved.append({
+                "memory_id": item["memory_id"],
+                "symbol": item["symbol"],
+                "position_id": item["position_id"],
+                "outcome_status": item["outcome_status"],
+                "outcome_pnl": item["outcome_pnl"],
+            })
+    return {"considered": considered, "pending": pending, "resolved": resolved}
 
 
 def record_decision_memory(
@@ -167,8 +339,40 @@ def memory_for_prompt(store: Any, account_id: str) -> list[dict[str, Any]]:
     ]
 
 
-def update_memory_outcome(store: Any, memory_id: str, *, outcome_status: str, outcome_pnl: float | None = None, lesson_zh: str | None = None) -> bool:
+def update_memory_outcome(
+    store: Any,
+    memory_id: str,
+    *,
+    outcome_status: str,
+    outcome_pnl: float | None = None,
+    lesson_zh: str | None = None,
+    evidence: dict[str, Any] | None = None,
+) -> bool:
+    """Record the observed result of a decision.
+
+    ``evidence`` is merged into the existing ``payload_json`` under
+    ``outcome_evidence`` so the arithmetic behind ``outcome_pnl`` stays
+    auditable without widening the table.  Callers that only know the verdict
+    can omit it.
+    """
+
     with store._connect() as db:
+        if evidence:
+            row = db.execute(
+                "SELECT payload_json FROM ai_decision_memory WHERE memory_id=?", (memory_id,)
+            ).fetchone()
+            if row is not None:
+                try:
+                    merged = json.loads(row["payload_json"] or "{}")
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    merged = {}
+                if not isinstance(merged, dict):
+                    merged = {}
+                merged["outcome_evidence"] = dict(evidence)
+                db.execute(
+                    "UPDATE ai_decision_memory SET payload_json=? WHERE memory_id=?",
+                    (json.dumps(merged, ensure_ascii=False, allow_nan=False), memory_id),
+                )
         result = db.execute(
             "UPDATE ai_decision_memory SET outcome_status=?, outcome_pnl=?, lesson_zh=?, updated_at=? WHERE memory_id=?",
             (str(outcome_status or "UNKNOWN").upper(), outcome_pnl, lesson_zh, _iso(), memory_id),
@@ -176,4 +380,11 @@ def update_memory_outcome(store: Any, memory_id: str, *, outcome_status: str, ou
         return result.rowcount == 1
 
 
-__all__ = ["list_decision_memory", "memory_for_prompt", "record_decision_memory", "update_memory_outcome"]
+__all__ = [
+    "ENTRY_ACTIONS",
+    "list_decision_memory",
+    "memory_for_prompt",
+    "reconcile_decision_outcomes",
+    "record_decision_memory",
+    "update_memory_outcome",
+]

@@ -6,6 +6,21 @@ import { InstitutionalEvidencePanel } from "./InstitutionalEvidencePanel";
 describe("institutional evidence panel", () => {
   afterEach(() => vi.restoreAllMocks());
 
+  it("keeps the account evidence scope empty instead of projecting a default account", async () => {
+    const v3 = vi.spyOn(apiClient, "v3").mockResolvedValue({ status: "NO_DATA", row_count: 0, instrument_count: 0 } as never);
+
+    render(<InstitutionalEvidencePanel />);
+
+    const panel = await screen.findByTestId("institutional-evidence-panel");
+    expect(await screen.findByText("Select a registered account to view scoped risk and model evidence.")).toBeInTheDocument();
+    expect(panel).toHaveTextContent("No account selected");
+    expect(panel).toHaveTextContent("No data");
+    expect(panel).toHaveTextContent("Weight digest not provided");
+    expect(panel).not.toHaveTextContent("Available capacity calculated");
+    expect(v3).toHaveBeenCalledTimes(1);
+    expect(v3).toHaveBeenCalledWith("/data/quality", "GET", undefined, expect.any(AbortSignal));
+  });
+
   it("renders v3 data, risk, evidence and model-digest states without inventing facts", async () => {
     const v3 = vi.spyOn(apiClient, "v3").mockImplementation(async (path: string) => {
       if (path === "/data/quality") {
@@ -27,7 +42,7 @@ describe("institutional evidence panel", () => {
       if (path.startsWith("/ai/evidence")) {
         return {
           bundles: [{ missing: ["model_weight_digest"] }],
-          ai_cycles: [{ model_digest_status: "UNKNOWN", model_digest: null, evidence_status: "EVIDENCE_INSUFFICIENT" }],
+          ai_cycles: [{ model_digest_status: "READY", model_digest: null, evidence_status: "EVIDENCE_INSUFFICIENT" }],
         } as never;
       }
       return {} as never;
@@ -36,12 +51,15 @@ describe("institutional evidence panel", () => {
     render(<InstitutionalEvidencePanel activeAccount="paper_test" />);
 
     const panel = await screen.findByTestId("institutional-evidence-panel");
-    await waitFor(() => expect(panel).toHaveTextContent("OBSERVED"));
+    await waitFor(() => expect(panel).toHaveTextContent("Observed"));
     expect(panel).toHaveTextContent("24 rows");
     expect(panel).toHaveTextContent("UNKNOWN_CONSERVATIVE_FALLBACK");
-    expect(panel).toHaveTextContent("NOT_CONFIGURED");
+    expect(panel).toHaveTextContent("Not configured");
     expect(panel).toHaveTextContent("EVIDENCE_INSUFFICIENT");
-    expect(panel).toHaveTextContent("UNKNOWN");
+    expect(panel).toHaveTextContent("Ready");
+    expect(panel).not.toHaveTextContent("Running · Bonsai-2-27B");
+    expect(panel).toHaveTextContent("Weight digest not provided");
+    expect(panel).not.toHaveTextContent("sha256:Bonsai");
     expect(v3).toHaveBeenCalledWith("/data/quality", "GET", undefined, expect.any(AbortSignal));
     expect(v3).toHaveBeenCalledWith("/risk/summary?account_id=paper_test", "GET", undefined, expect.any(AbortSignal));
   });
@@ -52,7 +70,7 @@ describe("institutional evidence panel", () => {
     render(<InstitutionalEvidencePanel />);
 
     const panel = await screen.findByTestId("institutional-evidence-panel");
-    await waitFor(() => expect(panel).toHaveTextContent("account required"));
+    await waitFor(() => expect(panel).toHaveTextContent("Select account"));
     expect(v3).toHaveBeenCalledTimes(1);
     expect(v3).toHaveBeenCalledWith("/data/quality", "GET", undefined, expect.any(AbortSignal));
   });

@@ -137,6 +137,10 @@ class MonitoringRuntime:
             guardian=self.guardian,
             execution_gateway=self.execution_gateway,
             clock=self.clock,
+            # No model_budget_seconds override here.  The coordinator's own
+            # MODEL_BUDGET_SECONDS is the single source of truth; a literal
+            # 120.0 in this call silently capped every cycle at two minutes no
+            # matter what that constant said.
         )
         # The runtime is the production scheduler for durable trade plans.
         # Requests may create/read plans, but only this runtime consumes an
@@ -401,6 +405,18 @@ class MonitoringRuntime:
                     (requested_account_id,),
                 ).fetchone() is None:
                     raise RuntimeError(f"ACCOUNT_NOT_FOUND: Account '{requested_account_id}' is not registered")
+        # Startup probes are intentionally inert when the user has not
+        # authorized resume.  Check this before acquiring the fencing lease:
+        # otherwise an inert probe owns an epoch without starting its
+        # heartbeat, the epoch expires, and the same runtime is permanently
+        # unable to handle the user's later explicit Start action.
+        if resume and not user_initiated:
+            with self._lock:
+                if not self._resume_eligible:
+                    self._status["last_reason"] = "resume_not_authorized"
+                    self._status["transition_at"] = _iso(self.clock())
+                    self._persist_locked()
+                    return self.status()
         with self._lock:
             if account_id and self._account_id and self._account_id != str(account_id):
                 current = str(self._status.get("state"))
@@ -449,16 +465,21 @@ class MonitoringRuntime:
                 self.guardian.set_account_scope(requested_account_id)
 
             current = str(self._status.get("state"))
-            if resume and not user_initiated and not self._resume_eligible:
-                self._status["last_reason"] = "resume_not_authorized"
-                self._status["transition_at"] = _iso(self.clock())
-                self._persist_locked()
-                return self.status()
             if user_initiated:
                 self._resume_eligible = True
             self._start_lease_heartbeat()
             if self._active_state(current) and self._worker and self._worker.is_alive():
                 self._status["last_reason"] = "already_active"
+                if resume or getattr(self.session_manager, "current_state", None) == "PAUSED":
+                    try:
+                        self.session_manager.resume()
+                    except Exception:
+                        pass
+                elif getattr(self.session_manager, "current_state", None) != "RUNNING":
+                    try:
+                        self.session_manager.start(user_initiated=user_initiated)
+                    except Exception:
+                        pass
                 if enable_ai:
                     self.ai_coordinator.start(account_id=requested_account_id)
                 return self.status()
@@ -476,7 +497,7 @@ class MonitoringRuntime:
             self._status["last_error"] = None
             self._status["consecutive_failures"] = 0
             self._set_status("starting", reason=str(self._status["last_reason"]), resume_eligible=self._resume_eligible)
-            if resume:
+            if resume or getattr(self.session_manager, "current_state", None) == "PAUSED":
                 try:
                     self.session_manager.resume()
                 except Exception:
@@ -603,6 +624,11 @@ class MonitoringRuntime:
             order_count = 0
             has_orders = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='order_intents'").fetchone()
             if has_orders:
+                # A resting intent past its own TTL is a duty the reconcile
+                # pass still has to discharge (cancel remotely, release the
+                # budget), so it stays counted here.  Only the trade gate in
+                # ``AccountLedger.reserve_risk`` treats an expired resting
+                # intent as non-blocking for *new* risk.
                 order_row = db.execute(
                     """SELECT COUNT(*) FROM order_intents
                        WHERE account_id=? AND mode=? AND venue=?
@@ -1157,7 +1183,7 @@ class MonitoringRuntime:
 
     def _run_cycle(self, symbols: tuple[str, ...]) -> MonitoringRunResult:
         if getattr(self.service, "ai_only", False):
-            # Coordinator refreshes public data and calls Qwen once per cycle.
+            # Coordinator refreshes public data and calls the Bonsai decision model once per cycle.
             # The monitoring loop continues stream/Guardian maintenance only.
             return MonitoringRunResult("AI_COORDINATOR_OWNS_DECISIONS", self.clock(), (), (), {"symbols": len(symbols)})
         return self.service.run(symbols=symbols, now=self.clock())

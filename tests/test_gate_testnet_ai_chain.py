@@ -1,8 +1,8 @@
 """Focused regression coverage for the Gate TestNet + AI main chain.
 
-These tests use isolated SQLite stores and deterministic provider doubles.  A
+These tests use isolated SQLite stores and deterministic provider doubles. A
 fixture passing here proves the contract and accounting boundaries, not the
-availability or quality of a real Gate credential or Qwen inference.
+availability or quality of a real Gate credential or Bonsai inference.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -162,6 +162,7 @@ def test_gate_gateway_open_and_reduce_only_use_remote_position_without_local_mir
 
         def __init__(self):
             self.open = False
+            self.orders = []
 
         def get_market_metadata(self, symbol):
             return {
@@ -169,6 +170,7 @@ def test_gate_gateway_open_and_reduce_only_use_remote_position_without_local_mir
                 "precision": {"amount": 1, "price": 0.5},
                 "limits": {"amount": {"step": 1, "min": 1, "max": 100}},
                 "contractSize": 1,
+                "leverage_max": 100,
                 "taker": 0.0005,
             }
 
@@ -198,6 +200,7 @@ def test_gate_gateway_open_and_reduce_only_use_remote_position_without_local_mir
             }
 
         def place_order(self, **kwargs):
+            self.orders.append(dict(kwargs))
             if kwargs.get("reduce_only"):
                 self.open = False
                 return {"status": "FILLED", "order_id": "remote-close", "filled": kwargs["amount"], "amount": kwargs["amount"], "average_price": 101.0, "fee": 0.01, "contract_size": 1}
@@ -242,7 +245,7 @@ def test_gate_gateway_open_and_reduce_only_use_remote_position_without_local_mir
             side="LONG",
             order_type="market",
             quantity=1,
-            leverage=1,
+            leverage=100,
             protection_plan=ProtectionPlan(stop_price=99, take_profit=101),
             authorization_id=auth.authorization_id,
             authorization_version=auth.version,
@@ -252,6 +255,12 @@ def test_gate_gateway_open_and_reduce_only_use_remote_position_without_local_mir
         now=now,
     )
     assert opened["status"] == "FILLED"
+    assert trader.orders[0]["leverage"] == 30
+    with store._connect() as db:
+        persisted = db.execute(
+            "SELECT leverage FROM order_intents WHERE intent_id='remote-gateway-open'"
+        ).fetchone()
+    assert persisted["leverage"] == 30
     assert opened["protection_status"] == "ACTIVE"
 
     closed = gateway.submit_intent(
@@ -420,6 +429,7 @@ class _E2EFixtureTrader:
             "precision": {"amount": 0.1, "price": 0.5},
             "limits": {"amount": {"step": 0.1, "min": 0.1, "max": 10}},
             "contractSize": 1,
+            "leverage_max": 100,
             "taker": 0.0005,
             "source": "fixture_gate_metadata",
         }

@@ -16,6 +16,8 @@ if str(ROOT) not in sys.path:
 
 from core.ai import OllamaProvider, SignalPolicy, analyze_with_repair, to_signal_proposal
 from core.instruments import instrument_for
+from core.model_client import model_client
+from core.model_routing import DEFAULT_SMART_MODEL
 from core.news_engine import NewsEngine, RSSNewsProvider
 from core.outcomes import settle_prediction
 from core.providers import Bar, Quote
@@ -37,8 +39,8 @@ def main(argv: list[str] | None = None) -> int:
     os.environ["MARKET_DATA_MODE"] = "real"
     os.environ["DISABLE_FIXTURE_FALLBACK"] = "1"
     os.environ["NEWS_MODE"] = "real"
-    base_url = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
-    model_name = os.environ.get("OLLAMA_MODEL", "qwen3.5:4b")
+    base_url = model_client.base_url
+    model_name = DEFAULT_SMART_MODEL
     llm = OllamaProvider(base_url=base_url, model_name=model_name, timeout=180, retries=0)
     news_provider = RSSNewsProvider(timeout=15, retries=1)
     store = SQLiteStore(args.db)

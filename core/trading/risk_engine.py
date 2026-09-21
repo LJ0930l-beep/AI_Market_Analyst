@@ -880,6 +880,12 @@ class RiskEngine:
             "venue": str(getattr(intent, "venue", "simulated") or "simulated"),
             "mode": str(getattr(getattr(intent, "mode", None), "value", getattr(intent, "mode", "PAPER"))).upper(),
         }
+        from .strategy_execution import venue_leverage_limit
+
+        user_max_leverage = Decimal(str(getattr(intent, "leverage", None) or 100))
+        venue_max_leverage = venue_leverage_limit(market)
+        if venue_max_leverage is not None:
+            user_max_leverage = min(user_max_leverage, Decimal(str(venue_max_leverage)))
         decision = self.evaluate_proposal(
             account_id=str(getattr(intent, "account_id", "")),
             proposal=proposal,
@@ -887,7 +893,7 @@ class RiskEngine:
             now=now,
             is_trend=True,
             open_positions=open_positions,
-            user_max_leverage=Decimal(str(getattr(intent, "leverage", None) or 100)),
+            user_max_leverage=user_max_leverage,
             requested_contracts=getattr(intent, "quantity", None),
             max_single_risk_fraction=max_single_risk_fraction,
             max_portfolio_risk_fraction=max_portfolio_risk_fraction,

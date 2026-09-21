@@ -14,14 +14,42 @@
   --focus: #00c087;
 }
 
+/* Command deck visual system: dense market telemetry over visible ambient motion. */
+:root {
+  --canvas: #07111f;
+  --surface: rgba(10, 18, 31, .58);
+  --surface-hover: rgba(17, 29, 47, .68);
+  --border: rgba(93, 126, 160, .28);
+  --border-subtle: rgba(93, 126, 160, .18);
+  --long: #4fe7d5;
+  --short: #ff6b7a;
+  --warning: #f7b955;
+  --text-primary: #dce7f4;
+  --text-muted: #8fa2b8;
+}
+
 .nav-entry--active { background:#17342d; color:#91f1d4; box-shadow:none; border-left:2px solid #00C087; }
 .brand-lockup__sigil { background:#17342d; border-color:#00C087; box-shadow:none; color:#91f1d4; }
 .route-surface:has(.v2-workspace) { padding:20px; }
 
+/* Ambient Motion Transparency Pass-through */
+html,
+body,
+#root,
+.app-frame,
+.app-column,
+.workspace-main,
+.route-surface,
+.v2-workspace {
+  background: transparent !important;
+}
+
 .v2-workspace {
   min-width: 0;
   color: var(--text-primary);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: "Segoe UI Variable", "Microsoft YaHei UI", sans-serif;
+  position: relative;
+  z-index: 1;
 }
 
 .v2-title,
@@ -42,6 +70,8 @@
   margin: 0;
   letter-spacing: -0.03em;
   font-weight: 700;
+  font-family: Bahnschrift, "Segoe UI Variable Display", "Microsoft YaHei UI", sans-serif;
+  text-transform: uppercase;
 }
 
 .v2-title-main {
@@ -128,24 +158,133 @@
   min-width: 0;
 }
 
-/* Terminal Panels */
+.v2-ai-hero {
+  position: relative;
+  z-index: 2;
+  margin: 14px 0 16px;
+  scroll-margin-top: 14px;
+}
+
+.v2-ai-hero .ai-cockpit {
+  margin-bottom: 0;
+}
+
+/* Terminal Panels - Cyber FinTech Translucent Glassmorphism */
 .v2-workspace .terminal-panel {
   padding: 16px 18px;
   margin-bottom: 16px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  box-shadow: none;
+  background: rgba(8, 15, 27, 0.56) !important;
+  backdrop-filter: blur(13px) saturate(132%) !important;
+  -webkit-backdrop-filter: blur(13px) saturate(132%) !important;
+  border: 1px solid rgba(56, 189, 248, 0.20) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+  transition: all 0.22s ease !important;
 }
+
+.v2-workspace .terminal-panel:hover {
+  border-color: rgba(56, 189, 248, 0.38) !important;
+  box-shadow: 0 12px 38px rgba(0, 0, 0, 0.5), 0 0 16px rgba(56, 189, 248, 0.1) !important;
+}
+
+/* Hero K-Line Chart Container (Top of Dashboard) */
+.v2-hero-chart-container {
+  margin-bottom: 16px;
+}
+
+.v2-hero-chart-container .terminal-panel {
+  background: rgba(8, 15, 27, 0.62) !important;
+  border: 1px solid rgba(56, 189, 248, 0.26) !important;
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.45) !important;
+  backdrop-filter: blur(16px) !important;
+  border-radius: 8px !important;
+  margin-bottom: 0 !important;
+}
+
+/* True Viewport-Fixed Left Sidebar */
+.app-frame {
+  display: block !important;
+  min-height: 100vh !important;
+  position: relative !important;
+}
+
+.nav-ledger {
+  position: fixed !important;
+  left: 0 !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  width: 14rem !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  background: rgba(5, 11, 21, 0.74) !important;
+  backdrop-filter: blur(20px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(140%) !important;
+  border-right: 1px solid rgba(56, 189, 248, 0.22) !important;
+  box-sizing: border-box !important;
+  padding: 1.15rem 0.85rem 0.85rem !important;
+  overflow: hidden !important;
+  z-index: 100 !important;
+}
+
+.nav-ledger__top {
+  display: flex !important;
+  flex-direction: column !important;
+  overflow-y: auto !important;
+  scrollbar-width: none !important;
+  flex: 1 1 auto !important;
+}
+.nav-ledger__top::-webkit-scrollbar {
+  display: none !important;
+}
+
+.nav-ledger__bottom {
+  flex-shrink: 0 !important;
+  margin-top: auto !important;
+  width: 100% !important;
+  padding-top: 0.65rem !important;
+}
+
+.health-status {
+  margin-top: auto !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  background: rgba(8, 16, 28, 0.64) !important;
+  border-top: 1px solid rgba(56, 189, 248, 0.25) !important;
+  border-radius: 6px !important;
+  padding: 12px 14px !important;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5) !important;
+}
+
+.app-column {
+  margin-left: 14rem !important;
+  width: calc(100% - 14rem) !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+  position: relative !important;
+}
+
+@media (max-width: 780px) {
+  .nav-ledger {
+    display: none !important;
+  }
+  .app-column {
+    margin-left: 0 !important;
+    width: 100% !important;
+  }
+}
+
 
 .v2-risk-cockpit {
   border-color: #3b5265 !important;
-  background: linear-gradient(135deg, rgba(20, 31, 43, 0.98), rgba(18, 21, 30, 0.98)) !important;
+  background: linear-gradient(135deg, rgba(15, 27, 40, 0.62), rgba(10, 16, 27, 0.58)) !important;
 }
 
 .v2-institutional-panel {
   border-color: #3c4a63 !important;
-  background: linear-gradient(135deg, rgba(25, 29, 47, 0.98), rgba(18, 21, 30, 0.98)) !important;
+  background: linear-gradient(135deg, rgba(18, 24, 42, 0.62), rgba(10, 16, 27, 0.58)) !important;
 }
 
 .v2-institutional-grid {
@@ -587,11 +726,79 @@
   border-color: #00c087 !important;
 }
 
+/* News Scroll Container & Cards (Harmonized with Macro Calendar) */
+.v2-news-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.v2-news-list {
+  display: grid;
+  gap: 10px;
+  max-height: clamp(340px, 58vh, 620px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(56, 189, 248, 0.35) #10141f;
+  background: rgba(16, 20, 31, 0.58);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.v2-news-list:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+
+.v2-news-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.v2-news-list::-webkit-scrollbar-track {
+  background: #10141f;
+  border-radius: 4px;
+}
+
+.v2-news-list::-webkit-scrollbar-thumb {
+  background: rgba(70, 81, 106, 0.6);
+  border-radius: 4px;
+  border: 2px solid #10141f;
+}
+
+.v2-news-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(56, 189, 248, 0.5);
+}
+
 .v2-news-card {
-  padding: 14px 0;
-  border-top: 1px solid var(--border);
+  padding: 12px 14px;
+  background: rgba(22, 28, 42, 0.65);
+  border: 1px solid rgba(48, 62, 86, 0.45);
+  border-radius: 6px;
   display: grid;
   gap: 8px;
+  transition: all 0.18s ease;
+  backdrop-filter: blur(8px);
+}
+
+.v2-news-card:hover {
+  background: rgba(28, 36, 54, 0.85);
+  border-color: rgba(70, 85, 115, 0.7);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+}
+
+.v2-news-card--bullish_policy {
+  border-left: 3px solid #00c087;
+}
+
+.v2-news-card--bearish_policy {
+  border-left: 3px solid #ff3b69;
+}
+
+.v2-news-card--circuit_breaker {
+  border-left: 3px solid #f59e0b;
 }
 
 .v2-news-header {
@@ -1176,6 +1383,99 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.v2-model-json-container {
+  padding: 16px;
+  border: 1px solid rgba(94, 234, 212, 0.2);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(11, 20, 34, 0.92), rgba(9, 13, 23, 0.96));
+}
+
+.v2-model-status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.v2-model-status-card {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-left: 2px solid #718096;
+  border-radius: 8px;
+  background: rgba(8, 13, 23, 0.72);
+}
+
+.v2-model-status-card[data-state="verified"] {
+  border-left-color: #5de4c7;
+  box-shadow: inset 10px 0 24px -24px rgba(93, 228, 199, 0.8);
+}
+
+.v2-model-status-card[data-state="warning"] {
+  border-left-color: #e5b65b;
+  box-shadow: inset 10px 0 24px -24px rgba(229, 182, 91, 0.8);
+}
+
+.v2-model-status-card > span {
+  color: #8fa2b8;
+  font: 600 10px/1.3 var(--data), "Fira Code", monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.v2-model-status-card > strong {
+  overflow-wrap: anywhere;
+  color: #e5edf7;
+  font-size: 14px;
+}
+
+.v2-model-status-card > small {
+  overflow-wrap: anywhere;
+  color: #91a2b5;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.v2-model-decision-summary {
+  margin-top: 14px;
+  color: #e2e8f0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.v2-model-decision-summary p {
+  margin: 6px 0 0;
+  color: #cbd5e1;
+}
+
+.v2-model-json-container .v2-pre {
+  max-height: 360px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 6px;
+  background: rgba(4, 9, 17, 0.86);
+  color: #5de4c7;
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .v2-model-status-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .v2-model-status-card[data-state="verified"] {
+    animation: model-verified-breathe 4.8s ease-in-out infinite;
+  }
+
+  @keyframes model-verified-breathe {
+    50% { border-left-color: rgba(93, 228, 199, 0.52); }
+  }
 }
 
 .v2-analysis-stats-grid {
@@ -2559,3 +2859,43 @@
   padding: 12px;
   margin-top: 10px;
 }
+
+.v2-analysis-tabs {
+  position: sticky;
+  top: 8px;
+  z-index: 8;
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  gap: 6px;
+  margin: 0 0 14px;
+  padding: 5px;
+  overflow-x: auto;
+  border: 1px solid rgba(96, 122, 155, .25);
+  border-radius: 12px;
+  background: rgba(8, 14, 25, .74);
+  backdrop-filter: blur(14px);
+}
+.v2-analysis-tabs button {
+  flex: 0 0 auto;
+  padding: 9px 13px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #a9b7c9;
+  cursor: pointer;
+  transition: background .2s ease, color .2s ease, border-color .2s ease;
+}
+.v2-analysis-tabs button:hover,
+.v2-analysis-tabs button.is-active {
+  border-color: rgba(76, 230, 193, .32);
+  background: rgba(76, 230, 193, .1);
+  color: #83f0d1;
+}
+.v2-intel-layout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+.v2-intel-layout > :first-child,
+.v2-intel-layout > :last-child { grid-column: 1 / -1; }
+@media (prefers-reduced-motion: reduce) {
+  .v2-analysis-tabs button { transition: none; }
+}
+@media (max-width: 900px) { .v2-intel-layout { grid-template-columns: minmax(0, 1fr); } }

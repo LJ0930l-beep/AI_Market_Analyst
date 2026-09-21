@@ -237,6 +237,7 @@ def _fresh_market(store: SQLiteStore, now: datetime, price: float = 100.0) -> di
             "slippage": 0.001,
             "market": {
                 "contractSize": 1.0,
+                "leverage_max": 100,
                 "precision": {"amount": 0.001, "price": 0.01},
                 "limits": {"amount": {"min": 0.001, "max": 1000000.0, "step": 0.001}},
                 "taker": 0.0005,

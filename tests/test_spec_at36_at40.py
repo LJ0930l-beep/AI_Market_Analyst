@@ -263,6 +263,7 @@ def test_at37_legacy_revocation_does_not_cut_off_scoped_execution_or_protection(
             "fresh": True,
             "market": {
                 "contractSize": 1.0,
+                "leverage_max": 100,
                 "precision": {"amount": 0.1, "price": 0.1},
                 "limits": {"amount": {"min": 0.1, "max": 100.0, "step": 0.1}},
                 "taker": 0.0005,
@@ -300,6 +301,7 @@ def test_at37_legacy_revocation_does_not_cut_off_scoped_execution_or_protection(
             "fresh": True,
             "market": {
                 "contractSize": 1.0,
+                "leverage_max": 100,
                 "precision": {"amount": 0.1, "price": 0.1},
                 "limits": {"amount": {"min": 0.1, "max": 100.0, "step": 0.1}},
                 "taker": 0.0005,

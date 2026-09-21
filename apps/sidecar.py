@@ -6,12 +6,20 @@ import argparse
 import logging
 import os
 import sys
+import threading
+import time
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from uuid import uuid4
 
 from core.config import database_path_from_env
-from core.desktop_runtime import ensure_app_data_layout, ownership_fingerprint, write_runtime_manifest
+from core.desktop_runtime import (
+    ensure_app_data_layout,
+    ownership_fingerprint,
+    process_is_alive,
+    remove_runtime_manifest_if_owned,
+    write_runtime_manifest,
+)
 from core.storage import SQLiteStore
 
 
@@ -21,6 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--port", type=int, default=int(os.environ.get("AIMA_SIDECAR_PORT", "18765")))
     parser.add_argument("--instance-id", default=f"standalone-{os.getpid()}-{uuid4().hex[:12]}")
     parser.add_argument("--ownership-token", default=uuid4().hex)
+    parser.add_argument("--owner-pid", type=int, default=0)
     args = parser.parse_args(argv)
     if args.host not in {"127.0.0.1", "localhost", "::1"}:
         parser.error("the packaged sidecar binds only to loopback")
@@ -43,7 +52,22 @@ def main(argv: list[str] | None = None) -> int:
         started_at=started_at,
         command_line=command_line,
     )
+    fingerprint["instance_id"] = args.instance_id
+    fingerprint["owner_pid"] = args.owner_pid or None
     write_runtime_manifest(paths, sidecar=fingerprint, port=args.port)
+
+    if args.owner_pid > 0:
+        def stop_when_desktop_owner_exits() -> None:
+            while process_is_alive(args.owner_pid):
+                time.sleep(1.0)
+            remove_runtime_manifest_if_owned(paths, pid=os.getpid(), instance_id=args.instance_id)
+            os._exit(0)
+
+        threading.Thread(
+            target=stop_when_desktop_owner_exits,
+            name="aima-desktop-owner-watchdog",
+            daemon=True,
+        ).start()
     log_path = paths.logs / "sidecar.log"
     handler = RotatingFileHandler(log_path, maxBytes=2_000_000, backupCount=3, encoding="utf-8")
     logging.basicConfig(
@@ -56,7 +80,10 @@ def main(argv: list[str] | None = None) -> int:
     SQLiteStore(database_path_from_env()).initialize()
     import uvicorn
 
-    uvicorn.run(app, host=args.host, port=args.port, log_level="warning", access_log=False, log_config=None)
+    try:
+        uvicorn.run(app, host=args.host, port=args.port, log_level="warning", access_log=False, log_config=None)
+    finally:
+        remove_runtime_manifest_if_owned(paths, pid=os.getpid(), instance_id=args.instance_id)
     return 0
 
 

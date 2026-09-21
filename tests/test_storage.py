@@ -68,7 +68,7 @@ class StorageTests(unittest.TestCase):
             store.initialize()
             store.create_replay_run(
                 run_id="replay-test",
-                model_id="qwen3.5:4b",
+                model_id="Bonsai-2-27B-PTQ1_0",
                 prompt_version="phase2-json-v6",
                 symbols=["NVDA"],
                 timeframes=["1h"],

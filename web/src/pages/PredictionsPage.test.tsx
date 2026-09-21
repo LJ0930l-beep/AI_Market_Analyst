@@ -67,7 +67,7 @@ describe("PredictionsPage", () => {
     expect(btcCard as HTMLElement).toHaveTextContent("BREAKOUT");
     expect(btcCard as HTMLElement).toHaveTextContent("score 0.81");
     expect(btcCard as HTMLElement).toHaveTextContent("ANALYZED / VALID");
-    expect(screen.getByText(/Loading this page never calls Qwen/)).toBeInTheDocument();
+    expect(screen.getByText(/Loading this page never calls AI/)).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "View market / run explicit analysis" })[0]).toHaveAttribute("href", "/assets/BTCUSDT");
     expect(analysis).not.toHaveBeenCalled();
   });
@@ -183,7 +183,7 @@ describe("PredictionsPage", () => {
     expect(within(rail as HTMLElement).getByRole("listitem", { name: /Re-evaluate: 2030-01-02T12:20:00.000Z/ })).toBeInTheDocument();
     expect(within(rail as HTMLElement).getByRole("listitem", { name: /Expiry: 2030-01-02T13:00:00.000Z/ })).toBeInTheDocument();
     expect(within(rail as HTMLElement).getByText("Prediction source: live")).toBeInTheDocument();
-    expect(within(rail as HTMLElement).getByText("qwen3.5:4b")).toBeInTheDocument();
+    expect(within(rail as HTMLElement).getByText("Bonsai-2-27B-PTQ1_0")).toBeInTheDocument();
   });
 
   it("suppresses Follow for WAIT and expired predictions", async () => {

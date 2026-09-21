@@ -1,10 +1,12 @@
-"""Explicit real Ollama smoke over live Gate/RSS facts, not fixture execution."""
+"""Explicit real Bonsai smoke over public Gate/RSS facts; this script never executes orders."""
 
 import json
 import tempfile
 from pathlib import Path
 from datetime import datetime, timezone
 from core.ai.ollama import OllamaProvider
+from core.model_client import model_client
+from core.model_routing import DEFAULT_SMART_MODEL
 from core.news_engine import RSSNewsProvider
 from core.news_translation import NewsTranslationService
 from core.providers.gateio_provider import GatePublicProvider
@@ -24,7 +26,7 @@ def main():
         for s in (EMATrend(), BollingerSqueeze())
         if (p := s.evaluate(instrument.symbol, bars, now=now))
     ]
-    model = OllamaProvider(timeout=60, retries=0, max_tokens=1200)
+    model = OllamaProvider(base_url=model_client.base_url, model_name=DEFAULT_SMART_MODEL, timeout=60, retries=0, max_tokens=1200)
     events = RSSNewsProvider(timeout=10, retries=0).get_events(instrument, 2)
     with tempfile.TemporaryDirectory(prefix="aima-v2-real-model-") as folder:
         store = SQLiteStore(Path(folder) / "evidence.sqlite3")
@@ -49,7 +51,7 @@ def main():
                 },
                 {"role": "user", "content": json.dumps(facts)},
             ],
-            model_name="qwen3.5:9b",
+            model_name=DEFAULT_SMART_MODEL,
             prompt_version="v2_live_smoke",
             input_hash="explicit-live-v2",
             temperature=0.0,
@@ -68,7 +70,10 @@ def main():
                     "model_metadata": result[2],
                     "execution": "NONE; live model integration only, not a natural-trigger fill claim",
                 },
-                ensure_ascii=False,
+                # Windows terminals may use GBK/code-page encodings that cannot
+                # represent flags or some source text. ASCII escaping keeps the
+                # evidence portable while remaining valid JSON.
+                ensure_ascii=True,
                 indent=2,
             )
         )

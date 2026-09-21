@@ -1,16 +1,22 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from core.instruments import instrument_for
-from core.monitoring import MonitoringPolicy, MonitoringService, OpportunityAnalysis, RealtimeBarCache, trigger_candidates
+from core.monitoring import (
+    MonitoringPolicy,
+    MonitoringService,
+    OpportunityAnalysis,
+    RealtimeBarCache,
+    trigger_candidates,
+)
 from core.providers import Bar, Quote
 from core.storage import SQLiteStore
 
-
-POINT = datetime(2030, 1, 2, 12, 0, tzinfo=timezone.utc)
+POINT = datetime(2030, 1, 2, 12, 0, tzinfo=UTC)
 
 
 def make_bars() -> tuple[list[Bar], list[Bar]]:
@@ -48,7 +54,14 @@ class FakeSmartProvider:
         self.calls = 0
 
     def health(self):
-        return {"available": True, "model_available": True, "models": ["qwen3.5:9b"]}
+        return {
+            "available": True,
+            "model_available": True,
+            "model_id": "Bonsai-2-27B-PTQ1_0",
+            "actual_model_id": "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+            "model_identity_source": "verified_manifest",
+            "models": ["Ternary-Bonsai-2-27B-PTQ1_0.gguf"],
+        }
 
     def generate_json(self, messages, **kwargs):
         self.calls += 1
@@ -67,7 +80,16 @@ class FakeSmartProvider:
             "event_risk": False,
             "missing_evidence": ["news unavailable in deterministic test"],
         }
-        return payload, "{\"bias\":\"LONG_WATCH\"}", {"latency_ms": 1.0}
+        return payload, json.dumps(payload, separators=(",", ":")), {
+            "latency_ms": 1.0,
+            "model_id": "Bonsai-2-27B-PTQ1_0",
+            "actual_model_id": "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+            "verified_manifest_model_id": "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+            "model_identity_source": "completion_response",
+            "prompt_version": kwargs.get("prompt_version"),
+            "input_hash": kwargs.get("input_hash"),
+            "parse_status": "valid",
+        }
 
 
 class InvalidLevelsSmartProvider(FakeSmartProvider):
@@ -197,7 +219,7 @@ def test_opportunity_accepts_list_invalidation_without_optional_price() -> None:
         symbol="BTCUSDT",
         timeframe="15m",
         trigger_event_id="trigger-list-invalidation",
-        model_id="qwen3.5:9b",
+        model_id="Bonsai-2-27B-PTQ1_0",
         data_as_of=POINT,
     )
     assert analysis.invalidation_price is None

@@ -1,23 +1,34 @@
 """Production strategy decision -> gateway -> ledger -> analysis, offline PAPER only."""
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+
 from core.agent_execution import AgentDecisionService
+from core.ai.ollama import OllamaProvider, model_client
 from core.analysis.ai_trade_analytics import analyze_ai_trading_ledger
+from core.model_routing import DEFAULT_MODEL
 from core.storage import SQLiteStore
 from core.trading.ledger import AccountLedger
 
 
-def test_strategy_open_appears_once_in_analysis_without_replaying_orders(tmp_path):
+def test_strategy_open_appears_once_in_analysis_without_replaying_orders(tmp_path, monkeypatch):
     store = SQLiteStore(tmp_path / "strategy.db")
     store.initialize()
     ledger = AccountLedger(store)
     ledger.create_account("strategy_account", mode="PAPER", initial_deposit=Decimal("10000"), config={"venue":"simulated"})
     # Explicit fixture-only simulation setting; never applied to user accounts.
     store.upsert_app_setting("simulation.allow_unknown_macro", True)
-    class Model:
-        def generate_json(self, messages, **kwargs):
-            assert "Simplified Chinese" in messages[0]["content"]
-            return {"decision":"EXECUTE_TRADE", "summary":"本地测试满足规则", "counterevidence":[]}
+    answer = {"decision":"EXECUTE_TRADE", "summary":"本地测试满足规则", "counterevidence":[]}
+    artifact = r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"
+    model = OllamaProvider(base_url=model_client.base_url, model_name=DEFAULT_MODEL)
+    monkeypatch.setattr(model, "health", lambda **_kwargs: {
+        "available": True,
+        "model_available": True,
+        "model_id": DEFAULT_MODEL,
+        "actual_model_id": artifact,
+        "model_identity_source": "verified_manifest",
+    })
+    monkeypatch.setattr(model_client, "structured_analysis", lambda *_args, **_kwargs: answer)
+    model_client._response_state.model = None
     now = datetime.now(timezone.utc)
     proposal = {"account_id":"strategy_account", "symbol":"BTCUSDT", "strategy_id":"ema_trend",
         "strategy_version":"2.0.0", "side":"LONG", "entry":100, "stop":95,
@@ -27,7 +38,7 @@ def test_strategy_open_appears_once_in_analysis_without_replaying_orders(tmp_pat
     market = {"active":True,"linear":True,"settle":"USDT","contractSize":0.01,
         "precision":{"amount":1,"price":0.1},"limits":{"amount":{"min":1,"max":1000000}}}
     facts = {"freshness":"fresh","source":"isolated_fixture","as_of":now.isoformat(),"price":100}
-    service = AgentDecisionService(store, Model())
+    service = AgentDecisionService(store, model)
     result = service.decide(proposal, market, facts, now=now)
     assert result["status"] == "SIMULATED", result.get("reason")
     for _ in range(2):

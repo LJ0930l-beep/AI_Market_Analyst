@@ -97,7 +97,7 @@ APP_SETTING_DEFINITIONS: dict[str, dict[str, object]] = {
         "default": "follow_ui",
         "value_type": "string",
         "allowed_values": ("follow_ui", "en", "zh-CN"),
-        "description": "Preferred language for explicit local Qwen responses.",
+        "description": "Preferred language for explicit local model responses.",
     },
     "notifications.language": {
         "default": "en",
@@ -109,7 +109,7 @@ APP_SETTING_DEFINITIONS: dict[str, dict[str, object]] = {
         "default": "auto",
         "value_type": "string",
         "allowed_values": ("auto", "fast", "smart"),
-        "description": "Deterministic server-side Qwen tier preference for explicit AI requests.",
+        "description": "Deterministic server-side model tier preference for explicit AI requests.",
     },
     "desktop.close_to_tray": {
         "default": False,
@@ -126,6 +126,17 @@ APP_SETTING_DEFINITIONS: dict[str, dict[str, object]] = {
         "value_type": "boolean",
         "description": "Resume explicitly enabled monitoring policies after a user-started application session.",
     },
+    "ai.autonomous_resume": {
+        "default": False,
+        "value_type": "boolean",
+        "description": "Restore the AI autonomous session the operator explicitly started after an application restart; only takes effect together with monitoring.resume.",
+    },
+    "ai.autonomous_account_id": {
+        "default": "",
+        "value_type": "string",
+        "description": "Registered account explicitly bound to the autonomous AI session for restart recovery.",
+    },
+
     "market_hydration.enabled": {
         "default": True,
         "value_type": "boolean",
@@ -161,8 +172,8 @@ def validate_app_setting_value(key: str, value: Any) -> Any:
     if value_type == "string":
         if type(value) is not str:
             raise ValueError(f"{key} must be a string")
-        allowed_values = definition.get("allowed_values", ())
-        if value not in allowed_values:
+        allowed_values = definition.get("allowed_values")
+        if allowed_values is not None and value not in allowed_values:
             raise ValueError(f"{key} must be one of: {', '.join(str(item) for item in allowed_values)}")
     return value
 
@@ -1790,18 +1801,24 @@ class SQLiteStore(V2Store):
         limit: int = 100,
     ) -> list[dict[str, object]]:
         bounded_limit = max(1, min(int(limit), 500))
+        normalized_symbol = symbol.strip().upper() if symbol else None
+        symbol_pattern = f'%"{normalized_symbol}"%' if normalized_symbol else None
         with self._connect() as db:
+            # Symbol scoping happens in Python below, because an event may be
+            # tagged with a concrete symbol yet still be market-wide context
+            # (scope == "MARKET_WIDE") that every symbol must see.  A hard SQL
+            # LIKE filter would drop those rows before scope is inspected.
             rows = db.execute(
                 """SELECT payload_json FROM phase6_events
                 WHERE (? IS NULL OR julianday(published_at) >= julianday(?))
                   AND (? IS NULL OR julianday(published_at) <= julianday(?))
                 ORDER BY CASE WHEN ? IS NULL THEN event_at ELSE published_at END DESC, event_id ASC LIMIT ?""",
-                (published_since, published_since, published_since, as_of, published_since, max(bounded_limit * 5, bounded_limit)),
+                (published_since, published_since, published_since, as_of,
+                 published_since, max(bounded_limit * 5, bounded_limit)),
             ).fetchall()
         cutoff = _parse_utc_timestamp(as_of) if as_of is not None else None
         if as_of is not None and cutoff is None:
             raise ValueError("as_of must be an ISO timestamp with timezone")
-        normalized_symbol = symbol.strip().upper() if symbol else None
         results: list[dict[str, object]] = []
         for row in rows:
             try:
@@ -1811,8 +1828,16 @@ class SQLiteStore(V2Store):
             if not isinstance(payload, dict):
                 continue
             symbols = payload.get("affected_symbols", payload.get("symbols", []))
-            if normalized_symbol and normalized_symbol not in {str(value).upper() for value in symbols if isinstance(value, str)}:
-                continue
+            if normalized_symbol:
+                declared_scope = str(payload.get("scope") or "").upper()
+                in_scope = normalized_symbol in {str(value).upper() for value in symbols if isinstance(value, str)}
+                if in_scope:
+                    payload = {**payload, "scope": declared_scope or "SYMBOL"}
+                else:
+                    # The event is tagged with other symbols but is the only
+                    # risk context available: surface it as market-wide
+                    # background instead of hiding it from this symbol.
+                    payload = {**payload, "scope": "MARKET_WIDE", "affected_symbols": symbols}
             known_at = _parse_utc_timestamp(payload.get("known_at"))
             published_at = _parse_utc_timestamp(payload.get("published_at"))
             revision_at = _parse_utc_timestamp(payload.get("revision_known_at"))
@@ -3664,6 +3689,7 @@ class SQLiteStore(V2Store):
         venue: str | None = None,
         market_type: str | None = None,
         price_type: str | None = None,
+        _latest: bool = False,
     ) -> list[dict[str, object]]:
         bounded = max(1, min(int(limit), 2_000))
         start_text = self._utc_timestamp(start) if isinstance(start, datetime) else (str(start) if start else None)
@@ -3697,7 +3723,18 @@ class SQLiteStore(V2Store):
             params.append(cursor)
         params.append(bounded)
         with self._connect() as db:
-            rows = db.execute(
+            if _latest:
+                rows = db.execute(
+                    f"""SELECT * FROM (
+                        SELECT *, ROW_NUMBER() OVER (
+                            PARTITION BY instrument_key, timeframe, bar_start
+                            ORDER BY is_closed DESC, available_at DESC, revision_id DESC
+                        ) AS current_revision FROM market_bar_versions
+                        WHERE {' AND '.join(conditions)}
+                    ) WHERE current_revision=1 ORDER BY bar_start DESC LIMIT ?""", tuple(params)
+                ).fetchall()
+            else:
+                rows = db.execute(
                 f"""SELECT instrument_key, symbol, venue, market_type, native_symbol,
                            settle_currency, price_type, timeframe, bar_start, bar_end,
                            revision_id, open, high, low, close, volume, volume_unit,
@@ -3747,13 +3784,13 @@ class SQLiteStore(V2Store):
                 continue
             result.append(candidate)
         result.sort(key=lambda item: (str(item.get("bar_start")), str(item.get("available_at")), str(item.get("revision_id"))))
-        return result[:bounded]
+        return result[-bounded:] if _latest else result[:bounded]
 
     def latest_bars(self, symbol: str, timeframe: str, *, limit: int = 500, **filters: object) -> list[dict[str, object]]:
         bounded = max(1, min(int(limit), 2_000))
         # Apply identity filters before limiting, then return chronological
         # order as required by strategy consumers.
-        rows = self.range_bars(symbol, timeframe, limit=2_000, **filters)
+        rows = self.range_bars(symbol, timeframe, limit=bounded, _latest=True, **filters)
         current: dict[tuple[object, object], dict[str, object]] = {}
         for row in rows:
             key = (row.get("instrument_key"), row.get("bar_start"))
@@ -3864,6 +3901,15 @@ class SQLiteStore(V2Store):
                 price_type="last",
                 volume_unit="contracts",
             )
+            # Keep the original Gate last-price OHLCV provenance alongside
+            # the market-bar projection. The derivative table is the source
+            # used by the public market radar; never copy mark/index bars into
+            # a last-price slot.
+            if quality.get("synthetic") is not True:
+                self._save_gate_derivative_bars(
+                    symbol, native, "last", rows, provider, environment,
+                    timeframe=str(timeframe), now=now,
+                )
         for price_type in ("mark", "index"):
             rows = bootstrap.get(f"{price_type}_bars") or []
             if isinstance(rows, list):
@@ -3881,7 +3927,10 @@ class SQLiteStore(V2Store):
                     price_type=price_type,
                     volume_unit="contracts",
                 )
-                self._save_gate_derivative_bars(symbol, native, price_type, rows, provider, environment, now=now)
+                self._save_gate_derivative_bars(
+                    symbol, native, price_type, rows, provider, environment,
+                    timeframe="15m", now=now,
+                )
         funding = bootstrap.get("funding")
         if isinstance(funding, dict):
             self.save_gate_funding(symbol, native, funding, provider=provider, environment=environment, now=now)
@@ -3897,19 +3946,95 @@ class SQLiteStore(V2Store):
                 self.save_gate_liquidation(symbol, native, event, provider=provider, environment=environment, now=now)
         return {"bootstrap_id": bootstrap_id, "source_hash": source_hash, "status": str(quality.get("status") or "READY"), "bars_written": bars_written, "provider": provider, "environment": environment, "symbol": symbol, "native_symbol": native, "synthetic": False}
 
-    def _save_gate_derivative_bars(self, symbol: str, native: str, price_type: str, bars: list[object], provider: str, environment: str, *, now: datetime | None = None) -> int:
+    def _save_gate_derivative_bars(
+        self,
+        symbol: str,
+        native: str,
+        price_type: str,
+        bars: list[object],
+        provider: str,
+        environment: str,
+        *,
+        timeframe: str = "15m",
+        now: datetime | None = None,
+    ) -> int:
         received = self._utc_timestamp(now)
+        received_point = _parse_utc_timestamp(received)
+        if received_point is None:
+            return 0
+        timeframe_name = str(timeframe or "").strip().lower()
+        try:
+            interval = timedelta(seconds=self._bar_seconds(timeframe_name))
+        except (TypeError, ValueError):
+            return 0
+        provider_name = str(provider or "").strip().lower()
+        environment_name = str(environment or "").strip().upper()
+        if not provider_name or not environment_name:
+            return 0
         rows: list[tuple[object, ...]] = []
         for bar in bars:
             item = self._gate_bar_payload(bar)
-            start = self._gate_time(item.get("timestamp") or item.get("bar_start"), received)
-            end = self._gate_time(item.get("bar_end"), start)
+            start_value = item.get("timestamp") or item.get("bar_start")
+            if start_value is None:
+                continue
+            start = self._gate_time(start_value, "")
+            start_point = _parse_utc_timestamp(start)
+            if start_point is None:
+                continue
+            end_value = item.get("bar_end")
+            end = self._gate_time(end_value, "") if end_value is not None else self._utc_timestamp(start_point + interval)
+            end_point = _parse_utc_timestamp(end)
+            if end_point is None or end_point - start_point != interval or end_point > received_point:
+                continue
+            closed = item.get("is_closed")
+            if not (closed is True or closed == 1 or str(closed).strip().lower() in {"true", "1"}):
+                continue
+            input_quality = str(item.get("quality_status") or item.get("status") or "VALID").strip().upper()
+            if input_quality != "VALID":
+                continue
+            try:
+                open_price, high, low, close, volume = (
+                    float(item[name]) for name in ("open", "high", "low", "close", "volume")
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+            if (
+                not all(math.isfinite(value) for value in (open_price, high, low, close, volume))
+                or min(open_price, high, low, close) <= 0
+                or volume < 0
+                or low > min(open_price, close)
+                or high < max(open_price, close)
+            ):
+                continue
             event = self._gate_time(item.get("event_time") or item.get("event_at"), start)
             available = self._gate_time(item.get("available_at"), received)
+            available_point = _parse_utc_timestamp(available)
+            if available_point is None or available_point > received_point:
+                continue
             revision = str(item.get("revision_id") or self._gate_event_hash(item)[:32])
-            raw_hash = self._gate_event_hash({"symbol": symbol, "native_symbol": native, "price_type": price_type, "timeframe": "15m", "bar": item})
-            row_id = f"gate_bar_{raw_hash[:24]}"
-            rows.append((row_id, provider, environment, symbol, native, "15m", price_type, start, end, event, available, received, revision, float(item["open"]), float(item["high"]), float(item["low"]), float(item["close"]), float(item["volume"]), int(bool(item.get("is_closed"))), raw_hash, "VALID", self._gate_json(item)))
+            raw_hash = self._gate_event_hash({"symbol": symbol, "native_symbol": native, "price_type": price_type, "timeframe": timeframe_name, "bar": item})
+            row_identity = self._gate_event_hash({"provider": provider_name, "environment": environment_name, "raw_hash": raw_hash})
+            row_id = f"gate_bar_{row_identity[:24]}"
+            payload = {
+                **item,
+                "symbol": symbol,
+                "native_symbol": native,
+                "provider": provider_name,
+                "environment": environment_name,
+                "timeframe": timeframe_name,
+                "price_type": str(price_type).strip().lower(),
+                "bar_start": start,
+                "bar_end": end,
+                "source": str(item.get("source") or f"{provider_name}_native_rest:{str(price_type).lower()}"),
+                "quality_status": "VALID",
+                "is_closed": True,
+            }
+            rows.append((
+                row_id, provider_name, environment_name, symbol, native,
+                timeframe_name, str(price_type).strip().lower(), start, end,
+                event, available, received, revision, open_price, high, low,
+                close, volume, 1, raw_hash, "VALID", self._gate_json(payload),
+            ))
         if not rows:
             return 0
         with self._connect() as db:
@@ -3919,7 +4044,7 @@ class SQLiteStore(V2Store):
                     timeframe, price_type, bar_start, bar_end, event_time,
                     available_at, received_at, revision_id, open, high, low,
                     close, volume, is_closed, raw_hash, quality_status, payload_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 rows,
             )
         return max(0, int(cursor.rowcount))

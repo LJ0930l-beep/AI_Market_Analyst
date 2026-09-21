@@ -17,6 +17,7 @@ import enum
 import hashlib
 import json
 import logging
+import math
 import uuid
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -44,6 +45,10 @@ from .ai_cycle_trace import (
     humanize_reason,
     infer_block_stage,
     persist_stage_trace,
+)
+from core.model_routing import (
+    is_verified_bonsai_receipt as is_verified_bonsai_inference_receipt,
+    DEFAULT_SMART_MODEL,
 )
 
 logger = logging.getLogger("core.trading.ai_led_engine")
@@ -94,6 +99,7 @@ class AICycleContext:
     model_inference_settings: Dict[str, Any] = field(default_factory=dict)
     model_latency_ms: Optional[float] = None
     model_call_attempted: bool = False
+    model_call_completed: bool = False
     model_raw_response: Optional[str] = None
     model_call_prompt_version: Optional[str] = None
     evidence_bundle_id: Optional[str] = None
@@ -119,6 +125,10 @@ class AICycleContext:
     stage_block: Optional[str] = None
     decision_contract: Optional[str] = None
     technical_context: Dict[str, Any] = field(default_factory=dict)
+    strategy_instructions: Dict[str, Any] = field(default_factory=dict)
+    universe_snapshot: Dict[str, Any] = field(default_factory=dict)
+    dynamic_risk: Optional[Dict[str, Any]] = None
+    performance_context: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -133,6 +143,7 @@ class AIActionOutput:
     stop_price: Optional[float] = None
     take_profit: Optional[float] = None
     requested_risk_fraction: Optional[float] = None
+    position_size_usdt: Optional[float] = None
     requested_leverage: Optional[int] = None
     new_stop_price: Optional[float] = None
     reduce_fraction: Optional[float] = None
@@ -291,16 +302,19 @@ class AILedDecisionEngine:
             execution_result=result.execution_result,
             order_intent=result.order_intent,
         )
+        is_model = (origin == "MODEL")
         payload = {
             "cycle_id": result.cycle_id,
             "action": persisted_action,
-            "model_action": output.action if origin != "MODEL" else None,
+            "model_action": output.action if not is_model else None,
             "instrument_id": output.instrument_id,
             "reason": output.reason,
             "decision_id": output.decision_id,
             "model_output": asdict(output),
-            "analysis": dict(output.extra_fields),
-            "strategy_plan": output.extra_fields.get("strategy_plan"),
+            "analysis": dict(output.extra_fields) if is_model else None,
+            "strategy_plan": output.extra_fields.get("strategy_plan") if is_model else None,
+            "strategy_instructions": getattr(context, "strategy_instructions", None),
+            "performance_context": getattr(context, "performance_context", None),
             "account_id": context.account_id,
             "venue": context.venue,
             "mode": context.mode.value if isinstance(context.mode, TradingMode) else str(context.mode),
@@ -312,13 +326,15 @@ class AILedDecisionEngine:
             "authorization_version": context.authorization_version,
             "lease_holder_id": context.lease_holder_id,
             "fencing_token": context.fencing_token,
-            "model_id": context.model_id,
-            "model_version": context.model_version,
-            "prompt_version": context.prompt_version,
-            "input_hash": context.input_hash,
-            "model_digest": context.model_digest,
-            "model_digest_status": context.model_digest_status,
-            "model_quantization": context.model_quantization,
+            "model": (context.model_id or DEFAULT_SMART_MODEL) if is_model else None,
+            "model_id": context.model_id if is_model else None,
+            "model_receipt": context.model_inference_settings if is_model else None,
+            "model_version": context.model_version if is_model else None,
+            "prompt_version": context.prompt_version if is_model else None,
+            "input_hash": context.input_hash if is_model else None,
+            "model_digest": context.model_digest if is_model else None,
+            "model_digest_status": context.model_digest_status if is_model else "UNKNOWN_NOT_PROVIDED",
+            "model_quantization": context.model_quantization if is_model else None,
             "model_inference_settings": context.model_inference_settings,
             "model_latency_ms": context.model_latency_ms,
             "model_raw_response": context.model_raw_response,
@@ -353,13 +369,17 @@ class AILedDecisionEngine:
             "indicator_snapshot_id": context.indicator_snapshot_id,
             "decision_memory": context.decision_memory[:20],
             "evidence_refs": list(output.evidence_refs),
-            "order_selection": {
-                "preference": output.order_preference,
-                "limit_price": output.limit_price,
-                "ttl_seconds": output.ttl_seconds,
-                "candidate_id": output.candidate_id,
-                "closed_15m_bar": output.closed_15m_bar,
-            },
+            "order_selection": (
+                {
+                    "preference": output.order_preference,
+                    "limit_price": output.limit_price,
+                    "ttl_seconds": output.ttl_seconds,
+                    "candidate_id": output.candidate_id,
+                    "closed_15m_bar": output.closed_15m_bar,
+                }
+                if is_model
+                else None
+            ),
             "order_intent": result.order_intent.to_dict() if result.order_intent else None,
             "execution_result": result.execution_result,
             "decision_origin": origin,
@@ -417,6 +437,95 @@ class AILedDecisionEngine:
                     persist_stage_trace(self.store, cycle_id=result.cycle_id, account_id=context.account_id, trace=stage_trace)
         except Exception as e:
             logger.warning("Failed to persist ai_led_cycle: %s", e)
+
+    def _compute_market_readiness_score(self, context: AICycleContext) -> float:
+        """从已收盘的 15m 技术指标动态评估当前全市场机会就绪度（0~100%）。"""
+        scores = []
+        for symbol in context.allowed_instruments:
+            tc = (context.technical_context or {}).get(symbol, {})
+            frame = (tc.get("timeframes") or {}).get("15m") or {}
+            ind = frame.get("indicators") or {}
+            support = ind.get("support20")
+            resistance = ind.get("resistance20")
+            rsi = ind.get("rsi14_simple")
+            vol_ratio = ind.get("volume_ratio20")
+            quote = ((context.market_snapshots or {}).get(symbol) or {}).get("price") or (frame.get("last_close"))
+            if not all(isinstance(v, (int, float)) and v > 0 for v in (support, resistance, quote)):
+                continue
+            span = max(1e-6, resistance - support)
+            dist_to_key = min(abs(quote - support), abs(quote - resistance))
+            proximity_score = max(0.0, min(40.0, 40.0 * (1.0 - (dist_to_key / span))))
+            rsi_score = 20.0
+            if isinstance(rsi, (int, float)):
+                if 40 <= rsi <= 60:
+                    rsi_score = 25.0
+                elif (30 <= rsi < 40) or (60 < rsi <= 70):
+                    rsi_score = 35.0
+                elif rsi < 30 or rsi > 70:
+                    rsi_score = 15.0
+            vol_score = 15.0
+            if isinstance(vol_ratio, (int, float)) and vol_ratio > 0:
+                vol_score = max(5.0, min(25.0, vol_ratio * 15.0))
+            symbol_score = round(proximity_score + rsi_score + vol_score, 1)
+            scores.append(symbol_score)
+        if scores:
+            return max(scores)
+        return 50.0
+
+    def _live_execution_quote(
+        self,
+        symbol: str,
+        *,
+        environment: Any = None,
+        venue: Optional[str] = None,
+        now: Optional[datetime] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Read the venue's live last price right before order dispatch."""
+        raw_mode = (
+            environment
+            or getattr(self, "execution_environment", "")
+            or getattr(self, "mode", "")
+            or getattr(getattr(self, "gateway", None), "mode", "")
+            or ""
+        )
+        mode = str(getattr(raw_mode, "value", raw_mode)).upper()
+        if mode not in {"TESTNET", "LIVE"}:
+            return None
+        target_venue = str(venue or getattr(self, "venue", "") or "gate").lower()
+        if target_venue != "gate":
+            return None
+        try:
+            from core.providers import gateio_provider
+            GatePublicProvider = getattr(gateio_provider, "GatePublicProvider", None)
+            if GatePublicProvider is None:
+                from core.providers.gateio_provider import GatePublicProvider
+            is_testnet = (mode == "TESTNET")
+            provider = getattr(self, "_live_quote_provider", None)
+            if provider is None or getattr(provider, "testnet", None) != is_testnet:
+                provider = GatePublicProvider(testnet=is_testnet)
+                self._live_quote_provider = provider
+            ticker = provider._native_ticker(symbol)
+        except Exception:
+            return None
+        if not isinstance(ticker, dict):
+            return None
+        raw_price = ticker.get("last") or ticker.get("last_price") or ticker.get("mark_price")
+        try:
+            price = float(raw_price)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(price) or price <= 0:
+            return None
+        wall_now = datetime.now(timezone.utc)
+        stamp = wall_now if now is None or wall_now >= now else now
+        return {
+            "price": price,
+            "data_as_of": stamp.isoformat(),
+            "received_at": stamp.isoformat(),
+            "source": "gate_native_ticker",
+            "environment": mode,
+            "venue": target_venue,
+        }
 
     def execute_cycle(
         self,
@@ -479,37 +588,43 @@ class AILedDecisionEngine:
             )
 
         def market_for(symbol: str) -> Dict[str, Any]:
-            raw = context.market_snapshots.get(symbol) or {}
+            exec_snaps = getattr(context, "execution_market_snapshots", None)
+            if isinstance(exec_snaps, dict) and symbol in exec_snaps:
+                raw = exec_snaps.get(symbol) or {}
+            else:
+                raw = context.market_snapshots.get(symbol) or {}
             market = dict(raw) if isinstance(raw, dict) else {}
             if market.get("price") is None:
                 market["price"] = market.get("last", market.get("close"))
             if market.get("price") is None:
-                # Direct engine callers may omit the snapshot while the
-                # store has a current quote.  Resolve only through the
-                # gateway's freshness gate; never substitute the intent or
-                # model entry price as market data.
                 try:
                     persisted = self.gateway._fresh_market_snapshot(symbol)
                 except GatewayError:
                     persisted = None
                 if persisted:
                     return persisted
+            live = self._live_execution_quote(
+                symbol,
+                environment=context.execution_environment or context.mode,
+                venue=context.venue,
+                now=now,
+            )
+            if live:
+                market["price"] = live["price"]
+                market["data_as_of"] = live["data_as_of"]
+                market["received_at"] = live["received_at"]
+                market["source"] = live["source"]
+                market["freshness_status"] = "FRESH"
+                market["fresh"] = True
+                return market
             wall_now = datetime.now(timezone.utc)
             if not any(market.get(key) for key in ("data_as_of", "timestamp", "bar_end")):
                 started = self._parse_time(context.started_at)
-                # A synthetic test clock may be ahead of wall time.  Do not
-                # turn that into a future market quote; use call time instead.
                 reference = started if started and started <= wall_now + timedelta(seconds=5) else wall_now
                 market["data_as_of"] = reference.isoformat()
             market.setdefault("received_at", wall_now.isoformat())
             market.setdefault("source", "ai_cycle_snapshot")
             market.setdefault("freshness_status", "FRESH")
-            # A directly constructed cycle context is an application-owned
-            # snapshot boundary.  Older callers supplied ``last``/``close``
-            # only; the context timestamp above is the bounded freshness
-            # contract for that compatibility path.  The production
-            # coordinator still carries the provider's explicit marker and
-            # metadata, and the gateway remains the final freshness gate.
             market.setdefault("fresh", True)
             return market
 
@@ -553,6 +668,15 @@ class AILedDecisionEngine:
             return finish(output, "REJECTED", f"INVALID_ACTION_SCHEMA: Unknown action '{output.action}'")
 
         if output.action in ("WAIT", "HOLD"):
+            extra = dict(getattr(output, "extra_fields", None) or {})
+            strat_analysis = dict(extra.get("strategy_analysis") or {})
+            if "trigger_completion_pct" not in strat_analysis or strat_analysis.get("trigger_completion_pct") is None:
+                dynamic_score = self._compute_market_readiness_score(context)
+                strat_analysis["trigger_completion_pct"] = dynamic_score
+                strat_analysis["market_readiness"] = dynamic_score
+                extra["strategy_analysis"] = strat_analysis
+                extra["market_readiness"] = dynamic_score
+                output.extra_fields = extra
             return finish(
                 output,
                 "WAITING" if output.action == "WAIT" else "HOLDING",
@@ -600,15 +724,88 @@ class AILedDecisionEngine:
         if output.action in ("OPEN_LONG", "OPEN_SHORT"):
             from .autonomous_strategy import CONTRACT, validate_entry
             if context.decision_contract == CONTRACT:
+                settings = context.model_inference_settings if isinstance(context.model_inference_settings, dict) else {}
+                receipt = {
+                    "model_id": context.model_id or DEFAULT_SMART_MODEL,
+                    "actual_model_id": settings.get("actual_model_id"),
+                    "model_identity_source": settings.get("model_identity_source"),
+                    "verified_manifest_model_id": settings.get("verified_manifest_model_id"),
+                    "model_version": context.model_version,
+                }
+                if (
+                    not context.model_call_attempted
+                    or not getattr(context, "model_call_completed", False)
+                    or not is_verified_bonsai_inference_receipt(receipt)
+                ):
+                    output = system_output("BONSAI_INFERENCE_RECEIPT_UNVERIFIED", block_stage="AI_MODEL")
+                    return finish(output, "BLOCKED", "BONSAI_INFERENCE_RECEIPT_UNVERIFIED")
                 rejection = validate_entry(context, output, now)
                 if rejection:
                     return finish(output, "BLOCKED", rejection)
+
+            strategy_instructions = getattr(context, "strategy_instructions", None) or {}
+            strategy_exec = strategy_instructions.get("execution") if isinstance(strategy_instructions, dict) else {}
+            max_positions = strategy_exec.get("max_positions") if isinstance(strategy_exec, dict) else None
+            if max_positions is not None:
+                try:
+                    max_pos_int = int(max_positions)
+                    truth = context.account_truth if isinstance(context.account_truth, dict) else {}
+                    pending = truth.get("pending_orders") if isinstance(truth.get("pending_orders"), list) else []
+                    working_slots = len([
+                        o for o in pending
+                        if not o.get("reduce_only") and str(o.get("status", "")).upper() in ("OPEN", "NEW", "ACCEPTED")
+                    ])
+                    total_occupied = len(open_positions) + working_slots
+                    if total_occupied >= max_pos_int:
+                        return finish(output, "BLOCKED", f"MAX_POSITIONS_REACHED: {total_occupied} >= {max_pos_int}")
+                except (TypeError, ValueError):
+                    pass
             if existing_positions:
                 target_side = "LONG" if output.action == "OPEN_LONG" else "SHORT"
                 existing_side = str(existing_positions[0].get("side", "")).upper()
                 if existing_side != target_side:
                     return finish(output, "REJECTED", f"REVERSE_OPENING_FORBIDDEN: Must close existing {existing_side} position before opening {target_side}")
                 return finish(output, "REJECTED", "DOUBLE_ENTRY_FORBIDDEN: Position already open on this instrument")
+
+            # NOFX Autopilot: Re-entry cooldown gate prevents immediate whipsaws after close
+            strategy_instructions = getattr(context, "strategy_instructions", None) or {}
+            throttle_config = strategy_instructions.get("trade_throttle") or strategy_instructions.get("throttle") or (strategy_instructions.get("execution") or {}).get("throttle")
+            throttle_active = bool(
+                strategy_instructions.get("throttle_enabled")
+                or (isinstance(throttle_config, dict) and throttle_config.get("enabled", True))
+                or (strategy_instructions.get("nofx_runtime") is not None)
+                or (strategy_instructions.get("profile") is not None)
+            )
+            if throttle_active and hasattr(self.store, "_connect") and context.account_id:
+                from .order_selection import TradeThrottlePolicy
+                strategy_exec = strategy_instructions.get("execution") if isinstance(strategy_instructions, dict) else {}
+                strategy_profile = strategy_instructions.get("profile") if isinstance(strategy_instructions, dict) else {}
+                cooldown_sec = float((strategy_exec or {}).get("cooldown_minutes", (strategy_profile or {}).get("cooldown_minutes", 60))) * 60.0
+                try:
+                    with self.store._connect() as db:
+                        last_close = db.execute(
+                            """SELECT created_at FROM order_intents
+                               WHERE account_id=? AND instrument_id=? AND reduce_only=1
+                                 AND status IN ('FILLED', 'ACKNOWLEDGED')
+                               ORDER BY created_at DESC LIMIT 1""",
+                            (context.account_id, output.instrument_id),
+                        ).fetchone()
+                        if last_close and last_close[0]:
+                            try:
+                                last_close_dt = datetime.fromisoformat(str(last_close[0]).replace("Z", "+00:00"))
+                                open_ok, open_code, open_reason = TradeThrottlePolicy.check_open_throttle(
+                                    output.instrument_id,
+                                    has_open_position=False,
+                                    last_closed_at=last_close_dt,
+                                    now=now,
+                                    cooldown_seconds=cooldown_sec,
+                                )
+                                if not open_ok:
+                                    return finish(output, "BLOCKED", f"{open_code}: {open_reason}")
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
 
             req_risk = output.requested_risk_fraction if output.requested_risk_fraction is not None else 0.0025
             try:
@@ -743,10 +940,62 @@ class AILedDecisionEngine:
                 # would round a request just above the authoritative budget
                 # once PAPER slippage is applied by the gateway.
                 sign = 1.0 if side == "LONG" else -1.0
-                executable_entry = current_price * (1.0 + sign * slippage)
+                executable_entry = (
+                    float(selection.limit_price)
+                    if selection.order_type == "limit" and selection.limit_price is not None
+                    else current_price * (1.0 + sign * slippage)
+                )
                 unit_risk = (abs(executable_entry - stop_price) + stop_price * slippage + (executable_entry + stop_price) * fee_rate) * contract_size
-                raw_qty = float(account_snapshot.net_equity) * req_risk_value / unit_risk
-                qty = float((Decimal(str(raw_qty)) / Decimal(str(step_size))).quantize(Decimal("1"), rounding="ROUND_DOWN") * Decimal(str(step_size)))
+                strategy_exec = (getattr(context, "strategy_instructions", None) or {}).get("execution")
+                if strategy_exec and isinstance(strategy_exec, dict):
+                    from .strategy_execution import (
+                        normalize_execution,
+                        resolve_execution_leverage,
+                        size_position,
+                    )
+                    from .risk_engine import compute_rule_based_leverage_score
+                    exec_config = normalize_execution(strategy_exec)
+                    equity = float(account_snapshot.net_equity)
+                    avail = float(getattr(account_snapshot, "available_balance", equity))
+                    used_m = float(getattr(account_snapshot, "used_margin", 0.0))
+                    confidence = float((output.extra_fields or {}).get("confidence") or 0.8)
+                    strategy_profile = strategy_instructions.get("profile") if isinstance(strategy_instructions, dict) else {}
+                    rule_leverage, rule_reason = compute_rule_based_leverage_score(
+                        str((strategy_profile or {}).get("strategy_id") or "ai_led"),
+                        confidence / 100.0 if confidence > 1 else confidence,
+                        executable_entry,
+                        stop_price,
+                    )
+                    leverage_resolution = resolve_execution_leverage(
+                        exec_config,
+                        market=market_info,
+                        rule_leverage=rule_leverage,
+                        requested_leverage=output.requested_leverage,
+                        require_venue_limit=(mode_val is not TradingMode.PAPER),
+                    )
+                    lev = int(leverage_resolution["leverage"])
+                    leverage_resolution["risk_rule_reason"] = rule_reason
+                    output.extra_fields["leverage_resolution"] = leverage_resolution
+                    sizing_res = size_position(
+                        exec_config,
+                        equity=equity,
+                        available=avail,
+                        used_margin=used_m,
+                        entry=executable_entry,
+                        unit_risk=unit_risk,
+                        contract_size=contract_size,
+                        step=step_size,
+                        risk_fraction=req_risk_value,
+                        leverage=lev,
+                        fee_rate=fee_rate,
+                        requested_notional=getattr(output, "position_size_usdt", None),
+                    )
+                    output.extra_fields["position_sizing"] = sizing_res
+                    qty = sizing_res["quantity"]
+                    raw_qty = qty
+                else:
+                    raw_qty = float(account_snapshot.net_equity) * req_risk_value / unit_risk
+                    qty = float((Decimal(str(raw_qty)) / Decimal(str(step_size))).quantize(Decimal("1"), rounding="ROUND_DOWN") * Decimal(str(step_size)))
             except (TypeError, ValueError, ArithmeticError) as exc:
                 return finish(output, "REJECTED", f"RISK_SIZING_UNAVAILABLE: {exc}")
             if qty <= 0:
@@ -840,6 +1089,43 @@ class AILedDecisionEngine:
                 current_price = 0.0
             if current_price <= 0:
                 return finish(output, "REJECTED", "MARKET_DATA_UNAVAILABLE")
+
+            # NOFX Autopilot: Guard against premature noise close within min hold window
+            strategy_instructions = getattr(context, "strategy_instructions", None) or {}
+            throttle_config = strategy_instructions.get("trade_throttle") or strategy_instructions.get("throttle") or (strategy_instructions.get("execution") or {}).get("throttle")
+            throttle_active = bool(
+                strategy_instructions.get("throttle_enabled")
+                or (isinstance(throttle_config, dict) and throttle_config.get("enabled", True))
+                or (strategy_instructions.get("nofx_runtime") is not None)
+                or (strategy_instructions.get("profile") is not None)
+            )
+            if throttle_active:
+                from .order_selection import TradeThrottlePolicy
+                entry_p = float(existing_pos.get("entry_price") or current_price)
+                if entry_p > 0:
+                    side_mult = 1.0 if str(existing_pos.get("side", "")).upper() == "LONG" else -1.0
+                    price_pnl_pct = (current_price - entry_p) / entry_p * 100.0 * side_mult
+                else:
+                    price_pnl_pct = 0.0
+                raw_opened = existing_pos.get("opened_at") or existing_pos.get("created_at") or existing_pos.get("timestamp")
+                entry_dt = None
+                if raw_opened:
+                    try:
+                        if isinstance(raw_opened, (int, float)):
+                            entry_dt = datetime.fromtimestamp(raw_opened / 1000.0 if raw_opened > 1e11 else raw_opened, tz=timezone.utc)
+                        else:
+                            entry_dt = datetime.fromisoformat(str(raw_opened).replace("Z", "+00:00"))
+                    except Exception:
+                        entry_dt = None
+                throttle_allowed, throttle_code, throttle_reason = TradeThrottlePolicy.check_close_throttle(
+                    output.instrument_id,
+                    entry_time=entry_dt,
+                    price_pnl_pct=price_pnl_pct,
+                    now=datetime.now(timezone.utc),
+                )
+                if not throttle_allowed:
+                    return finish(output, "BLOCKED", f"{throttle_code}: {throttle_reason}")
+
             mode_val = context.mode if isinstance(context.mode, TradingMode) else TradingMode(str(context.mode).upper())
             intent = OrderIntent(
                 intent_id=f"intent_close_{uuid.uuid4().hex[:12]}",

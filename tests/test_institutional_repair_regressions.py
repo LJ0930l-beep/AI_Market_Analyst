@@ -71,6 +71,9 @@ def _stored_rows(bars: list[Bar]) -> list[dict[str, object]]:
 class _GateStrategyFixture:
     provider_name = "gate_public_swap"
 
+    def __init__(self):
+        self.bar_requests = []
+
     def market(self, symbol: str) -> dict[str, object]:
         return {
             "id": f"{symbol[:3]}_USDT",
@@ -84,6 +87,7 @@ class _GateStrategyFixture:
         return Quote(instrument, datetime.now(UTC), 100.0, 1_000.0, 0.0)
 
     def get_bars(self, _instrument, timeframe: str, limit: int = 240) -> list[Bar]:
+        self.bar_requests.append((timeframe, limit))
         minutes = {"5m": 5, "15m": 15, "1h": 60}[timeframe]
         return [
             Bar(
@@ -115,6 +119,25 @@ def test_strategy_monitoring_persists_gate_native_identity_without_degrading(tmp
     assert rows[0]["instrument_key"] == canonical_instrument_key(
         "gate", "perpetual", "BTC_USDT", "USDT", "last"
     )
+
+
+def test_ai_refresh_replaces_the_complete_candidate_window(tmp_path):
+    store = SQLiteStore(tmp_path / "ai-refresh-window.db")
+    store.initialize()
+    store.save_instrument(instrument_for("BTCUSDT"))
+    fixture = _GateStrategyFixture()
+    service = StrategyMonitoringService(store=store, llm_provider=None)
+    service.gate = fixture
+
+    result = service.run(
+        symbols=("BTCUSDT",),
+        now=START + timedelta(days=7),
+        analysis_only=True,
+        ai_interval=5,
+    )
+
+    assert result.status == "COMPLETED"
+    assert set(fixture.bar_requests) == {("5m", 240), ("15m", 240), ("1h", 240)}
 
 
 def test_low_price_quantization_is_positive_and_revalidated():

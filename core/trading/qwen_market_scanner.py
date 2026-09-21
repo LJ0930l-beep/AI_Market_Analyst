@@ -1,7 +1,7 @@
-"""Independent Qwen 9B public-market scanner.
+"""Independent Bonsai 2 27B public-market scanner.
 
 This service is deliberately analysis-only: it reads public Gate market data
-and public RSS news, requests a strict JSON analysis from Qwen, and persists
+and public RSS news, requests a strict JSON analysis from Bonsai, and persists
 the model receipt.  It never imports a strategy scanner, TradingAuthorization,
 session manager, execution gateway, or order model.
 """
@@ -17,7 +17,7 @@ import uuid
 from typing import Any, Iterable
 
 from core.instruments import instrument_for
-from core.model_routing import DEFAULT_SMART_MODEL
+from core.model_routing import DEFAULT_SMART_MODEL, is_bonsai_model_identity, is_verified_bonsai_receipt
 from core.news_engine import NewsEngine, RSSNewsProvider
 from core.providers.gateio_provider import GatePublicProvider
 
@@ -75,7 +75,7 @@ def _symbols(values: Iterable[str] | None) -> tuple[str, ...]:
 
 
 class QwenMarketScanner:
-    """Five-minute Qwen scan loop with durable, non-executable receipts."""
+    """Five-minute Bonsai scan loop with durable, non-executable receipts."""
 
     def __init__(
         self,
@@ -152,8 +152,14 @@ class QwenMarketScanner:
         except Exception as exc:
             return {"available": False, "model_available": False, "reason_code": "SMART_MODEL_UNAVAILABLE", "error": type(exc).__name__}
         data = dict(result) if isinstance(result, dict) else {}
-        models = {str(item) for item in data.get("models", []) if item}
-        model_available = bool(data.get("model_available")) or data.get("model_id") == DEFAULT_SMART_MODEL or DEFAULT_SMART_MODEL in models
+        actual_model = data.get("actual_model_id")
+        identity_valid = is_bonsai_model_identity(actual_model)
+        model_available = (
+            data.get("model_id") == DEFAULT_SMART_MODEL
+            and data.get("model_available") is True
+            and identity_valid
+            and data.get("model_identity_source") == "verified_manifest"
+        )
         return {**data, "available": bool(data.get("available")) and model_available, "model_available": model_available}
 
     def _market(self, symbol: str) -> dict[str, Any]:
@@ -262,12 +268,20 @@ class QwenMarketScanner:
                 temperature=0.0,
                 schema=QWEN_MARKET_SCAN_SCHEMA,
             )
+            if not is_verified_bonsai_receipt(metadata):
+                raise ValueError("MODEL_RECEIPT_INVALID")
             if not isinstance(answer, dict):
                 raise ValueError("INVALID_MODEL_JSON")
             payload["analysis"] = answer
-            payload["model_receipt"] = {key: metadata.get(key) for key in ("model_id", "model_version", "latency_ms", "schema_enforcement", "parse_status")}
+            payload["model_receipt"] = {
+                key: metadata.get(key)
+                for key in (
+                    "model_id", "model_version", "actual_model_id", "model_identity_source",
+                    "verified_manifest_model_id", "latency_ms", "schema_enforcement", "parse_status",
+                )
+            }
             result = {
-                "scan_id": scan_id, "status": "COMPLETED", "model_id": str(metadata.get("model_id") or DEFAULT_SMART_MODEL),
+                "scan_id": scan_id, "status": "COMPLETED", "model_id": DEFAULT_SMART_MODEL,
                 "model_digest": health.get("weight_digest"), "input_hash": input_hash,
                 "payload": payload, "created_at": _iso(started), "completed_at": _iso(),
             }

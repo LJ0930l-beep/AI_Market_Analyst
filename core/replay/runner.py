@@ -14,8 +14,9 @@ from uuid import uuid4
 
 from ..analysis_service import AnalysisService
 from ..ai import OllamaProvider, PROMPT_VERSION
+from ..ai.mock import MOCK_MODEL_ID, MockLLMProvider
 from ..instruments import instrument_for
-from ..model_routing import DEFAULT_FAST_MODEL
+from ..model_routing import DEFAULT_FAST_MODEL, DEFAULT_MODEL, is_bonsai_model_identity
 from ..outcomes import settle_prediction
 from ..performance.calibration import apply_calibration, fit_calibration
 from ..performance.metrics import aggregate_performance, build_performance_snapshot, is_actionable
@@ -23,13 +24,13 @@ from ..providers.base import ProviderError
 from ..storage import SQLiteStore
 from .provider import ReplayNewsProvider, ReplayProvider, build_as_of_points, fetch_historical_bars, future_bars
 
-
 @dataclass(frozen=True, slots=True)
 class ReplayConfig:
     symbols: tuple[str, ...]
     timeframes: tuple[str, ...]
     samples: int = 300
     model_id: str = DEFAULT_FAST_MODEL
+    model_mode: str = "real"
     prompt_version: str = PROMPT_VERSION
     seed: int = 42
     db_path: str = "data/phase3-replay.sqlite3"
@@ -54,10 +55,10 @@ def _replay_prediction_id(run_id: str, symbol: str, timeframe: str, as_of: datet
     return f"replay-{hashlib.sha256(key.encode('utf-8')).hexdigest()[:32]}"
 
 
-def _counts(store: SQLiteStore, run_id: str, total: int) -> dict[str, Any]:
+def _counts(store: SQLiteStore, run_id: str, total: int, *, source_type: str = "replay") -> dict[str, Any]:
     samples = store.list_replay_samples(run_id)
-    records = store.list_prediction_records(source_type="replay", replay_run_id=run_id)
-    metrics = aggregate_performance(records, scope={"source_type": "replay"})
+    records = store.list_prediction_records(source_type=source_type, replay_run_id=run_id)
+    metrics = aggregate_performance(records, scope={"source_type": source_type})
     return {
         "planned": total,
         "sample_rows": len(samples),
@@ -105,12 +106,14 @@ def _sample_plan(config: ReplayConfig) -> tuple[list[dict[str, Any]], dict[str, 
             )
     plan.sort(key=lambda item: (item["as_of"], item["symbol"], item["timeframe"]))
     manifest = {
-        "schema_version": "phase3-replay-manifest-v1",
+        "schema_version": "phase3-replay-manifest-v2",
         "symbols": [symbol.upper() for symbol in config.symbols],
         "timeframes": [timeframe.lower() for timeframe in config.timeframes],
         "samples": config.samples,
         "seed": config.seed,
         "model_id": config.model_id,
+        "model_mode": config.model_mode,
+        "model_provenance": "mock_simulation" if config.model_mode == "mock" else "bonsai_runtime",
         "prompt_version": config.prompt_version,
         "sampling_policy": {
             "min_history_bars": 120,
@@ -130,6 +133,31 @@ def run_replay(
     progress: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Run real or test-injected replay samples sequentially with resume support."""
+
+    model = llm_provider or OllamaProvider(model_name=config.model_id, prompt_version=config.prompt_version)
+    provider_name = str(getattr(model, "provider_name", model.__class__.__name__.lower()))
+    provider_model_id = str(getattr(model, "model_id", getattr(model, "model_name", "")))
+    if config.model_mode == "mock":
+        if config.model_id != MOCK_MODEL_ID or provider_name != MockLLMProvider.provider_name or provider_model_id != MOCK_MODEL_ID:
+            raise ValueError("Mock replay requires the explicit mock-llm identity and MockLLMProvider")
+    elif config.model_mode == "real":
+        if config.model_id != DEFAULT_MODEL:
+            raise ValueError("Replay model is pinned to the manifest-verified Bonsai 2 27B model")
+        if type(model) is not OllamaProvider:
+            raise ValueError("Real replay requires the exact production OllamaProvider; injected models must use mock mode")
+        if model.model_name != DEFAULT_MODEL or model._route_error(DEFAULT_MODEL):
+            raise ValueError("Real replay provider is not configured for the pinned Bonsai route")
+        receipt = model.health()
+        if not (
+            receipt.get("available") is True
+            and receipt.get("model_available") is True
+            and receipt.get("model_id") == DEFAULT_MODEL
+            and receipt.get("model_identity_source") == "verified_manifest"
+            and is_bonsai_model_identity(receipt.get("actual_model_id"))
+        ):
+            raise ValueError("Real replay requires a verified Bonsai manifest receipt")
+    else:
+        raise ValueError("Replay model_mode must be 'real' or 'mock'")
 
     started = time.perf_counter()
     store = SQLiteStore(config.db_path)
@@ -157,13 +185,16 @@ def run_replay(
                 "samples": config.samples,
                 "seed": config.seed,
                 "manifest_path": str(manifest_path),
+                "model_mode": config.model_mode,
+                "model_provider": provider_name,
+                "model_provenance": "mock_simulation" if config.model_mode == "mock" else "bonsai_runtime",
             },
             status="RUNNING",
         )
     else:
         store.update_replay_run(run_id, status="RUNNING", error_code=None)
 
-    model = llm_provider or OllamaProvider(model_name=config.model_id, prompt_version=config.prompt_version)
+    source_type = "mock_replay" if config.model_mode == "mock" else "replay"
     current_provider: ReplayProvider | None = None
 
     def market_factory(_instrument):
@@ -211,13 +242,15 @@ def run_replay(
                 timeframe=timeframe,
                 limit=120,
                 analysis_time=as_of,
-                source_type="replay",
+                source_type=source_type,
                 replay_run_id=run_id,
                 context_capabilities={
                     "replay": True,
                     "news_history_available": False,
                     "technical_only": True,
                     "underlying_market_provider": history.provider,
+                    "model_mode": config.model_mode,
+                    "model_provenance": "mock_simulation" if config.model_mode == "mock" else "bonsai_runtime",
                 },
             )
             observed_timestamps = [bar.timestamp for bar in result.context.bars]
@@ -230,28 +263,34 @@ def run_replay(
                     prediction_id=_replay_prediction_id(run_id, symbol, timeframe, as_of),
                 ),
             )
-            calibration_records = store.list_prediction_records(source_type="replay", model_id=config.model_id, prompt_version=config.prompt_version)
-            calibration_scope = {"source_type": "replay", "model_id": config.model_id, "prompt_version": config.prompt_version}
-            calibration = fit_calibration(
-                calibration_records,
-                scope=calibration_scope,
-                trained_until=as_of,
-                min_sample=100,
-                version=f"cal-v1-{config.model_id.replace(':', '-')}",
-            )
-            signal = apply_calibration(result.signal, calibration)
+            if config.model_mode == "real":
+                calibration_records = store.list_prediction_records(source_type="replay", replay_run_id=run_id, model_id=config.model_id, prompt_version=config.prompt_version)
+                calibration_scope = {"source_type": "replay", "model_id": config.model_id, "prompt_version": config.prompt_version}
+                calibration = fit_calibration(
+                    calibration_records,
+                    scope=calibration_scope,
+                    trained_until=as_of,
+                    min_sample=100,
+                    version=f"cal-v1-{config.model_id.replace(':', '-')}"
+                )
+                signal = apply_calibration(result.signal, calibration)
+            else:
+                signal = result.signal
             calibrated_result = replace(result, signal=signal)
             persistence_service.persist(calibrated_result)
             latency = result.model_status.get("latency_ms")
             if latency is not None:
                 latency_values.append(float(latency))
             outcome = None
-            if signal.action.value in {"LONG", "SHORT"} and not str(signal.parse_status).lower().endswith("failed"):
-                outcome = settle_prediction(signal, future_bars(history.bars, as_of))
-                store.save_outcome(outcome)
-                sample_status = "COMPLETED"
-            elif str(signal.parse_status).lower() in {"model_unavailable", "model_not_configured", "parse_error", "repair_failed"}:
+            if str(signal.parse_status).lower() in {"model_unavailable", "model_not_configured", "parse_error", "repair_failed"}:
                 sample_status = "ERROR"
+            elif signal.action.value in {"LONG", "SHORT"} and not str(signal.parse_status).lower().endswith("failed"):
+                if config.model_mode == "real":
+                    outcome = settle_prediction(signal, future_bars(history.bars, as_of))
+                    store.save_outcome(outcome)
+                # Mock actions are pipeline smoke only: never turn them into
+                # outcome evidence, win rate, or calibration data.
+                sample_status = "COMPLETED"
             else:
                 sample_status = "WAIT"
             store.save_replay_sample(
@@ -290,22 +329,34 @@ def run_replay(
         finally:
             current_provider = None
         if index % max(1, config.checkpoint_every) == 0:
-            store.update_replay_run(run_id, counts=_counts(store, run_id, len(plan)))
+            store.update_replay_run(run_id, counts=_counts(store, run_id, len(plan), source_type=source_type))
 
-    records = store.list_prediction_records(source_type="replay", replay_run_id=run_id)
-    scope = {"source_type": "replay", "model_id": config.model_id, "prompt_version": config.prompt_version}
+    records = store.list_prediction_records(source_type=source_type, replay_run_id=run_id)
+    scope = {"source_type": source_type, "model_id": config.model_id, "prompt_version": config.prompt_version}
     performance = build_performance_snapshot(records, scope=scope)
-    store.save_performance_snapshot(performance)
-    all_calibration_records = store.list_prediction_records(source_type="replay", model_id=config.model_id, prompt_version=config.prompt_version)
-    final_calibration = fit_calibration(
-        all_calibration_records,
-        scope=scope,
-        min_sample=100,
-        version=f"cal-v1-{config.model_id.replace(':', '-')}",
-    )
-    store.save_calibration_result(final_calibration.to_dict())
+    if config.model_mode == "real":
+        store.save_performance_snapshot(performance)
+    if config.model_mode == "real":
+        # Use only this fresh, identity-validated run. Older runs may predate
+        # the mock-vs-real provenance boundary and must not train Bonsai calibration.
+        all_calibration_records = store.list_prediction_records(source_type="replay", replay_run_id=run_id, model_id=config.model_id, prompt_version=config.prompt_version)
+        final_calibration = fit_calibration(
+            all_calibration_records,
+            scope=scope,
+            min_sample=100,
+            version=f"cal-v1-{config.model_id.replace(':', '-')}"
+        )
+        store.save_calibration_result(final_calibration.to_dict())
+        calibration_output = final_calibration.to_dict()
+    else:
+        calibration_output = {
+            "status": "DISABLED_FOR_MOCK_MODE",
+            "scope": scope,
+            "sample_count": 0,
+            "reason": "mock outputs are synthetic and excluded from model calibration",
+        }
     latency_values = store.list_replay_model_latencies(run_id)
-    counts = _counts(store, run_id, len(plan))
+    counts = _counts(store, run_id, len(plan), source_type=source_type)
     status = "COMPLETED" if not errors else "COMPLETED_WITH_ERRORS"
     store.update_replay_run(
         run_id,
@@ -323,8 +374,11 @@ def run_replay(
         "manifest_path": str(manifest_path),
         "db_path": config.db_path,
         "model_id": config.model_id,
+        "model_mode": config.model_mode,
+        "model_provenance": "mock_simulation" if config.model_mode == "mock" else "bonsai_runtime",
+        "formal_acceptance_eligible": False,
         "prompt_version": config.prompt_version,
-        "source_type": "replay",
+        "source_type": source_type,
         "context_capabilities": {"news_history_available": False, "technical_only": True},
         "counts": counts,
         "elapsed_ms": round(elapsed, 3),
@@ -335,7 +389,7 @@ def run_replay(
             "p95": _p95(latency_values),
         },
         "performance": performance,
-        "calibration": final_calibration.to_dict(),
+        "calibration": calibration_output,
         "errors": errors,
     }
     output_path = Path(config.output_path or f"data/phase3-replay-{run_id}.json")

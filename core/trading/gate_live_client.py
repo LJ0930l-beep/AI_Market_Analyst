@@ -43,7 +43,7 @@ def _map_gate_error(exc: BaseException) -> Dict[str, str]:
     if "timeout" in name or "timed out" in message or "deadline" in message:
         return {"code": "GATE_NETWORK_TIMEOUT", "message_zh": "Gate 请求超时，未确认账户状态；请稍后重试。"}
     if "network" in name or "connection" in message or "dns" in message or "tls" in message or "ssl" in message or "unreachable" in message:
-        return {"code": "GATE_NETWORK_UNAVAILABLE", "message_zh": "无法连接 Gate 当前环境，请检查网络、DNS 或 TLS 后重试。"}
+        return {"code": "GATE_NETWORK_UNAVAILABLE", "message_zh": "无法连接 Gate 当前环境，请检查网络、代理配置、DNS 或 TLS 后重试。"}
     # Do not turn every Gate/CCXT 400 into an environment mismatch.  Gate
     # uses BadRequest for ordinary parameter errors too (for example an
     # overlong client ``text``), and that false diagnosis makes a valid
@@ -53,6 +53,26 @@ def _map_gate_error(exc: BaseException) -> Dict[str, str]:
     if "badrequest" in name or "invalid_param" in message or "invalid parameter" in message:
         return {"code": "GATE_REMOTE_BAD_REQUEST", "message_zh": "Gate 拒绝了请求参数，请按远端合约规则修正后重试。"}
     return {"code": "GATE_REMOTE_ERROR", "message_zh": "Gate 返回了未识别的错误，请查看环境、权限和接口类型后重试。"}
+
+
+def _execute_with_retry(fn, max_retries: int = 2, delay_seconds: float = 0.5):
+    """Execute a callable with bounded exponential backoff on transient network faults."""
+    last_exc = None
+    for attempt in range(max_retries + 1):
+        try:
+            return fn()
+        except Exception as exc:
+            last_exc = exc
+            mapped = _map_gate_error(exc)
+            if attempt < max_retries and mapped.get("code") in {
+                "GATE_NETWORK_UNAVAILABLE",
+                "GATE_NETWORK_TIMEOUT",
+            }:
+                time.sleep(delay_seconds * (2 ** attempt))
+                continue
+            raise
+    if last_exc is not None:
+        raise last_exc
 
 
 def _validation_failure(exc: BaseException, *, environment: str, endpoint: str) -> Dict[str, Any]:
@@ -142,11 +162,27 @@ class GateLiveTrader:
             "apiKey": self.api_key,
             "secret": self.api_secret,
             "enableRateLimit": True,
-            "timeout": 8000,
+            "timeout": 20000,
             "options": {
                 "defaultType": "swap",
             },
         }
+        import os
+        proxy_env = (
+            os.environ.get("HTTPS_PROXY")
+            or os.environ.get("https_proxy")
+            or os.environ.get("HTTP_PROXY")
+            or os.environ.get("http_proxy")
+            or os.environ.get("ALL_PROXY")
+            or os.environ.get("all_proxy")
+        )
+        if proxy_env and str(proxy_env).strip():
+            clean_proxy = str(proxy_env).strip()
+            config["proxies"] = {
+                "http": clean_proxy,
+                "https": clean_proxy,
+            }
+            config["aiohttp_proxy"] = clean_proxy
         endpoint = self.api_base_url
         # Reject an explicitly known Gate host from the other environment
         # before ccxt can sign a private request.  Custom endpoints remain
@@ -374,7 +410,7 @@ class GateLiveTrader:
             }
         try:
             ex = self._get_exchange()
-            balance = ex.fetch_balance()
+            balance = _execute_with_retry(lambda: ex.fetch_balance())
             if not isinstance(balance, dict):
                 raise ValueError("GATE_RESPONSE_SCHEMA_INVALID")
             usdt = balance.get("USDT", {})
@@ -547,7 +583,7 @@ class GateLiveTrader:
         self.last_positions_error_code = None
         try:
             ex = self._get_exchange()
-            raw_positions = ex.fetch_positions()
+            raw_positions = _execute_with_retry(lambda: ex.fetch_positions())
             if not isinstance(raw_positions, list):
                 raise ValueError("GATE_RESPONSE_SCHEMA_INVALID")
             try:
@@ -649,7 +685,7 @@ class GateLiveTrader:
                 self.last_open_orders_error_code = "GATE_OPEN_ORDERS_UNSUPPORTED"
                 return []
             target_symbol = self._exchange_symbol(ex, symbol) if symbol else None
-            raw_orders = fetcher(target_symbol, limit=max(1, min(int(limit), 100)))
+            raw_orders = _execute_with_retry(lambda: fetcher(target_symbol, limit=max(1, min(int(limit), 100))))
             if not isinstance(raw_orders, list):
                 raise ValueError("GATE_OPEN_ORDERS_RESPONSE_SCHEMA_INVALID")
             results: list[dict[str, Any]] = []
@@ -916,7 +952,7 @@ class GateLiveTrader:
             ex = self._get_exchange()
             target_symbol = self._exchange_symbol(ex, symbol) if symbol else None
             
-            raw_trades = ex.fetch_my_trades(target_symbol, limit=max(1, min(limit, 100)))
+            raw_trades = _execute_with_retry(lambda: ex.fetch_my_trades(target_symbol, limit=max(1, min(limit, 100))))
             if not isinstance(raw_trades, list):
                 raise ValueError("GATE_TRADES_RESPONSE_SCHEMA_INVALID")
             results = []
@@ -1139,6 +1175,8 @@ class GateLiveTrader:
                 "created_at": now_iso,
                 "protection_status": "NOT_REQUESTED",
                 "protection_orders": [],
+                "stop_loss": stop_loss,
+                "take_profit": take_profit,
             }
             if order.get("status") in {"canceled", "cancelled", "rejected", "expired"}:
                 response["status"] = {"canceled": "CANCELED", "cancelled": "CANCELED", "rejected": "REJECTED", "expired": "EXPIRED"}[str(order.get("status"))]
@@ -1158,6 +1196,7 @@ class GateLiveTrader:
                         )
                         response["protection_orders"] = protection
                         response["protection_status"] = "PROTECTED"
+                        response["protection_verified"] = True
                     except Exception as protection_exc:
                         mapped_protection = _map_gate_error(protection_exc)
                         response.update(
@@ -1272,6 +1311,32 @@ class GateLiveTrader:
         if not results:
             raise ValueError("GATE_PROTECTION_PLAN_EMPTY")
         return results
+
+    def place_protection_orders(
+        self,
+        symbol: str,
+        *,
+        side: str,
+        amount: float,
+        stop_loss: float | None = None,
+        take_profit: float | None = None,
+        client_order_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Place native conditional SL/TP orders on Gate for an observed fill."""
+        if not self.live_trading_enabled:
+            return []
+        ex = self._get_exchange()
+        exchange_symbol = self._exchange_symbol(ex, symbol)
+        ccxt_side = "buy" if str(side).lower() in ("buy", "long") else "sell"
+        return self._place_protection_orders(
+            ex,
+            exchange_symbol,
+            side=ccxt_side,
+            amount=amount,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+            client_order_id=client_order_id,
+        )
 
     def reconcile_order(self, order_id: str, symbol: str) -> Dict[str, Any]:
         """Query actual status and fills from exchange to reconcile UNKNOWN orders."""

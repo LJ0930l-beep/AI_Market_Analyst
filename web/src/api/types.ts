@@ -52,6 +52,12 @@ export interface ContextHealthResponse extends JsonRecord {
 export interface ModelHealthResponse extends JsonRecord {
   provider?: string;
   available?: boolean;
+  model_available?: boolean;
+  model_id?: string;
+  required_model?: string;
+  actual_model_id?: string;
+  model_identity_source?: string;
+  checked_at?: string;
   error_code?: string;
   consult?: ConsultCapability;
 }
@@ -101,6 +107,14 @@ export interface ConsultContextEvidence extends JsonRecord {
   read_only?: boolean;
 }
 
+export interface ModelIdentityReceipt {
+  model_id?: string;
+  actual_model_id?: string;
+  model_version?: string;
+  model_identity_source?: string;
+  verified_manifest_model_id?: string;
+}
+
 export type ConsultStreamEvent =
   | (JsonRecord & {
       type: "meta";
@@ -114,7 +128,7 @@ export type ConsultStreamEvent =
       context: ConsultContextEvidence;
     })
   | { type: "delta"; content: string }
-  | { type: "done"; finish_reason: string; output_chars: number }
+  | { type: "done"; finish_reason: string; output_chars: number; model_receipt?: ModelIdentityReceipt }
   | { type: "error"; error: { code: string; message: string } };
 
 export interface Instrument extends JsonRecord {

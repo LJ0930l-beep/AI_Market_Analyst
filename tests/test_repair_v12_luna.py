@@ -72,6 +72,7 @@ def fresh_market(symbol: str, price: float, *, now: datetime | None = None, cont
         "slippage": 0.001,
         "market": {
             "contractSize": contract_size,
+            "leverage_max": 100,
             "precision": {"amount": 0.001, "price": 0.01},
             "limits": {"amount": {"min": 0.001, "max": 1_000_000.0, "step": 0.001}},
             "taker": 0.0005,
@@ -318,13 +319,16 @@ def test_unknown_reconciliation_records_concrete_fill_once(repair_store):
     assert adapter.fetch_calls
 
 
-def test_production_ai_coordinator_uses_qwen9b_and_persists_cycles(repair_store):
+def test_production_ai_coordinator_uses_explicit_smart_model_and_persists_cycles(repair_store):
     now = datetime.now(timezone.utc)
 
-    class FakeQwen9B:
-        provider_name = "fake_qwen_for_local_trace"
+    class FakeLocalSmartModel:
+        provider_name = "fake_local_model_for_trace"
+        model_id = "Bonsai-2-27B-PTQ1_0"
+        context_length = 8192
+        max_tokens = 1000
         # The institutional coordinator requires an actual model-weight
-        # digest before calibration can open an AI session.  This fixture
+        # digest and verified runtime context before calibration can open an AI session. This fixture
         # is deterministic evidence for the test adapter, not a model
         # name or a production credential.
         weight_digest = "a" * 64
@@ -333,19 +337,22 @@ def test_production_ai_coordinator_uses_qwen9b_and_persists_cycles(repair_store)
             self.calls = []
 
         def health(self):
-            return {"available": True, "model_available": True, "models": ["qwen3.5:9b"], "model_id": "qwen3.5:9b"}
+            return {"available": True, "model_available": True, "models": [r"D:\RJ\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"], "model_id": "Bonsai-2-27B-PTQ1_0", "actual_model_id": r"D:\RJ\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf", "model_identity_source": "verified_manifest", "context_length": self.context_length}
 
         def generate_json(self, _messages, **kwargs):
             self.calls.append(kwargs)
-            if kwargs.get("prompt_version") == "ai_calibration_operation_profile_v1":
-                return {
+            if kwargs.get("prompt_version") in {"ai_calibration_operation_profile_v1", "ai_calibration_operation_profile_v2"}:
+                answer = {
                     "risk_regime": "fixture",
                     "entry_style": "CONSERVATIVE",
                     "order_preference": "AUTO",
                     "max_concurrent_positions": 1,
                     "notes_zh": "deterministic calibration fixture",
                 }
-            return {"action": "WAIT", "instrument_id": "BTCUSDT", "reason": "local coordinator trace"}
+            else:
+                answer = {"action": "WAIT", "instrument_id": "BTCUSDT", "reason": "local coordinator trace"}
+            actual = r"D:\RJ\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"
+            return answer, json.dumps(answer), {"model_id": "Bonsai-2-27B-PTQ1_0", "model_version": actual, "actual_model_id": actual, "model_identity_source": "request_bound_to_verified_manifest", "verified_manifest_model_id": actual}
 
     ledger = AccountLedger(repair_store)
     ledger.create_account("ai_account", mode="PAPER", initial_deposit=Decimal("10000.00"))
@@ -371,7 +378,7 @@ def test_production_ai_coordinator_uses_qwen9b_and_persists_cycles(repair_store)
     )
     session_manager = SessionManager(repair_store)
     session_manager.start()
-    provider = FakeQwen9B()
+    provider = FakeLocalSmartModel()
     coordinator = AISessionCoordinator(
         store=repair_store,
         service=SimpleNamespace(llm_provider=provider),
@@ -392,13 +399,13 @@ def test_production_ai_coordinator_uses_qwen9b_and_persists_cycles(repair_store)
         assert first.reason == "CALIBRATION_NOT_READY" or coordinator.status()["calibration_state"] == "READY"
         coordinator.run_cycle_once()
         assert len(provider.calls) >= 2
-        assert all(call["model_name"] == "qwen3.5:9b" for call in provider.calls)
+        assert all(call["model_name"] == "Bonsai-2-27B-PTQ1_0" for call in provider.calls)
         with repair_store._connect() as db:
             rows = db.execute("SELECT account_id, session_id, generation, authorization_id, market_snapshot_hash FROM ai_led_cycles WHERE account_id='ai_account'").fetchall()
         assert len(rows) >= 2
         assert all(row["authorization_id"] is None for row in rows)
         assert all(row["market_snapshot_hash"] for row in rows)
-        assert coordinator.status()["model"]["required_model"] == "qwen3.5:9b"
+        assert coordinator.status()["model"]["required_model"] == "Bonsai-2-27B-PTQ1_0"
     finally:
         coordinator.stop()
         coordinator.close()
@@ -811,3 +818,105 @@ def test_legacy_authorization_portfolio_cap_does_not_override_unified_risk_engin
     )
     assert receipt["status"] == "FILLED"
     assert len(ledger.get_open_positions("auth_cap_account")) == 1
+
+
+def test_expired_resting_order_does_not_block_new_risk_reservation(repair_store):
+    """An unfilled resting order must not pin the account forever.
+
+    Reproduces the production failure seen on the managed Gate TestNet
+    account: a limit order stayed open at the venue, its intent remained
+    ACKNOWLEDGED and its reservation stayed PENDING, so every later opening
+    was refused with an opaque RISK_RESERVATION_FAILED.  The gate now stops
+    honouring a resting intent once its own TTL (plus grace) has elapsed.
+    """
+    ledger = AccountLedger(repair_store)
+    ledger.create_account("zombie_account", mode="PAPER", initial_deposit=Decimal("10000.00"))
+    gateway = ExecutionGateway(repair_store, ledger=ledger)
+
+    resting = make_intent(
+        intent_id="zombie-resting-limit",
+        account_id="zombie_account",
+        side="LONG",
+        quantity=1.0,
+        price=90.0,
+        stop=80.0,
+    )
+    resting.order_type = "limit"
+    first = gateway.submit_intent(
+        resting,
+        market_snapshot={**fresh_market("BTCUSDT", 100.0), "ask": 100.05},
+    )
+    assert first["status"] == "ACKNOWLEDGED"
+
+    # A fresh reservation is refused while the resting order is inside TTL.
+    blocked = ledger.reserve_risk(
+        account_id="zombie_account",
+        reservation_id="res_blocked_probe",
+        amount_risk=Decimal("1.0"),
+        amount_margin=Decimal("1.0"),
+        now=datetime.now(timezone.utc),
+    )
+    assert blocked is False
+
+    # Age the intent past its TTL: the same reservation must now be possible.
+    stale_at = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    with repair_store._connect() as db:
+        db.execute(
+            "UPDATE order_intents SET expires_at=?, created_at=? WHERE intent_id=?",
+            (stale_at, stale_at, "zombie-resting-limit"),
+        )
+    allowed = ledger.reserve_risk(
+        account_id="zombie_account",
+        reservation_id="res_allowed_probe",
+        amount_risk=Decimal("1.0"),
+        amount_margin=Decimal("1.0"),
+        now=datetime.now(timezone.utc),
+    )
+    assert allowed is True
+    # The stale fact is recorded so the reconcile pass can cancel it remotely;
+    # the budget is only freed after a confirmed remote terminal state.
+    with repair_store._connect() as db:
+        assert db.execute(
+            "SELECT status FROM order_intents WHERE intent_id=?",
+            ("zombie-resting-limit",),
+        ).fetchone()[0] == "CANCEL_PENDING"
+        assert db.execute(
+            "SELECT status FROM risk_reservations WHERE reservation_id=?",
+            ("res_zombie-resting-limit",),
+        ).fetchone()[0] == "PENDING"
+
+
+def test_unknown_intent_stays_blocking_regardless_of_ttl(repair_store):
+    """A genuinely unknown exposure must never be unlocked by a TTL."""
+    ledger = AccountLedger(repair_store)
+    ledger.create_account("unknown_account", mode="PAPER", initial_deposit=Decimal("10000.00"))
+    # The gateway owns the order_intents schema; construct it before seeding.
+    ExecutionGateway(repair_store, ledger=ledger)
+    now = datetime.now(timezone.utc)
+    stale_at = (now - timedelta(hours=5)).isoformat()
+    with repair_store._connect() as db:
+        db.execute(
+            """INSERT INTO order_intents
+               (intent_id, idempotency_key, account_id, mode, instrument_id, side,
+                order_type, quantity, status, created_at, updated_at, venue,
+                environment, expires_at, payload_hash)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                "unknown-timed-out", "idem_unknown_timed_out", "unknown_account",
+                "PAPER", "BTCUSDT", "LONG", "market", 1.0, "UNKNOWN",
+                stale_at, stale_at, "simulated", "PAPER", stale_at, "unverified_unknown",
+            ),
+        )
+    refused = ledger.reserve_risk(
+        account_id="unknown_account",
+        reservation_id="res_unknown_probe",
+        amount_risk=Decimal("1.0"),
+        amount_margin=Decimal("1.0"),
+        now=now,
+    )
+    assert refused is False
+    with repair_store._connect() as db:
+        assert db.execute(
+            "SELECT status FROM order_intents WHERE intent_id=?",
+            ("unknown-timed-out",),
+        ).fetchone()[0] == "UNKNOWN"

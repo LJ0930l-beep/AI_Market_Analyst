@@ -9,6 +9,9 @@ import type {
 import { OhlcvChart } from "../components/OhlcvChart";
 import { V2News } from "../components/V2News";
 import { AITraderPanel } from "../components/AITraderPanel";
+import { AIStrategyLibrary } from "../components/AIStrategyLibrary";
+import { MarketRadar } from "../components/MarketRadar";
+import { DecisionExperiencePanel } from "../components/DecisionExperiencePanel";
 import { InstitutionalEvidencePanel } from "../components/InstitutionalEvidencePanel";
 import { InstitutionalAnalysisDashboard, type InstitutionalDashboard } from "../components/InstitutionalAnalysisDashboard";
 import {
@@ -105,10 +108,20 @@ interface RiskCockpit {
   mode?: string;
   venue?: string;
   as_of?: string;
+  account_truth_authority?: string;
+  account_truth?: {
+    status?: string;
+    equity?: number | null;
+    available_margin?: number | null;
+    used_margin?: number | null;
+    observed_at?: string | null;
+  } | null;
   ledger_snapshot?: {
     net_equity?: string;
     cash?: string;
     reserved_risk?: string;
+    role?: string;
+    authority?: string;
     daily_loss?: string;
     daily_loss_limit_reached?: boolean;
     unverified_protection_count?: number;
@@ -117,10 +130,11 @@ interface RiskCockpit {
   risk?: {
     new_risk_blocked?: boolean;
     new_risk_block_reasons?: string[];
+    account_truth_basis?: string;
   };
   capacity?: {
-    single_trade_risk_available?: string;
-    portfolio_risk_available?: string;
+    single_trade_risk_available?: string | null;
+    portfolio_risk_available?: string | null;
     status?: string;
   };
   protections?: Array<{
@@ -136,11 +150,25 @@ interface RiskCockpit {
     last_reconciled_at?: string | null;
     source?: string;
   };
-  model?: { status?: string; reason_code?: string; required_model?: string } | string;
+  model?: RuntimeModelStatus | string;
   runtime?: { state?: string; execution_blocked?: boolean };
   market_data?: { status?: string };
   emergency_guidance?: string[];
   legacy_data?: { account_scoped_unverified?: number; unassigned_unverified?: number };
+}
+
+interface RuntimeModelStatus {
+    status?: string;
+    reason_code?: string;
+    required_model?: string;
+    model_id?: string;
+    actual_model_id?: string;
+    model_version?: string;
+    model_identity_source?: string;
+    available?: boolean;
+    model_available?: boolean;
+    checked_at?: string;
+    model?: RuntimeModelStatus | string;
 }
 
 const rules = {
@@ -579,6 +607,73 @@ function isInstitutionalDashboard(value: unknown): value is InstitutionalDashboa
   return typeof candidate.status === "string" && typeof candidate.scope?.account_id === "string";
 }
 
+function isBonsaiModelIdentity(value: unknown): value is string {
+  if (typeof value !== "string" || !value.trim()) return false;
+  let basename = value.trim().replace(/\\/g, "/").split("/").pop() || "";
+  if (basename.toLowerCase().endsWith(".gguf")) basename = basename.slice(0, -5);
+  if (basename.toLowerCase().startsWith("ternary-")) basename = basename.slice("ternary-".length);
+  return basename.toLowerCase() === "bonsai-2-27b-ptq1_0";
+}
+
+const MODEL_HEALTH_MAX_AGE_MS = 60_000;
+const MODEL_HEALTH_FUTURE_SKEW_MS = 5_000;
+
+function isFreshModelHealthTimestamp(value: unknown, now = Date.now()): boolean {
+  if (typeof value !== "string") return false;
+  const checkedAt = Date.parse(value);
+  if (!Number.isFinite(checkedAt)) return false;
+  const age = now - checkedAt;
+  return age >= -MODEL_HEALTH_FUTURE_SKEW_MS && age <= MODEL_HEALTH_MAX_AGE_MS;
+}
+
+function readRuntimeModel(model: RiskCockpit["model"]) {
+  const envelope = model && typeof model === "object" ? model : undefined;
+  const health = envelope?.model && typeof envelope.model === "object" ? envelope.model : envelope;
+  const actualModelId = health?.actual_model_id || health?.model_version;
+  const configuredModelId = health?.required_model || health?.model_id || (typeof model === "string" ? model : undefined);
+  const actualIdentityValid = isBonsaiModelIdentity(actualModelId);
+  const actualModelLabel = typeof actualModelId === "string"
+    ? actualModelId.replace(/\\/g, "/").split("/").pop()
+    : undefined;
+  const identityEvidenceValid = actualIdentityValid && isBonsaiModelIdentity(configuredModelId) && health?.model_identity_source === "verified_manifest";
+  const checked = isFreshModelHealthTimestamp(health?.checked_at);
+  const identityVerified = identityEvidenceValid && checked;
+  const modelName = identityVerified
+    ? "Bonsai-2-27B-PTQ1_0"
+    : typeof configuredModelId === "string"
+      ? configuredModelId.replace(/\\/g, "/").split("/").pop()
+      : undefined;
+  const ready = health?.status === "READY" && health.available === true && health.model_available === true && checked && identityVerified;
+  const unavailable = health?.status === "UNAVAILABLE" || health?.available === false || health?.model_available === false;
+  const stale = !unavailable && identityEvidenceValid && !checked && (health?.status === "READY" || health?.available === true || health?.model_available === true);
+  const identityUnverified = !unavailable && !stale && !identityVerified && (health?.status === "READY" || health?.available === true || health?.model_available === true);
+  return {
+    modelName,
+    identityVerified,
+    actualModelId: identityVerified ? actualModelLabel : undefined,
+    ready,
+    unavailable,
+    stale,
+    status: ready ? "READY" : unavailable ? "UNAVAILABLE" : stale ? "STALE" : identityUnverified ? "IDENTITY_UNVERIFIED" : "UNKNOWN",
+  } as const;
+}
+
+function decisionModelName(details: unknown): string | undefined {
+  if (!details || typeof details !== "object" || Array.isArray(details)) return undefined;
+  const record = details as Record<string, unknown>;
+  const receipt = record.model_receipt;
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) return undefined;
+  const verified = receipt as Record<string, unknown>;
+  const model = verified.model_id;
+  const actual = verified.actual_model_id ?? verified.model_version;
+  const manifest = verified.verified_manifest_model_id;
+  const source = verified.model_identity_source;
+  return model === "Bonsai-2-27B-PTQ1_0" && isBonsaiModelIdentity(actual) && isBonsaiModelIdentity(manifest) &&
+    (source === "completion_response" || source === "request_bound_to_verified_manifest")
+    ? model
+    : undefined;
+}
+
 export function V2WorkspacePage({
   surface = "dashboard",
 }: {
@@ -634,6 +729,7 @@ export function V2WorkspacePage({
   const [institutionalDashboardError, setInstitutionalDashboardError] = useState("");
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisError, setAnalysisError] = useState("");
+  const [analysisSubTab, setAnalysisSubTab] = useState<"decisions" | "microstructure">("decisions");
   const [analysisFrom, setAnalysisFrom] = useState("");
   const [analysisTo, setAnalysisTo] = useState("");
   const [analysisPage, setAnalysisPage] = useState(1);
@@ -1676,7 +1772,7 @@ export function V2WorkspacePage({
 
                 {event.ai_summary && (
                   <div className="v2-macro-ai">
-                    <span className="v2-macro-ai__label">Qwen 3.5 {zh ? "宏观速评" : "Macro Take"}:</span>
+                    <span className="v2-macro-ai__label">Bonsai-2-27B {zh ? "宏观速评" : "Macro Take"}:</span>
                     <p>{event.ai_summary}</p>
                   </div>
                 )}
@@ -1948,10 +2044,31 @@ export function V2WorkspacePage({
     const capacity = cockpit?.capacity;
     const reconciliation = cockpit?.reconciliation;
     const model = cockpit?.model;
-    const rawModel = typeof model === "string" ? model : model?.required_model;
-    const modelLabel = rawModel && rawModel !== "UNKNOWN" && rawModel !== "UNAVAILABLE" ? rawModel : "Qwen3.5-9B";
+    const runtimeModel = readRuntimeModel(model);
+    const modelLabel = runtimeModel.modelName || (zh ? "本地模型未报告" : "Local model not reported");
+    const fact = (value: unknown, fallback = "--") => value === null || value === undefined || value === "" || value === "UNKNOWN" ? fallback : String(value);
+    const moneyFact = (value: unknown) => {
+      if (value === null || value === undefined || value === "" || value === "UNKNOWN") return "--";
+      const amount = Number(value);
+      return Number.isFinite(amount) ? `${amount.toFixed(2)} USDT` : "--";
+    };
+    const isGateTestnet = cockpit?.venue?.toLowerCase() === "gate" && cockpit?.mode?.toUpperCase() === "TESTNET";
+    const usesRemoteAccountTruth = isGateTestnet || cockpit?.account_truth_authority === "REMOTE_GATE_TESTNET_PRIVATE_API";
+    const remoteTruthAvailable = Boolean(
+      cockpit?.account_truth?.status === "AVAILABLE" &&
+      cockpit.account_truth.equity != null &&
+      cockpit.account_truth.available_margin != null &&
+      cockpit.account_truth.used_margin != null,
+    );
+    const remoteTruthUnavailable = usesRemoteAccountTruth && !remoteTruthAvailable;
+    const displayedReconciliation = remoteTruthUnavailable ? undefined : reconciliation;
+    const reportedMoney = (value: unknown, requiresRemoteTruth = false) =>
+      requiresRemoteTruth && remoteTruthUnavailable ? "--" : moneyFact(value);
+    const sourceLabel = remoteTruthUnavailable
+      ? (zh ? "远端账户未核验 · 本地账本仅供审计" : "Remote account unverified · local ledger is audit-only")
+      : fact(cockpit?.account_truth_authority, zh ? "未报告" : "NOT REPORTED");
     const blocked = Boolean(risk?.new_risk_blocked || cockpit?.runtime?.execution_blocked);
-    const fact = (value: unknown) => value === null || value === undefined || value === "" ? "UNKNOWN" : String(value);
+    const emergencyGuidance = cockpit?.emergency_guidance?.filter((item) => item.trim() && !item.includes("UNKNOWN")) || [];
     return (
       <section className="terminal-panel v2-risk-cockpit" aria-label={zh ? "账户风险台" : "Account risk cockpit"}>
         <header className="v2-panel-header">
@@ -1961,8 +2078,8 @@ export function V2WorkspacePage({
               {zh ? "风险优先 · 已有仓位计划 · 新机会 · 当日归因" : "Risk first · position plans · opportunities · attribution"}
             </small>
           </div>
-          <span className={`v2-badge ${blocked ? "v2-badge--warning" : "v2-badge--bull"}`}>
-            {blocked ? (zh ? "新风险已阻断" : "NEW RISK BLOCKED") : (zh ? "可读快照" : "READ-ONLY SNAPSHOT")}
+          <span className={`v2-badge ${blocked ? "v2-badge--warning" : "v2-badge--neutral"}`}>
+            {blocked ? (zh ? "新风险已阻断" : "NEW RISK BLOCKED") : (zh ? "只读快照" : "READ-ONLY SNAPSHOT")}
           </span>
         </header>
         {!cockpit || cockpit.status === "SCOPE_REQUIRED" ? (
@@ -1970,19 +2087,20 @@ export function V2WorkspacePage({
         ) : (
           <>
             <div className="v2-risk-fact-grid">
-              <div><span>{zh ? "账户 / 场所" : "Account / Venue"}</span><strong>{fact(cockpit.account_id)} · {fact(cockpit.venue)}</strong></div>
-              <div><span>{zh ? "模式" : "Mode"}</span><strong>{fact(cockpit.mode)}</strong></div>
-              <div><span>{zh ? "账本净权益" : "Ledger equity"}</span><strong>{fact(snapshot?.net_equity)}</strong></div>
-              <div><span>{zh ? "现金 / 预留风险" : "Cash / Reserved risk"}</span><strong>{fact(snapshot?.cash)} / {fact(snapshot?.reserved_risk)}</strong></div>
-              <div><span>{zh ? "单笔可做风险" : "Single-trade capacity"}</span><strong>{fact(capacity?.single_trade_risk_available)}</strong></div>
-              <div><span>{zh ? "组合可做风险" : "Portfolio capacity"}</span><strong>{fact(capacity?.portfolio_risk_available)}</strong></div>
-              <div><span>{zh ? "对账" : "Reconciliation"}</span><strong>{fact(reconciliation?.status)}</strong><small>{fact(reconciliation?.last_reconciled_at)}</small></div>
-              <div><span>{zh ? "模型" : "Model"}</span><strong className="v2-badge v2-badge--bull">{modelLabel}</strong><small>{zh ? "🟢 运行中 · 15m 联动" : "ACTIVE · 15m cadence"}</small></div>
+              <div><span>{zh ? "账户 / 场所" : "Account / Venue"}</span><strong>{fact(cockpit.account_id, zh ? "未选择" : "NOT SELECTED")} · {fact(cockpit.venue, zh ? "未报告" : "NOT REPORTED")}</strong></div>
+              <div><span>{zh ? "模式" : "Mode"}</span><strong>{fact(cockpit.mode, zh ? "未报告" : "NOT REPORTED")}</strong></div>
+              <div><span>{zh ? "账本净权益" : "Ledger equity"}</span><strong>{reportedMoney(snapshot?.net_equity, true)}</strong></div>
+              <div><span>{zh ? "现金 / 预留风险" : "Cash / Reserved risk"}</span><strong>{reportedMoney(snapshot?.cash, true)} / {reportedMoney(snapshot?.reserved_risk, true)}</strong></div>
+              <div><span>{zh ? "单笔可做风险" : "Single-trade capacity"}</span><strong>{reportedMoney(capacity?.single_trade_risk_available, true)}</strong></div>
+              <div><span>{zh ? "组合可做风险" : "Portfolio capacity"}</span><strong>{reportedMoney(capacity?.portfolio_risk_available, true)}</strong></div>
+              <div><span>{zh ? "对账" : "Reconciliation"}</span><strong>{fact(displayedReconciliation?.status, zh ? "未核验" : "UNVERIFIED")}</strong><small>{fact(displayedReconciliation?.last_reconciled_at, zh ? "时间未报告" : "TIME NOT REPORTED")}</small></div>
+              <div><span>{zh ? "模型" : "Model"}</span><strong className={`v2-badge ${runtimeModel.ready ? "v2-badge--bull" : runtimeModel.unavailable ? "v2-badge--warning" : "v2-badge--neutral"}`}>{modelLabel}</strong><small>{zh ? `运行状态 · ${runtimeModel.status}` : `Runtime status · ${runtimeModel.status}`}</small></div>
+              <div><span>{zh ? "账户事实来源" : "Account fact source"}</span><strong>{sourceLabel}</strong></div>
             </div>
-            {(risk?.new_risk_block_reasons?.length || cockpit.legacy_data?.unassigned_unverified) ? (
+            {(risk?.new_risk_block_reasons?.length) ? (
               <div className="v2-risk-warning">
-                <strong>{zh ? "阻断原因 / 数据限制" : "Blocks / data limitations"}</strong>
-                <span>{[...(risk?.new_risk_block_reasons || []), ...(cockpit.legacy_data?.unassigned_unverified ? ["LEGACY_UNVERIFIED"] : [])].join(" · ") || "UNKNOWN"}</span>
+                <strong>{zh ? "风控提示" : "Risk notice"}</strong>
+                <span>{risk.new_risk_block_reasons.join(" · ")}</span>
               </div>
             ) : null}
             <div className="v2-protection-strip">
@@ -1991,12 +2109,14 @@ export function V2WorkspacePage({
                 <span key={`${protection.position_id}-${protection.symbol}`} className={`v2-badge ${protection.status === "ACTIVE" ? "v2-badge--bull" : "v2-badge--warning"}`}>
                   {fact(protection.symbol)} · {fact(protection.position_id)} · {fact(protection.quantity)} · {fact(protection.status)}
                 </span>
-              )) : <span className="v2-data-tag">{zh ? "无已确认保护仓位" : "No confirmed protected position"}</span>}
+              )) : <span className="v2-data-tag">{zh ? "无已核验保护数据" : "No verified protection data"}</span>}
             </div>
             <details className="v2-details">
-              <summary>{zh ? "应急处理与未知项" : "Emergency handling & UNKNOWN facts"}</summary>
+              <summary>{zh ? "风控准则与实时守则" : "Risk Guidelines & Execution Facts"}</summary>
               <ul className="v2-guidance-list">
-                {(cockpit.emergency_guidance || ["UNKNOWN: no authoritative fact is available."]).map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}
+                {emergencyGuidance.length
+                  ? emergencyGuidance.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)
+                  : <li>{zh ? "风控指引未报告。" : "Risk guidance not reported."}</li>}
               </ul>
             </details>
           </>
@@ -2081,6 +2201,7 @@ export function V2WorkspacePage({
           <div className="v2-grid">
             <div className="v2-grid-col-left">
               {chart}
+              <MarketRadar mode="dashboard" preferredSymbol={selected} />
               {decisions}
             </div>
             <aside className="v2-grid-col-right" aria-label={copy.intel}>
@@ -2326,50 +2447,19 @@ export function V2WorkspacePage({
         </>
       )}
 
-      {/* Surface: Strategies (量化与策略库) */}
+      {/* Surface: Strategies (策略驱动的 AI 工作室) */}
       {surface === "strategies" && (
         <>
-          <div className="v2-strategies-grid">
-            {strategyIds.map((s) => {
-              const meta = STRATEGY_CATALOG[s];
-              return (
-                <article className="terminal-panel v2-strategy-card" key={s}>
-                  <header className="v2-strategy-header">
-                    <div className="v2-strategy-title-row">
-                      <h2>⌁ {zh ? meta.nameZh : meta.nameEn}</h2>
-                      {meta.isRecommended && (
-                        <span className="v2-badge v2-badge--gold">
-                          ⭐ {zh ? "系统推荐" : "Recommended"}
-                        </span>
-                      )}
-                      <span className={`v2-badge v2-badge--${meta.badgeVariant}`}>
-                        {zh ? meta.classificationZh : meta.classificationEn}
-                      </span>
-                    </div>
-                    <span className="v2-badge v2-badge--neutral">v2.0.0 · 15m/1h</span>
-                  </header>
-                  <p className="v2-strategy-desc">{copy[rules[s]]}</p>
-                  <div className="v2-strategy-footer">
-                    <span className="v2-data-tag">严格输出三要素: 触发价 / 强制止损 / 梯级止盈</span>
-                    <Link
-                      className="v2-attach-btn"
-                      to="/monitor"
-                      onClick={() => setStrategy(s)}
-                    >
-                      {copy.attach} ➔
-                    </Link>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
+          <AIStrategyLibrary accountId={selectedTradingAccount} />
           {decisions}
+          <InstitutionalEvidencePanel activeAccount={selectedTradingAccount} />
         </>
       )}
 
       {/* Surface: Intel (资讯与宏观) */}
       {surface === "intel" && (
         <div className="v2-intel-layout">
+          <MarketRadar mode="intel" />
           {macroCalendarCard}
           {macroBarometer}
           {newsFeed}
@@ -2485,19 +2575,84 @@ export function V2WorkspacePage({
 
       {/* Surface: Analysis (AI 做单分析看板与交易风格洞察) */}
       {surface === "analysis" && (
-        <div className="v2-analysis-desk">
-          <AITraderPanel
-            activeAccount={selectedTradingAccount}
-            currentMode={tradingAccounts.find((item) => item.account_id === selectedTradingAccount)?.mode}
-            onAccountChange={setSelectedTradingAccount}
-            onRefresh={() => { void refresh(); void fetchAnalysisData(); }}
-          />
+        <>
+        <nav className="v2-analysis-tabs" role="group" aria-label={zh ? "交易分析分类" : "Trading analysis sections"}>
+          <button type="button" aria-pressed={analysisSubTab === "decisions"} className={analysisSubTab === "decisions" ? "is-active" : ""} onClick={() => setAnalysisSubTab("decisions")}>
+            {zh ? "AI 决策与交易复盘" : "AI decisions & trade review"}
+          </button>
+          <button type="button" aria-pressed={analysisSubTab === "microstructure"} className={analysisSubTab === "microstructure" ? "is-active" : ""} onClick={() => setAnalysisSubTab("microstructure")}>
+            {zh ? "市场微观结构与衍生品雷达" : "Market microstructure & derivatives"}
+          </button>
+        </nav>
+        {analysisSubTab === "microstructure" ? <MarketRadar mode="analysis" /> : <div className="v2-analysis-desk">
+          {(() => {
+            const latestDecision = institutionalDashboard?.timeline?.[0];
+            const runtimeModel = readRuntimeModel(workspace?.risk_cockpit?.model);
+            const decisionModel = decisionModelName(latestDecision?.details);
+            const runtimeModelLabel = runtimeModel.modelName || (zh ? "Bonsai-2-27B-PTQ1_0" : "Bonsai-2-27B-PTQ1_0");
+            const decisionModelLabel = decisionModel || (zh ? "决策模型未报告" : "Decision model not reported");
+            const decisionSummary = latestDecision
+              ? latestDecision.reason || (zh ? "API 未提供本条决策理由。" : "The API did not include a reason for this decision.")
+              : (zh ? "暂无真实决策记录。启动 AI 做单后，首轮调度结果会显示在这里。" : "No recorded decision yet. The first scheduled AI cycle will appear here after trading starts.");
+            return <section className="terminal-panel v2-model-reasoning-panel" aria-label={zh ? "Bonsai 做单分析与决策记录" : "Bonsai trading analysis and decision records"}>
+            <header className="v2-panel-header">
+              <div>
+                <p className="eyebrow">MODEL ROUTE / VERIFIED RUNTIME</p>
+                <h2>🧠 {zh ? "Bonsai-2-27B 做单分析" : "Bonsai-2-27B Trading Analysis"}</h2>
+                <small className="v2-subtitle">
+                  {zh ? `目标模型：${runtimeModelLabel} · 模型状态：${runtimeModel.status}` : `Target model: ${runtimeModelLabel} · Model status: ${runtimeModel.status}`}
+                </small>
+              </div>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <span className={`v2-badge ${runtimeModel.ready ? "v2-badge--bull" : runtimeModel.unavailable || runtimeModel.stale || runtimeModel.status === "IDENTITY_UNVERIFIED" ? "v2-badge--warning" : "v2-badge--neutral"}`}>{runtimeModel.status}</span>
+                <button
+                  type="button"
+                  className="v2-btn-refresh"
+                  style={{ padding: "4px 10px", fontSize: "12px" }}
+                  disabled={busy || analysisLoading}
+                  onClick={() => { void refresh(); void fetchAnalysisData(); }}
+                >
+                  ↻ {zh ? "刷新状态 / 决策记录" : "Refresh status / decision records"}
+                </button>
+              </div>
+            </header>
+            <div className="v2-model-json-container">
+              <div className="v2-model-status-grid">
+                <div className="v2-model-status-card" data-state={runtimeModel.ready ? "verified" : runtimeModel.unavailable || runtimeModel.stale || runtimeModel.status === "IDENTITY_UNVERIFIED" ? "warning" : "unknown"}>
+                  <span>{zh ? "实际运行模型" : "Actual runtime model"}</span>
+                  <strong>{runtimeModel.identityVerified ? runtimeModel.actualModelId : (zh ? "身份未核验" : "Identity unverified")}</strong>
+                  <small>{runtimeModel.identityVerified ? (zh ? "由本地模型清单回执验证" : "Verified against the local model manifest") : (zh ? `目标配置：${runtimeModelLabel}` : `Configured target: ${runtimeModelLabel}`)}</small>
+                </div>
+                <div className="v2-model-status-card" data-state={latestDecision ? "recorded" : "unknown"}>
+                  <span>{zh ? "最近决策记录 · 历史账本" : "Latest decision · historical ledger"}</span>
+                  <strong>{latestDecision ? `${latestDecision.action || "UNKNOWN"} · ${latestDecision.status || "STATUS_NOT_REPORTED"}` : (zh ? "暂无记录" : "No decision record")}</strong>
+                  <small>{latestDecision?.scheduled_at || latestDecision?.completed_at || (zh ? "时间未提供" : "Time not provided")}</small>
+                </div>
+              </div>
+              <div className="v2-model-decision-summary">
+                <strong>{zh ? `【${decisionModelLabel} 盘口与宏观研判】` : `【${decisionModelLabel} Market Thesis】`}</strong>
+                <p>
+                  {decisionSummary}
+                </p>
+              </div>
+              {latestDecision ? <details open className="v2-details" style={{ marginTop: "10px" }}>
+                <summary style={{ cursor: "pointer", color: "#e5b65b", fontWeight: "bold" }}>
+                  {zh ? "查看这条历史决策 JSON" : "Inspect this historical decision JSON"}
+                </summary>
+                <pre className="v2-pre">
+                  {JSON.stringify(latestDecision.details ?? latestDecision, null, 2)}
+                </pre>
+              </details> : null}
+            </div>
+          </section>;
+          })()}
           <InstitutionalAnalysisDashboard
             dashboard={institutionalDashboard}
             loading={analysisLoading}
             error={institutionalDashboardError}
             zh={zh}
           />
+          <DecisionExperiencePanel accountId={selectedTradingAccount} />
           <details className="v2-analysis-legacy-details">
             <summary>{zh ? "展开兼容明细表与逐笔账本" : "Open compatibility tables and ledger details"}</summary>
             <div className="v2-analysis-legacy-content">
@@ -2581,7 +2736,9 @@ export function V2WorkspacePage({
                 </span>
               </div>
               <span className="v2-data-tag">
-                {zh ? "自适应动态杠杆 (5x~100x) · 锁定单笔最大风险 ≤2% 本金" : "Dynamic Leverage (5x~100x) · Hard Risk Capped at 2%"}
+                {zh
+                  ? `杠杆范围：${analysisData?.account?.leverage_range || "未报告"} · 单笔风险规则：未报告`
+                  : `Leverage range: ${analysisData?.account?.leverage_range || "NOT REPORTED"} · Per-trade risk rule: NOT REPORTED`}
               </span>
             </header>
 
@@ -3068,8 +3225,8 @@ export function V2WorkspacePage({
           </section>
             </div>
           </details>
-          <InstitutionalEvidencePanel activeAccount={selectedTradingAccount} />
-        </div>
+        </div>}
+        </>
       )}
 
       {/* Surface: Gate Live Desk (芝麻交易所实盘对接与量化接口预留) */}

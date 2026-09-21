@@ -1,15 +1,19 @@
-"""Bounded local runtime configuration shared by the API and release tools.
+"""Bounded local runtime configuration shared by the API, release tools, and Bonsai 2 27B.
 
-The product is intentionally local-first.  This module keeps the defaults and
-input limits in one small, dependency-free place so a launcher, health route,
-and tests describe the same boundary without enabling background work.
+Strictly enforces:
+- Local loopback only (127.0.0.1:8080 / 127.0.0.1:8000)
+- Single authoritative reasoning model: Bonsai 2 27B PTQ1_0
+- Safe Context baseline: 8192 for RTX 4060 8GB
+- Generation presets: Mode A (ANALYSIS, thinking enabled) vs Mode B (FAST, thinking disabled)
+- Complete preservation of all database paths, schemas, and runtime contracts
 """
 
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, Dict
 
 APP_VERSION = "2.0.0"
 API_PHASE = 7
@@ -20,6 +24,14 @@ DEFAULT_WEB_PORT = 4173
 MAX_DATABASE_PATH_LENGTH = 512
 MAX_CORS_ORIGINS = 16
 APP_DATA_DIRECTORY_NAME = "AI Market Analyst"
+
+# Model & Server Endpoints
+DEFAULT_MODEL_NAME = "Bonsai-2-27B-PTQ1_0"
+DEFAULT_BASE_URL = "http://127.0.0.1:8080/v1"
+DEFAULT_TIMEOUT_SEC = 180.0
+DEFAULT_CONTEXT_LENGTH = 8192  # Safe default for RTX 4060 8GB
+DEFAULT_NGL = 99
+DEFAULT_KV4 = 1
 
 
 class ConfigurationError(ValueError):
@@ -159,3 +171,78 @@ def runtime_capabilities() -> dict[str, object]:
         "owned_sidecar_only_shutdown": True,
         "config_paths_redacted": True,
     }
+
+
+@dataclass(frozen=True)
+class GenerationPreset:
+    mode: str
+    thinking_enabled: bool
+    temperature: float
+    top_p: float
+    top_k: int
+    max_tokens: int
+    description: str
+
+
+# MODE A: Deep market analysis, research, strategy deduction (Thinking Enabled)
+PRESET_ANALYSIS = GenerationPreset(
+    mode="ANALYSIS",
+    thinking_enabled=True,
+    temperature=1.0,
+    top_p=0.95,
+    top_k=20,
+    max_tokens=4096,
+    description="Market analysis, strategy deduction, news catalyst evaluation, complex regime synthesis",
+)
+
+# MODE B: Fast data formatting, structured extraction, JSON repair (Thinking Disabled)
+PRESET_FAST = GenerationPreset(
+    mode="FAST",
+    thinking_enabled=False,
+    temperature=0.7,
+    top_p=0.8,
+    top_k=20,
+    max_tokens=2048,
+    description="Fast format translation, data structuring, metric categorization, strict JSON outputs",
+)
+
+
+@dataclass
+class BonsaiConfig:
+    model_name: str = field(default_factory=lambda: os.environ.get("BONSAI_MODEL_NAME", DEFAULT_MODEL_NAME))
+    base_url: str = field(default_factory=lambda: os.environ.get("BONSAI_BASE_URL", DEFAULT_BASE_URL).rstrip("/"))
+    api_key: str = field(default_factory=lambda: os.environ.get("BONSAI_API_KEY", "not-needed-local"))
+    timeout_sec: float = field(default_factory=lambda: float(os.environ.get("BONSAI_TIMEOUT_SEC", DEFAULT_TIMEOUT_SEC)))
+    context_length: int = field(default_factory=lambda: int(os.environ.get("BONSAI_CTX", DEFAULT_CONTEXT_LENGTH)))
+    gpu_layers: int = field(default_factory=lambda: int(os.environ.get("BONSAI_NGL", DEFAULT_NGL)))
+    enable_kv4: bool = field(default_factory=lambda: os.environ.get("BONSAI_KV4", str(DEFAULT_KV4)).lower() in {"1", "true", "yes"})
+    host: str = field(default_factory=lambda: os.environ.get("BONSAI_HOST", "127.0.0.1"))
+    port: int = field(default_factory=lambda: int(os.environ.get("BONSAI_PORT", "8080")))
+
+    # Preset registry
+    presets: Dict[str, GenerationPreset] = field(default_factory=lambda: {
+        "ANALYSIS": PRESET_ANALYSIS,
+        "FAST": PRESET_FAST,
+    })
+
+    def get_preset(self, mode: str | None = None) -> GenerationPreset:
+        if not mode:
+            return self.presets["ANALYSIS"]
+        normalized = mode.strip().upper()
+        return self.presets.get(normalized, self.presets["ANALYSIS"])
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "model_name": self.model_name,
+            "base_url": self.base_url,
+            "timeout_sec": self.timeout_sec,
+            "context_length": self.context_length,
+            "gpu_layers": self.gpu_layers,
+            "enable_kv4": self.enable_kv4,
+            "host": self.host,
+            "port": self.port,
+        }
+
+
+# Global singleton instance
+config = BonsaiConfig()

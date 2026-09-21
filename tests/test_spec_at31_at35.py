@@ -36,6 +36,22 @@ from core.trading.ai_led_engine import (
     AICycleResult,
     AIActionType,
 )
+from core.model_routing import DEFAULT_SMART_MODEL
+
+
+def _with_verified_bonsai_receipt(ctx: AICycleContext) -> AICycleContext:
+    """Mark fixture decisions as completed Bonsai calls for execution-gate tests."""
+    artifact = r"D:\test-models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"
+    ctx.model_id = DEFAULT_SMART_MODEL
+    ctx.model_version = artifact
+    ctx.model_inference_settings = {
+        "actual_model_id": artifact,
+        "model_identity_source": "request_bound_to_verified_manifest",
+        "verified_manifest_model_id": artifact,
+    }
+    ctx.model_call_attempted = True
+    ctx.model_call_completed = True
+    return ctx
 
 
 @pytest.fixture
@@ -71,7 +87,7 @@ def test_setup(temp_store):
         risk_engine=risk_engine,
         ledger=ledger,
         guardian=guardian,
-        agent_policy_id="ai_led_qwen9b",
+        agent_policy_id="ai_led_bonsai_27b",
     )
     return {
         "store": temp_store,
@@ -90,7 +106,7 @@ def test_at31_ai_led_independent_proposal_no_s1_s6_trigger(test_setup):
     account_id = test_setup["account_id"]
 
     now = datetime.now(timezone.utc)
-    ctx = AICycleContext(
+    ctx = _with_verified_bonsai_receipt(AICycleContext(
         cycle_id="cycle_at31_001",
         account_id=account_id,
         generation=1,
@@ -99,7 +115,7 @@ def test_at31_ai_led_independent_proposal_no_s1_s6_trigger(test_setup):
         allowed_instruments=("BTCUSDT", "ETHUSDT"),
         max_risk_fraction=0.0025,
         market_snapshots={"BTCUSDT": {"last": 50000.0, "close": 50000.0}},
-    )
+    ))
 
     action_out = AIActionOutput(
         action="OPEN_LONG",
@@ -128,7 +144,7 @@ def test_at31_ai_led_independent_proposal_no_s1_s6_trigger(test_setup):
     for s_name in s1_s6_names:
         assert s_name not in intent.strategy_version.lower(), f"Strategy version {intent.strategy_version} forged S1-S6 name {s_name}"
 
-    assert intent.strategy_version == "ai_led_qwen9b"
+    assert intent.strategy_version == "ai_led_bonsai_27b"
 
     # Protection plan verified
     assert intent.protection_plan.stop_price == 49000.0
@@ -145,7 +161,7 @@ def test_at32_autonomous_continuous_execution_paper_mode(test_setup):
     now = datetime.now(timezone.utc)
 
     # Cycle 1: AI opens LONG position
-    ctx1 = AICycleContext(
+    ctx1 = _with_verified_bonsai_receipt(AICycleContext(
         cycle_id="cycle_at32_001",
         account_id=account_id,
         generation=1,
@@ -154,7 +170,7 @@ def test_at32_autonomous_continuous_execution_paper_mode(test_setup):
         allowed_instruments=("BTCUSDT", "ETHUSDT"),
         max_risk_fraction=0.0025,
         market_snapshots={"BTCUSDT": {"last": 50000.0, "close": 50000.0}},
-    )
+    ))
     out1 = AIActionOutput(
         action="OPEN_LONG",
         instrument_id="BTCUSDT",
@@ -234,7 +250,7 @@ def test_at33_hard_risk_rejection_over_budget_and_unauthorized(test_setup):
     account_id = test_setup["account_id"]
 
     now = datetime.now(timezone.utc)
-    ctx = AICycleContext(
+    ctx = _with_verified_bonsai_receipt(AICycleContext(
         cycle_id="cycle_at33_001",
         account_id=account_id,
         generation=1,
@@ -243,7 +259,7 @@ def test_at33_hard_risk_rejection_over_budget_and_unauthorized(test_setup):
         allowed_instruments=("BTCUSDT", "ETHUSDT"),
         max_risk_fraction=0.0025,
         market_snapshots={"BTCUSDT": {"last": 50000.0}, "DOGEUSDT": {"last": 0.15}},
-    )
+    ))
 
     # Subcase A: Over-budget risk fraction (requested 1% vs limit 0.25%)
     out_over_risk = AIActionOutput(
@@ -310,7 +326,7 @@ def test_at34_guardian_stop_priority_and_anti_competition(test_setup):
     now = datetime.now(timezone.utc)
 
     # Step 1: Open LONG position at 50000.0 with stop at 49500.0
-    ctx1 = AICycleContext(
+    ctx1 = _with_verified_bonsai_receipt(AICycleContext(
         cycle_id="cycle_at34_001",
         account_id=account_id,
         generation=1,
@@ -318,7 +334,7 @@ def test_at34_guardian_stop_priority_and_anti_competition(test_setup):
         expires_at=(now + timedelta(seconds=15)).isoformat(),
         allowed_instruments=("BTCUSDT",),
         market_snapshots={"BTCUSDT": {"last": 50000.0, "close": 50000.0}},
-    )
+    ))
     out1 = AIActionOutput(
         action="OPEN_LONG",
         instrument_id="BTCUSDT",
@@ -332,7 +348,7 @@ def test_at34_guardian_stop_priority_and_anti_competition(test_setup):
     assert res1.status == "EXECUTED"
 
     # Step 2: Attempt STOP WIDENING (new stop 49000.0 is below current stop 49500.0 for LONG)
-    ctx2 = AICycleContext(
+    ctx2 = _with_verified_bonsai_receipt(AICycleContext(
         cycle_id="cycle_at34_002",
         account_id=account_id,
         generation=2,
@@ -340,7 +356,7 @@ def test_at34_guardian_stop_priority_and_anti_competition(test_setup):
         expires_at=(now + timedelta(seconds=15)).isoformat(),
         allowed_instruments=("BTCUSDT",),
         market_snapshots={"BTCUSDT": {"last": 49700.0}},
-    )
+    ))
     out_widen = AIActionOutput(
         action="TIGHTEN_STOP",
         instrument_id="BTCUSDT",

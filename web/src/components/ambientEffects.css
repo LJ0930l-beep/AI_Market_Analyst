@@ -1,0 +1,256 @@
+/* Ambient Candlestick & Cyber Aurora Effects */
+.ambient-root {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+  contain: strict;
+  background:
+    radial-gradient(ellipse 95% 45% at 50% -5%, rgba(0, 229, 255, 0.14) 0%, transparent 65%),
+    radial-gradient(ellipse 80% 50% at 85% 20%, rgba(0, 242, 169, 0.11) 0%, transparent 60%),
+    radial-gradient(ellipse 75% 55% at 10% 70%, rgba(168, 85, 247, 0.12) 0%, transparent 65%),
+    radial-gradient(ellipse 65% 40% at 80% 85%, rgba(255, 68, 102, 0.08) 0%, transparent 60%);
+  transition: opacity 0.5s ease;
+}
+
+.ambient-root[data-visible="false"] {
+  opacity: 0;
+}
+
+.ambient-root[data-visible="false"] * {
+  animation-play-state: paused !important;
+}
+
+/* 1. Cyber Auroras */
+.ambient-aurora {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(85px);
+  pointer-events: none;
+  opacity: 0.55;
+  mix-blend-mode: screen;
+  animation: ambient-aurora-breathe 14s ease-in-out infinite alternate;
+}
+
+.ambient-aurora--cyan {
+  width: 55vw;
+  height: 38vw;
+  top: -10vw;
+  left: 18vw;
+  background: radial-gradient(circle, rgba(0, 229, 255, 0.38) 0%, transparent 70%);
+}
+
+.ambient-aurora--emerald {
+  width: 48vw;
+  height: 34vw;
+  top: 35vh;
+  left: -8vw;
+  background: radial-gradient(circle, rgba(0, 242, 169, 0.30) 0%, transparent 70%);
+  animation-delay: -5s;
+}
+
+.ambient-aurora--purple {
+  width: 52vw;
+  height: 36vw;
+  bottom: -8vh;
+  right: -6vw;
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.28) 0%, transparent 70%);
+  animation-delay: -9s;
+}
+
+.ambient-aurora--rose {
+  width: 42vw;
+  height: 30vw;
+  bottom: 25vh;
+  left: 32vw;
+  background: radial-gradient(circle, rgba(255, 68, 102, 0.22) 0%, transparent 70%);
+  animation-delay: -3s;
+}
+
+@keyframes ambient-aurora-breathe {
+  0% { transform: scale(1) translate(0, 0); opacity: 0.45; }
+  50% { transform: scale(1.12) translate(1.5vw, 1vh); opacity: 0.68; }
+  100% { transform: scale(0.96) translate(-1vw, -1vh); opacity: 0.48; }
+}
+
+/* 2. Cyber Grid */
+.ambient-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(56, 189, 248, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(56, 189, 248, 0.08) 1px, transparent 1px);
+  background-size: 52px 52px;
+  mask-image: radial-gradient(ellipse 90% 70% at 50% 45%, black 35%, transparent 92%);
+  -webkit-mask-image: radial-gradient(ellipse 90% 70% at 50% 45%, black 35%, transparent 92%);
+  pointer-events: none;
+}
+
+/* 3. Hero Candlestick Wave (Top) */
+.ambient-kline-container {
+  position: absolute;
+  left: 0;
+  right: 0;
+  width: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ambient-kline-container--top {
+  top: 12px;
+  height: 160px;
+  opacity: 0.92;
+}
+
+.ambient-kline-track--top {
+  display: flex;
+  width: 3200px;
+  animation: kline-flow-left 42s linear infinite;
+  will-change: transform;
+}
+
+@keyframes kline-flow-left {
+  0% { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(-1600px, 0, 0); }
+}
+
+/* 4. Mid Candlestick Wave */
+.ambient-kline-container--mid {
+  top: 36vh;
+  height: 240px;
+  opacity: 0.45;
+}
+
+.ambient-kline-track--mid {
+  display: flex;
+  width: 3520px;
+  animation: kline-flow-right 68s linear infinite;
+  will-change: transform;
+}
+
+@keyframes kline-flow-right {
+  0% { transform: translate3d(-1760px, 0, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+.ambient-kline-svg {
+  flex-shrink: 0;
+  display: block;
+}
+
+/* Moving Averages */
+.ambient-line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ambient-line--cyan {
+  stroke: #00f2fe;
+  stroke-width: 2.8;
+  opacity: 0.95;
+}
+
+.ambient-line--gold {
+  stroke: #f59e0b;
+  stroke-width: 2.2;
+  opacity: 0.75;
+}
+
+/* Candlestick Styling with Vibrant Cyber Accents */
+.ambient-candle--bull .ambient-wick {
+  stroke: #00f2a9;
+  stroke-width: 2;
+  opacity: 0.95;
+}
+
+.ambient-candle--bull .ambient-body {
+  fill: rgba(0, 242, 169, 0.42);
+  stroke: #00f2a9;
+  stroke-width: 1.6;
+}
+
+.ambient-candle--bear .ambient-wick {
+  stroke: #ff4466;
+  stroke-width: 2;
+  opacity: 0.92;
+}
+
+.ambient-candle--bear .ambient-body {
+  fill: rgba(255, 68, 102, 0.38);
+  stroke: #ff4466;
+  stroke-width: 1.6;
+}
+
+/* 5. Quantum Sparks */
+.ambient-spark {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--size);
+  height: var(--size);
+  border-radius: 50%;
+  background: var(--color);
+  box-shadow: 0 0 12px var(--color);
+  animation: ambient-spark-drift var(--duration) linear infinite;
+  animation-delay: var(--delay);
+  opacity: 0.85;
+}
+
+@keyframes ambient-spark-drift {
+  0% { transform: translateY(0) scale(0.85); opacity: 0; }
+  15% { opacity: 0.95; }
+  85% { opacity: 0.95; }
+  100% { transform: translateY(-140px) scale(1.25); opacity: 0; }
+}
+
+/* Motion Toggle Button */
+.motion-toggle {
+  position: static;
+  flex: 0 0 auto;
+  min-height: 2rem;
+  white-space: nowrap;
+  background: rgba(13, 20, 36, 0.85);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  color: #38bdf8;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: all 0.2s ease;
+}
+
+.motion-toggle:hover {
+  background: rgba(26, 38, 64, 0.95);
+  border-color: rgba(56, 189, 248, 0.7);
+  box-shadow: 0 6px 22px rgba(56, 189, 248, 0.25);
+  transform: translateY(-1px);
+}
+
+.motion-toggle:focus-visible {
+  outline: 2px solid #59e1cc;
+  outline-offset: 3px;
+}
+
+html[data-motion="off"] .ambient-root { opacity: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion="on"]) .ambient-aurora,
+  html:not([data-motion="on"]) .ambient-kline-track--top,
+  html:not([data-motion="on"]) .ambient-kline-track--mid,
+  html:not([data-motion="on"]) .ambient-spark { animation: none !important; }
+  .ambient-aurora { opacity: .24; }
+  .ambient-kline-container { opacity: .1; }
+  .ambient-spark { opacity: .14; }
+  .motion-toggle { transition: none; }
+}
+
+@media (max-width: 520px) {
+  .motion-toggle { padding-inline: .5rem; }
+  .motion-toggle__label { font-size: .58rem; }
+}

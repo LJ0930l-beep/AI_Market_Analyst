@@ -8,13 +8,14 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
 
-from .ai import OllamaProvider, SignalPolicy, analyze_with_repair, to_signal_proposal
+from .ai import MockLLMProvider, OllamaProvider, SignalPolicy, analyze_with_repair, to_signal_proposal
 from .ai.contracts import LLMError
 from .benchmarks import BenchmarkContext, BenchmarkContextService
 from .context import MarketContext
 from .events import EventIntelligenceResult, EventIntelligenceService, NewsEventProviderAdapter
 from .instruments import Instrument
 from .memory import MarketMemoryContext, MarketMemoryService
+from .model_routing import DEFAULT_MODEL, is_verified_bonsai_receipt
 from .news_engine import NewsFetchResult, RSSNewsProvider
 from .providers import FixtureNewsProvider, ProviderError, ProviderChain, Quote
 from .providers.runtime import MarketDataBundle, ProviderSnapshot, build_default_provider, fetch_market_data
@@ -458,8 +459,23 @@ class AnalysisService:
         context_capabilities: dict[str, object] | None = None,
     ) -> AnalysisResult:
         response_time = (analysis_time or datetime.now(timezone.utc)).astimezone(timezone.utc)
-        if source_type == "replay" and not replay_run_id:
+        if source_type in {"replay", "mock_replay"} and not replay_run_id:
             raise ValueError("replay analysis requires replay_run_id")
+        if source_type in {"live", "replay"} and self.llm_provider is not None:
+            if type(self.llm_provider) is not OllamaProvider:
+                raise AnalysisError(
+                    "production analysis requires the pinned Bonsai provider; use demo or mock_replay for injected models",
+                    code="MODEL_PROVIDER_NOT_ALLOWED",
+                    provider=str(getattr(self.llm_provider, "provider_name", self.llm_provider.__class__.__name__.lower())),
+                )
+            if self.llm_provider.model_name != DEFAULT_MODEL or self.llm_provider._route_error(DEFAULT_MODEL):
+                raise AnalysisError(
+                    "production analysis provider is not configured for the pinned Bonsai route",
+                    code="MODEL_ROUTE_NOT_ALLOWED",
+                    provider=self.llm_provider.provider_name,
+                )
+        if source_type == "mock_replay" and self.llm_provider is not None and type(self.llm_provider) is not MockLLMProvider:
+            raise AnalysisError("mock_replay requires MockLLMProvider", code="MOCK_REPLAY_PROVIDER_NOT_ALLOWED")
         bundle = self._bundle(instrument, timeframe, limit)
         quant = build_quant_snapshot(list(bundle.bars), timeframe, symbol=instrument.symbol)
         event_context, news, benchmark_context, memory_context, policy = self._phase6_context(
@@ -527,6 +543,13 @@ class AnalysisService:
             try:
                 model_policy = SignalPolicy.from_context(context)
                 response, metadata = analyze_with_repair(self.llm_provider, context, model_policy)  # type: ignore[arg-type]
+                model_receipt = metadata.to_dict()
+                if source_type in {"live", "replay"} and not is_verified_bonsai_receipt(model_receipt):
+                    raise AnalysisError(
+                        "production model output did not include a verified Bonsai inference receipt",
+                        code="MODEL_RECEIPT_UNVERIFIED",
+                        provider=provider_name,
+                    )
                 signal = to_signal_proposal(
                     response,
                     context,

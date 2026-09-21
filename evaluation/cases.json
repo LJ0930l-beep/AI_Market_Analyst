@@ -1,0 +1,315 @@
+{
+  "description": "50 Comprehensive Evaluation Test Cases for AI Market Analyst V2 (Bonsai 2 27B)",
+  "total_cases": 50,
+  "categories": {
+    "crypto_analysis": 10,
+    "pine_script": 10,
+    "python_quant": 10,
+    "mathematics": 5,
+    "tool_calling": 5,
+    "deep_research": 5,
+    "structured_json": 5
+  },
+  "cases": [
+    {
+      "id": "crypto_01",
+      "category": "crypto_analysis",
+      "prompt": "BTC current price is 82,500, EMA20=81,200, EMA50=79,800, RSI=68, forming HH_HL. Give a 3-sentence institutional regime summary.",
+      "expected_keywords": ["bullish", "HH_HL", "trend"]
+    },
+    {
+      "id": "crypto_02",
+      "category": "crypto_analysis",
+      "prompt": "ETH tests 2,450 resistance three times with declining volume and RSI bearish divergence. Explain the invalidation condition for a short setup.",
+      "expected_keywords": ["invalidation", "breakout", "volume"]
+    },
+    {
+      "id": "crypto_03",
+      "category": "crypto_analysis",
+      "prompt": "Explain the difference between taker volume dominance and funding rate elevation during a weekend consolidation.",
+      "expected_keywords": ["funding", "taker", "liquidity"]
+    },
+    {
+      "id": "crypto_04",
+      "category": "crypto_analysis",
+      "prompt": "SOL broke below EMA200 on 4h timeframe, but daily closed with a long lower wick. Analyze the conflict between timeframes.",
+      "expected_keywords": ["timeframe", "EMA200", "rejection"]
+    },
+    {
+      "id": "crypto_05",
+      "category": "crypto_analysis",
+      "prompt": "BTC open interest surged 15% while price compressed in a $500 range. What structural volatility expansion does this signal?",
+      "expected_keywords": ["squeeze", "open interest", "expansion"]
+    },
+    {
+      "id": "crypto_06",
+      "category": "crypto_analysis",
+      "prompt": "DOGE experienced a high volume spike followed immediately by an engulfing red bar. Categorize the failed breakout.",
+      "expected_keywords": ["failed breakout", "trap", "liquidity"]
+    },
+    {
+      "id": "crypto_07",
+      "category": "crypto_analysis",
+      "prompt": "How should a trader treat a weekend breakout of a 5-day trading range when spot volume is 40% below average?",
+      "expected_keywords": ["low volume", "fakeout", "confirmation"]
+    },
+    {
+      "id": "crypto_08",
+      "category": "crypto_analysis",
+      "prompt": "A crypto perpetual has a negative funding rate of -0.05% with price making higher lows. Interpret the short-crowding regime.",
+      "expected_keywords": ["short squeeze", "funding", "crowded"]
+    },
+    {
+      "id": "crypto_09",
+      "category": "crypto_analysis",
+      "prompt": "Explain why Fair Value Gaps (FVG) act as dynamic magnets in high-volatility crypto regimes.",
+      "expected_keywords": ["imbalance", "liquidity", "fill"]
+    },
+    {
+      "id": "crypto_10",
+      "category": "crypto_analysis",
+      "prompt": "Detail the 3 mandatory criteria before taking a pullback entry towards an upward-sloping EMA50.",
+      "expected_keywords": ["retest", "support", "confirmation"]
+    },
+    {
+      "id": "pine_01",
+      "category": "pine_script",
+      "prompt": "Write a valid TradingView Pine Script v5 indicator that plots EMA20 (blue) and EMA50 (orange). Output only the code.",
+      "expected_keywords": ["//@version=5", "indicator", "ta.ema", "plot"]
+    },
+    {
+      "id": "pine_02",
+      "category": "pine_script",
+      "prompt": "Write a Pine Script v5 function to calculate a 14-period True Range and color the background red when ATR > 2 * SMA(ATR, 20).",
+      "expected_keywords": ["//@version=5", "ta.atr", "ta.sma", "bgcolor"]
+    },
+    {
+      "id": "pine_03",
+      "category": "pine_script",
+      "prompt": "Write a Pine Script v5 script that identifies Swing Highs and Swing Lows using ta.pivothigh and ta.pivotlow with window 3.",
+      "expected_keywords": ["ta.pivothigh", "ta.pivotlow", "plotshape"]
+    },
+    {
+      "id": "pine_04",
+      "category": "pine_script",
+      "prompt": "Write Pine Script v5 code to draw horizontal lines for the daily high and daily low of the previous day.",
+      "expected_keywords": ["request.security", "line.new", "day"]
+    },
+    {
+      "id": "pine_05",
+      "category": "pine_script",
+      "prompt": "Write a Pine Script v5 strategy entry condition: enter long when close crosses above EMA20 and RSI > 50.",
+      "expected_keywords": ["strategy.entry", "ta.crossover", "ta.rsi"]
+    },
+    {
+      "id": "pine_06",
+      "category": "pine_script",
+      "prompt": "Write a Pine Script v5 snippet that plots a Volume Weighted Average Price (VWAP) anchor on a custom session.",
+      "expected_keywords": ["ta.vwap", "plot"]
+    },
+    {
+      "id": "pine_07",
+      "category": "pine_script",
+      "prompt": "In Pine Script v5, demonstrate how to implement trailing stop logic using strategy.exit.",
+      "expected_keywords": ["strategy.exit", "trail_points", "trail_offset"]
+    },
+    {
+      "id": "pine_08",
+      "category": "pine_script",
+      "prompt": "Write a Pine Script v5 alertcondition that triggers when RSI reaches overbought level of 70.",
+      "expected_keywords": ["alertcondition", "ta.rsi", "message"]
+    },
+    {
+      "id": "pine_09",
+      "category": "pine_script",
+      "prompt": "Write a Pine Script v5 function calculating Bollinger Bands with length 20 and multiplier 2.0.",
+      "expected_keywords": ["ta.sma", "ta.stdev", "plot"]
+    },
+    {
+      "id": "pine_10",
+      "category": "pine_script",
+      "prompt": "Write Pine Script v5 code to detect bullish RSI divergence when price makes a lower low but RSI makes a higher low.",
+      "expected_keywords": ["divergence", "ta.rsi", "ta.pivotlow"]
+    },
+    {
+      "id": "py_01",
+      "category": "python_quant",
+      "prompt": "Write a self-contained Python function `calculate_max_drawdown(equity_series: list[float]) -> float` that returns maximum peak-to-trough percentage drawdown.",
+      "expected_keywords": ["def calculate_max_drawdown", "peak", "return"]
+    },
+    {
+      "id": "py_02",
+      "category": "python_quant",
+      "prompt": "Write a Python function calculating the annualized Sharpe Ratio given daily returns (assuming 252 trading days, risk-free rate 0.02).",
+      "expected_keywords": ["math.sqrt", "252", "mean", "std"]
+    },
+    {
+      "id": "py_03",
+      "category": "python_quant",
+      "prompt": "Write a pure Python function to compute an Exponential Moving Average for a series of prices without numpy.",
+      "expected_keywords": ["multiplier", "2 / (period + 1)", "ema"]
+    },
+    {
+      "id": "py_04",
+      "category": "python_quant",
+      "prompt": "Write a Python function to parse an exchange order book depth snapshot and calculate the bid/ask spread and top-5 bid volume sum.",
+      "expected_keywords": ["bids", "asks", "spread", "volume"]
+    },
+    {
+      "id": "py_05",
+      "category": "python_quant",
+      "prompt": "Implement a simple FIFO trade position ledger in Python tracking open lots, average entry price, and realized PnL.",
+      "expected_keywords": ["class", "realized_pnl", "entry_price"]
+    },
+    {
+      "id": "py_06",
+      "category": "python_quant",
+      "prompt": "Write a Python function implementing Kelly Criterion for position sizing given win rate p and reward-to-risk ratio b.",
+      "expected_keywords": ["kelly", "p - (1 - p) / b"]
+    },
+    {
+      "id": "py_07",
+      "category": "python_quant",
+      "prompt": "Write a Python generator that yields rolling fixed-size windows over a time-series list.",
+      "expected_keywords": ["yield", "window", "range"]
+    },
+    {
+      "id": "py_08",
+      "category": "python_quant",
+      "prompt": "Write a Python function to check whether an order intent satisfies risk bounds (max risk pct <= 5%, max leverage <= 20).",
+      "expected_keywords": ["def", "risk", "True", "False"]
+    },
+    {
+      "id": "py_09",
+      "category": "python_quant",
+      "prompt": "Write a Python dataclass `Candle` with fields timestamp, open, high, low, close, volume, and an is_bullish property.",
+      "expected_keywords": ["@dataclass", "close > open"]
+    },
+    {
+      "id": "py_10",
+      "category": "python_quant",
+      "prompt": "Write a Python script to compute Average True Range (ATR) with standard RMA smoothing.",
+      "expected_keywords": ["tr", "atr", "max"]
+    },
+    {
+      "id": "math_01",
+      "category": "mathematics",
+      "prompt": "If account equity is $50,000 and the maximum single-trade risk is 2.5%, entry price is $80,000, and stop loss is $78,000, calculate the maximum position size in BTC.",
+      "expected_keywords": ["1250", "2000", "0.625"]
+    },
+    {
+      "id": "math_02",
+      "category": "mathematics",
+      "prompt": "A trader achieves 45% win rate with a 2.5:1 profit-to-loss ratio. Calculate the mathematical expected value per dollar risked.",
+      "expected_keywords": ["0.575", "expectation", "EV"]
+    },
+    {
+      "id": "math_03",
+      "category": "mathematics",
+      "prompt": "An asset price drops 20%. What exact percentage gain is required from the lower price to break even?",
+      "expected_keywords": ["25%", "25"]
+    },
+    {
+      "id": "math_04",
+      "category": "mathematics",
+      "prompt": "Calculate the liquidation price for a 10x isolated long entered at $100,000 assuming a maintenance margin rate of 1%.",
+      "expected_keywords": ["91,000", "90,000", "liquidation"]
+    },
+    {
+      "id": "math_05",
+      "category": "mathematics",
+      "prompt": "Compute the annualized yield of an 8-hour funding rate of +0.03% compounded over 365 days (3 settlements per day).",
+      "expected_keywords": ["32.8%", "38%", "compound"]
+    },
+    {
+      "id": "tool_01",
+      "category": "tool_calling",
+      "prompt": "The user asks for the current price of BTC. Which tool should be called, and with what arguments? Output valid tool call JSON.",
+      "expected_keywords": ["get_ticker", "symbol", "BTC"]
+    },
+    {
+      "id": "tool_02",
+      "category": "tool_calling",
+      "prompt": "The user asks for 15-minute K-lines for ETH_USDT. Output the exact tool call JSON.",
+      "expected_keywords": ["get_ohlcv", "ETH_USDT", "15m"]
+    },
+    {
+      "id": "tool_03",
+      "category": "tool_calling",
+      "prompt": "The user wants to inspect current funding rate and open interest for SOL_USDT. Output the appropriate tool calls.",
+      "expected_keywords": ["get_funding_rate", "get_open_interest"]
+    },
+    {
+      "id": "tool_04",
+      "category": "tool_calling",
+      "prompt": "If a tool call to `get_ticker` fails due to network outage, what exact JSON error message must be emitted according to protocol?",
+      "expected_keywords": ["DATA_UNAVAILABLE"]
+    },
+    {
+      "id": "tool_05",
+      "category": "tool_calling",
+      "prompt": "Demonstrate the tool call sequence to first fetch 100 bars of BTC, then pass those bars to technical analysis calculation.",
+      "expected_keywords": ["get_ohlcv", "calculate_indicators"]
+    },
+    {
+      "id": "research_01",
+      "category": "deep_research",
+      "prompt": "Analyze how macro interest rate expectations impact cryptocurrency perpetual futures basis and stablecoin market cap expansion.",
+      "expected_keywords": ["macro", "yield", "liquidity", "stablecoin"]
+    },
+    {
+      "id": "research_02",
+      "category": "deep_research",
+      "prompt": "Compare Order Book Liquidity Sweeps vs Stop Hunting phenomena from the perspective of institutional market makers.",
+      "expected_keywords": ["market maker", "liquidity", "slippage", "stops"]
+    },
+    {
+      "id": "research_03",
+      "category": "deep_research",
+      "prompt": "Discuss the institutional risk constraints of running automated trend-following models across correlated crypto pairs.",
+      "expected_keywords": ["correlation", "portfolio", "cluster risk"]
+    },
+    {
+      "id": "research_04",
+      "category": "deep_research",
+      "prompt": "Provide a comprehensive teardown of why martingale position sizing inevitably leads to ruin in non-stationary markets.",
+      "expected_keywords": ["martingale", "drawdown", "gambler's ruin", "tail risk"]
+    },
+    {
+      "id": "research_05",
+      "category": "deep_research",
+      "prompt": "Explain the architectural requirements for an algorithmic trading system to prevent stale order replay after network disconnections.",
+      "expected_keywords": ["idempotency", "timestamp", "fence", "stale"]
+    },
+    {
+      "id": "json_01",
+      "category": "structured_json",
+      "prompt": "Output a valid JSON object with keys: symbol (string), trend (string), score (float between 0 and 1). Output ONLY JSON.",
+      "expected_keywords": ["\"symbol\"", "\"trend\"", "\"score\""]
+    },
+    {
+      "id": "json_02",
+      "category": "structured_json",
+      "prompt": "Output a valid JSON representing trade risk bounds: max_risk_pct, max_leverage, allowed_directions (array). Output ONLY JSON.",
+      "expected_keywords": ["\"max_risk_pct\"", "\"max_leverage\"", "\"allowed_directions\""]
+    },
+    {
+      "id": "json_03",
+      "category": "structured_json",
+      "prompt": "Convert this statement into structured JSON: 'BTC is bullish at 82000 with support at 80000 and resistance at 84000'. Output ONLY JSON.",
+      "expected_keywords": ["\"support\"", "\"resistance\"", "80000"]
+    },
+    {
+      "id": "json_04",
+      "category": "structured_json",
+      "prompt": "Output a valid JSON object matching the scenario schema: hypothesis, trigger_condition, stop_loss (number), take_profit (array). Output ONLY JSON.",
+      "expected_keywords": ["\"hypothesis\"", "\"trigger_condition\"", "\"stop_loss\""]
+    },
+    {
+      "id": "json_05",
+      "category": "structured_json",
+      "prompt": "Output a strict JSON array containing 3 objects, each representing an asset with name, symbol, and 24h_volume. Output ONLY JSON.",
+      "expected_keywords": ["\"name\"", "\"symbol\"", "\"24h_volume\""]
+    }
+  ]
+}

@@ -32,6 +32,130 @@ def _add_columns(db: sqlite3.Connection, table: str, additions: dict[str, str]) 
             db.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
 
 
+def _candidate_unique_keys(db: sqlite3.Connection) -> set[tuple[str, ...]]:
+    indexes = db.execute("PRAGMA index_list(ai_strategy_candidates)").fetchall()
+    unique_keys: set[tuple[str, ...]] = set()
+    for index in indexes:
+        if not bool(index[2]):
+            continue
+        name = str(index[1]).replace('"', '""')
+        columns = db.execute(f'PRAGMA index_info("{name}")').fetchall()
+        unique_keys.add(tuple(str(column[2]) for column in columns))
+    return unique_keys
+
+
+def _migrate_candidate_timeframe_identity(db: sqlite3.Connection) -> None:
+    """Replace the legacy candidate key with a timeframe-aware unique key.
+
+    Older releases keyed candidates by account/symbol/rule/closed bar only.
+    That aliases a 5m and 15m signal when both close at the same timestamp.
+    Keep every historical row and rebuild the table transactionally.
+    """
+    if db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ai_strategy_candidates'"
+    ).fetchone() is None:
+        return
+    unique_keys = _candidate_unique_keys(db)
+    legacy_key = ("account_id", "symbol", "strategy_id", "closed_15m_bar")
+    if legacy_key not in unique_keys:
+        return
+
+    column_names = (
+        "candidate_id", "account_id", "provider", "environment", "symbol",
+        "strategy_id", "strategy_version", "signal_timeframe", "closed_15m_bar",
+        "status", "side", "entry_price", "stop_price", "take_profit", "rule_score",
+        "calibrated_probability", "calibration_sample_size", "rationale", "source_hash",
+        "conditions_json", "trigger_completion_pct", "entry_zone_json", "invalidation",
+        "targets_json", "rr", "evidence_json", "signal_time", "expires_at",
+        "context_timeframe", "market_regime", "direction_bias", "trigger_status",
+        "context_json", "created_at", "updated_at",
+    )
+    defaults = {
+        "provider": "'unknown'", "environment": "'unknown'",
+        "strategy_version": "'legacy'", "signal_timeframe": "'15m'",
+        "status": "'UNKNOWN'", "side": "NULL", "entry_price": "NULL",
+        "stop_price": "NULL", "take_profit": "NULL", "rule_score": "NULL",
+        "calibrated_probability": "NULL", "calibration_sample_size": "0",
+        "rationale": "''", "source_hash": "''", "conditions_json": "'[]'",
+        "trigger_completion_pct": "NULL", "entry_zone_json": "NULL",
+        "invalidation": "NULL", "targets_json": "'[]'", "rr": "NULL",
+        "evidence_json": "'[]'", "signal_time": "NULL", "expires_at": "NULL",
+        "context_timeframe": "NULL", "market_regime": "NULL",
+        "direction_bias": "NULL", "trigger_status": "NULL", "context_json": "'{}'",
+        # Missing audit timestamps stay explicit instead of inventing a point
+        # in time for old records whose schema did not retain those fields.
+        "created_at": "'UNKNOWN'", "updated_at": "'UNKNOWN'",
+    }
+    source_columns = _columns(db, "ai_strategy_candidates")
+    select_expressions = []
+    for name in column_names:
+        if name in source_columns:
+            select_expressions.append(name)
+        elif name in defaults:
+            select_expressions.append(f"{defaults[name]} AS {name}")
+        else:
+            raise sqlite3.OperationalError(
+                f"Cannot migrate ai_strategy_candidates: required legacy column {name!r} is missing"
+            )
+    columns_sql = ", ".join(column_names)
+    select_sql = ", ".join(select_expressions)
+    db.execute("SAVEPOINT candidate_timeframe_identity")
+    try:
+        db.execute(
+            """CREATE TABLE ai_strategy_candidates__timeframe_new (
+                candidate_id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                environment TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                strategy_id TEXT NOT NULL,
+                strategy_version TEXT NOT NULL,
+                signal_timeframe TEXT NOT NULL DEFAULT '15m',
+                closed_15m_bar TEXT NOT NULL,
+                status TEXT NOT NULL,
+                side TEXT,
+                entry_price REAL,
+                stop_price REAL,
+                take_profit REAL,
+                rule_score REAL,
+                calibrated_probability REAL,
+                calibration_sample_size INTEGER NOT NULL DEFAULT 0,
+                rationale TEXT NOT NULL DEFAULT '',
+                source_hash TEXT NOT NULL,
+                conditions_json TEXT NOT NULL DEFAULT '[]',
+                trigger_completion_pct REAL,
+                entry_zone_json TEXT,
+                invalidation TEXT,
+                targets_json TEXT NOT NULL DEFAULT '[]',
+                rr REAL,
+                evidence_json TEXT NOT NULL DEFAULT '[]',
+                signal_time TEXT,
+                expires_at TEXT,
+                context_timeframe TEXT,
+                market_regime TEXT,
+                direction_bias TEXT,
+                trigger_status TEXT,
+                context_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(account_id, symbol, strategy_id, signal_timeframe, closed_15m_bar)
+            )"""
+        )
+        db.execute(
+            f"INSERT INTO ai_strategy_candidates__timeframe_new ({columns_sql}) "
+            f"SELECT {select_sql} FROM ai_strategy_candidates"
+        )
+        db.execute("DROP TABLE ai_strategy_candidates")
+        db.execute(
+            "ALTER TABLE ai_strategy_candidates__timeframe_new RENAME TO ai_strategy_candidates"
+        )
+        db.execute("RELEASE SAVEPOINT candidate_timeframe_identity")
+    except Exception:
+        db.execute("ROLLBACK TO SAVEPOINT candidate_timeframe_identity")
+        db.execute("RELEASE SAVEPOINT candidate_timeframe_identity")
+        raise
+
+
 def ensure_institutional_trader_schema(db: sqlite3.Connection) -> None:
     """Create or extend the workflow tables idempotently.
 
@@ -78,7 +202,7 @@ def ensure_institutional_trader_schema(db: sqlite3.Connection) -> None:
             context_json TEXT NOT NULL DEFAULT '{}',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
-            UNIQUE(account_id, symbol, strategy_id, closed_15m_bar)
+            UNIQUE(account_id, symbol, strategy_id, signal_timeframe, closed_15m_bar)
         );
         CREATE INDEX IF NOT EXISTS idx_ai_candidates_scope_time
             ON ai_strategy_candidates(account_id, environment, closed_15m_bar DESC, symbol, strategy_id);
@@ -377,6 +501,50 @@ def ensure_institutional_trader_schema(db: sqlite3.Connection) -> None:
             UNIQUE(provider, environment, native_symbol, event_at, raw_hash)
         );
 
+        CREATE TABLE IF NOT EXISTS onchain_flow_events (
+            event_id TEXT PRIMARY KEY,
+            provider TEXT NOT NULL,
+            provider_event_id TEXT,
+            asset TEXT,
+            amount REAL,
+            amount_usd REAL,
+            direction TEXT NOT NULL,
+            from_label TEXT,
+            to_label TEXT,
+            transaction_hash TEXT,
+            event_at TEXT,
+            received_at TEXT NOT NULL,
+            raw_hash TEXT NOT NULL,
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            UNIQUE(provider, raw_hash)
+        );
+        CREATE INDEX IF NOT EXISTS idx_onchain_flow_time
+            ON onchain_flow_events(COALESCE(event_at, received_at) DESC, provider);
+
+        -- Normalized inbound alerts from user-configured Whale Alert or
+        -- Arkham webhooks.  Raw provider payloads stay available for audit,
+        -- while the nullable normalized fields prevent the UI from guessing
+        -- an amount, asset, direction, or address when a provider omits it.
+        CREATE TABLE IF NOT EXISTS onchain_flow_events (
+            event_id TEXT PRIMARY KEY,
+            provider TEXT NOT NULL,
+            provider_event_id TEXT,
+            asset TEXT,
+            amount REAL,
+            amount_usd REAL,
+            direction TEXT,
+            from_label TEXT,
+            to_label TEXT,
+            transaction_hash TEXT,
+            event_at TEXT,
+            received_at TEXT NOT NULL,
+            raw_hash TEXT NOT NULL,
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            UNIQUE(provider, raw_hash)
+        );
+        CREATE INDEX IF NOT EXISTS idx_onchain_flow_events_time
+            ON onchain_flow_events(event_at DESC, received_at DESC);
+
         CREATE TABLE IF NOT EXISTS indicator_snapshots (
             snapshot_id TEXT PRIMARY KEY,
             provider TEXT NOT NULL,
@@ -414,6 +582,7 @@ def ensure_institutional_trader_schema(db: sqlite3.Connection) -> None:
         db,
         "ai_strategy_candidates",
         {
+            "signal_timeframe": "TEXT NOT NULL DEFAULT '15m'",
             "conditions_json": "TEXT NOT NULL DEFAULT '[]'",
             "trigger_completion_pct": "REAL",
             "entry_zone_json": "TEXT",
@@ -428,6 +597,19 @@ def ensure_institutional_trader_schema(db: sqlite3.Connection) -> None:
             "direction_bias": "TEXT",
             "trigger_status": "TEXT",
         },
+    )
+    db.execute(
+        "UPDATE ai_strategy_candidates SET signal_timeframe='15m' "
+        "WHERE signal_timeframe IS NULL OR TRIM(signal_timeframe)=''"
+    )
+    _migrate_candidate_timeframe_identity(db)
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_ai_candidates_scope_time "
+        "ON ai_strategy_candidates(account_id, environment, closed_15m_bar DESC, symbol, strategy_id)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_ai_candidates_status "
+        "ON ai_strategy_candidates(account_id, status, updated_at DESC)"
     )
     _add_columns(
         db,

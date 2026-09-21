@@ -41,6 +41,11 @@ EventType = LedgerEventType
 # wire value used by both modules.
 PROTECTION_ACTIVE = "ACTIVE"
 
+# A resting order intent stops blocking new risk once its own TTL has been
+# exceeded by this margin.  The window exists so the reconcile path can
+# cancel the remote order before the budget gate stops waiting for it.
+_ORDER_INTENT_STALE_GRACE = timedelta(minutes=5)
+
 
 def _decimal_or_none(value: Any) -> Optional[Decimal]:
     try:
@@ -220,6 +225,32 @@ class AccountLedger:
             return str(row[0]) if row else clean
         except sqlite3.Error:
             return clean
+
+    @staticmethod
+    def _order_intent_is_stale(expires_at: Any, now: datetime) -> bool:
+        """Report whether a resting order intent has outlived its TTL.
+
+        ``order_intents.expires_at`` is written by the AI session coordinator
+        from ``INTENT_TTL_SECONDS``.  A missing or unparseable value is
+        treated as *not* stale so a malformed row keeps its blocking power
+        instead of silently unlocking new risk.
+        """
+
+        if expires_at is None:
+            return False
+        raw = str(expires_at).strip()
+        if not raw:
+            return False
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        # Grace window: a TTL is an intent-level deadline, not a remote order
+        # state.  Allow the reconcile path a short margin to cancel the order
+        # remotely before the gate stops blocking on it.
+        return now >= parsed + _ORDER_INTENT_STALE_GRACE
 
     @staticmethod
     def _remote_truth_ready(conn: sqlite3.Connection, account_id: str, now: datetime) -> bool:
@@ -877,6 +908,16 @@ class AccountLedger:
                 # reservation.  Do not approve another opening around them.
                 # The current gateway intent is inserted before RiskEngine
                 # runs, so it is explicitly excluded by its durable identity.
+                #
+                # Lifecycle caveat: an intent that reached a resting state
+                # (ACKNOWLEDGED) carries an ``expires_at`` TTL.  Nothing in
+                # the runtime sweeps those rows, so a single unfilled remote
+                # order used to block every later opening forever, and the
+                # caller only ever saw the opaque RISK_RESERVATION_FAILED.
+                # Only orders inside their TTL (plus a grace window) may
+                # block a new reservation; the stale row is marked
+                # CANCEL_PENDING below so the runtime reconcile path can
+                # cancel it remotely and release its budget.
                 order_table = conn.execute(
                     "SELECT 1 FROM sqlite_master WHERE type='table' AND name='order_intents'"
                 ).fetchone()
@@ -887,9 +928,10 @@ class AccountLedger:
                     )
                     placeholders = ",".join("?" for _ in active_statuses)
                     order_rows = conn.execute(
-                        f"SELECT intent_id, account_id, mode, venue, status FROM order_intents WHERE account_id=? AND status IN ({placeholders})",
+                        f"SELECT intent_id, account_id, mode, venue, status, expires_at FROM order_intents WHERE account_id=? AND status IN ({placeholders})",
                         (account_id, *active_statuses),
                     ).fetchall()
+                    stale_intent_ids: list[str] = []
                     for order_row in order_rows:
                         if exclude_intent_id and str(order_row["intent_id"]) == str(exclude_intent_id):
                             continue
@@ -898,9 +940,33 @@ class AccountLedger:
                         if not order_mode or not order_venue:
                             conn.rollback()
                             return False
+                        order_status = str(order_row["status"] or "").strip().upper()
+                        # Terminal-but-unreconciled states stay blocking: their
+                        # true exposure is genuinely unknown, so a TTL must
+                        # never be treated as proof that they are harmless.
+                        if order_status in {"UNKNOWN", "SUBMITTING", "CANCEL_PENDING"}:
+                            if order_mode == account_mode and order_venue == expected_venue:
+                                conn.rollback()
+                                return False
+                            continue
+                        if self._order_intent_is_stale(order_row["expires_at"], now):
+                            stale_intent_ids.append(str(order_row["intent_id"]))
+                            continue
                         if order_mode == account_mode and order_venue == expected_venue:
                             conn.rollback()
                             return False
+                    # Record the expired fact inside the same transaction so a
+                    # later reconcile pass can cancel it remotely.  The budget
+                    # is not freed here: only a confirmed remote terminal
+                    # state may release the reservation.
+                    if stale_intent_ids:
+                        now_iso = now.isoformat()
+                        for stale_id in stale_intent_ids:
+                            conn.execute(
+                                "UPDATE order_intents SET status='CANCEL_PENDING', updated_at=? "
+                                "WHERE intent_id=? AND status IN ('CREATED','RISK_APPROVED','ACKNOWLEDGED','PARTIALLY_FILLED')",
+                                (now_iso, stale_id),
+                            )
 
                 # An unscoped pending reservation is itself an unknown
                 # exposure.  It must not be relabelled by a newer caller or

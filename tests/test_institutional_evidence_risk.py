@@ -28,27 +28,27 @@ def test_evidence_bundle_is_frozen_idempotent_and_digest_does_not_hash_model_nam
         assert first["persisted"] is True
         assert second["persisted"] is False
         assert bundle.validate_references(["bar:1", "news:missing"]) == ("news:missing",)
-        assert model_weight_digest(type("Provider", (), {"model_id": "qwen3.5:9b"})()) == (None, "UNKNOWN_NOT_PROVIDED")
+        assert model_weight_digest(type("Provider", (), {"model_id": "Bonsai-2-27B-PTQ1_0"})()) == (None, "UNKNOWN_NOT_PROVIDED")
     finally:
         temp.cleanup()
 
 
 def test_model_digest_is_selected_for_requested_smart_model() -> None:
     class DualModelProvider:
-        model_name = "qwen3.5:4b"
+        model_name = "Bonsai-2-27B-PTQ1_0"
         weight_digest = "a" * 64
 
         def health(self, *, model_name=None):
             target = model_name or self.model_name
             return {
                 "model_id": target,
-                "weight_digest": "b" * 64 if target == "qwen3.5:9b" else "a" * 64,
+                "weight_digest": "b" * 64 if target == "Bonsai-2-27B-PTQ1_0" else "a" * 64,
             }
 
     digest, status = model_weight_digest(
         DualModelProvider(),
-        health_result={"model_id": "qwen3.5:9b", "weight_digest": "b" * 64},
-        model_name="qwen3.5:9b",
+        health_result={"model_id": "Bonsai-2-27B-PTQ1_0", "weight_digest": "b" * 64},
+        model_name="Bonsai-2-27B-PTQ1_0",
     )
     assert (digest, status) == ("b" * 64, "OBSERVED_PROVIDER_DIGEST")
 

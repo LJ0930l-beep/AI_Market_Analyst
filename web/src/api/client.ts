@@ -106,6 +106,19 @@ export class ApiError extends Error {
       });
     }
 
+    // FastAPI's HTTPException contract uses a top-level `detail`. Preserve
+    // its stable error code so the desktop UI can recover from transient
+    // runtime lease hand-offs instead of reducing every conflict to HTTP 409.
+    if (isRecord(payload) && typeof payload.detail === "string") {
+      const detail = payload.detail.trim();
+      const separator = detail.indexOf(":");
+      return new ApiError(status, {
+        code: (separator > 0 ? detail.slice(0, separator) : "HTTP_ERROR").trim(),
+        message: (separator > 0 ? detail.slice(separator + 1) : detail).trim() || `Request failed with status ${status}`,
+        detail,
+      });
+    }
+
     return new ApiError(status, {
       code: "HTTP_ERROR",
       message: `Request failed with status ${status}`,
@@ -329,13 +342,26 @@ function isAbortSignal(value: unknown): value is AbortSignal {
 
 function parseConsultStreamEvent(payload: unknown): ConsultStreamEvent {
   if (!isRecord(payload) || typeof payload.type !== "string") {
-    throw new ApiError(502, { code: "QWEN_STREAM_INVALID", message: "Qwen stream returned an invalid event." });
+    throw new ApiError(502, { code: "QWEN_STREAM_INVALID", message: "Local model stream returned an invalid event." });
   }
   if (payload.type === "delta" && typeof payload.content === "string") {
     return { type: "delta", content: payload.content };
   }
   if (payload.type === "done" && typeof payload.finish_reason === "string" && typeof payload.output_chars === "number") {
-    return { type: "done", finish_reason: payload.finish_reason, output_chars: payload.output_chars };
+    const receipt = isRecord(payload.model_receipt) ? payload.model_receipt : undefined;
+    const model_receipt = receipt ? {
+      ...(typeof receipt.model_id === "string" ? { model_id: receipt.model_id } : {}),
+      ...(typeof receipt.actual_model_id === "string" ? { actual_model_id: receipt.actual_model_id } : {}),
+      ...(typeof receipt.model_version === "string" ? { model_version: receipt.model_version } : {}),
+      ...(typeof receipt.model_identity_source === "string" ? { model_identity_source: receipt.model_identity_source } : {}),
+      ...(typeof receipt.verified_manifest_model_id === "string" ? { verified_manifest_model_id: receipt.verified_manifest_model_id } : {}),
+    } : undefined;
+    return {
+      type: "done",
+      finish_reason: payload.finish_reason,
+      output_chars: payload.output_chars,
+      ...(model_receipt && Object.keys(model_receipt).length > 0 ? { model_receipt } : {}),
+    };
   }
   if (payload.type === "error" && isRecord(payload.error) && typeof payload.error.code === "string" && typeof payload.error.message === "string") {
     return { type: "error", error: { code: payload.error.code, message: payload.error.message } };
@@ -350,7 +376,7 @@ function parseConsultStreamEvent(payload: unknown): ConsultStreamEvent {
   ) {
     return payload as ConsultStreamEvent;
   }
-  throw new ApiError(502, { code: "QWEN_STREAM_INVALID", message: "Qwen stream returned an invalid event." });
+  throw new ApiError(502, { code: "QWEN_STREAM_INVALID", message: "Local model stream returned an invalid event." });
 }
 
 export class ApiClient implements MarketApiClient {
@@ -494,7 +520,7 @@ export class ApiClient implements MarketApiClient {
       throw ApiError.fromResponse(response.status, payload);
     }
     if (!response.body) {
-      throw new ApiError(502, { code: "QWEN_STREAM_UNAVAILABLE", message: "Qwen stream body is unavailable." });
+      throw new ApiError(502, { code: "QWEN_STREAM_UNAVAILABLE", message: "Local model stream body is unavailable." });
     }
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -506,7 +532,7 @@ export class ApiClient implements MarketApiClient {
       try {
         payload = JSON.parse(line);
       } catch {
-        throw new ApiError(502, { code: "QWEN_STREAM_INVALID", message: "Qwen stream returned invalid JSON." });
+        throw new ApiError(502, { code: "QWEN_STREAM_INVALID", message: "Local model stream returned invalid JSON." });
       }
       const event = parseConsultStreamEvent(payload);
       if (event.type === "done" || event.type === "error") terminal = true;
@@ -517,7 +543,7 @@ export class ApiClient implements MarketApiClient {
         const { done, value } = await reader.read();
         buffer += decoder.decode(value, { stream: !done });
         if (buffer.length > 65_536) {
-          throw new ApiError(502, { code: "QWEN_STREAM_INVALID", message: "Qwen stream exceeded the client event limit." });
+          throw new ApiError(502, { code: "QWEN_STREAM_INVALID", message: "Local model stream exceeded the client event limit." });
         }
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
@@ -526,7 +552,7 @@ export class ApiClient implements MarketApiClient {
       }
       if (buffer.trim()) dispatchLine(buffer);
       if (!terminal) {
-        throw new ApiError(502, { code: "QWEN_STREAM_INTERRUPTED", message: "Qwen stream ended before a terminal event." });
+        throw new ApiError(502, { code: "QWEN_STREAM_INTERRUPTED", message: "Local model stream ended before a terminal event." });
       }
     } finally {
       reader.releaseLock();

@@ -49,11 +49,13 @@ from core.instruments import (
     instrument_for,
     parse_instrument_candidate,
     phase1_universe,
+    read_trading_bars,
 )
 from core.memory import MarketMemoryService, memory_capabilities
 from core.market_intelligence import MARKET_INTELLIGENCE_VERSION, brief_source_evidence, build_market_intelligence
 from core.market_hydration import HYDRATION_CONTRACT_VERSION, MarketHydrationRuntime
-from core.model_routing import DEFAULT_FAST_MODEL, ModelRoutingConfig
+from core.model_client import model_client
+from core.model_routing import DEFAULT_FAST_MODEL, DEFAULT_SMART_MODEL, ModelRoutingConfig, is_bonsai_model_identity
 from core.monitoring import MonitoringPolicy, MonitoringService, SUPPORTED_TRIGGER_TYPES
 from core.monitoring_runtime import MonitoringRuntime
 from core.strategy_monitoring import StrategyMonitoringService
@@ -182,9 +184,9 @@ def _news_provider() -> object:
 
 
 def _llm_provider() -> OllamaProvider | None:
-    if os.environ.get("LLM_MODE", "ollama").lower() in {"disabled", "off", "none"}:
+    if os.environ.get("LLM_MODE", "bonsai").lower() in {"disabled", "off", "none"}:
         return None
-    return OllamaProvider()
+    return OllamaProvider(base_url=model_client.base_url, model_name=DEFAULT_SMART_MODEL)
 
 
 def _consult_service() -> QwenConsultService:
@@ -259,7 +261,7 @@ def get_consult_service(request: Request) -> QwenConsultService:
 
     service = getattr(request.app.state, "consult_service", None)
     if not isinstance(service, QwenConsultService):
-        raise RuntimeError("Qwen consultation service is not configured")
+        raise RuntimeError("Bonsai consultation service is not configured")
     return service
 
 
@@ -767,7 +769,7 @@ if FastAPI is not None:
         consult = consult_service.capability()
         if llm_provider is None:
             consult["available"] = False
-            return {"provider": "none", "available": False, "error_code": "MODEL_NOT_CONFIGURED", "consult": consult}
+            return {"provider": "none", "available": False, "error_code": "MODEL_NOT_CONFIGURED", "checked_at": datetime.now(timezone.utc).isoformat(), "consult": consult}
         health_method = getattr(llm_provider, "health", None)
         if not callable(health_method):
             consult["available"] = False
@@ -775,29 +777,49 @@ if FastAPI is not None:
                 "provider": str(getattr(llm_provider, "provider_name", llm_provider.__class__.__name__.lower())),
                 "available": False,
                 "error_code": "MODEL_HEALTH_UNSUPPORTED",
+                "checked_at": datetime.now(timezone.utc).isoformat(),
                 "consult": consult,
             }
         try:
-            if isinstance(llm_provider, OllamaProvider):
-                health = OllamaProvider(
-                    timeout=float(os.environ.get("OLLAMA_HEALTH_TIMEOUT_SEC", "2")),
-                    retries=0,
-                ).health()
-            else:
-                health = health_method()
+            health = health_method()
             safe_health = dict(health)
             # Provider exception text can contain local paths or request data;
             # the health contract exposes only stable capability/error fields.
             safe_health.pop("detail", None)
-            installed = {str(name) for name in safe_health.get("models", []) if isinstance(name, str)} if isinstance(safe_health.get("models"), list) else set()
             configured_models = consult.get("models") if isinstance(consult.get("models"), dict) else {}
-            fast_model = str(configured_models.get("fast", ""))
-            smart_model = str(configured_models.get("smart", ""))
+            fast_model = str(configured_models.get("fast", DEFAULT_FAST_MODEL))
+            smart_model = str(configured_models.get("smart", DEFAULT_SMART_MODEL))
+            if isinstance(llm_provider, OllamaProvider):
+                actual_model_id = safe_health.get("actual_model_id")
+                bonsai_ready = bool(
+                    safe_health.get("available")
+                    and safe_health.get("model_available") is True
+                    and safe_health.get("model_id") == DEFAULT_SMART_MODEL
+                    and is_bonsai_model_identity(actual_model_id)
+                    and safe_health.get("model_identity_source") == "verified_manifest"
+                )
+                safe_health["server_available"] = bool(safe_health.get("available"))
+                safe_health["available"] = bonsai_ready
+                model_ready = bonsai_ready
+            else:
+                # Only the production Ollama adapter can bind runtime identity
+                # to the locally verified Bonsai manifest. Another provider's
+                # self-reported model list is not evidence of the loaded weights.
+                safe_health["server_available"] = bool(safe_health.get("available"))
+                safe_health["available"] = False
+                safe_health["model_available"] = False
+                safe_health["model_identity_source"] = "unverified_provider"
+                safe_health["error_code"] = "BONSAI_PROVIDER_REQUIRED"
+                model_ready = False
             consult["models_status"] = {
-                "fast": {"model_id": fast_model, "available": fast_model in installed},
-                "smart": {"model_id": smart_model, "available": smart_model in installed},
+                "fast": {"model_id": fast_model, "available": model_ready},
+                "smart": {"model_id": smart_model, "available": model_ready},
             }
-            consult["available"] = bool(safe_health.get("available")) and bool(installed & {fast_model, smart_model})
+            consult["available"] = model_ready
+            # This endpoint invokes provider.health() on every request. Stamp
+            # the response so clients can expire cached READY claims instead
+            # of treating a historical model check as live indefinitely.
+            safe_health["checked_at"] = datetime.now(timezone.utc).isoformat()
             safe_health["consult"] = consult
             return safe_health
         except Exception:  # pragma: no cover - depends on the local model process
@@ -806,6 +828,7 @@ if FastAPI is not None:
                 "provider": str(getattr(llm_provider, "provider_name", llm_provider.__class__.__name__.lower())),
                 "available": False,
                 "error_code": "MODEL_HEALTH_ERROR",
+                "checked_at": datetime.now(timezone.utc).isoformat(),
                 "consult": consult,
             }
 
@@ -1028,7 +1051,7 @@ if FastAPI is not None:
         store: SQLiteStore = Depends(get_store),
         service: QwenConsultService = Depends(get_consult_service),
     ):
-        """Stream local Qwen text as versioned NDJSON without domain writes."""
+        """Stream local Bonsai text as versioned NDJSON without domain writes."""
 
         payload = await _consult_payload(request, service)
         try:
@@ -1781,9 +1804,12 @@ if FastAPI is not None:
             samples = int(body.get("samples", 300))
         except (TypeError, ValueError) as exc:
             raise APIError(400, "INVALID_SAMPLES", "samples must be an integer", detail=str(body.get("samples"))) from exc
+        requested_model = str(body.get("model_id", DEFAULT_SMART_MODEL)).strip()
+        if requested_model != DEFAULT_SMART_MODEL:
+            raise APIError(400, "INVALID_MODEL_ID", "replay model_id is pinned to Bonsai-2-27B-PTQ1_0")
         store.create_replay_run(
             run_id=run_id,
-            model_id=str(body.get("model_id", os.environ.get("OLLAMA_MODEL", DEFAULT_FAST_MODEL))),
+            model_id=requested_model,
             prompt_version=str(body.get("prompt_version", PROMPT_VERSION)),
             symbols=[item for item in symbols if item is not None],
             timeframes=timeframes,
@@ -1880,7 +1906,7 @@ if FastAPI is not None:
     ) -> MarketDataBundle | None:
         """Return persisted bars only as an explicitly stale, honest fallback."""
 
-        cached_rows = store.list_market_bars(instrument.symbol, timeframe, limit=500)
+        cached_rows = read_trading_bars(store, instrument.symbol, timeframe, limit=500)
         cached_bars: list[Bar] = []
         for row in cached_rows:
             timestamp = _parse_utc_timestamp(row.get("bar_start"))
@@ -2193,7 +2219,7 @@ if FastAPI is not None:
         return {
             "contract_version": "opportunity_analysis_v1",
             "validator": "python",
-            "model_tier": "smart_9b_only",
+            "model_tier": "bonsai_27b_only",
             "analyses": store.list_opportunity_analyses(symbol=normalized, limit=_clamp_limit(limit, maximum=500)),
         }
 
@@ -2365,7 +2391,7 @@ def create_app(
     app = FastAPI(
         title="AI Market Analyst",
         version=API_VERSION,
-        description="Local-first V1.2.1 crypto monitoring API with sidecar-owned public cache hydration, deterministic point-in-time evidence, explicit opt-in monitoring, paper-only tracking, app-supplied charts and dual-tier local Qwen assistance.",
+        description="Local-first crypto research API with sidecar-owned public cache hydration, deterministic point-in-time evidence, explicit opt-in monitoring, paper-only tracking, app-supplied charts and Bonsai 2 27B assistance.",
         openapi_extra={"x-phase": API_PHASE, "x-product-baseline": "v1.2.1"},
     )
     app.state.api_phase = API_PHASE
@@ -2585,8 +2611,35 @@ def create_app(
         except Exception:
             resume_setting = False
         if resume_setting:
+            # Restore the AI autonomous session as well when the operator had it
+            # running.  ``monitoring.resume`` on its own only revives the
+            # fixed-strategy worker: it never passes ``enable_ai``, so the AI
+            # coordinator stayed STOPPED after every rebuild while the session
+            # API kept reporting RUNNING.
+            resume_ai = False
             try:
-                runtime.start(resume=True, user_initiated=False)
+                resume_ai = runtime.store.get_app_setting("ai.autonomous_resume").get("value") is True
+            except Exception:
+                resume_ai = False
+            resume_account_id = None
+            if resume_ai:
+                try:
+                    stored_account = runtime.store.get_app_setting("ai.autonomous_account_id").get("value")
+                    resume_account_id = str(stored_account or "").strip() or None
+                except Exception:
+                    resume_account_id = None
+            try:
+                # ``enable_ai`` is the whole point: on its own the resume path
+                # only revives the fixed-strategy worker, so the AI coordinator
+                # stayed STOPPED while the session API kept reporting RUNNING.
+                # The account is left to the runtime, which infers it from the
+                # single durable owner and refuses to guess when ambiguous.
+                runtime.start(
+                    resume=True,
+                    user_initiated=False,
+                    account_id=resume_account_id,
+                    enable_ai=resume_ai,
+                )
             except Exception as exc:
                 print(f"[startup_monitoring] auto-resume deferred: {exc}")
 

@@ -210,7 +210,8 @@ class RSSNewsProvider(NewsProvider):
         raise RuntimeError(f"RSS fetch failed: {last_error}") from last_error
 
     def get_events(self, instrument: Instrument, limit: int = 20) -> list[NewsEvent]:
-        topic = {"BTCUSDT":"Bitcoin cryptocurrency", "ETHUSDT":"Ethereum cryptocurrency", "SOLUSDT":"Solana cryptocurrency", "NVDA":"NVIDIA earnings"}.get(instrument.symbol, instrument.symbol)
+        fallback = f'{instrument.symbol[:-4]} cryptocurrency' if instrument.symbol.endswith('USDT') else instrument.symbol
+        topic = {"BTCUSDT":"Bitcoin cryptocurrency", "ETHUSDT":"Ethereum cryptocurrency", "SOLUSDT":"Solana cryptocurrency", "NVDA":"NVIDIA earnings"}.get(instrument.symbol, fallback)
         query = quote_plus(f"{topic} when:2d -site:tradingview.com")
         root = ElementTree.fromstring(self._fetch_xml(self.feed_template.format(query=query)))
         events: list[NewsEvent] = []

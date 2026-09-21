@@ -1,0 +1,22 @@
+﻿{
+    "status":  "PASS",
+    "api_version":  "2.0.0",
+    "decision_contract":  "ai_news_technical_v1",
+    "trading_enabled":  false,
+    "policy":  {
+                   "strategy_origin":  "AI_AUTHORED",
+                   "registered_strategies":  "REFERENCE_ONLY",
+                   "max_single_risk_fraction":  0.0025,
+                   "max_portfolio_risk_fraction":  0.01,
+                   "max_cluster_risk_fraction":  0.005,
+                   "daily_loss_limit_fraction":  0.015,
+                   "max_leverage":  100,
+                   "min_net_reward_risk":  2.0,
+                   "min_confidence":  70,
+                   "confidence_is_win_probability":  false,
+                   "news_max_age_hours":  48,
+                   "missing_news_action":  "WAIT",
+                   "entry_trigger":  "PRICE_ZONE_NOW"
+               },
+    "logs":  "D:\\RJ\\codex\\ai-market-analyst\\build\\ai-trader-smoke-c13d7dd6da6649d8b364316e16861e8e"
+}

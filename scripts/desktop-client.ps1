@@ -161,6 +161,12 @@ function Invoke-Stop {
             Write-Host "清理残留 sidecar PID $($item.Id)" -ForegroundColor Yellow
             Stop-Process -Id $item.Id -Force -ErrorAction SilentlyContinue
         }
+        if (@(Get-OwnedProcesses $BackendExe).Count -eq 0) {
+            $runtimePath = Join-Path (Get-DataRoot) "runtime\runtime.json"
+            if (Test-Path -LiteralPath $runtimePath -PathType Leaf) {
+                Remove-Item -LiteralPath $runtimePath -Force -ErrorAction SilentlyContinue
+            }
+        }
     }
     Write-Host "已停止。" -ForegroundColor Green
 }

@@ -1,4 +1,4 @@
-"""JSON schemas sent to Qwen/Ollama and used by local validators."""
+"""JSON schemas sent to the local Bonsai route and used by validators."""
 
 from __future__ import annotations
 import math
@@ -7,7 +7,8 @@ import math
 def validate_schema(value, schema, path="output"):
     """Validate the bounded JSON-schema subset used by these local contracts.
 
-    Ollama may fall back to JSON mode after a grammar rejection, so native
+    The local OpenAI-compatible runtime may fall back to JSON mode after a
+    grammar rejection, so native
     schema enforcement is never assumed to replace local validation.
     """
     kinds = schema.get("type", [])
@@ -23,6 +24,8 @@ def validate_schema(value, schema, path="output"):
     if actual in {"integer", "number"}:
         if not math.isfinite(value) or value < schema.get("minimum", -math.inf) or value > schema.get("maximum", math.inf):
             raise ValueError(f"INVALID_ACTION_SCHEMA:{path}:range")
+        if value <= schema.get("exclusiveMinimum", -math.inf) or value >= schema.get("exclusiveMaximum", math.inf):
+            raise ValueError(f"INVALID_ACTION_SCHEMA:{path}:exclusive_range")
     if actual in {"string", "array"}:
         prefix = "Length" if actual == "string" else "Items"
         if not schema.get("min" + prefix, 0) <= len(value) <= schema.get("max" + prefix, math.inf):
@@ -56,7 +59,11 @@ CALIBRATION_PROFILE_SCHEMA: dict[str, object] = {
 AI_ACTION_SCHEMA: dict[str, object] = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["action", "instrument_id", "reason"],
+    # Keep confidence present on every response. WAIT/HOLD may explicitly use
+    # null, while OPEN is tightened to a number by the bounded repair schema.
+    # Making the key part of the native grammar prevents small local models
+    # from silently omitting the field altogether.
+    "required": ["action", "instrument_id", "reason", "confidence"],
     "properties": {
         "action": {"type": "string", "enum": ["WAIT", "HOLD", "OPEN_LONG", "OPEN_SHORT", "REDUCE_POSITION", "CLOSE_POSITION", "TIGHTEN_STOP"]},
         "instrument_id": {"type": "string", "minLength": 1, "maxLength": 80},
@@ -67,13 +74,14 @@ AI_ACTION_SCHEMA: dict[str, object] = {
         "stop_price": {"type": ["number", "null"]},
         "take_profit": {"type": ["number", "null"]},
         "requested_risk_fraction": {"type": ["number", "null"]},
+        "position_size_usdt": {"type": ["number", "null"], "exclusiveMinimum": 0},
         "requested_leverage": {"type": ["integer", "null"], "minimum": 1, "maximum": 100},
         "new_stop_price": {"type": ["number", "null"]},
         "reduce_fraction": {"type": ["number", "null"]},
         "evidence_refs": {"type": "array", "items": {"type": "string", "maxLength": 200}, "maxItems": 32},
         "order_preference": {"type": "string", "enum": ["MARKET", "LIMIT", "AUTO"]},
         "limit_price": {"type": ["number", "null"]},
-        "ttl_seconds": {"type": ["integer", "null"], "minimum": 60, "maximum": 300},
+        "ttl_seconds": {"type": ["integer", "null"], "minimum": 60, "maximum": 1800},
         "candidate_id": {"type": ["string", "null"], "maxLength": 200},
         "closed_15m_bar": {"type": ["string", "null"], "maxLength": 200},
         "strategy_candidate_id": {"type": ["string", "null"], "maxLength": 200},
@@ -83,8 +91,11 @@ AI_ACTION_SCHEMA: dict[str, object] = {
             "type": ["object", "null"],
             "additionalProperties": False,
             "properties": {
+                "5m": {"type": ["string", "null"], "maxLength": 800},
                 "15m": {"type": ["string", "null"], "maxLength": 800},
                 "1h": {"type": ["string", "null"], "maxLength": 800},
+                "4h": {"type": ["string", "null"], "maxLength": 800},
+                "1d": {"type": ["string", "null"], "maxLength": 800},
             },
         },
         "strategy_analysis": {
@@ -144,7 +155,7 @@ SIGNAL_SCHEMA: dict[str, object] = {
 
 
 AI_ACTION_SCHEMA["properties"]["strategy_plan"] = {
-    "type": "object", "additionalProperties": False,
+    "type": ["object", "null"], "additionalProperties": False,
     "required": ["name", "thesis", "entry_conditions", "exit_conditions"],
     "properties": {
         "name": {"type": "string", "minLength": 1, "maxLength": 100},
@@ -154,4 +165,20 @@ AI_ACTION_SCHEMA["properties"]["strategy_plan"] = {
     },
 }
 
-__all__ = ["AI_ACTION_SCHEMA", "CALIBRATION_PROFILE_SCHEMA", "SIGNAL_SCHEMA"]
+
+def require_confidence_for_open(decoded: object) -> None:
+    """OPEN_LONG/OPEN_SHORT must carry a concrete numeric confidence.
+
+    ``confidence`` is optional in the schema (WAIT/HOLD legitimately omit it),
+    but ``autonomous_strategy.validate_entry`` hard-rejects a null confidence on
+    an OPEN action with ``AI_CONFIDENCE_BELOW_POLICY``.  Rejecting it here — inside
+    the model's bounded repair loop — forces the model to emit a number instead of
+    letting the first valid OPEN die silently at the last gate.
+    """
+    if not isinstance(decoded, dict):
+        return
+    if decoded.get("action") in ("OPEN_LONG", "OPEN_SHORT") and decoded.get("confidence") is None:
+        raise ValueError("INVALID_ACTION_SCHEMA: OPEN_LONG/OPEN_SHORT requires a numeric confidence in [0,100]")
+
+
+__all__ = ["AI_ACTION_SCHEMA", "CALIBRATION_PROFILE_SCHEMA", "SIGNAL_SCHEMA", "require_confidence_for_open"]

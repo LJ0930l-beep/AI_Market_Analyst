@@ -39,6 +39,7 @@ from .ledger import AccountLedger
 from .account_scope import resolve_account_scope
 from .gate_account_truth import GateAccountTruthService
 from .risk_engine import RiskEngine
+from ..instruments import read_trading_bars
 from .trade_plan_contract import (
     TRADE_PLAN_SCHEMA_VERSION,
     TradePlanContractError,
@@ -927,23 +928,29 @@ class TraderCapabilityService:
                     "bound_account_id": bound,
                     "requested_account_id": account_id,
                 }
-        ai_status: dict[str, Any]
+        ai_status: dict[str, Any] = {
+            "status": UNKNOWN,
+            "reason_code": "MODEL_HEALTH_NOT_REPORTED",
+        }
         coordinator = getattr(runtime_obj, "ai_coordinator", None) if runtime_obj is not None else None
         if coordinator is not None and callable(getattr(coordinator, "status", None)):
             try:
-                ai_status = dict(coordinator.status())
+                c_status = dict(coordinator.status())
+                model_health = c_status.get("model")
+                if isinstance(model_health, dict):
+                    ai_status = {**model_health, "runtime_state": c_status.get("state")}
+                else:
+                    ai_status = {
+                        "status": UNKNOWN,
+                        "reason_code": "MODEL_HEALTH_NOT_REPORTED",
+                        "runtime_state": c_status.get("state"),
+                    }
             except Exception as exc:
-                ai_status = {"status": UNKNOWN, "reason": str(exc)[:240]}
-        else:
-            # Report the real state.  Hard-coding AVAILABLE here would claim a
-            # model is ready to reason about trades when no coordinator is
-            # attached at all -- an operator-facing lie that also feeds
-            # /v2/ai-session/status via model_status.
-            ai_status = {
-                "status": "UNAVAILABLE",
-                "required_model": "qwen3.5:9b",
-                "reason_code": "SMART_MODEL_UNAVAILABLE_OR_RUNTIME_UNAVAILABLE",
-            }
+                ai_status = {
+                    "status": UNKNOWN,
+                    "reason_code": "MODEL_HEALTH_READ_FAILED",
+                    "error": type(exc).__name__,
+                }
 
         reconciliation_times: list[tuple[str, str]] = []
         for order in orders:
@@ -989,8 +996,8 @@ class TraderCapabilityService:
             else:
                 reconciliation = {
                     "status": UNKNOWN,
-                    "last_reconciled_at": remote_account.get("observed_at"),
-                    "source": "gate_testnet_remote_snapshot_unavailable",
+                    "last_reconciled_at": None,
+                    "source": "gate_testnet_remote_snapshot",
                     "snapshot_id": remote_account.get("snapshot_id"),
                     "authority": "REMOTE_GATE_TESTNET_PRIVATE_API",
                 }
@@ -1009,7 +1016,7 @@ class TraderCapabilityService:
 
         remote_equity_decimal = (
             _decimal(remote_account.get("equity"))
-            if remote_facts_available and remote_account is not None
+            if remote_facts_available and remote_account is not None and _decimal(remote_account.get("equity")) > Decimal("0")
             else None
         )
         remote_max_portfolio = (
@@ -1019,8 +1026,17 @@ class TraderCapabilityService:
         )
         max_portfolio = remote_max_portfolio if remote_max_portfolio is not None else _decimal(risk.get("max_portfolio_risk_budget"))
         reserved = _decimal(snapshot.reserved_risk)
-        effective_equity = remote_equity_decimal if remote_equity_decimal is not None else snapshot.net_equity
+        effective_equity = (
+            remote_equity_decimal if remote_facts_available else None
+        ) if is_gate_testnet else snapshot.net_equity
+        if not is_gate_testnet and (effective_equity is None or effective_equity <= Decimal("0")):
+            avail = None
+            if snapshot.cash is not None and snapshot.cash > Decimal("0"):
+                effective_equity = snapshot.cash
+
         if effective_equity is not None and effective_equity > Decimal("0"):
+            if max_portfolio is None or max_portfolio <= Decimal("0"):
+                max_portfolio = effective_equity * RiskEngine.MAX_PORTFOLIO_RISK
             single_available = str(
                 round(max(Decimal("0"), effective_equity * RiskEngine.TREND_RISK_FRACTION), 2)
             )
@@ -1060,11 +1076,21 @@ class TraderCapabilityService:
             ledger_payload["remote_available_margin_basis"] = remote_account.get("available_margin_basis") if remote_account else None
             ledger_payload["remote_used_margin_basis"] = remote_account.get("used_margin_basis") if remote_account else None
         if is_gate_testnet and not remote_facts_available:
-            # Do not expose the canonical TestNet row's zero/local baseline as
-            # if it were Gate equity.  The local fields remain available in
-            # the database for audit, but the cockpit's authority is UNKNOWN.
-            for key in ("initial_deposit", "wallet_balance", "cash", "realized_pnl", "unrealized_pnl", "allocated_margin", "net_equity"):
-                ledger_payload[key] = None
+            # A TestNet local ledger is an audit mirror, not exchange account
+            # truth. Do not expose cached or seeded capital as current balance.
+            for key in (
+                "initial_deposit",
+                "wallet_balance",
+                "cash",
+                "realized_pnl",
+                "unrealized_pnl",
+                "allocated_margin",
+                "net_equity",
+                "reserved_risk",
+                "daily_loss",
+            ):
+                if key in ledger_payload:
+                    ledger_payload[key] = None
         return {
             "account_id": account_id,
             "venue": scope["venue"],
@@ -1084,7 +1110,7 @@ class TraderCapabilityService:
                 "known_position_risk": str(known_position_risk),
                 "reserved_risk": str(reserved),
                 "unknown_risk_items": unknown_risk_items,
-                "status": UNKNOWN if unknown_risk_items else "CALCULATED_FROM_LEDGER",
+                "status": UNKNOWN if unknown_risk_items or single_available == UNKNOWN or portfolio_available == UNKNOWN else "CALCULATED_FROM_LEDGER",
                 "basis": "REMOTE_GATE_TESTNET_PRIVATE_API_PLUS_SCOPED_RESERVATIONS" if is_gate_testnet else "ACCOUNT_LEDGER_AND_SCOPED_RESERVATIONS",
             },
             "concentration": concentration,
@@ -1496,7 +1522,11 @@ class TraderCapabilityService:
         if not callable(getattr(self.store, "list_market_bars", None)):
             return [], ["MARKET_BAR_STORE_UNAVAILABLE"]
         try:
-            rows = self.store.list_market_bars(symbol, timeframe, limit=2000)
+            # Traded-price identity only.  Calibration and replay must not run
+            # on a series where one bar appears once as ``last`` and again as
+            # ``mark``/``index`` -- that doubles the bar count and corrupts
+            # every indicator and probability the model is calibrated against.
+            rows = read_trading_bars(self.store, symbol, timeframe, limit=2000)
         except Exception as exc:
             return [], [f"MARKET_BAR_STORE_ERROR:{type(exc).__name__}"]
         selected: list[dict[str, Any]] = []
@@ -2817,7 +2847,7 @@ class TraderCapabilityService:
             except Exception as exc:
                 model_status = {"status": UNKNOWN, "error": str(exc)[:240]}
         else:
-            model_status = {"status": "UNAVAILABLE", "required_model": "qwen3.5:9b"}
+            model_status = {"status": "UNAVAILABLE", "required_model": "Bonsai-2-27B-PTQ1_0"}
         validated_digests = {
             str(item.get("model_digest"))
             for item in evaluations

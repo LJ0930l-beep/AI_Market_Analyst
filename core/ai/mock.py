@@ -10,13 +10,18 @@ from ..signals.schema import Action
 from .contracts import LLMCallMetadata, LLMError, ModelSignalResponse, SignalPolicy
 from .prompts import PROMPT_VERSION
 
+MOCK_MODEL_ID = "mock-llm"
+
 
 class MockLLMProvider:
     provider_name = "mock_llm"
 
-    def __init__(self, *, invalid_first: bool = False, model_id: str = "mock-qwen3.5-4b") -> None:
+    @property
+    def model_id(self) -> str:
+        return MOCK_MODEL_ID
+
+    def __init__(self, *, invalid_first: bool = False) -> None:
         self.invalid_first = invalid_first
-        self.model_id = model_id
         self.calls = 0
 
     def health(self) -> dict[str, object]:

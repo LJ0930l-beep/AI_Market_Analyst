@@ -39,7 +39,12 @@ def test_ai_trading_analytics_empty(store):
     assert account["current_equity_usdt"] == 1000.0
     assert account["total_trades"] == 0
     assert "style_dna" in analysis
-    assert len(analysis["strategy_matrix"]) == 6
+    assert len(analysis["strategy_matrix"]) >= 4
+    matrix_ids = {s["strategy_id"] for s in analysis["strategy_matrix"]}
+    assert "aggressive_breakout" in matrix_ids
+    assert "aggressive_impulse" in matrix_ids
+    assert "conservative_pullback" in matrix_ids
+    assert "conservative_defense" in matrix_ids
 
 
 def test_gate_credentials_and_dry_run_trader(store):

@@ -131,6 +131,7 @@ class GatePublicProvider:
         min_size = _number(payload.get("order_size_min"), name="order_size_min", non_negative=True)
         amount_step = min_size if min_size > 0 else 1.0
         amount_max = _number(payload.get("order_size_max"), name="order_size_max", positive=True)
+        leverage_max = _number(payload.get("leverage_max"), name="leverage_max", positive=True)
         return {
             "id": str(payload.get("name") or contract).upper(),
             "symbol": f"{contract[:-5]}/USDT:USDT",
@@ -145,7 +146,11 @@ class GatePublicProvider:
             "active": True,
             "contractSize": contract_size,
             "precision": {"price": price_tick, "amount": amount_step},
-            "limits": {"amount": {"min": amount_step, "max": amount_max}},
+            "leverage_max": leverage_max,
+            "limits": {
+                "amount": {"min": amount_step, "max": amount_max},
+                "leverage": {"min": 1, "max": leverage_max},
+            },
             "taker": _number(payload.get("taker_fee_rate"), name="taker_fee_rate", non_negative=True),
             "maker": payload.get("maker_fee_rate"),
             "mark_price": _number(payload.get("mark_price"), name="mark_price", positive=True),
@@ -303,6 +308,39 @@ class GatePublicProvider:
             raise ProviderError("Gate funding metadata is not an object", code="schema_invalid", provider="gate")
         return {"rate": {"fundingRate": _number(metadata.get("funding_rate"), name="funding_rate"), "fundingTimestamp": metadata.get("funding_next_apply")}, "history": self._funding_history(symbol), "open_interest_history": self._open_interest_history(symbol), "source": self.provider_name, "provider": "gate", "environment": self.environment, "native_symbol": contract, "data_status": "AVAILABLE", "raw_contract": metadata}
 
+    def derivatives_history(self, symbol: str) -> dict[str, Any]:
+        """Return real, environment-scoped funding and OI histories for strategies.
+
+        Candidate evaluation does not need the extra contract metadata call made
+        by ``funding_context``. These series are public exchange facts and are
+        still returned with explicit source/environment identity so callers can
+        fail closed instead of mixing TestNet and mainnet inputs.
+        """
+        if self.exchange is not None:
+            with self._lock:
+                market = self.market(symbol)
+                funding = self.exchange.fetch_funding_rate_history(market["symbol"], limit=100)
+                oi = self.exchange.fetch_open_interest_history(market["symbol"], "1h", limit=24)
+            return {
+                "funding_history": funding,
+                "oi_history": oi,
+                "source": self.provider_name,
+                "provider": "gate",
+                "environment": self.environment,
+                "data_status": "AVAILABLE",
+                "data_as_of": datetime.now(timezone.utc).isoformat(),
+            }
+        return {
+            "funding_history": self._funding_history(symbol, limit=100),
+            "oi_history": self._open_interest_history(symbol, limit=24),
+            "source": "gate_native_rest_derivatives_history",
+            "provider": "gate",
+            "environment": self.environment,
+            "data_status": "AVAILABLE",
+            "data_as_of": datetime.now(timezone.utc).isoformat(),
+            "native_symbol": self._contract_id(symbol),
+        }
+
     def order_book(self, symbol: str, *, limit: int = 20) -> dict[str, Any]:
         if self.exchange is not None:
             with self._lock:
@@ -384,7 +422,7 @@ class GatePublicProvider:
 
     native_bootstrap = bootstrap_symbol
 
-    def list_active_usdt_contracts(self, limit: int = 300) -> list[dict[str, Any]]:
+    def list_active_usdt_contracts(self, limit: int | None = 300) -> list[dict[str, Any]]:
         if self.exchange is not None:
             with self._lock:
                 markets = self.exchange.load_markets()
@@ -392,13 +430,13 @@ class GatePublicProvider:
             for market in markets.values():
                 if market.get("swap") and market.get("linear") and str(market.get("settle") or "").upper() == "USDT" and market.get("active") is True:
                     contracts.append({"symbol": f"{market.get('base', '')}{market.get('quote', '')}".upper(), "gate_id": market.get("id"), "ccxt_symbol": market.get("symbol"), "base": market.get("base"), "quote": market.get("quote"), "contract_size": float(market.get("contractSize", 1.0) or 1.0), "price_precision": market.get("precision", {}).get("price"), "amount_precision": market.get("precision", {}).get("amount")})
-            return contracts[: max(1, min(int(limit), 1000))]
+            return contracts if limit is None else contracts[: max(1, min(int(limit), 1000))]
         payload = self._request("/futures/usdt/contracts")
         if not isinstance(payload, list):
             raise ProviderError("Gate contracts response is not a list", code="schema_invalid", provider="gate")
         contracts = []
         for row in payload:
-            if not isinstance(row, dict) or str(row.get("status") or "").lower() not in {"trading", "online"}:
+            if not isinstance(row, dict) or row.get("in_delisting") is True or str(row.get("status") or "trading").lower() not in {"trading", "online"}:
                 continue
             native = str(row.get("name") or "").upper()
             if not native.endswith("_USDT"):
@@ -406,7 +444,13 @@ class GatePublicProvider:
             contracts.append({"symbol": native.replace("_", ""), "gate_id": native, "ccxt_symbol": f"{native[:-5]}/USDT:USDT", "base": native[:-5], "quote": "USDT", "contract_size": float(row.get("quanto_multiplier") or 0), "price_precision": row.get("order_price_round"), "amount_precision": row.get("order_size_min"), "source": "gate_native_rest_contracts"})
         major_priority = {"BTCUSDT": 1, "ETHUSDT": 2, "SOLUSDT": 3, "DOGEUSDT": 4, "PEPEUSDT": 5, "SUIUSDT": 6, "XRPUSDT": 7, "NEARUSDT": 8, "AVAXUSDT": 9, "BNBUSDT": 10, "APTUSDT": 11, "LINKUSDT": 12}
         contracts.sort(key=lambda item: (major_priority.get(item["symbol"], 999), item["symbol"]))
-        return contracts[: max(1, min(int(limit), 1000))]
+        return contracts if limit is None else contracts[: max(1, min(int(limit), 1000))]
+
+    def list_contract_tickers(self) -> list[dict[str, Any]]:
+        payload = self._request('/futures/usdt/tickers')
+        if not isinstance(payload, list):
+            raise ProviderError('Gate tickers response is not a list', code='schema_invalid', provider='gate')
+        return payload
 
 
 __all__ = ["GATE_PUBLIC_API_BASE_URL", "GATE_TESTNET_PUBLIC_API_BASE_URL", "GatePublicProvider"]

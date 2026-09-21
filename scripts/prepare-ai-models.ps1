@@ -1,57 +1,80 @@
-﻿<#
-    本地 Qwen 模型准备 (V2.0)
+<#
+    Verify the configured local Bonsai 2 27B inference service.
 
-    从原 scripts\v11-user-launch.ps1 中抽出。原脚本的 start / stop / status 分支
-    会去探测 8000/4173 端口并打开浏览器网页入口 —— V2.0 的界面是 Tauri 窗口、
-    前端资源编译期已嵌入 exe，那条链路必然得到 ERR_CONNECTION_REFUSED，因此整段
-    已移除。桌面客户端的启停请看 scripts\desktop-client.ps1。
-
-    本脚本只负责按需拉取本地模型，不启动、不停止任何进程。
+    Model weights are managed by infra\bonsai\start_model.ps1. This script is
+    read-only: it does not download weights, start processes, or substitute a
+    model from Ollama.
 #>
 [CmdletBinding()]
 param(
-    [string[]]$RequiredModels = @("qwen3.5:4b", "qwen3.5:9b")
+    [string]$BaseUrl = $(if ($env:BONSAI_BASE_URL) { $env:BONSAI_BASE_URL } else { "http://127.0.0.1:8080/v1" }),
+    [string]$RequiredModel = "Bonsai-2-27B-PTQ1_0"
 )
 
 $ErrorActionPreference = "Stop"
+$ExpectedModel = "Bonsai-2-27B-PTQ1_0"
 
-function Get-OllamaExecutable {
-    $command = Get-Command ollama -ErrorAction SilentlyContinue
-    if ($null -ne $command) { return [IO.Path]::GetFullPath($command.Source) }
-    $local = Join-Path $env:LOCALAPPDATA "Programs\Ollama\ollama.exe"
-    if (Test-Path -LiteralPath $local -PathType Leaf) { return [IO.Path]::GetFullPath($local) }
-    throw "Ollama was not found. Install official Ollama, then run model preparation again."
+if ($RequiredModel -cne $ExpectedModel) {
+    throw "Model routing is pinned to $ExpectedModel; alternate model overrides are rejected."
 }
 
-function Get-InstalledModels([string]$Ollama) {
-    $names = @()
-    $lines = & $Ollama list 2>$null
-    if ($LASTEXITCODE -ne 0) { return $names }
-    foreach ($line in $lines | Select-Object -Skip 1) {
-        $name = ([string]$line -split '\s+')[0]
-        if (-not [string]::IsNullOrWhiteSpace($name)) { $names += $name }
-    }
-    return $names
+try {
+    $parsed = [Uri]$BaseUrl
+} catch {
+    throw "BONSAI_BASE_URL must be a valid local inference URL."
+}
+if ($parsed.Scheme -cne "http" -or $parsed.Host -notin @("127.0.0.1", "localhost", "::1") -or $parsed.Port -ne 8080 -or $parsed.AbsolutePath.TrimEnd('/') -cne "/v1") {
+    throw "Only the local Bonsai OpenAI-compatible endpoint http://127.0.0.1:8080/v1 is supported."
 }
 
-$ollama = Get-OllamaExecutable
-$installed = @(Get-InstalledModels $ollama)
-$missing = 0
-foreach ($model in $RequiredModels) {
-    if ($installed -contains $model) {
-        Write-Host "Installed: $model" -ForegroundColor Green
-        continue
+function Test-BonsaiIdentity([object]$Value) {
+    if ($Value -isnot [string] -or [string]::IsNullOrWhiteSpace($Value)) { return $false }
+    $normalized = $Value.Trim().Replace('\', '/')
+    $basename = ($normalized -split '/')[-1]
+    if ($basename.EndsWith('.gguf', [StringComparison]::OrdinalIgnoreCase)) {
+        $basename = $basename.Substring(0, $basename.Length - 5)
     }
-    Write-Host "Pulling $model from the official Ollama registry. This may take time on first use." -ForegroundColor Cyan
-    & $ollama pull $model
-    if ($LASTEXITCODE -ne 0) {
-        $missing++
-        Write-Warning "Model pull failed: $model. No substitute was selected."
-        continue
+    if ($basename.StartsWith('Ternary-', [StringComparison]::OrdinalIgnoreCase)) {
+        $basename = $basename.Substring(8)
     }
+    return $basename.Equals($ExpectedModel, [StringComparison]::OrdinalIgnoreCase)
 }
-if ($missing -gt 0) {
-    Write-Warning "$missing model(s) could not be prepared. The UI stays available and marks unavailable tiers."
-    exit 1
+
+$healthUrl = $parsed.GetLeftPart([System.UriPartial]::Authority) + "/health"
+try {
+    $health = Invoke-RestMethod -Uri $healthUrl -Method Get -TimeoutSec 3
+    $manifest = Invoke-RestMethod -Uri ($BaseUrl.TrimEnd('/') + "/models") -Method Get -TimeoutSec 5
+} catch {
+    throw "Bonsai service is not ready at $BaseUrl. Start it with infra\bonsai\start_model.ps1. $($_.Exception.Message)"
 }
-Write-Host "Qwen 4B / 9B model preparation complete." -ForegroundColor Green
+
+$rows = @()
+if ($manifest.data -is [System.Collections.IEnumerable]) { $rows = @($manifest.data) }
+elseif ($manifest.models -is [System.Collections.IEnumerable]) { $rows = @($manifest.models) }
+$matching = @()
+foreach ($row in $rows) {
+    $primary = @()
+    foreach ($field in @('id', 'name', 'model')) {
+        $value = $row.$field
+        if ($value -is [string] -and -not [string]::IsNullOrWhiteSpace($value)) { $primary += $value }
+    }
+    $primaryValid = $true
+    foreach ($value in $primary) {
+        if (-not (Test-BonsaiIdentity $value)) { $primaryValid = $false; break }
+    }
+    if (-not $primaryValid) { continue }
+    $candidates = @($primary)
+    if ($row.aliases -is [System.Collections.IEnumerable]) { $candidates += @($row.aliases) }
+    if (@($candidates | Where-Object { Test-BonsaiIdentity $_ }).Count -gt 0) { $matching += $row }
+}
+
+if ($matching.Count -ne 1) {
+    throw "Expected exactly one verified $ExpectedModel entry in /v1/models; found $($matching.Count). No other model will be selected."
+}
+
+$context = $null
+if ($matching[0].meta -and $matching[0].meta.n_ctx) { $context = $matching[0].meta.n_ctx }
+elseif ($matching[0].context_length) { $context = $matching[0].context_length }
+Write-Host "Bonsai service ready: $ExpectedModel" -ForegroundColor Green
+Write-Host "Manifest id: $($matching[0].id)"
+Write-Host "Effective context: $(if ($context) { $context } else { 'UNKNOWN_NOT_PROVIDED' })"

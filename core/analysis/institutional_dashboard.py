@@ -15,6 +15,7 @@ import json
 import math
 from typing import Any
 
+from core.model_routing import DEFAULT_SMART_MODEL, is_bonsai_model_identity
 from ..trading.account_scope import resolve_account_scope
 from ..trading.gate_account_truth import (
     CAPITAL_BASIS_SOURCE,
@@ -260,6 +261,50 @@ def _public_candidate(row: dict[str, Any]) -> dict[str, Any]:
 def _public_cycle(row: dict[str, Any]) -> dict[str, Any]:
     payload = _json(row.get("payload_json"))
     calibration = payload.get("calibration") if isinstance(payload.get("calibration"), dict) else {}
+    decision_origin = str(row.get("decision_origin") or "").upper()
+    system_blocked = (
+        str(row.get("action") or "").upper() == "SYSTEM_BLOCKED"
+        or (decision_origin and decision_origin != "MODEL")
+    )
+    receipt = None if system_blocked else payload.get("model_receipt")
+    if not system_blocked and not isinstance(receipt, dict):
+        settings = payload.get("model_inference_settings")
+        settings = settings if isinstance(settings, dict) else {}
+        receipt = {
+            "model_id": payload.get("model_id"),
+            "actual_model_id": settings.get("actual_model_id"),
+            "model_identity_source": settings.get("model_identity_source"),
+            "verified_manifest_model_id": settings.get("verified_manifest_model_id"),
+            "model_version": payload.get("model_version"),
+        }
+    model_receipt = None
+    if not system_blocked and isinstance(receipt, dict) and receipt.get("model_id") == DEFAULT_SMART_MODEL:
+        source = receipt.get("model_identity_source")
+        actual_model_id = receipt.get("actual_model_id")
+        if actual_model_id is None:
+            actual_model_id = receipt.get("model_version")
+        manifest_model_id = receipt.get("verified_manifest_model_id")
+        actual_is_bonsai = is_bonsai_model_identity(actual_model_id)
+        manifest_is_bonsai = is_bonsai_model_identity(manifest_model_id)
+        manifest_is_absent = manifest_model_id is None
+        source_is_verified = (
+            source == "completion_response"
+            and (manifest_is_absent or manifest_is_bonsai)
+        ) or (
+            source == "request_bound_to_verified_manifest"
+            and manifest_is_bonsai
+        )
+        if actual_is_bonsai and source_is_verified:
+            model_receipt = receipt
+    model_val = (model_receipt or {}).get("model_id")
+    ai_analysis = None if system_blocked else payload.get("analysis")
+    if not isinstance(ai_analysis, dict) or not ai_analysis:
+        ai_analysis = None
+    evidence_refs = None if system_blocked else payload.get("evidence_refs")
+    if not system_blocked and not isinstance(evidence_refs, list):
+        evidence_refs = payload.get("evidence_context_refs")
+    if not isinstance(evidence_refs, list):
+        evidence_refs = None
     return {
         "cycle_id": row.get("cycle_id"),
         "account_id": row.get("account_id"),
@@ -282,9 +327,11 @@ def _public_cycle(row: dict[str, Any]) -> dict[str, Any]:
             {
                 "reason": row.get("reason"),
                 "rejection_code": row.get("rejection_code"),
-                "order_selection": payload.get("order_selection"),
-                "evidence_refs": payload.get("evidence_refs"),
-                "model": payload.get("model"),
+                "order_selection": None if system_blocked else payload.get("order_selection"),
+                "evidence_refs": evidence_refs,
+                "model": model_val,
+                "model_receipt": model_receipt,
+                "ai_analysis": ai_analysis,
             }
         ),
     }

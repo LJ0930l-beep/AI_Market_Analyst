@@ -185,6 +185,58 @@ def write_runtime_manifest(paths: AppDataPaths, *, sidecar: dict[str, object], p
     return path
 
 
+def process_is_alive(pid: int) -> bool:
+    """Return whether an exact process still exists without mutating it."""
+
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes
+
+        synchronize = 0x00100000
+        handle = ctypes.windll.kernel32.OpenProcess(synchronize, False, int(pid))
+        if not handle:
+            return False
+        try:
+            return ctypes.windll.kernel32.WaitForSingleObject(handle, 0) == 0x00000102
+        finally:
+            ctypes.windll.kernel32.CloseHandle(handle)
+    try:
+        os.kill(int(pid), 0)
+    except (ProcessLookupError, OSError):
+        return False
+    return True
+
+
+def remove_runtime_manifest_if_owned(
+    paths: AppDataPaths,
+    *,
+    pid: int,
+    instance_id: str,
+) -> bool:
+    """Remove only the manifest written by this exact sidecar generation."""
+
+    path = paths.runtime / "runtime.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
+        return False
+    sidecar = payload.get("sidecar") if isinstance(payload, dict) else None
+    if not isinstance(sidecar, dict):
+        return False
+    try:
+        recorded_pid = int(sidecar.get("pid", -1))
+    except (TypeError, ValueError):
+        return False
+    if recorded_pid != int(pid) or str(sidecar.get("instance_id") or "") != str(instance_id):
+        return False
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return False
+    return True
+
+
 __all__ = [
     "LEGACY_DATABASE_RELATIVE_PATH",
     "LegacyImportReport",
@@ -192,6 +244,8 @@ __all__ = [
     "ensure_app_data_layout",
     "import_legacy_database",
     "ownership_fingerprint",
+    "process_is_alive",
+    "remove_runtime_manifest_if_owned",
     "verify_ownership",
     "write_runtime_manifest",
 ]

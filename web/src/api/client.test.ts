@@ -102,12 +102,25 @@ describe("ApiClient", () => {
     }
   });
 
+  it("preserves FastAPI detail codes used by runtime recovery", async () => {
+    const fetchImpl = vi.fn<FetchMock>().mockResolvedValue(response({
+      detail: "Runtime lease held by another instance: Runtime lease held by another instance",
+    }, 409));
+    const client = new ApiClient({ baseUrl: "http://localhost:8000", fetchImpl });
+
+    await expect(client.v2("/ai-session/start", "POST")).rejects.toMatchObject({
+      status: 409,
+      code: "Runtime lease held by another instance",
+      message: "Runtime lease held by another instance",
+    });
+  });
+
   it("parses the Qwen NDJSON response incrementally without buffering the full answer", async () => {
     const encoder = new TextEncoder();
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
-        controller.enqueue(encoder.encode(`{"type":"meta","contract_version":"qwen_consult_v2","request_id":"r1","provider":"ollama","model_id":"qwen3.5:9b","model_tier":"smart","model_route":{"version":"qwen_route_v1","reason":"auto_smart_task"},"context":{"status":"unavailable","sources":[],"missing_reasons":[],"read_only":true}}\n{"type":"delta","content":"first `));
-        controller.enqueue(encoder.encode(`chunk"}\n{"type":"delta","content":"second"}\n{"type":"done","finish_reason":"stop","output_chars":18}\n`));
+        controller.enqueue(encoder.encode(`{"type":"meta","contract_version":"qwen_consult_v2","request_id":"r1","provider":"ollama","model_id":"Bonsai-2-27B-PTQ1_0","model_tier":"smart","model_route":{"version":"qwen_route_v1","reason":"auto_smart_task"},"context":{"status":"unavailable","sources":[],"missing_reasons":[],"read_only":true}}\n{"type":"delta","content":"first `));
+        controller.enqueue(encoder.encode(`chunk"}\n{"type":"delta","content":"second"}\n{"type":"done","finish_reason":"stop","output_chars":18,"model_receipt":{"model_id":"Bonsai-2-27B-PTQ1_0","actual_model_id":"Ternary-Bonsai-2-27B-PTQ1_0.gguf","verified_manifest_model_id":"Ternary-Bonsai-2-27B-PTQ1_0.gguf","model_identity_source":"completion_response","raw_response":"must not reach UI"}}\n`));
         controller.close();
       },
     });
@@ -121,7 +134,15 @@ describe("ApiClient", () => {
 
     await client.consultStream(
       { language: "en", messages: [{ role: "user", content: "question" }] },
-      (event) => events.push(event.type === "delta" ? event.content : event.type),
+      (event) => {
+        events.push(event.type === "delta" ? event.content : event.type);
+        if (event.type === "done") expect(event.model_receipt).toEqual({
+          model_id: "Bonsai-2-27B-PTQ1_0",
+          actual_model_id: "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+          verified_manifest_model_id: "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+          model_identity_source: "completion_response",
+        });
+      },
       controller.signal,
     );
 

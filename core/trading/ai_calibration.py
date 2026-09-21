@@ -2,8 +2,8 @@
 
 Calibration is a lifecycle prerequisite, not a cosmetic status label.  It
 uses only closed 15m bars available at the replay as-of time, makes one
-operation-profile call to the configured Qwen provider, and fails closed when
-the sample or a real model digest is unavailable.
+operation-profile call to the configured local Bonsai route, and fails closed
+when the sample or a real model digest is unavailable.
 """
 
 from __future__ import annotations
@@ -11,17 +11,19 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
+import math
 import uuid
 from typing import Any, Callable
 
 from ..evidence import model_weight_digest
-from ..model_routing import DEFAULT_SMART_MODEL
+from ..instruments import read_trading_bars
+from ..model_routing import DEFAULT_SMART_MODEL, is_verified_bonsai_receipt
 from .institutional_schema import ensure_institutional_trader_schema
 from .model_schemas import CALIBRATION_PROFILE_SCHEMA
 
 
-CALIBRATION_PROFILE_VERSION = "ai_operation_profile_v1"
-CALIBRATION_PROMPT_VERSION = "ai_calibration_operation_profile_v1"
+CALIBRATION_PROFILE_VERSION = "ai_operation_profile_v2"
+CALIBRATION_PROMPT_VERSION = "ai_calibration_operation_profile_v2"
 DEFAULT_CALIBRATION_BARS = 500
 DEFAULT_CALIBRATION_LOOKBACK_DAYS = 30
 CALIBRATION_TTL_HOURS = 24
@@ -56,7 +58,14 @@ def _closed_bars(store: Any, symbols: tuple[str, ...], *, now: datetime, lookbac
             # The newest row is commonly the still-forming 15m candle.  Ask
             # for a buffer before filtering so one partial row cannot turn a
             # complete 500-bar bootstrap into a false NOT_READY result.
-            rows = store.list_market_bars(symbol, "15m", limit=max(int(limit) + 64, int(limit) * 2))
+            #
+            # Pinned to the traded-price identity: the dedupe below keeps one
+            # row per bar_start, so an unfiltered read would let a mark-price
+            # row win over the traded-price row for the same bar and silently
+            # calibrate the model against prices it can never fill at.
+            rows = read_trading_bars(
+                store, symbol, "15m", limit=max(int(limit) + 64, int(limit) * 2)
+            )
         except Exception:
             rows = []
         by_start: dict[str, dict[str, Any]] = {}
@@ -125,9 +134,9 @@ class AICalibrationService:
                 return None
             row = db.execute(
                 """SELECT * FROM ai_calibration_profiles
-                   WHERE account_id=? AND environment=? AND active=1 AND expires_at>?
+                   WHERE account_id=? AND environment=? AND profile_version=? AND active=1 AND expires_at>?
                    ORDER BY calibrated_at DESC LIMIT 1""",
-                (account_id, str(environment).lower(), _iso(point)),
+                (account_id, str(environment).lower(), CALIBRATION_PROFILE_VERSION, _iso(point)),
             ).fetchone()
         if row is None:
             return None
@@ -224,6 +233,8 @@ class AICalibrationService:
             )
             decoded = response[0] if isinstance(response, tuple) else response
             metadata = response[2] if isinstance(response, tuple) and len(response) >= 3 and isinstance(response[2], dict) else {}
+            if not is_verified_bonsai_receipt(metadata):
+                raise ValueError("MODEL_RECEIPT_INVALID")
             raw_response = str(response[1])[:12000] if isinstance(response, tuple) and len(response) >= 2 and response[1] is not None else str(metadata.get("raw_response") or "")[:12000] or None
             latency_ms = float(metadata.get("latency_ms")) if metadata.get("latency_ms") is not None else max(0.0, (datetime.now(timezone.utc) - started_call).total_seconds() * 1000.0)
             if not isinstance(decoded, dict):
@@ -251,6 +262,12 @@ class AICalibrationService:
             try:
                 profile, _metadata = call_model(messages, CALIBRATION_PROMPT_VERSION)
             except Exception as first_exc:
+                if str(first_exc).split(":", 1)[0] in {
+                    "MODEL_RECEIPT_INVALID", "MODEL_RESPONSE_IDENTITY_MISMATCH",
+                    "MODEL_NOT_ALLOWED", "MODEL_ENDPOINT_NOT_ALLOWED", "MODEL_UNAVAILABLE",
+                    "MODEL_MANIFEST_UNAVAILABLE", "MODEL_INFERENCE_ERROR",
+                }:
+                    raise
                 # Exactly one bounded repair attempt.  A failed repair is a
                 # hard calibration failure; it must not become a cached
                 # profile or a model-generated WAIT.
@@ -278,7 +295,7 @@ class AICalibrationService:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
                 (profile_id, account_id, str(provider or "unknown"), str(environment).lower(), CALIBRATION_PROFILE_VERSION, model_id, digest, digest_status, input_hash, len(bars), started, _iso(expires), json.dumps(profile, ensure_ascii=False, sort_keys=True, allow_nan=False)),
             )
-        result = self._finish(run_id, account_id, environment, status="READY", error_code=None, result={"profile_id": profile_id, "sample_size": len(bars), "digest_status": digest_status, "input_hash": input_hash, "parse_phase": parse_phase, "schema_version": "calibration_profile_v1"}, model_id=model_id, model_digest=digest, input_hash=input_hash, parse_phase=parse_phase, latency_ms=latency_ms, raw_response=raw_response)
+        result = self._finish(run_id, account_id, environment, status="READY", error_code=None, result={"profile_id": profile_id, "sample_size": len(bars), "digest_status": digest_status, "input_hash": input_hash, "parse_phase": parse_phase, "schema_version": "calibration_profile_v1", "model_receipt": {key: _metadata.get(key) for key in ("model_id", "actual_model_id", "model_identity_source", "verified_manifest_model_id")}}, model_id=model_id, model_digest=digest, input_hash=input_hash, parse_phase=parse_phase, latency_ms=latency_ms, raw_response=raw_response)
         result["profile_id"] = profile_id
         result["profile"] = profile
         return result
@@ -299,17 +316,36 @@ class AICalibrationService:
     @staticmethod
     def _replay_summary(bars: list[dict[str, Any]]) -> dict[str, Any]:
         returns: list[float] = []
-        for previous, current in zip(bars, bars[1:]):
-            try:
-                prior = float(previous["close"])
-                close = float(current["close"])
-                if prior > 0:
-                    returns.append((close - prior) / prior)
-            except (KeyError, TypeError, ValueError):
+        by_symbol: dict[str, list[tuple[datetime, dict[str, Any]]]] = {}
+        for item in bars:
+            symbol = str(item.get("symbol") or "").strip().upper()
+            bar_end = _utc(item.get("bar_end") or item.get("timestamp"))
+            if not symbol or bar_end is None:
                 continue
+            by_symbol.setdefault(symbol, []).append((bar_end, item))
+
+        # _closed_bars merges symbols into one chronological list.  Returns
+        # must be calculated inside each instrument, or a BTC-to-altcoin
+        # boundary can look like a multi-million-percent candle.
+        for series in by_symbol.values():
+            series.sort(key=lambda row: row[0])
+            for (previous_end, previous), (current_end, current) in zip(series, series[1:]):
+                if current_end - previous_end != timedelta(minutes=15):
+                    continue
+                try:
+                    prior = float(previous["close"])
+                    close = float(current["close"])
+                    if not math.isfinite(prior) or not math.isfinite(close) or prior <= 0:
+                        continue
+                    value = (close - prior) / prior
+                    if math.isfinite(value):
+                        returns.append(value)
+                except (KeyError, TypeError, ValueError):
+                    continue
         wins = sum(1 for value in returns if value > 0)
         return {
             "sample_size": len(bars),
+            "symbol_count": len(by_symbol),
             "return_observations": len(returns),
             "positive_fraction": round(wins / len(returns), 6) if returns else None,
             "mean_return": round(sum(returns) / len(returns), 8) if returns else None,

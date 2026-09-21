@@ -48,7 +48,7 @@ def refresh_public_news(
             continue
         attempted.append(symbol)
         try:
-            instrument = instrument_for(symbol)
+            instrument = store.resolve_instrument(symbol) if hasattr(store, 'resolve_instrument') else instrument_for(symbol)
         except ValueError:
             results.append({"symbol": symbol, "status": "INVALID_SYMBOL", "event_count": 0})
             continue

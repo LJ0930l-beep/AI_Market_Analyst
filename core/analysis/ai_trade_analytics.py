@@ -662,6 +662,9 @@ def build_execution_ledger_projection(
         else:
             economic_status = "NOT_FILLED"
         first = related[0] if related else None
+        prot = _projection_json(row.get("protection_plan_json"))
+        stop_loss = _projection_number(prot.get("stop_price"))
+        take_profit = _projection_number(prot.get("take_profit"))
         orders.append({
             "intent_id": intent_id,
             "order_id": execution.get("order_id") or execution.get("id") or (f"ord_paper_{intent_id}" if intent_id else None),
@@ -673,6 +676,9 @@ def build_execution_ledger_projection(
             "order_type": row.get("order_type"),
             "quantity": _projection_number(row.get("quantity"), 0.0),
             "price": _projection_number(row.get("price")),
+            "stop_loss": stop_loss,
+            "take_profit": take_profit,
+            "protection_plan": prot if prot else None,
             "reduce_only": _projection_bool(row.get("reduce_only")),
             "status": status,
             "economic_status": economic_status,
@@ -904,9 +910,9 @@ def compute_ai_recommended_leverage(
         reason = f"波动率较大或逆势左侧博弈，止损带宽较宽({stop_distance_pct*100:.2f}%)，保守降低杠杆严防插针"
 
     # Strategy-specific tuning
-    if strategy_id == "liquidity_sweep" and confidence_score >= 0.85:
+    if strategy_id in {"liquidity_sweep", "aggressive_impulse", "aggressive_breakout"} and confidence_score >= 0.85:
         base_lev = min(100.0, base_lev * 1.25)
-    elif strategy_id == "funding_extreme":
+    elif strategy_id in {"funding_extreme", "conservative_defense"}:
         base_lev = min(15.0, base_lev)  # Hedging strategy stays conservative
 
     final_lev = int(max(MIN_LEVERAGE, min(MAX_LEVERAGE, round(base_lev))))
@@ -1066,6 +1072,12 @@ def analyze_ai_trading_ledger(
     
     trades = []
     strategy_matrix = {
+        # AI 自主做单策略（当前生效主链路）
+        "aggressive_impulse": {"name": "动量突破·AI自主激进型", "style": "激进型 · 动量突破", "trades": 0, "wins": 0, "losses": 0, "pnl": 0.0, "total_rr": 0.0, "leverages": []},
+        "aggressive_breakout": {"name": "全天候趋势箱体·AI自主全能型", "style": "全能型 · 趋势箱体突破", "trades": 0, "wins": 0, "losses": 0, "pnl": 0.0, "total_rr": 0.0, "leverages": []},
+        "conservative_pullback": {"name": "关键位均值回归·AI自主稳健型", "style": "稳健型 · 关键位均值回归", "trades": 0, "wins": 0, "losses": 0, "pnl": 0.0, "total_rr": 0.0, "leverages": []},
+        "conservative_defense": {"name": "多维防守波段·AI自主防守型", "style": "防守型 · 多维防守波段", "trades": 0, "wins": 0, "losses": 0, "pnl": 0.0, "total_rr": 0.0, "leverages": []},
+        # 兼容传统量化策略历史归属
         "ema_trend": {"name": "EMA 动态通道动能策略", "style": "稳健型 · 趋势追踪", "trades": 0, "wins": 0, "losses": 0, "pnl": 0.0, "total_rr": 0.0, "leverages": []},
         "bollinger_squeeze": {"name": "布林带/ATR 挤压突破策略", "style": "平衡型 · 波动爆发", "trades": 0, "wins": 0, "losses": 0, "pnl": 0.0, "total_rr": 0.0, "leverages": []},
         "liquidity_sweep": {"name": "流动性扫荡与订单块反转", "style": "进阶型 · 机构反转", "trades": 0, "wins": 0, "losses": 0, "pnl": 0.0, "total_rr": 0.0, "leverages": []},
@@ -1102,13 +1114,40 @@ def analyze_ai_trading_ledger(
             or "UNKNOWN"
         )
         matrix_strategy_id = strat_id if strat_id in strategy_matrix else None
+        if not matrix_strategy_id:
+            for k in strategy_matrix:
+                if k in str(strat_id).lower():
+                    matrix_strategy_id = k
+                    break
 
         pnl = float(p.get("realized_pnl", 0.0))
         status = p.get("status", "OPEN")
         side = p.get("side", "LONG")
         entry = float(p.get("entry", 0.0))
         stop = float(p.get("stop", 0.0))
+        if not stop:
+            stop = float(
+                p.get("stop_loss")
+                or p.get("stop_price")
+                or proposal.get("stop")
+                or (p.get("protection_contract") or {}).get("stop_price")
+                or (p.get("protection_plan") or {}).get("stop_price")
+                or 0.0
+            )
         targets = p.get("targets", [0.0, 0.0])
+        if not targets or targets == [0.0, 0.0]:
+            tp = (
+                p.get("take_profit")
+                or proposal.get("take_profit")
+                or (p.get("protection_contract") or {}).get("take_profit")
+                or (p.get("protection_plan") or {}).get("take_profit")
+            )
+            if tp:
+                targets = [float(tp)]
+            elif proposal.get("targets"):
+                targets = [float(t) for t in proposal.get("targets") if t]
+            else:
+                targets = []
         confidence = float(proposal.get("confidence_score")) if proposal.get("confidence_score") is not None else 0.0
 
         # Dynamic leverage is a sizing explanation only.  It is never used as
@@ -1430,4 +1469,108 @@ def _generate_trader_style_dna(
         },
         "style_report": report,
         "best_strategy": best_name,
+    }
+
+
+# --- Prompt-facing performance feedback -----------------------------------
+#
+# NOFX feeds the model's own recent results back into every decision so it can
+# adapt to them.  These bands express the same idea in the metrics this ledger
+# actually exposes (profit factor and drawdown) rather than NOFX's Sharpe
+# scale, which this ledger does not compute.
+PERFORMANCE_MIN_CLOSED_TRADES = 5
+PERFORMANCE_STRONG_PROFIT_FACTOR = 1.5
+PERFORMANCE_WEAK_PROFIT_FACTOR = 0.8
+PERFORMANCE_HIGH_DRAWDOWN_PCT = 15.0
+
+
+def _finite_or_none(value: Any) -> float | None:
+    number = _projection_number(value)
+    if number is None or not math.isfinite(number):
+        return None
+    return number
+
+
+def _performance_stance(
+    closed_trades: int,
+    win_rate_pct: float,
+    profit_factor: float,
+    max_drawdown_pct: float,
+) -> tuple[str, str]:
+    if closed_trades < PERFORMANCE_MIN_CLOSED_TRADES:
+        return (
+            "INSUFFICIENT_SAMPLE",
+            f"已了结交易仅 {closed_trades} 笔，样本不足以判断策略优劣；按标准评估本轮证据即可，"
+            "不要因为样本小就对同一形态给出两极化的置信度。",
+        )
+    if max_drawdown_pct >= PERFORMANCE_HIGH_DRAWDOWN_PCT:
+        return (
+            "DRAWDOWN_PRIORITY",
+            f"当前最大回撤 {max_drawdown_pct:.2f}% 处于高位，以控制回撤为先：只接受止损明确、"
+            "净盈亏比明显高于最低要求的机会，并缩小单笔风险；严禁为挽回回撤而急于开单。",
+        )
+    if profit_factor >= PERFORMANCE_STRONG_PROFIT_FACTOR and win_rate_pct >= 50.0:
+        return (
+            "PERFORMING",
+            f"近期结果良好（盈亏比 {profit_factor:.2f}、胜率 {win_rate_pct:.1f}%）。维持当前入场标准，"
+            "不要因为表现好就放宽止损或放大单笔风险。",
+        )
+    if profit_factor >= PERFORMANCE_WEAK_PROFIT_FACTOR:
+        return (
+            "NEUTRAL",
+            f"近期结果中性（盈亏比 {profit_factor:.2f}、胜率 {win_rate_pct:.1f}%），属正常波动。"
+            "按策略标准执行，不要因为一两笔亏损就放弃仍然合格的信号。",
+        )
+    return (
+        "UNDERPERFORMING",
+        f"近期表现不佳（盈亏比 {profit_factor:.2f}、胜率 {win_rate_pct:.1f}%）。提高入场门槛："
+        "只做触发度最高、净盈亏比明显优于最低要求的机会，并检查止损是否过紧；"
+        "严禁为挽回亏损而放宽标准或连续开单。",
+    )
+
+
+def build_performance_context(
+    store,
+    account_id: str,
+    *,
+    venue: str | None = None,
+    mode: str | None = None,
+) -> dict[str, Any]:
+    """Compact realised-performance feedback for the trading prompt.
+
+    Reuses ``analyze_ai_trading_ledger`` so the model reasons about exactly the
+    numbers an operator sees on the dashboard instead of a second, divergent
+    calculation.  Never raises: an unreadable ledger reports ``UNAVAILABLE``
+    rather than a zeroed record, because a fabricated "0% win rate" would be
+    worse than admitting there is no data.
+    """
+    try:
+        ledger = analyze_ai_trading_ledger(store, account_id, venue=venue, mode=mode)
+    except Exception as exc:  # noqa: BLE001 - a trading cycle must survive this
+        return {"status": "UNAVAILABLE", "reason": type(exc).__name__, "closed_trades": 0}
+    account = ledger.get("account") if isinstance(ledger, dict) else None
+    account = account if isinstance(account, dict) else {}
+    wins = _finite_or_none(account.get("winning_trades")) or 0.0
+    losses = _finite_or_none(account.get("losing_trades")) or 0.0
+    closed = int(wins + losses)
+    win_rate = _finite_or_none(account.get("win_rate_pct")) or 0.0
+    profit_factor = _finite_or_none(account.get("profit_factor")) or 0.0
+    drawdown = _finite_or_none(account.get("max_drawdown_pct")) or 0.0
+    stance, guidance = _performance_stance(closed, win_rate, profit_factor, drawdown)
+    return {
+        "status": "AVAILABLE",
+        "stance": stance,
+        "closed_trades": closed,
+        "winning_trades": int(wins),
+        "losing_trades": int(losses),
+        "win_rate_pct": win_rate,
+        "profit_factor": profit_factor,
+        "max_drawdown_pct": drawdown,
+        "net_pnl_usdt": _finite_or_none(account.get("net_pnl_usdt")),
+        "current_equity_usdt": _finite_or_none(account.get("current_equity_usdt")),
+        "initial_capital_usdt": _finite_or_none(account.get("initial_capital_usdt")),
+        "equity_basis": account.get("equity_basis"),
+        "capital_source": account.get("capital_source"),
+        "capital_stale": account.get("capital_stale"),
+        "guidance_zh": guidance,
     }

@@ -50,8 +50,16 @@ export function V2News({
 
   const policy = String(event.macro_policy || "NEUTRAL");
   const policyLabel = String(
-    event.macro_policy_label || (policy === "BULLISH_POLICY" ? "利多政策" : policy === "BEARISH_POLICY" ? "利空政策" : policy === "CIRCUIT_BREAKER" ? "宏观熔断警戒" : "中性观望")
+    event.macro_policy_label ||
+      (policy === "BULLISH_POLICY"
+        ? "利多政策"
+        : policy === "BEARISH_POLICY"
+        ? "利空政策"
+        : policy === "CIRCUIT_BREAKER"
+        ? "宏观熔断"
+        : "中性观望")
   );
+
   let sourceDisplay = String(event.source_display || event.source || (zh ? "海外财经快讯" : "Financial Wire"));
   if (sourceDisplay.includes(".com") || sourceDisplay.includes(".org") || sourceDisplay.includes(".net")) {
     sourceDisplay = sourceDisplay.replace(/^www\./i, "").split("/")[0];
@@ -61,41 +69,66 @@ export function V2News({
 
   return (
     <article className={`v2-news-card v2-news-card--${policy.toLowerCase()}`}>
+      {/* 3-Factor Top Header */}
       <div className="v2-news-header">
         <span className="v2-source-tag">{sourceDisplay}</span>
-        <span className={`v2-badge ${policy === "BULLISH_POLICY" ? "v2-badge--bull" : policy === "BEARISH_POLICY" ? "v2-badge--bear" : policy === "CIRCUIT_BREAKER" ? "v2-badge--warning" : "v2-badge--neutral"}`}>
-          {policy === "BULLISH_POLICY" ? "🟢 " : policy === "BEARISH_POLICY" ? "🔴 " : policy === "CIRCUIT_BREAKER" ? "⚠️ " : "⚪ "}
+        <span
+          className={`v2-badge ${
+            policy === "BULLISH_POLICY"
+              ? "v2-badge--bull"
+              : policy === "BEARISH_POLICY"
+              ? "v2-badge--bear"
+              : policy === "CIRCUIT_BREAKER"
+              ? "v2-badge--warning"
+              : "v2-badge--neutral"
+          }`}
+        >
+          {policy === "BULLISH_POLICY"
+            ? "🟢 "
+            : policy === "BEARISH_POLICY"
+            ? "🔴 "
+            : policy === "CIRCUIT_BREAKER"
+            ? "⚠️ "
+            : "⚪ "}
           {policyLabel}
         </span>
         <span className="v2-stars" title={`影响星级: ${stars}星`}>
-          {"★".repeat(stars)}{"☆".repeat(Math.max(0, 3 - stars))}
+          {"★".repeat(stars)}
+          {"☆".repeat(Math.max(0, 3 - stars))}
         </span>
-        <time className="v2-news-time" title="中国香港时间 (HKT)">{formatHktTime(event.published_at)}</time>
+        <time className="v2-news-time" title="中国香港时间 (HKT)">
+          {formatHktTime(event.published_at)}
+        </time>
       </div>
 
+      {/* Main Headline */}
       <h3 className="v2-news-title">
         {zh && !translated && (
-          <span className="v2-news-en-badge" title="海外一手英文快讯，可点击下方 Qwen 翻译">
+          <span className="v2-news-en-badge" title="海外一手英文快讯，可点击下方本地模型翻译">
             [英文原文]
           </span>
         )}
         {zh && translated ? translated : String(event.title ?? "")}
       </h3>
 
+      {/* Optional Raw Summary */}
       {Boolean(event.summary_raw) && (
         <p className="v2-news-summary">{String(event.summary_raw)}</p>
       )}
 
+      {/* Trader Take Callout Box */}
       {traderTake && (
         <div className="v2-trader-take">
-          <span className="v2-trader-take__label">{zh ? "交易员快评" : "Trader Take"}:</span> {traderTake}
+          <span className="v2-trader-take__label">{zh ? "交易员快评" : "Trader Take"}:</span>{" "}
+          {traderTake}
         </div>
       )}
 
+      {/* Footer Controls */}
       <div className="v2-news-footer">
         {zh && !translated && (
-          <button className="v2-btn-inline" disabled={busy} onClick={() => void translate()}>
-            {busy ? "翻译中…" : "Qwen 翻译 (4B)"}
+          <button className="v2-btn-inline v2-btn-inline--translate" disabled={busy} onClick={() => void translate()}>
+            {busy ? "翻译中…" : "Bonsai-2-27B 翻译"}
           </button>
         )}
         {typeof event.url === "string" && event.url.startsWith("https://") && (

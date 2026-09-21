@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiClient } from "../api/client";
@@ -6,7 +6,7 @@ import { I18nProvider } from "../i18n";
 import { V2WorkspacePage } from "./V2WorkspacePage";
 import { createFakeClient } from "../test/fakeClient";
 
-function show(surface:"dashboard"|"monitor"|"strategies"|"analysis"|"gate-live"="dashboard") {
+function show(surface:"dashboard"|"monitor"|"strategies"|"intel"|"analysis"|"gate-live"="dashboard") {
   render(<I18nProvider><MemoryRouter><V2WorkspacePage surface={surface}/></MemoryRouter></I18nProvider>);
 }
 beforeEach(()=>{
@@ -17,6 +17,70 @@ beforeEach(()=>{
 });
 afterEach(()=>vi.restoreAllMocks());
 describe("V2 task workspace",()=>{
+  it("keeps the AI trading cockpit above the chart and market radar",async()=>{
+    show();
+    const cockpit=await screen.findByRole("region",{name:"AI execution overview"});
+    const grid=document.querySelector(".v2-grid");
+    expect(grid).not.toBeNull();
+    expect(cockpit.compareDocumentPosition(grid as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const radar = await screen.findByRole("heading", { name: "盘口与全球市场" });
+    expect(grid!.compareDocumentPosition(radar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(vi.mocked(apiClient.v2).mock.calls.some(([path]) => path === "/market-radar?symbols=BTCUSDT")).toBe(true);
+  });
+  it("opens the microstructure subtab inside trading analysis", async () => {
+    show("analysis");
+    const navigation = await screen.findByRole("group", { name: "Trading analysis sections" });
+    const microstructureButton = within(navigation).getByRole("button", { name: "Market microstructure & derivatives" });
+    expect(within(navigation).getByRole("button", { name: "AI decisions & trade review" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(microstructureButton);
+    expect(microstructureButton).toHaveAttribute("aria-pressed", "true");
+    expect(await screen.findByRole("heading", { name: "市场微观结构与衍生品雷达" })).toBeInTheDocument();
+    expect(apiClient.v2).toHaveBeenCalledWith("/market-radar", "GET", undefined, expect.any(AbortSignal));
+    expect(screen.queryByText("MODEL ROUTE / VERIFIED RUNTIME")).not.toBeInTheDocument();
+  });
+  it("adds liquidation, chain-flow and cross-market radar to the intelligence room", async () => {
+    show("intel");
+    expect(await screen.findByRole("heading", { name: "爆仓分布" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "链上资金走向" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "全球宏观与跨市场走廊" })).toBeInTheDocument();
+    expect(apiClient.v2).toHaveBeenCalledWith("/market-radar", "GET", undefined, expect.any(AbortSignal));
+  });
+  it("opens the strategy route on the account-scoped AI strategy studio", async () => {
+    window.sessionStorage.setItem("aima.trading-account", "gate_testnet");
+    const sections = { role: "role", frequency: "discipline", entry_standards: "entry", decision_process: "exits", custom_prompt: "limits" };
+    const execution = {
+      symbols: [], universe_mode: "ALL", scan_interval_minutes: 15, direction: "BOTH", sizing_mode: "RISK_BASED",
+      fixed_notional_usdt: 1000, equity_notional_pct: 5, max_notional_usdt: 5000, risk_per_trade_pct: .2,
+      leverage: 3, max_positions: 3, max_margin_pct: 20, min_confidence: 68, min_net_rr: 2,
+      cooldown_minutes: 30, order_preference: "LIMIT", atr_adaptive_sizing: true,
+      consecutive_loss_lock_enabled: true, us_open_defense_enabled: true,
+    };
+    const templates = [
+      { id: "aggressive_impulse", name: "Breakout Pulse", sections, style: "AGGRESSIVE", scan_interval_minutes: 5, order_preference: "AUTO", profile: { limit_priority: true, order_preference: "AUTO" } },
+      { id: "aggressive_breakout", name: "Trend Acceleration", sections, style: "AGGRESSIVE", scan_interval_minutes: 15, order_preference: "AUTO", profile: { limit_priority: true, order_preference: "AUTO" } },
+      { id: "conservative_pullback", name: "Measured Pullback", sections, style: "CONSERVATIVE", scan_interval_minutes: 15, order_preference: "AUTO", profile: { limit_priority: true, order_preference: "AUTO" } },
+      { id: "conservative_defense", name: "Range Confirmation", sections, style: "CONSERVATIVE", scan_interval_minutes: 15, order_preference: "AUTO", profile: { limit_priority: true, order_preference: "AUTO" } },
+    ];
+    vi.mocked(apiClient.v2).mockImplementation(async (path: string) => {
+      if (path === "/accounts") return { accounts: [{ account_id: "gate_testnet", mode: "TESTNET", venue: "gate" }] } as never;
+      if (path.startsWith("/ai-strategy")) return { active: { account_id: "gate_testnet", revision: 4, template_id: "conservative_pullback", name: "Measured Pullback", style: "CONSERVATIVE", sections, execution, digest: "active" }, templates } as never;
+      if (path.startsWith("/gate/markets")) return { markets: [{ symbol: "BTC_USDT" }] } as never;
+      if (path.startsWith("/gate/account")) return { data_status: "UNAVAILABLE" } as never;
+      if (path.startsWith("/ai-session/memory")) return { items: [] } as never;
+      return { watchlist: [{ symbol: "BTCUSDT" }], subscriptions: [], runtime: { state: "stopped" }, decisions: [], positions: [], allow_unknown_macro: false } as never;
+    });
+
+    show("strategies");
+
+    expect(await screen.findByRole("heading", { name: "让策略驱动 AI 找机会。" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Breakout Pulse/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Trend Acceleration/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Measured Pullback/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Range Confirmation/ })).toBeInTheDocument();
+    expect(document.querySelectorAll(".ai-template-card")).toHaveLength(4);
+    expect(screen.getByRole("button", { name: /Trend Acceleration/ })).toHaveTextContent("限价优先 · 阈值达标才市价");
+    expect(document.querySelector(".v2-strategy-card")).toBeNull();
+  });
   it("shows useful deterministic data and explicit analysis without model POST",async()=>{
     show();
     expect(await screen.findByText(/No strategy proposal yet/)).toBeInTheDocument();
@@ -24,8 +88,157 @@ describe("V2 task workspace",()=>{
     expect(apiClient.v2).toHaveBeenCalledWith("/workspace","GET",undefined,expect.any(AbortSignal));
     expect(screen.getByText(/Structured macro provider not configured/)).toBeInTheDocument();
   });
+  it("does not invent a Bonsai ready state or decision when runtime evidence is absent", async () => {
+    show("analysis");
+    const panel = await screen.findByRole("region", { name: "Bonsai trading analysis and decision records" });
+    expect(within(panel).getByText(/Latest decision · historical ledger/)).toBeInTheDocument();
+    expect(within(panel).getByText("No decision record")).toBeInTheDocument();
+    expect(within(panel).getByText(/No recorded decision yet/)).toBeInTheDocument();
+    expect(within(panel).getByText(/Model status: UNKNOWN/)).toBeInTheDocument();
+    expect(within(panel).queryByText(/MODEL_READY|ACTIVE/)).not.toBeInTheDocument();
+    expect(within(panel).queryByText(/autonomous analysis online|Ollama/)).not.toBeInTheDocument();
+  });
+  it("shows model availability only from the workspace runtime health response", async () => {
+    vi.mocked(apiClient.v2).mockImplementation(async (path: string) =>
+      path.startsWith("/workspace")
+        ? {
+            watchlist: [{ symbol: "BTCUSDT" }], subscriptions: [], runtime: { state: "stopped" }, decisions: [], positions: [], allow_unknown_macro: false,
+            risk_cockpit: { model: { status: "UNAVAILABLE", required_model: "Bonsai-2-27B-PTQ1_0", model_id: "Bonsai-2-27B-PTQ1_0", available: false, model_available: false, checked_at: new Date().toISOString() } },
+          }
+        : path === "/accounts"
+          ? { accounts: [] }
+          : { watchlist: [{ symbol: "BTCUSDT" }], subscriptions: [], runtime: { state: "stopped" }, decisions: [], positions: [], allow_unknown_macro: false },
+    );
+    show("analysis");
+    const panel = await screen.findByRole("region", { name: "Bonsai trading analysis and decision records" });
+    expect(within(panel).getByText(/Target model: Bonsai-2-27B-PTQ1_0 · Model status: UNAVAILABLE/)).toBeInTheDocument();
+    expect(within(panel).getByText("UNAVAILABLE")).toBeInTheDocument();
+    expect(within(panel).queryByText(/ACTIVE|ready for the active strategy cadence/i)).not.toBeInTheDocument();
+  });
+  it("shows only the model artifact basename from runtime health", async () => {
+    vi.mocked(apiClient.v2).mockImplementation(async (path: string) =>
+      path.startsWith("/workspace")
+        ? {
+            watchlist: [{ symbol: "BTCUSDT" }], subscriptions: [], runtime: { state: "stopped" }, decisions: [], positions: [], allow_unknown_macro: false,
+            risk_cockpit: { model: { status: "READY", model_id: "Bonsai-2-27B-PTQ1_0", actual_model_id: "D:\\models\\Ternary-Bonsai-2-27B-PTQ1_0.gguf", model_identity_source: "verified_manifest", available: true, model_available: true, checked_at: new Date().toISOString() } },
+          }
+        : path === "/accounts"
+          ? { accounts: [] }
+          : { watchlist: [{ symbol: "BTCUSDT" }], subscriptions: [], runtime: { state: "stopped" }, decisions: [], positions: [], allow_unknown_macro: false },
+    );
+    show("analysis");
+    const panel = await screen.findByRole("region", { name: "Bonsai trading analysis and decision records" });
+    expect(within(panel).getByText(/Target model: Bonsai-2-27B-PTQ1_0 · Model status: READY/)).toBeInTheDocument();
+    expect(within(panel).getByText("Ternary-Bonsai-2-27B-PTQ1_0.gguf")).toBeInTheDocument();
+    expect(within(panel).queryByText(/D:\\models/)).not.toBeInTheDocument();
+  });
+  it("downgrades a verified Bonsai identity after its runtime health receipt expires", async () => {
+    vi.mocked(apiClient.v2).mockImplementation(async (path: string) =>
+      path.startsWith("/workspace")
+        ? {
+            watchlist: [{ symbol: "BTCUSDT" }], subscriptions: [], runtime: { state: "stopped" }, decisions: [], positions: [], allow_unknown_macro: false,
+            risk_cockpit: { model: { status: "READY", model_id: "Bonsai-2-27B-PTQ1_0", actual_model_id: "Ternary-Bonsai-2-27B-PTQ1_0.gguf", model_identity_source: "verified_manifest", available: true, model_available: true, checked_at: new Date(Date.now() - 120_000).toISOString() } },
+          }
+        : path === "/accounts"
+          ? { accounts: [] }
+          : { watchlist: [{ symbol: "BTCUSDT" }], subscriptions: [], runtime: { state: "stopped" }, decisions: [], positions: [], allow_unknown_macro: false },
+    );
+    show("analysis");
+    const panel = await screen.findByRole("region", { name: "Bonsai trading analysis and decision records" });
+    expect(within(panel).getByText(/Model status: STALE/)).toBeInTheDocument();
+    expect(within(panel).getByText("Identity unverified")).toBeInTheDocument();
+    expect(within(panel).queryByText("Ternary-Bonsai-2-27B-PTQ1_0.gguf")).not.toBeInTheDocument();
+  });
+  it("does not assign a runtime model to a decision without a persisted receipt", async () => {
+    window.sessionStorage.setItem("aima.trading-account", "paper_ui");
+    vi.mocked(apiClient.v2).mockImplementation(async (path: string) => {
+      if (path.startsWith("/workspace")) return {
+        watchlist: [{ symbol: "BTCUSDT" }], subscriptions: [], runtime: { state: "stopped" }, decisions: [], positions: [], allow_unknown_macro: false,
+        risk_cockpit: { model: { status: "READY", model_id: "Bonsai-2-27B-PTQ1_0", actual_model_id: "Ternary-Bonsai-2-27B-PTQ1_0.gguf", model_identity_source: "verified_manifest", available: true, model_available: true, checked_at: new Date().toISOString() } },
+      };
+      if (path.startsWith("/accounts")) return { accounts: [{ account_id: "paper_ui", mode: "PAPER", venue: "simulated" }] };
+      if (path.startsWith("/ai-analysis/dashboard")) return {
+        status: "AVAILABLE", scope: { account_id: "paper_ui" },
+        timeline: [{ cycle_id: "blocked-cycle", action: "SYSTEM_BLOCKED", status: "BLOCKED", reason: "MODEL_RESPONSE_INVALID", scheduled_at: "2030-01-02T12:00:00Z", details: { model: null, model_receipt: { model_id: "Bonsai-2-27B-PTQ1_0", actual_model_id: "Qwen3.5-9B.gguf", verified_manifest_model_id: "Qwen3.5-9B.gguf", model_identity_source: "completion_response" }, ai_analysis: null } }],
+      };
+      if (path.startsWith("/ai-analysis")) return {
+        account: { initial_capital_usdt: null, current_equity_usdt: null, net_pnl_usdt: null, total_roi_pct: null, margin_used_usdt: null, margin_available_usdt: null, win_rate_pct: 0, total_trades: 0, winning_trades: 0, losing_trades: 0, profit_factor: 0, max_drawdown_pct: null, avg_leverage: 0, leverage_range: "UNREPORTED" },
+        style_dna: { risk_temperament: "UNKNOWN", style_label: "UNKNOWN", discipline_score: null, avg_leverage: null, style_report: "UNKNOWN", best_strategy: "UNKNOWN", leverage_distribution: { conservative_5_25x: null, moderate_25_50x: null, aggressive_50_100x: null } },
+        strategy_matrix: [], trades: [],
+      };
+      return { watchlist: [{ symbol: "BTCUSDT" }], subscriptions: [], runtime: { state: "stopped" }, decisions: [], positions: [], allow_unknown_macro: false };
+    });
+    show("analysis");
+    const panel = await screen.findByRole("region", { name: "Bonsai trading analysis and decision records" });
+    expect(within(panel).getByText(/Target model: Bonsai-2-27B-PTQ1_0 · Model status: READY/)).toBeInTheDocument();
+    expect(within(panel).getByText(/SYSTEM_BLOCKED · BLOCKED/)).toBeInTheDocument();
+    expect(within(panel).getByText(/Latest decision · historical ledger/)).toBeInTheDocument();
+    expect(within(panel).getByText(/【Decision model not reported Market Thesis】/)).toBeInTheDocument();
+    expect(within(panel).queryByText(/Bonsai-2-27B-PTQ1_0 Market Thesis/)).not.toBeInTheDocument();
+  });
+  it("does not treat a configured Bonsai name as verified runtime identity", async () => {
+    vi.mocked(apiClient.v2).mockImplementation(async (path: string) =>
+      path.startsWith("/workspace")
+        ? {
+            watchlist: [{ symbol: "BTCUSDT" }], subscriptions: [], runtime: { state: "stopped" }, decisions: [], positions: [], allow_unknown_macro: false,
+            risk_cockpit: { model: { status: "READY", model_id: "Bonsai-2-27B-PTQ1_0", available: true, model_available: true, checked_at: new Date().toISOString() } },
+          }
+        : path === "/accounts"
+          ? { accounts: [] }
+          : { watchlist: [{ symbol: "BTCUSDT" }], subscriptions: [], runtime: { state: "stopped" }, decisions: [], positions: [], allow_unknown_macro: false },
+    );
+    show("analysis");
+    const panel = await screen.findByRole("region", { name: "Bonsai trading analysis and decision records" });
+    expect(within(panel).getByText(/Model status: IDENTITY_UNVERIFIED/)).toBeInTheDocument();
+    expect(within(panel).getByText("Identity unverified")).toBeInTheDocument();
+  });
+  it("keeps an incomplete account cockpit read-only and leaves missing facts unverified", async () => {
+    vi.mocked(apiClient.v2).mockImplementation(async (path: string) =>
+      path.startsWith("/workspace")
+        ? {
+            watchlist: [{ symbol: "BTCUSDT" }], subscriptions: [], runtime: { state: "stopped" }, decisions: [], positions: [], allow_unknown_macro: false,
+            risk_cockpit: { status: "AVAILABLE" },
+          }
+        : path === "/accounts"
+          ? { accounts: [] }
+          : { watchlist: [{ symbol: "BTCUSDT" }], subscriptions: [], runtime: { state: "stopped" }, decisions: [], positions: [], allow_unknown_macro: false },
+    );
+    show("gate-live");
+    const cockpit = await screen.findByRole("region", { name: "Account risk cockpit" });
+    expect(cockpit).toHaveTextContent("NOT SELECTED · NOT REPORTED");
+    expect(cockpit).toHaveTextContent("UNVERIFIED");
+    expect(cockpit).toHaveTextContent("READ-ONLY SNAPSHOT");
+    expect(cockpit).toHaveTextContent("No verified protection data");
+    expect(cockpit).toHaveTextContent("Risk guidance not reported.");
+    expect(cockpit).not.toHaveTextContent(/ACTIVE LINK|SYNCED|50,173\.00|2,508\.65|15,051\.88|All positions guarded|2% risk cap/);
+  });
+  it("hides local Gate TestNet ledger amounts when remote account truth is missing", async () => {
+    vi.mocked(apiClient.v2).mockImplementation(async (path: string) =>
+      path.startsWith("/workspace")
+        ? {
+            watchlist: [{ symbol: "BTCUSDT" }], subscriptions: [], runtime: { state: "stopped" }, decisions: [], positions: [], allow_unknown_macro: false,
+            risk_cockpit: {
+              status: "AVAILABLE", account_id: "gate_testnet", venue: "gate", mode: "TESTNET",
+              account_truth_authority: "REMOTE_GATE_TESTNET_PRIVATE_API",
+              account_truth: { status: "UNAVAILABLE", equity: null, available_margin: null, used_margin: null },
+              ledger_snapshot: { net_equity: "50173.00", cash: "2508.65", reserved_risk: "15051.88", role: "REMOTE_FACTS_AUDIT_CACHE_ONLY" },
+              capacity: { single_trade_risk_available: "12.34", portfolio_risk_available: "56.78", status: "UNKNOWN" },
+              reconciliation: { status: "SYNCED", last_reconciled_at: "2030-01-02T12:00:00Z" },
+            },
+          }
+        : path === "/accounts"
+          ? { accounts: [{ account_id: "gate_testnet", mode: "TESTNET", venue: "gate" }] }
+          : { watchlist: [{ symbol: "BTCUSDT" }], subscriptions: [], runtime: { state: "stopped" }, decisions: [], positions: [], allow_unknown_macro: false },
+    );
+    show("gate-live");
+    const cockpit = await screen.findByRole("region", { name: "Account risk cockpit" });
+    expect(cockpit).toHaveTextContent("Remote account unverified · local ledger is audit-only");
+    expect(cockpit).toHaveTextContent("--");
+    expect(cockpit).not.toHaveTextContent(/50,173\.00|2,508\.65|15,051\.88|12\.34 USDT|56\.78 USDT|SYNCED|2030-01-02T12:00:00Z/);
+  });
   it("discloses backend failures without simulated values",async()=>{
-    vi.mocked(apiClient.v2).mockRejectedValue(new Error("offline"));show();
+    vi.mocked(apiClient.v2).mockRejectedValue(new Error("offline"));
+    vi.mocked(apiClient.chartBars).mockRejectedValue(new Error("offline"));show();
     expect(await screen.findByRole("alert")).toHaveTextContent("Backend unavailable");
     expect(screen.getByText(/No stored bars yet/)).toBeInTheDocument();
   });
@@ -89,11 +302,26 @@ describe("V2 task workspace",()=>{
     };
     vi.mocked(apiClient.v2).mockImplementation(async (path: string) => {
       if (path.startsWith("/accounts")) return {accounts:[{account_id:"paper_ui",mode:"PAPER",venue:"simulated"}]};
+      if (path.startsWith("/ai-analysis/dashboard")) return {
+        status:"AVAILABLE",
+        scope:{account_id:"paper_ui"},
+        timeline:[{
+          cycle_id:"cycle-ui-1",
+          action:"OPEN_LONG",
+          status:"MODEL_DECISION",
+          reason:"Recorded model decision for the test fixture.",
+          scheduled_at:"2030-01-02T12:00:00Z",
+          details:{model_receipt:{model_id:"Bonsai-2-27B-PTQ1_0",actual_model_id:"Ternary-Bonsai-2-27B-PTQ1_0.gguf",verified_manifest_model_id:"Ternary-Bonsai-2-27B-PTQ1_0.gguf",model_identity_source:"completion_response"},action:"OPEN_LONG",status:"MODEL_DECISION"},
+        }],
+      };
       if (path.startsWith("/ai-analysis")) return analysis;
       if (path.startsWith("/workspace")) return {watchlist:[{symbol:"BTCUSDT"}],subscriptions:[],runtime:{state:"stopped"},decisions:[],positions:[],allow_unknown_macro:false};
       return {watchlist:[{symbol:"BTCUSDT"}],subscriptions:[],runtime:{state:"stopped"},decisions:[],positions:[],allow_unknown_macro:false};
     });
     show("analysis");
+    expect(await screen.findByText(/OPEN_LONG · MODEL_DECISION/)).toBeInTheDocument();
+    expect(screen.getByText(/Target model: Bonsai-2-27B-PTQ1_0/)).toBeInTheDocument();
+    expect(screen.getByText(/【Bonsai-2-27B-PTQ1_0 Market Thesis】/)).toBeInTheDocument();
     fireEvent.click(await screen.findByText(/Open compatibility tables and ledger details/));
     expect(await screen.findByText("fill-ui-1")).toBeInTheDocument();
     expect(screen.getByText("Position lifecycle")).toBeInTheDocument();

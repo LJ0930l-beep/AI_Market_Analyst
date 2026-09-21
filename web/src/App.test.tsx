@@ -30,7 +30,7 @@ describe("application shell", () => {
 
     const navigation = screen.getByRole("navigation", { name: "Primary navigation" });
     expect(within(navigation).getByRole("link", { name: "Strategies" })).toHaveAttribute("aria-current", "page");
-    expect(within(navigation).getAllByRole("link")).toHaveLength(8);
+    expect(within(navigation).getAllByRole("link")).toHaveLength(6);
     expect(screen.getByRole("main")).toHaveAttribute("id", "main-content");
     expect(screen.getByRole("link", { name: "Skip to content" })).toHaveAttribute("href", "#main-content");
     expect(await screen.findByRole("heading", { name: "Strategy library" })).toBeInTheDocument();
@@ -68,7 +68,7 @@ describe("application shell", () => {
     fireEvent.change(await screen.findByLabelText("Language"), { target: { value: "zh-CN" } });
 
     expect(await screen.findByRole("heading", { name: "预测" })).toBeInTheDocument();
-    expect(within(screen.getByRole("navigation", { name: "主导航" })).getByRole("link", { name: "自选与盯盘" })).toBeInTheDocument();
+    expect(within(screen.getByRole("navigation", { name: "主导航" })).getByRole("link", { name: "策略库" })).toBeInTheDocument();
     expect(screen.getByLabelText("语言")).toHaveValue("zh-CN");
     expect(window.localStorage.getItem("ai-market-analyst.language")).toBe("zh-CN");
   });

@@ -29,10 +29,14 @@ class _News:
 
 class _Model:
     def health(self, *, model_name=None):
-        return {"available": True, "model_available": True, "model_id": model_name, "weight_digest": "sha256:test"}
+        return {
+            "available": True, "model_available": True, "model_id": model_name,
+            "actual_model_id": r"D:\RJ\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+            "model_identity_source": "verified_manifest", "weight_digest": "sha256:test",
+        }
 
     def generate_json(self, messages, *, model_name, prompt_version, input_hash, temperature, schema):
-        assert model_name == "qwen3.5:9b"
+        assert model_name == "Bonsai-2-27B-PTQ1_0"
         assert "strategy" not in messages[1]["content"].lower()
         return (
             {
@@ -43,7 +47,14 @@ class _Model:
                 "symbol_analysis": [{"symbol": "BTCUSDT", "bias": "NEUTRAL", "summary": "range", "key_levels": [99, 101]}],
             },
             "{}",
-            {"model_id": model_name, "model_version": model_name, "latency_ms": 1.0, "schema_enforcement": "fixture", "parse_status": "valid"},
+            {
+                "model_id": model_name,
+                "model_version": r"D:\RJ\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                "actual_model_id": r"D:\RJ\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                "model_identity_source": "request_bound_to_verified_manifest",
+                "verified_manifest_model_id": r"D:\RJ\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                "latency_ms": 1.0, "schema_enforcement": "fixture", "parse_status": "valid",
+            },
         )
 
 
@@ -62,4 +73,19 @@ def test_qwen_market_scanner_persists_model_analysis_without_order_or_strategy(t
     assert scanner.history() == [result]
     with store._connect() as db:
         row = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='order_intents'").fetchone()
-        assert row is None
+    assert row is None
+
+
+def test_scanner_rejects_missing_or_non_bonsai_model_receipt(tmp_path):
+    class _UnverifiedModel(_Model):
+        def generate_json(self, *args, **kwargs):
+            answer, raw, _metadata = super().generate_json(*args, **kwargs)
+            return answer, raw, {"model_id": kwargs["model_name"], "model_version": kwargs["model_name"]}
+
+    store = SQLiteStore(tmp_path / "unverified-scanner.db")
+    store.initialize()
+    scanner = QwenMarketScanner(store, _UnverifiedModel(), market_provider=_Market(), news_provider=_News())
+    result = scanner.run_once(["BTCUSDT"])
+    assert result["status"] == "MODEL_CALL_FAILED"
+    assert result["payload"]["model_error"] == "ValueError"
+    assert "analysis" not in result["payload"]

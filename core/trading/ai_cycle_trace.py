@@ -54,6 +54,8 @@ def infer_block_stage(reason: Any, explicit: Any = None) -> str:
     code = str(reason or "").split(":", 1)[0].strip().upper()
     if code in {"AI_SESSION_NOT_ENABLED", "SESSION_NOT_EXECUTABLE", "AUTHORIZATION_REVOKED_BEFORE_EXECUTION"}:
         return "AUTHORIZATION"
+    if code.startswith("STRATEGY_"):
+        return "RISK"
     if code == "LIVE_EXECUTION_LOCKED":
         return "EXECUTION"
     if any(token in code for token in ("ACCOUNT", "REMOTE_ACCOUNT", "CREDENTIAL", "GATE_")):
@@ -86,14 +88,28 @@ def humanize_reason(reason: Any, *, stage: str | None = None) -> str:
     """Return a bounded UI sentence without exposing provider payloads."""
 
     code = str(reason or "UNKNOWN").split(":", 1)[0].strip().upper()
+    # A successful submit/ack reason is free-form prose, not an error code.
+    # Never render it through the "stage failed" fallback below, otherwise the
+    # UI reports a successful order as a blocked stage.
+    if code.startswith("AUTONOMOUS AI-LED ORDER"):
+        return "本轮已通过统一网关提交订单，等待远端回执与成交回读。"
     messages = {
         "AI_STRATEGY_PLAN_REQUIRED": "AI 未给出完整自拟策略，本轮不新增仓位。",
         "TECHNICAL_EVIDENCE_UNAVAILABLE": "已收盘 K 线不足或过期，等待有效技术面证据。",
-        "NEWS_EVIDENCE_UNAVAILABLE": "缺少当前标的有效新闻引用，本轮不新增仓位。",
+        "NEWS_EVIDENCE_UNAVAILABLE": "缺少新鲜的标的新闻或全市场风险背景，本轮不新增仓位。",
         "AI_ENTRY_CONDITION_NOT_MET": "当前价格不在 AI 入场区间内，等待下一轮重新评估。",
         "AI_NET_REWARD_RISK_TOO_LOW": "计入手续费和滑点后，盈亏比不足 2，本轮不新增仓位。",
         "AI_CONFIDENCE_BELOW_POLICY": "AI 置信分数未达到固定门槛，本轮不新增仓位。",
         "AI_ORDER_EXCEEDS_OBSERVED_DEPTH": "下单量超过已观测盘口深度，本轮不新增仓位。",
+        "STRATEGY_DIRECTION_OR_SYMBOL_BLOCKED": "本轮标的或方向不在账户策略允许范围内。",
+        "STRATEGY_LEVERAGE_EXCEEDED": "AI 请求的杠杆超过该账户策略上限。",
+        "STRATEGY_RISK_EXCEEDED": "AI 请求的止损风险超过该账户策略预算。",
+        "STRATEGY_MAX_POSITIONS": "当前持仓及待成交入场单已占满策略的持仓名额。",
+        "STRATEGY_REENTRY_COOLDOWN": "该标的仍在策略设定的重入冷却期内，防止追涨杀跌磨损。",
+        "THROTTLE_MIN_HOLD_ACTIVE": "持仓未达最小持仓时长且在噪音区间内，防止过早平仓磨损手续费。",
+        "THROTTLE_NOISE_CLOSE_BLOCKED": "持仓浮动盈亏仍在噪音震荡区间内，拦截过频平仓以防磨损。",
+        "EXECUTION_QUOTE_UNAVAILABLE": "模型已完成分析，但执行前无法取得有效新报价，本轮未发单。",
+        "EXECUTION_ACCOUNT_RECHECK_FAILED": "模型已完成分析，但执行前账户复核失败，本轮未发单。",
         "ACCOUNT_REQUIRED": "未选择可执行账户，本轮未读取账户事实，也未调用模型。",
         "AI_SESSION_NOT_ENABLED": "AI 会话未显式启动，本轮未调用模型。",
         "AUTHORIZATION_REQUIRED": "没有当前账户有效的 AI_LED 本地授权，本轮未调用模型。",
@@ -101,13 +117,24 @@ def humanize_reason(reason: Any, *, stage: str | None = None) -> str:
         "REMOTE_ACCOUNT_TRUTH_UNAVAILABLE": "Gate TestNet 账户事实不可用，无法核对权益/保证金，本轮未调用模型。",
         "GATE_CREDENTIALS_REQUIRED": "Gate TestNet 凭证未配置，无法读取远端账户事实。",
         "MARKET_DATA_UNAVAILABLE": "没有满足时效和可执行性要求的行情，本轮未调用模型。",
-        "SMART_MODEL_UNAVAILABLE": "Qwen3.5-9B 当前不可用，本轮未生成交易动作。",
+        "MARKET_UNIVERSE_UNAVAILABLE": "无法从 Gate 取得可交易合约候选池，本轮未调用模型。",
+        "SMART_MODEL_UNAVAILABLE": "Bonsai-2-27B 当前不可用，本轮未生成交易动作。",
+        "SMART_MODEL_NOT_INSTALLED": "Bonsai-2-27B 推理服务未就绪，本轮未生成交易动作。",
+        "VENUE_LEVERAGE_LIMIT_UNAVAILABLE": "Gate 未返回当前合约的杠杆上限，为避免猜测实际杠杆，本轮未提交开仓单。",
         "MODEL_TIMEOUT_DISCARDED": "模型推理超过本轮有效期，结果已丢弃。",
+        "AI_INPUT_BUDGET_EXCEEDED": "本轮市场上下文超过模型窗口，已在调用前安全拦截。",
         "CALIBRATION_NOT_READY": "校准证据尚未就绪，本轮未调用模型。",
         "INVALID_MODEL_OUTPUT_SCHEMA": "模型返回不符合严格动作契约，已拒绝执行。",
         "STALE_GENERATION_DISCARDED": "会话代次已变化，模型结果已丢弃。",
     }
-    return messages.get(code) or (f"{stage or infer_block_stage(code)} 阶段未通过：{str(reason)[:240]}")
+    if code in messages:
+        return messages[code]
+    # Only a genuine failure should be phrased as "stage failed".  A free-form
+    # reason that carries no recognisable error code is reported verbatim so a
+    # success message is never reworded into a block.
+    if not code.replace("_", "").isalnum() or " " in code:
+        return str(reason)[:240]
+    return f"{stage or infer_block_stage(code)} 阶段未通过：{str(reason)[:240]}"
 
 
 def _evidence(*values: Any) -> list[str]:
@@ -172,9 +199,9 @@ def build_stage_trace(
                 "KLINE_CONTEXT", "STRATEGY_SCAN", "AI_MODEL",
             }:
                 return "SKIPPED"
-            return "PASS" if status in {"EXECUTED", "REJECTED", "BLOCKED"} else "SKIPPED"
+            return "PASS" if status in {"EXECUTED", "SUBMITTED", "REJECTED", "BLOCKED"} else "SKIPPED"
         if stage == "EXECUTION":
-            if status == "EXECUTED":
+            if status in {"EXECUTED", "SUBMITTED"}:
                 return "PASS"
             if block_stage == "EXECUTION" or (status == "REJECTED" and result_reason):
                 return "FAILED"
@@ -183,6 +210,8 @@ def build_stage_trace(
             if status == "EXECUTED":
                 remote = execution_result or {}
                 return "PASS" if remote.get("reconciled", True) is not False else "FAILED"
+            if status == "SUBMITTED":
+                return "PENDING"
             return "SKIPPED"
         return "PASS"
 
@@ -206,8 +235,8 @@ def build_stage_trace(
         "MARKET_DATA": "使用满足时效约束的行情快照，不用模型输入反推可执行价格。",
         "NEWS_EVENTS": "记录新闻修订与事件状态；没有事件证据时保持 UNKNOWN。",
         "KLINE_CONTEXT": "保留 15m 信号与 1h 上下文的来源时间和指标快照。",
-        "STRATEGY_SCAN": "六策略只产生候选证据，不直接发单。",
-        "AI_MODEL": "仅允许真实 Qwen3.5-9B 返回严格 JSON 动作。",
+        "STRATEGY_SCAN": "使用账户交易指令，AI 自拟策略；固定风控独立执行。" if getattr(context, "decision_contract", None) == "ai_news_technical_v1" else "六策略只产生候选证据，不直接发单。",
+        "AI_MODEL": "仅允许真实 Bonsai-2-27B-PTQ1_0 返回严格 JSON 动作。",
         "RISK": "风控、授权、费用、滑点、保护计划在网关内复核。",
         "EXECUTION": "通过统一 ExecutionGateway；没有本地模拟成交冒充远端成交。",
         "RECONCILIATION": "以远端订单/成交/持仓回读作为 Gate TestNet 最终事实。",
@@ -225,6 +254,8 @@ def build_stage_trace(
             human_message = humanize_reason(result_reason, stage=stage)
         if stage_status == "SKIPPED":
             human_message = "因前置阶段未通过，本阶段未运行。"
+        if stage_status == "PENDING":
+            human_message = "订单已被交易所接收，等待远端成交与持仓回读。"
         trace.append(
             {
                 "stage": stage,

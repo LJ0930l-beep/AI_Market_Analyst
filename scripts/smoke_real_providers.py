@@ -15,7 +15,6 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -24,6 +23,8 @@ if str(ROOT) not in sys.path:
 from core.ai import OllamaProvider
 from core.analysis_service import AnalysisError, AnalysisService
 from core.instruments import instrument_for, phase1_universe
+from core.model_client import model_client
+from core.model_routing import DEFAULT_SMART_MODEL, bonsai_manifest_entry_matches
 from core.news_engine import RSSNewsProvider
 
 
@@ -63,68 +64,19 @@ def _nvidia_smi() -> dict[str, object]:
     return {"command": result, "gpus": rows}
 
 
-def _ollama_executable() -> str | None:
-    found = shutil.which("ollama")
-    if found:
-        return found
-    candidate = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"
-    return str(candidate) if candidate.exists() else None
-
-
-def _ollama_cli_env() -> dict[str, str]:
-    env = os.environ.copy()
-    host = env.get("OLLAMA_BASE_URL") or env.get("OLLAMA_HOST")
-    if host:
-        env["OLLAMA_HOST"] = host.removeprefix("http://").removeprefix("https://")
-    return env
-
-
-def _ollama_ps() -> dict[str, object]:
-    executable = _ollama_executable()
-    if not executable:
-        return {"available": False, "error": "ollama executable not found"}
-    return {"available": True, "result": _run_command([executable, "ps"], env=_ollama_cli_env(), timeout=5)}
-
-
-def _json_request(base_url: str, path: str, payload: dict[str, object] | None = None, timeout: float = 5.0) -> dict[str, object]:
-    body = json.dumps(payload).encode("utf-8") if payload is not None else None
-    request = Request(
-        f"{base_url.rstrip('/')}{path}",
-        data=body,
-        method="POST" if payload is not None else "GET",
-        headers={"Accept": "application/json", "Content-Type": "application/json"},
-    )
-    with urlopen(request, timeout=timeout) as response:
-        parsed = json.loads(response.read().decode("utf-8"))
-    if not isinstance(parsed, dict):
-        raise ValueError(f"Ollama {path} response must be an object")
-    return parsed
-
-
-def _ollama_inventory(base_url: str, model_name: str) -> dict[str, object]:
+def _bonsai_inventory(base_url: str, model_name: str) -> dict[str, object]:
     try:
-        tags = _json_request(base_url, "/api/tags", timeout=10)
-        models = tags.get("models", [])
-        selected = next((item for item in models if isinstance(item, dict) and item.get("name") == model_name), None)
-        show = _json_request(base_url, "/api/show", {"name": model_name}, timeout=10) if selected else None
-        details = (selected or {}).get("details", {}) if isinstance(selected, dict) else {}
-        if not isinstance(details, dict):
-            details = {}
-        model_info = (show or {}).get("details", {}) if isinstance(show, dict) else {}
-        if not isinstance(model_info, dict):
-            model_info = {}
+        if base_url.rstrip("/") != model_client.base_url or model_name != DEFAULT_SMART_MODEL:
+            return {"available": False, "model": model_name, "registered": False, "error": "Bonsai endpoint/model configuration mismatch"}
+        models = model_client.list_models(timeout=10)
+        matching = [item for item in models if bonsai_manifest_entry_matches(item, requested_model=model_name)]
+        selected = matching[0] if len(matching) == 1 else None
         return {
             "available": True,
             "model": model_name,
             "registered": selected is not None,
-            "tag": selected,
-            "show": show,
-            "size_bytes": selected.get("size") if isinstance(selected, dict) else None,
-            "size_gib": round(float(selected["size"]) / (1024**3), 3) if isinstance(selected, dict) and selected.get("size") else None,
-            "quantization_level": details.get("quantization_level") or model_info.get("quantization_level"),
-            "parameter_size": details.get("parameter_size") or model_info.get("parameter_size"),
-            "format": details.get("format") or model_info.get("format"),
-            "family": details.get("family") or model_info.get("family"),
+            "manifest_entry": selected,
+            "effective_context_length": (selected.get("meta") or {}).get("n_ctx") if selected and isinstance(selected.get("meta"), dict) else None,
         }
     except Exception as exc:  # pragma: no cover - network dependent
         return {"available": False, "model": model_name, "registered": False, "error": str(exc), "error_type": type(exc).__name__}
@@ -158,8 +110,7 @@ def hardware_snapshot(base_url: str) -> dict[str, object]:
         "logical_processors": os.cpu_count(),
         "ram_total_bytes": _memory_bytes(),
         "nvidia_smi": _nvidia_smi(),
-        "ollama_ps": _ollama_ps(),
-        "ollama_base_url": base_url,
+        "model_server_base_url": base_url,
     }
 
 
@@ -217,19 +168,19 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", default="data/phase2-real-smoke.json")
     parser.add_argument("--strict", action="store_true", help="return non-zero if any symbol cannot complete")
-    parser.add_argument("--require-model", action="store_true", help="also fail if Ollama/Qwen is unavailable")
+    parser.add_argument("--require-model", action="store_true", help="also fail if Bonsai-2-27B is unavailable")
     parser.add_argument("--require-schema-coverage", action="store_true", help="require observed LONG, SHORT, and WAIT outputs")
     args = parser.parse_args(argv)
     os.environ["MARKET_DATA_MODE"] = "real"
     os.environ.setdefault("NEWS_MODE", "real")
     os.environ["DISABLE_FIXTURE_FALLBACK"] = "1"
-    base_url = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
-    model_name = os.environ.get("OLLAMA_MODEL", "qwen3.5:4b")
+    base_url = model_client.base_url
+    model_name = DEFAULT_SMART_MODEL
     service = AnalysisService(news_provider=RSSNewsProvider(timeout=15, retries=1), llm_provider=OllamaProvider(base_url=base_url, model_name=model_name, timeout=180, retries=0))
     records: list[dict[str, object]] = []
     failures = 0
     health = service.llm_provider.health()  # type: ignore[union-attr]
-    inventory = _ollama_inventory(base_url, model_name)
+    inventory = _bonsai_inventory(base_url, model_name)
     sampler = RuntimeSampler(base_url)
     sampler.start()
     for instrument in phase1_universe():
@@ -271,7 +222,7 @@ def main(argv: list[str] | None = None) -> int:
     report = {
         "phase": 2,
         "mode": "real",
-        "ollama": {"health": health, "inventory": inventory, "ps_after": _ollama_ps()},
+        "model_server": {"health": health, "manifest_inventory": inventory, "residency": "NOT_EXPOSED_BY_BONSAI_API"},
         "hardware": hardware_snapshot(base_url),
         "runtime_samples": samples,
         "schema_coverage": schema_coverage,

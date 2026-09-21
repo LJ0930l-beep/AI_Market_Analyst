@@ -1,4 +1,4 @@
-"""4B news translation cache with provenance and numeric preservation."""
+"""Bonsai-backed news translation cache with provenance and numeric preservation."""
 
 from __future__ import annotations
 
@@ -12,10 +12,14 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping
 
 from .ai.ollama import OllamaProvider
-from .model_routing import DEFAULT_FAST_MODEL, ModelRoutingConfig
+from .model_routing import (
+    DEFAULT_FAST_MODEL,
+    ModelRoutingConfig,
+    is_bonsai_model_identity,
+    is_verified_bonsai_receipt,
+)
 from .providers.news import NewsEvent
 from .storage import SQLiteStore
-
 
 NEWS_TRANSLATION_PROMPT_VERSION = "news_translation_v1"
 NEWS_TRANSLATION_CONTRACT_VERSION = "localized_news_artifact_v1"
@@ -28,6 +32,9 @@ _NUMBER_RE = re.compile(
     re.IGNORECASE,
 )
 _TICKER_RE = re.compile(r"(?<![A-Za-z0-9])[A-Z][A-Z0-9]{1,11}(?:USDT|USD)?(?![A-Za-z0-9])")
+_NON_TICKER_HEADLINE_TOKENS = frozenset({
+    "ALERT", "BREAKING", "IN", "JUST", "LIVE", "NEW", "NEWS", "UPDATE", "URGENT", "WATCH",
+})
 _ENGLISH_MONTH_NUMBERS = {
     "jan": "1", "january": "1", "feb": "2", "february": "2",
     "mar": "3", "march": "3", "apr": "4", "april": "4",
@@ -65,6 +72,10 @@ def extract_numeric_tokens(value: object) -> tuple[str, ...]:
     for pattern in (_NUMBER_RE, _TICKER_RE):
         for match in pattern.finditer(text):
             if any(match.start() < end and match.end() > start for start, end in occupied):
+                continue
+            # Short all-caps editorial labels (especially "JUST IN") are common
+            # in news titles and must not be mistaken for exchange tickers.
+            if pattern is _TICKER_RE and match.group(0).upper() in _NON_TICKER_HEADLINE_TOKENS:
                 continue
             matches.append((match.start(), match.end(), match.group(0)))
             occupied.append((match.start(), match.end()))
@@ -289,7 +300,7 @@ def _event_fields(event: NewsEvent | Mapping[str, object]) -> tuple[str, str, st
 
 
 class NewsTranslationService:
-    """Cache one 4B translation per source hash and locale."""
+    """Cache one Bonsai translation per source hash and locale."""
 
     def __init__(self, *, store: SQLiteStore, llm_provider: object | None = None, fast_model: str | None = None) -> None:
         self.store = store
@@ -301,6 +312,29 @@ class NewsTranslationService:
         if not cached or str(cached[0].get("source_hash")) != expected_hash:
             return None
         row = cached[0]
+        evidence = row.get("evidence") if isinstance(row.get("evidence"), dict) else {}
+        model_metadata = evidence.get("model_metadata") if isinstance(evidence, dict) else None
+        model_id = str(row.get("model_id") or "")
+        status = str(row.get("status") or "")
+        # Older cache entries could be labelled Bonsai because an injected
+        # translator returned a plausible model_id. Never reuse those labels
+        # as successful production translations without an inference receipt.
+        cached_input_hash = model_metadata.get("input_hash") if isinstance(model_metadata, Mapping) else None
+        if (
+            model_id != DEFAULT_FAST_MODEL
+            or not is_verified_bonsai_receipt(model_metadata)
+            or model_metadata.get("prompt_version") != NEWS_TRANSLATION_PROMPT_VERSION
+            or not isinstance(cached_input_hash, str)
+            or re.fullmatch(r"[0-9a-f]{64}", cached_input_hash) is None
+            or model_metadata.get("parse_status") != "valid"
+        ):
+            return None
+        if status == "translated" and (
+            model_id != DEFAULT_FAST_MODEL
+            or not bool(row.get("numeric_guard_passed"))
+            or not row.get("translated_title_zh")
+        ):
+            return None
         try:
             translated_at = datetime.fromisoformat(str(row["translated_at"]).replace("Z", "+00:00"))
         except ValueError:
@@ -309,41 +343,65 @@ class NewsTranslationService:
             news_id=str(row["news_id"]), locale=str(row["locale"]), source_language=str(row["source_language"]),
             original_title=str(row["original_title"]), original_summary=row.get("original_summary"),
             translated_title_zh=row.get("translated_title_zh"), translated_summary_zh=row.get("translated_summary_zh"),
-            evidence=row.get("evidence") if isinstance(row.get("evidence"), dict) else {}, source_hash=str(row["source_hash"]),
+            evidence=evidence, source_hash=str(row["source_hash"]),
             model_id=str(row["model_id"]), prompt_version=str(row["prompt_version"]), translated_at=translated_at,
             numeric_guard_passed=bool(row.get("numeric_guard_passed")), status=str(row["status"]),
         )
 
-    def _call_fast_model(self, prompt: list[dict[str, str]], *, input_hash: str) -> tuple[dict[str, object], str | None, dict[str, object]]:
+    def _call_fast_model(
+        self,
+        prompt: list[dict[str, str]],
+        *,
+        input_hash: str,
+        prompt_version: str = NEWS_TRANSLATION_PROMPT_VERSION,
+        temperature: float | None = None,
+    ) -> tuple[dict[str, object], str, dict[str, object]]:
         if self.llm_provider is None:
-            raise RuntimeError("4B translation model is unavailable")
+            raise RuntimeError("Bonsai translation model is unavailable")
         provider = self.llm_provider
-        if isinstance(provider, OllamaProvider):
-            health = provider.health()
-            if isinstance(health, Mapping) and (health.get("available") is False or health.get("model_available") is False):
-                raise RuntimeError("4B translation model is unavailable")
-            models = health.get("models") if isinstance(health, dict) else None
-            if isinstance(models, list) and self.fast_model not in {str(item) for item in models}:
-                raise RuntimeError("4B translation model is unavailable")
-            return provider.generate_json(prompt, model_name=self.fast_model, prompt_version=NEWS_TRANSLATION_PROMPT_VERSION, input_hash=input_hash)
-        method = getattr(provider, "generate_json", None) or getattr(provider, "translate_news", None) or getattr(provider, "complete_json", None)
-        if not callable(method):
-            raise RuntimeError("4B translation provider has no structured JSON interface")
-        try:
-            result = method(prompt, model_name=self.fast_model, prompt_version=NEWS_TRANSLATION_PROMPT_VERSION, input_hash=input_hash)
-        except TypeError:
-            result = method(prompt)
-        if isinstance(result, tuple):
-            payload = result[0]
-            raw = str(result[1]) if len(result) > 1 and result[1] is not None else None
-            metadata = dict(result[2]) if len(result) > 2 and isinstance(result[2], Mapping) else {}
-        else:
-            payload, raw, metadata = result, None, {}
+        if type(provider) is not OllamaProvider or self.fast_model != DEFAULT_FAST_MODEL:
+            raise RuntimeError("Bonsai translation requires the pinned OllamaProvider route")
+        health = provider.health(model_name=DEFAULT_FAST_MODEL)
+        models = health.get("models") if isinstance(health, Mapping) else None
+        manifest_matches = isinstance(models, list) and any(is_bonsai_model_identity(item) for item in models)
+        health_confirms_bonsai = (
+            isinstance(health, Mapping)
+            and health.get("available") is True
+            and health.get("model_available") is True
+            and health.get("model_id") == DEFAULT_FAST_MODEL
+            and health.get("model_identity_source") == "verified_manifest"
+            and is_bonsai_model_identity(health.get("actual_model_id"))
+            and manifest_matches
+        )
+        if not health_confirms_bonsai:
+            raise RuntimeError("Bonsai translation model is unavailable")
+        call_options: dict[str, object] = {
+            "model_name": DEFAULT_FAST_MODEL,
+            "prompt_version": prompt_version,
+            "input_hash": input_hash,
+        }
+        if temperature is not None:
+            call_options["temperature"] = temperature
+        result = provider.generate_json(prompt, **call_options)
+        if not isinstance(result, tuple) or len(result) != 3:
+            raise RuntimeError("Bonsai translation inference receipt is missing")
+        payload, raw_value, raw_metadata = result
+        raw = str(raw_value) if raw_value is not None else ""
+        if not isinstance(raw_metadata, Mapping):
+            raise RuntimeError("Bonsai translation inference receipt is invalid")
+        metadata = dict(raw_metadata)
         if isinstance(payload, str):
             raw = payload
             payload = json.loads(payload)
         if not isinstance(payload, dict):
-            raise RuntimeError("4B translation output is not a JSON object")
+            raise RuntimeError("Bonsai translation output is not a JSON object")
+        if (
+            not is_verified_bonsai_receipt(metadata)
+            or metadata.get("prompt_version") != prompt_version
+            or metadata.get("input_hash") != input_hash
+            or metadata.get("parse_status") != "valid"
+        ):
+            raise RuntimeError("Bonsai translation inference receipt is invalid")
         return payload, raw, metadata
 
     def translate(self, event: NewsEvent | Mapping[str, object], *, locale: str = "zh-CN") -> LocalizedNewsArtifact:
@@ -373,7 +431,7 @@ class NewsTranslationService:
             "numeric_tokens": list(extract_numeric_tokens(original)),
             "structured_values": structured_values,
         }
-        model_id = self.fast_model
+        model_id = "UNVERIFIED"
         translated_title: str | None = None
         translated_summary: str | None = None
         status = "failed"
@@ -392,14 +450,29 @@ class NewsTranslationService:
             ]
             input_hash = hashlib.sha256(json.dumps(prompt, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
             payload, _raw, metadata = self._call_fast_model(prompt, input_hash=input_hash)
+            model_id = str(metadata["model_id"])
             translated_title = sanitize_untrusted_text(payload.get("title_zh") or payload.get("title"), max_chars=500)
             translated_summary = sanitize_untrusted_text(payload.get("summary_zh") or payload.get("summary"), max_chars=2000) or None
             if not translated_title:
-                raise RuntimeError("4B translation omitted title_zh")
+                raise RuntimeError("Bonsai translation omitted title_zh")
             guard = numeric_guard(original, "\n".join(part for part in (translated_title, translated_summary or "") if part))
             evidence["numeric_guard"] = guard.to_dict()
             evidence["translation"] = {"title_zh": translated_title, "summary_zh": translated_summary}
-            evidence["model_metadata"] = {key: metadata.get(key) for key in ("model_id", "model_version", "prompt_version", "input_hash", "latency_ms") if metadata.get(key) is not None}
+            evidence["model_metadata"] = {
+                key: metadata.get(key)
+                for key in (
+                    "model_id",
+                    "model_version",
+                    "actual_model_id",
+                    "model_identity_source",
+                    "verified_manifest_model_id",
+                    "prompt_version",
+                    "input_hash",
+                    "latency_ms",
+                    "parse_status",
+                )
+                if metadata.get(key) is not None
+            }
             status = "translated" if guard.passed else "failed_numeric_guard"
         except Exception as exc:
             evidence["error_code"] = "MODEL_UNAVAILABLE" if "unavailable" in str(exc).lower() else "TRANSLATION_FAILED"

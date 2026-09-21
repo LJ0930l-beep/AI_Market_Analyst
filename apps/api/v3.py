@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
+import math
 import sqlite3
 from typing import Any
 
@@ -23,8 +24,6 @@ from core.security.local_guard import validate_local_request
 from core.trading.institutional_risk import (
     build_exposure_snapshots,
     cluster_pressure,
-    compute_tca,
-    estimate_paper_capacity,
 )
 from core.trading.ledger import AccountLedger
 from core.trading.risk_engine import RiskEngine
@@ -601,8 +600,85 @@ def router_for(get_store):
         positions = projection.get("positions") or []
         exposures = build_exposure_snapshots(positions)
         equity = risk.get("net_equity")
+        if scope["mode"] == "TESTNET" and scope["venue"] == "gate":
+            try:
+                from core.trading.gate_account_truth import GateAccountTruthService
+                truth = GateAccountTruthService(store).latest(account_id)
+            except Exception:
+                truth = None
+            def remote_number(key: str) -> float | None:
+                value = truth.get(key) if truth else None
+                if value is None or isinstance(value, bool):
+                    return None
+                try:
+                    parsed = float(value)
+                except (TypeError, ValueError):
+                    return None
+                return parsed if math.isfinite(parsed) else None
+
+            remote_equity = remote_number("equity")
+            remote_available_margin = remote_number("available_margin")
+            remote_used_margin = remote_number("used_margin")
+            remote_available = bool(
+                truth
+                and str(truth.get("status") or "").upper() == "AVAILABLE"
+                and remote_equity is not None
+                and remote_available_margin is not None
+                and remote_used_margin is not None
+            )
+            if remote_available:
+                equity = remote_equity
+            else:
+                # The local ledger may contain a seeded or historical mirror;
+                # it is not Gate TestNet account equity.
+                equity = None
+                risk = dict(risk)
+                for key in (
+                    "net_equity",
+                    "max_portfolio_risk_budget",
+                    "cash",
+                    "allocated_margin",
+                    "reserved_risk",
+                    "max_portfolio_risk",
+                    "daily_loss",
+                    "daily_loss_limit",
+                ):
+                    risk[key] = None
+                risk["account_truth_status"] = "UNAVAILABLE"
+            if remote_available and equity is not None:
+                risk = dict(risk)
+                risk["net_equity"] = equity
+                risk["cash"] = str(remote_available_margin)
+                risk["allocated_margin"] = str(remote_used_margin)
+                risk["account_truth_status"] = "AVAILABLE"
         pressure = cluster_pressure(exposures, equity=equity, max_fraction=risk.get("risk_limits", {}).get("max_cluster_risk", "0.005"))
-        return {"account_id": account_id, "mode": scope["mode"], "venue": scope["venue"], "risk": risk, "exposures": [item.to_dict() for item in exposures], "cluster_pressure": pressure, "correlation_status": "UNKNOWN_CONSERVATIVE_FALLBACK", "capacity": estimate_paper_capacity(None, price=1), "tca": compute_tca(arrival_price=None, side="UNKNOWN", fills=[]).to_dict(), "read_only": True}
+        cap_val = {
+            "status": "UNKNOWN",
+            "capacity_quantity": None,
+            "reason": "ORDERBOOK_DEPTH_NOT_REPORTED",
+        }
+        tca_val = {
+            "status": "UNKNOWN",
+            "filled_quantity": None,
+            "notional": None,
+            "average_fill_price": None,
+            "implementation_shortfall": None,
+            "fees": None,
+            "slippage_cost": None,
+            "reason": "ARRIVAL_PRICE_AND_SCOPED_FILLS_NOT_REPORTED",
+        }
+        return {
+            "account_id": account_id,
+            "mode": scope["mode"],
+            "venue": scope["venue"],
+            "risk": risk,
+            "exposures": [item.to_dict() for item in exposures],
+            "cluster_pressure": pressure,
+            "correlation_status": "UNKNOWN",
+            "capacity": cap_val,
+            "tca": tca_val,
+            "read_only": True,
+        }
 
     @router.get("/ai/evidence")
     def ai_evidence(account_id: str, bundle_id: str | None = None, store=Depends(get_store)) -> dict[str, Any]:

@@ -1,22 +1,25 @@
 from datetime import datetime, timedelta, timezone
+
 import pytest
+
 from core.agent_execution import (
     AgentDecisionService,
     MacroGuard,
     SimulationEngine,
     risk_plan,
 )
+from core.instruments import instrument_for
+from core.model_routing import DEFAULT_MODEL
+from core.providers.base import Bar
 from core.quant.strategies import (
-    EMATrend,
     BollingerSqueeze,
-    LiquiditySweep,
+    EMATrend,
     FundingExtreme,
+    LiquiditySweep,
     TradeProposal,
 )
-from core.providers.base import Bar
 from core.storage import SQLiteStore
 from core.trading.ledger import AccountLedger
-from core.instruments import instrument_for
 
 NOW = datetime.now(timezone.utc)
 MARKET = {
@@ -51,6 +54,28 @@ def store(tmp_path):
     s = SQLiteStore(tmp_path / "v2.db")
     s.initialize()
     return s
+
+
+def bonsai_provider(monkeypatch, payload):
+    """Exercise the real Bonsai adapter while stubbing only its network call."""
+    from core.ai.ollama import OllamaProvider, model_client
+
+    artifact = r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"
+    provider = OllamaProvider(base_url=model_client.base_url, model_name=DEFAULT_MODEL)
+    monkeypatch.setattr(
+        provider,
+        "health",
+        lambda **_kwargs: {
+            "available": True,
+            "model_available": True,
+            "model_id": DEFAULT_MODEL,
+            "actual_model_id": artifact,
+            "model_identity_source": "verified_manifest",
+        },
+    )
+    monkeypatch.setattr(model_client, "structured_analysis", lambda *_args, **_kwargs: payload)
+    model_client._response_state.model = None
+    return provider
 
 
 def test_subscription_default_delete_and_migration(store):
@@ -128,18 +153,52 @@ def test_macro_expiry_missing_and_direction():
 
 def test_model_invalid_unavailable_and_deduplication(store):
     class Invalid:
+        calls = 0
+
         def generate_json(self, *_, **__):
+            self.calls += 1
             return {"decision": "EXECUTE_TRADE"}
 
-    service = AgentDecisionService(store, Invalid())
+    injected = Invalid()
+    service = AgentDecisionService(store, injected)
     assert (
         service.decide(proposal(), MARKET, {"freshness": "fresh"}, now=NOW)["reason"]
-        == "INVALID_MODEL_JSON"
+        == "MODEL_PROVIDER_NOT_TRUSTED"
     )
+    assert injected.calls == 0
     assert (
         service.decide(proposal(), MARKET, {"freshness": "fresh"}, now=NOW)["status"]
         == "DUPLICATE"
     )
+    assert not store.v2_records("simulated_positions")
+
+
+def test_forged_bonsai_receipt_from_injected_provider_is_never_called(store):
+    class ForgedBonsai:
+        calls = 0
+
+        def generate_json(self, *_args, **_kwargs):
+            self.calls += 1
+            return (
+                {"decision": "EXECUTE_TRADE", "summary": "forged", "counterevidence": []},
+                '{"decision":"EXECUTE_TRADE","summary":"forged","counterevidence":[]}',
+                {
+                    "model_id": DEFAULT_MODEL,
+                    "actual_model_id": DEFAULT_MODEL,
+                    "model_identity_source": "completion_response",
+                    "verified_manifest_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                    "prompt_version": "agent_v2",
+                    "input_hash": "a" * 64,
+                    "parse_status": "valid",
+                },
+            )
+
+    model = ForgedBonsai()
+    service = AgentDecisionService(store, model)
+    result = service.decide(proposal(), MARKET, {"freshness": "fresh"}, now=NOW)
+    assert result["status"] == "BLOCKED"
+    assert result["reason"] == "MODEL_PROVIDER_NOT_TRUSTED"
+    assert model.calls == 0
     assert not store.v2_records("simulated_positions")
 
 
@@ -200,18 +259,16 @@ def test_liquidity_positive_and_missing_confirmation():
     )
 
 
-def test_simulation_approved_model_permission_and_revocation(store):
-    class Approve:
-        def generate_json(self, *_, **__):
-            return {
-                "decision": "EXECUTE_TRADE",
-                "summary": "Unit-test-only approval",
-                "counterevidence": [],
-            }
-
+def test_simulation_approved_model_permission_and_revocation(store, monkeypatch):
+    answer = {
+        "decision": "EXECUTE_TRADE",
+        "summary": "Unit-test-only approval",
+        "counterevidence": [],
+    }
+    model = bonsai_provider(monkeypatch, answer)
     store.upsert_app_setting("simulation.allow_unknown_macro", True)
     AccountLedger(store).create_account("default", mode="PAPER", initial_deposit=10000.0)
-    service = AgentDecisionService(store, Approve())
+    service = AgentDecisionService(store, model)
     approved_proposal = proposal().to_dict()
     approved_proposal["account_id"] = "default"
     approved_proposal["venue"] = "simulated"
@@ -229,8 +286,8 @@ def test_simulation_approved_model_permission_and_revocation(store):
 
 
 def test_runtime_default_no_scan_and_subscription_membership(store):
-    from core.strategy_monitoring import StrategyMonitoringService
     from core.monitoring_runtime import MonitoringRuntime
+    from core.strategy_monitoring import StrategyMonitoringService
 
     service = StrategyMonitoringService(store=store, llm_provider=None)
     runtime = MonitoringRuntime(store=store, service=service)
@@ -242,3 +299,17 @@ def test_runtime_default_no_scan_and_subscription_membership(store):
     assert runtime._enabled_symbols() == ("BTCUSDT",)
     store.delete_watchlist_entry("BTCUSDT")
     assert runtime._enabled_symbols() == ()
+
+
+def test_strategy_monitoring_rejects_injected_model_adapter(store):
+    from core.strategy_monitoring import StrategyMonitoringService
+
+    class ForgedBonsai:
+        def generate_json(self, *_args, **_kwargs):
+            raise AssertionError("untrusted provider must not be retained or invoked")
+
+    service = StrategyMonitoringService(store=store, llm_provider=ForgedBonsai())
+    assert service.strategy_model_route_status == "REJECTED_UNTRUSTED_PROVIDER"
+    assert service.smart.llm_provider is None
+    assert service.agent.model is None
+    assert service.agent.model_trust_error == "MODEL_PROVIDER_NOT_TRUSTED"

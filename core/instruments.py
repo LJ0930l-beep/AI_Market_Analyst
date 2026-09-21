@@ -45,6 +45,92 @@ def canonical_instrument_key(
     return ":".join(values)
 
 
+# The trading path must evaluate exactly one bar identity.
+#
+# Gate persists the same 15m bar under several identities: the traded price
+# (``last``), the mark price (``mark``) and the index price (``index``).  A
+# pre-v3 mirror in the ``market_bars`` table adds a ``legacy`` identity on top.
+# A read that omits the identity filters therefore returns two or three rows
+# for one timestamp.
+#
+# That is not a cosmetic duplication.  ``core/quant/strategies.py`` rejects any
+# series whose timestamps repeat, so an unfiltered read silently degenerates
+# into a permanent ``WARMING_UP`` and no strategy candidate is ever produced --
+# which in turn starves the AI cycle of anything to open.
+#
+# ``last`` is the traded-price series.  It is the only one that carries real
+# volume, and it is what the autonomous strategy and the market radar already
+# read, so pinning every trading reader to it keeps the whole path consistent.
+TRADING_BAR_VENUE = "gate"
+TRADING_BAR_MARKET_TYPE = "perpetual"
+TRADING_BAR_PRICE_TYPE = "last"
+
+
+def trading_bar_filters() -> dict[str, str]:
+    """Identity filters restricting a bar read to the traded-price series."""
+
+    return {
+        "venue": TRADING_BAR_VENUE,
+        "market_type": TRADING_BAR_MARKET_TYPE,
+        "price_type": TRADING_BAR_PRICE_TYPE,
+    }
+
+
+def _dominant_identity_rows(rows: list[dict]) -> list[dict]:
+    """Collapse a mixed read down to the single best-populated identity.
+
+    Interleaving identities is what produced duplicate ``bar_start`` values and
+    pinned every strategy at ``WARMING_UP``.  Keeping exactly one keeps the
+    series unambiguous; which one wins matters less than not mixing them, and
+    callers only reach this path when the Gate series is absent entirely.
+    """
+
+    if not rows:
+        return []
+    counts: dict[str, int] = {}
+    for row in rows:
+        key = str(row.get("instrument_key") or "")
+        counts[key] = counts.get(key, 0) + 1
+    if len(counts) <= 1:
+        return rows
+    dominant = max(counts, key=lambda key: (counts[key], key))
+    return [row for row in rows if str(row.get("instrument_key") or "") == dominant]
+
+
+def read_trading_bars(store: object, symbol: str, timeframe: str, *, limit: int) -> list[dict]:
+    """Read one symbol/timeframe as a single, unambiguous bar identity.
+
+    The Gate ``last`` series is preferred because it is the traded price with
+    real volume.  Paper and simulated accounts have no Gate writer at all --
+    ``upsert_market_bars`` without explicit identity arguments stores
+    everything under ``legacy:unknown:<symbol>:UNKNOWN:last`` -- so when the
+    Gate series is empty the read collapses to the single best-populated
+    identity instead of returning nothing.  A plain unfiltered read is *not*
+    an acceptable fallback: it interleaves identities and re-creates the
+    duplicate-timestamp bug this function exists to prevent.
+
+    Stores that predate the identity filters -- and minimal read-only test
+    doubles that only implement ``list_market_bars(symbol, timeframe, limit=)``
+    -- cannot accept the keyword filters, so that compatibility case is
+    resolved here once rather than at every call site.
+    """
+
+    reader = getattr(store, "list_market_bars", None)
+    if not callable(reader):
+        return []
+    try:
+        rows = list(reader(symbol, timeframe, limit=limit, **trading_bar_filters()))
+    except TypeError:
+        return _dominant_identity_rows(list(reader(symbol, timeframe, limit=limit)))
+    if rows:
+        return rows
+    try:
+        fallback = list(reader(symbol, timeframe, limit=limit))
+    except TypeError:
+        return []
+    return _dominant_identity_rows(fallback)
+
+
 class AssetType(StrEnum):
     EQUITY = "equity"
     CRYPTO = "crypto"
@@ -214,6 +300,21 @@ def instrument_for(symbol: str) -> Instrument:
             sector=sector,
         )
     raise ValueError(f"unsupported Phase 1 instrument: {symbol!r}")
+
+
+def market_type_for_symbol(symbol: str) -> str:
+    """Return the ``supported_markets`` token for a watchlist symbol.
+
+    Symbols outside the Phase 1 map (for example a freshly added crypto pair)
+    are treated as crypto.  The trading path only routes Gate perpetuals, so
+    defaulting to crypto refuses the equity-only strategies instead of
+    silently subscribing them to a market whose rules they cannot evaluate.
+    """
+
+    try:
+        return instrument_for(symbol).asset_type.value
+    except ValueError:
+        return AssetType.CRYPTO.value
 
 
 def _candidate_error(message: str) -> CandidateParseError:

@@ -1,8 +1,8 @@
 """Run a disposable, real-provider V1.2.1 smoke against the packaged sidecar.
 
 This probe deliberately records capability failures instead of replacing live
-responses with fixtures.  It owns only the child process it starts and never
-stops Ollama or another unrelated process.
+responses with fixtures. It owns only the child process it starts and never
+stops the local model service or another unrelated process.
 """
 
 from __future__ import annotations
@@ -21,6 +21,8 @@ from time import perf_counter
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from core.model_routing import is_bonsai_model_identity
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BINARY = REPO_ROOT / "src-tauri" / "binaries" / "ai-market-analyst-backend-x86_64-pc-windows-msvc.exe"
@@ -30,6 +32,25 @@ SYMBOLS = ("BTCUSDT", "ETHUSDT", "SOLUSDT")
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _is_valid_smart_analysis(row: object) -> bool:
+    return (
+        isinstance(row, dict)
+        and is_bonsai_model_identity(row.get("model_id"))
+        and row.get("validator_status") == "VALID"
+    )
+
+
+def _is_verified_bonsai_health(health: object) -> bool:
+    return (
+        isinstance(health, dict)
+        and health.get("available") is True
+        and health.get("model_available") is True
+        and is_bonsai_model_identity(health.get("model_id"))
+        and is_bonsai_model_identity(health.get("actual_model_id"))
+        and health.get("model_identity_source") == "verified_manifest"
+    )
 
 
 def _request(base_url: str, path: str, *, method: str = "GET", payload: object | None = None, timeout: float = 15.0) -> dict[str, object]:
@@ -101,7 +122,7 @@ def _endpoint_summary(result: dict[str, object], *, fields: tuple[str, ...] = ()
 
 
 def _model_smoke() -> dict[str, object]:
-    requested_model = "qwen3.5:9b"
+    requested_model = "Bonsai-2-27B-PTQ1_0"
     result: dict[str, object] = {"requested_model": requested_model, "checked_at": _utc_now()}
     try:
         from core.ai.ollama import OllamaProvider
@@ -111,10 +132,10 @@ def _model_smoke() -> dict[str, object]:
         result["health"] = {
             key: value
             for key, value in health.items()
-            if key in {"provider", "available", "model_id", "model_available", "models", "context_length", "quantization", "think", "error_code"}
+            if key in {"provider", "available", "model_id", "actual_model_id", "model_identity_source", "model_available", "models", "context_length", "quantization", "think", "error_code"}
         }
-        if health.get("available") is not True or health.get("model_available") is not True:
-            result["status"] = "unavailable"
+        if not _is_verified_bonsai_health(health):
+            result["status"] = "identity_unverified" if health.get("available") is True else "unavailable"
             return result
         messages = [
             {"role": "system", "content": "Return one small JSON object only. This is a local model connectivity smoke probe, not a trading request."},
@@ -130,17 +151,23 @@ def _model_smoke() -> dict[str, object]:
             messages,
             model_name=requested_model,
             prompt_version="v12_live_smoke_v1",
-            input_hash="v12-live-smoke-qwen3.5-9b",
+            input_hash="v12-live-smoke-Bonsai-2-27B-PTQ1_0",
+        )
+        receipt_verified = (
+            metadata.get("model_id") == requested_model
+            and is_bonsai_model_identity(metadata.get("actual_model_id") or metadata.get("model_version"))
+            and metadata.get("model_identity_source") in {"completion_response", "request_bound_to_verified_manifest"}
         )
         result.update(
             {
-                "status": "passed",
+                "status": "passed" if receipt_verified and isinstance(parsed, dict) else "identity_unverified" if not receipt_verified else "invalid_json",
                 "structured_json": isinstance(parsed, dict),
-                "returned_keys": sorted(str(key) for key in parsed),
-                "metadata": {key: metadata.get(key) for key in ("model_id", "model_version", "prompt_version", "latency_ms", "parse_status", "output_chars")},
+                "returned_keys": sorted(str(key) for key in parsed) if isinstance(parsed, dict) else [],
+                "receipt_verified": receipt_verified,
+                "metadata": {key: metadata.get(key) for key in ("model_id", "model_version", "actual_model_id", "model_identity_source", "prompt_version", "latency_ms", "parse_status", "output_chars")},
             }
         )
-    except Exception as exc:  # pragma: no cover - depends on the local Ollama runtime
+    except Exception as exc:  # pragma: no cover - depends on the local Bonsai runtime
         result["status"] = "failed"
         result["error"] = type(exc).__name__
         result["error_code"] = str(getattr(exc, "code", "MODEL_SMOKE_FAILED"))
@@ -362,10 +389,7 @@ def _monitoring_smoke(base_url: str) -> dict[str, object]:
         for row in analysis_rows[:20]
         if isinstance(row, dict)
     ]
-    result["smart_analysis_saved"] = any(
-        isinstance(row, dict) and str(row.get("model_id", "")).endswith(":9b") and row.get("validator_status") == "VALID"
-        for row in analysis_rows
-    )
+    result["smart_analysis_saved"] = any(_is_valid_smart_analysis(row) for row in analysis_rows)
     repeat = _request(base_url, "/monitoring/run", method="POST", payload={"symbols": list(SYMBOLS)}, timeout=240.0)
     result["repeat_run"] = _endpoint_summary(repeat, fields=("contract_version", "status", "as_of", "resource"))
     repeat_payload = _payload(repeat)
@@ -393,10 +417,9 @@ def run(binary: Path, output: Path, *, port: int) -> int:
             "ALLOW_FIXTURE_FALLBACK": "0",
             "MARKET_DATA_MODE": "real",
             "NEWS_MODE": "real",
-            "LLM_MODE": "ollama",
-            "FAST_MODEL": "qwen3.5:4b",
-            "SMART_MODEL": "qwen3.5:9b",
-            "OLLAMA_MODEL": "qwen3.5:4b",
+            "LLM_MODE": "bonsai",
+            "FAST_MODEL": "Bonsai-2-27B-PTQ1_0",
+            "SMART_MODEL": "Bonsai-2-27B-PTQ1_0",
         }
     )
     process: subprocess.Popen[bytes] | None = None

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -14,6 +15,7 @@ from core.market_intelligence import build_market_intelligence
 from core.monitoring import MonitoringPolicy
 from core.monitoring_runtime import MonitoringRuntime
 from core.storage import SQLiteStore
+from core.trading.ledger import AccountLedger
 
 
 POINT = datetime(2030, 1, 2, 12, 0, tzinfo=timezone.utc)
@@ -53,6 +55,28 @@ class _IdlePublicStream:
 
     def stop(self) -> None:
         self._stop = True
+
+
+class _RecordingAICoordinator:
+    def __init__(self) -> None:
+        self.started_accounts: list[str | None] = []
+
+    def start(self, *, account_id=None):
+        self.started_accounts.append(account_id)
+        return self.status()
+
+    def pause(self):
+        return self.status()
+
+    def stop(self):
+        return self.status()
+
+    def status(self):
+        return {
+            "state": "RUNNING" if self.started_accounts else "STOPPED",
+            "enabled": bool(self.started_accounts),
+            "account_id": self.started_accounts[-1] if self.started_accounts else None,
+        }
 
 
 def _seed_enabled_policy(store: SQLiteStore) -> None:
@@ -194,6 +218,63 @@ def test_monitoring_startup_is_off_without_resume_authorization_and_resumes_only
         assert on_store.get_scheduler_state("monitoring_runtime") is not None
 
 
+def test_ai_start_persists_account_and_restart_restores_same_account(tmp_path: Path) -> None:
+    path = tmp_path / "ai-account-resume.sqlite3"
+    store = SQLiteStore(path)
+    store.initialize()
+    AccountLedger(store).create_account(
+        "gate_testnet",
+        mode="TESTNET",
+        initial_deposit=Decimal("10000"),
+        config={"venue": "gate"},
+    )
+    _seed_enabled_policy(store)
+
+    runtime = MonitoringRuntime(
+        store=store,
+        service=_RuntimeService(),
+        stream_factory=_IdlePublicStream,
+        poll_interval_seconds=30,
+    )
+    first_coordinator = _RecordingAICoordinator()
+    runtime.ai_coordinator = first_coordinator  # type: ignore[assignment]
+    app = create_app(
+        store=store,
+        llm_provider=None,
+        monitoring_service=runtime.service,
+        monitoring_runtime=runtime,
+        market_hydration_enabled=False,
+    )
+    with TestClient(app) as client:
+        started = client.post("/v2/ai-session/start", params={"account_id": "gate_testnet"})
+        assert started.status_code == 200
+        assert first_coordinator.started_accounts == ["gate_testnet"]
+        assert store.get_app_setting("monitoring.resume")["value"] is True
+        assert store.get_app_setting("ai.autonomous_resume")["value"] is True
+        assert store.get_app_setting("ai.autonomous_account_id")["value"] == "gate_testnet"
+
+    restored_store = SQLiteStore(path)
+    restored_store.initialize()
+    restored_runtime = MonitoringRuntime(
+        store=restored_store,
+        service=_RuntimeService(),
+        stream_factory=_IdlePublicStream,
+        poll_interval_seconds=30,
+    )
+    restored_coordinator = _RecordingAICoordinator()
+    restored_runtime.ai_coordinator = restored_coordinator  # type: ignore[assignment]
+    restored_app = create_app(
+        store=restored_store,
+        llm_provider=None,
+        monitoring_service=restored_runtime.service,
+        monitoring_runtime=restored_runtime,
+        market_hydration_enabled=False,
+    )
+    with TestClient(restored_app):
+        _wait_until(lambda: restored_coordinator.started_accounts == ["gate_testnet"])
+        assert restored_runtime.status()["account_id"] == "gate_testnet"
+
+
 def test_health_contract_reports_desktop_identity_only_with_the_ownership_token(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AIMA_INSTANCE_ID", "test-instance")
     monkeypatch.setenv("AIMA_OWNERSHIP_TOKEN", "test-token")
@@ -229,6 +310,7 @@ def test_v121_build_and_capability_contract_is_dynamic_and_webview_cannot_spawn(
     assert "backend health contract or ownership identity mismatch" in rust
     assert "foreign listeners were not touched" in rust
     assert '"--host".to_string()' in rust and '"--port".to_string()' in rust
+    assert '"--owner-pid".to_string()' in rust
     assert not any(
         permission == "shell:allow-spawn"
         or (isinstance(permission, dict) and permission.get("identifier") == "shell:allow-spawn")

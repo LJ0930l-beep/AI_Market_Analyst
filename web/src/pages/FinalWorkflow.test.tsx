@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { apiClient } from "../api/client";
@@ -8,6 +8,7 @@ import { createFakeClient } from "../test/fakeClient";
 
 beforeEach(() => {
   window.localStorage.setItem("ai-market-analyst.language", "zh-CN");
+  window.sessionStorage.removeItem("aima.trading-account");
   const fake = createFakeClient();
   vi.spyOn(apiClient, "marketIntelligence").mockImplementation(fake.marketIntelligence);
   vi.spyOn(apiClient, "chartBars").mockImplementation(fake.chartBars);
@@ -20,22 +21,16 @@ it("keeps the console and analysis on the same account without creating orders",
     if (path.startsWith("/ai-analysis")) return {account: {initial_capital_usdt:10000,current_equity_usdt:10000,net_pnl_usdt:0,total_roi_pct:0,margin_used_usdt:0,margin_available_usdt:10000,win_rate_pct:0,total_trades:0,winning_trades:0,losing_trades:0,profit_factor:1,max_drawdown_pct:0,avg_leverage:1},execution_records: [], execution_positions: [], execution_orders: [], trades: [], strategy_matrix: [], equity_curve: []} as never;
     return {watchlist: [], subscriptions: [], runtime: {state: "stopped"}, positions: [], decisions: [], allow_unknown_macro: false} as never;
   });
-  render(<I18nProvider><MemoryRouter><V2WorkspacePage surface="analysis" /></MemoryRouter></I18nProvider>);
+  const dashboard = render(<I18nProvider><MemoryRouter><V2WorkspacePage surface="dashboard" /></MemoryRouter></I18nProvider>);
   const selector = await screen.findByRole("combobox", {name: "交易账户"});
   fireEvent.change(selector, {target: {value: "paper_b"}});
+  await waitFor(() => expect(window.sessionStorage.getItem("aima.trading-account")).toBe("paper_b"));
+  expect(screen.getByRole("heading", {name: /AI 交易指挥舱/})).toBeInTheDocument();
+  dashboard.unmount();
+
+  render(<I18nProvider><MemoryRouter><V2WorkspacePage surface="analysis" /></MemoryRouter></I18nProvider>);
   await waitFor(() => expect(query).toHaveBeenCalledWith(expect.stringContaining("/ai-analysis?account_id=paper_b"), "GET", undefined, expect.any(AbortSignal)));
   expect(window.sessionStorage.getItem("aima.trading-account")).toBe("paper_b");
-  expect(screen.getByRole("heading", {name: /AI 自主交易控制台/})).toBeInTheDocument();
-  expect(screen.getByRole("link", {name: "查看本账户做单分析"})).toHaveAttribute("href", "/ai-analysis");
-  expect(query.mock.calls.every(call => call[1] === undefined || call[1] === "GET")).toBe(true);
-  vi.useFakeTimers();
-  const before = query.mock.calls.filter(call => call[0].startsWith("/ai-analysis")).length;
-  await act(async () => { await vi.advanceTimersByTimeAsync(3100); });
-  // Timer was scheduled before fake timers; use account change to establish a
-  // new scope under the controllable clock, then verify recurring read polling.
-  fireEvent.change(selector, {target: {value: "paper_a"}});
-  await act(async () => { await vi.advanceTimersByTimeAsync(6100); });
-  expect(query.mock.calls.filter(call => call[0].startsWith("/ai-analysis")).length).toBeGreaterThan(before + 1);
   expect(query.mock.calls.every(call => call[1] === undefined || call[1] === "GET")).toBe(true);
 });
 

@@ -4,7 +4,7 @@ import sqlite3
 import tempfile
 import tomllib
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -102,7 +102,7 @@ class Phase4APITests(unittest.TestCase):
             source_type="replay",
             replay_run_id="replay-test",
         )
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         fresh_signal = self._signal("TSLA", "p-fresh", action=Action.LONG, generated_at=now)
         expired_signal = self._signal("AMD", "p-expired", action=Action.LONG, generated_at=now)
         for signal in (long_signal, wait_signal, replay_signal, fresh_signal, expired_signal):
@@ -131,7 +131,7 @@ class Phase4APITests(unittest.TestCase):
         self._expire_prediction("p-expired")
 
     def _expire_prediction(self, prediction_id: str):
-        expired_at = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+        expired_at = (datetime.now(UTC) - timedelta(minutes=1)).isoformat()
         connection = sqlite3.connect(self.store.path)
         try:
             row = connection.execute(
@@ -189,6 +189,34 @@ class Phase4APITests(unittest.TestCase):
             model_health = client.get("/health/model")
             self.assertEqual(model_health.status_code, 200)
             self.assertEqual(model_health.json()["provider"], "mock_llm")
+            self.assertFalse(model_health.json()["available"])
+            self.assertFalse(model_health.json()["model_available"])
+            self.assertEqual(model_health.json()["error_code"], "BONSAI_PROVIDER_REQUIRED")
+            checked_at = datetime.fromisoformat(model_health.json()["checked_at"])
+            self.assertLess(abs((datetime.now(UTC) - checked_at).total_seconds()), 5)
+
+            class SelfReportingBonsaiProvider:
+                provider_name = "self_reporting_bonsai"
+
+                def health(self):
+                    return {
+                        "available": True,
+                        "model_available": True,
+                        "model_id": "Bonsai-2-27B-PTQ1_0",
+                        "actual_model_id": "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                        "model_identity_source": "verified_manifest",
+                        "models": ["Bonsai-2-27B-PTQ1_0"],
+                    }
+
+            self_reporting_app = create_app(
+                store=self.store,
+                news_provider=FixtureNewsProvider(),
+                llm_provider=SelfReportingBonsaiProvider(),
+            )
+            self_reported_health = TestClient(self_reporting_app).get("/health/model").json()
+            self.assertFalse(self_reported_health["available"])
+            self.assertFalse(self_reported_health["consult"]["available"])
+            self.assertEqual(self_reported_health["error_code"], "BONSAI_PROVIDER_REQUIRED")
 
         with patch.dict(
             os.environ,
@@ -197,14 +225,13 @@ class Phase4APITests(unittest.TestCase):
                 "API_CORS_ALLOW_CREDENTIALS": "true",
             },
             clear=False,
-        ):
-            with self.assertRaises(ValueError):
-                create_app(store=self.store)
+        ), self.assertRaises(ValueError):
+            create_app(store=self.store)
 
         analysis_service = AnalysisService(
             market_provider_factory=lambda _instrument: FixtureProvider(),
             news_provider=FixtureNewsProvider(),
-            llm_provider=MockLLMProvider(),
+            llm_provider=None,
             store=self.store,
         )
         analysis_app = create_app(

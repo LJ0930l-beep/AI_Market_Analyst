@@ -1,0 +1,512 @@
+{
+  "model": "Bonsai-2-27B-PTQ1_0",
+  "total_cases": 50,
+  "passed_cases": 47,
+  "failed_cases": 3,
+  "pass_rate_pct": 94.0,
+  "total_time_sec": 558.02,
+  "avg_latency_ms": 11160.27,
+  "overall_tokens_per_sec": 32.46,
+  "results": [
+    {
+      "id": "crypto_01",
+      "category": "crypto_analysis",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 15021.93,
+      "tokens": 478,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "crypto_02",
+      "category": "crypto_analysis",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 14469.63,
+      "tokens": 454,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "crypto_03",
+      "category": "crypto_analysis",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 14481.62,
+      "tokens": 441,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "crypto_04",
+      "category": "crypto_analysis",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 14386.39,
+      "tokens": 455,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "crypto_05",
+      "category": "crypto_analysis",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 14033.7,
+      "tokens": 450,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "crypto_06",
+      "category": "crypto_analysis",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 14045.63,
+      "tokens": 445,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "crypto_07",
+      "category": "crypto_analysis",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 14008.74,
+      "tokens": 449,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "crypto_08",
+      "category": "crypto_analysis",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 14068.63,
+      "tokens": 452,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "crypto_09",
+      "category": "crypto_analysis",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 14012.11,
+      "tokens": 446,
+      "error": null,
+      "preview": "Fair Value Gaps (FVGs) act like **dynamic magnets** in high-volatility crypto regimes because they represent **unfilled "
+    },
+    {
+      "id": "crypto_10",
+      "category": "crypto_analysis",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 13973.43,
+      "tokens": 445,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "pine_01",
+      "category": "pine_script",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 8152.83,
+      "tokens": 301,
+      "error": null,
+      "preview": "//@version=5 indicator(\"EMA20 and EMA50\", overlay=true)  ema20 = ta.ema(close, 20) ema50 = ta.ema(close, 50)  plot(ema20"
+    },
+    {
+      "id": "pine_02",
+      "category": "pine_script",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 14025.13,
+      "tokens": 459,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "pine_03",
+      "category": "pine_script",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 13984.7,
+      "tokens": 454,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "pine_04",
+      "category": "pine_script",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 13978.63,
+      "tokens": 445,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "pine_05",
+      "category": "pine_script",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 10712.53,
+      "tokens": 365,
+      "error": null,
+      "preview": "```pinescript //@version=5 strategy(\"EMA20 RSI Long\")  ema20 = ta.ema(close, 20) rsi14 = ta.rsi(close, 14)  longEntry = "
+    },
+    {
+      "id": "pine_06",
+      "category": "pine_script",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 14063.58,
+      "tokens": 449,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "pine_07",
+      "category": "pine_script",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 13972.64,
+      "tokens": 440,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "pine_08",
+      "category": "pine_script",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 12679.81,
+      "tokens": 411,
+      "error": null,
+      "preview": "```pinescript //@version=5 indicator(\"RSI Overbought Alert\")  rsiVal = ta.rsi(close, 14)  alertcondition(      rsiVal >="
+    },
+    {
+      "id": "pine_09",
+      "category": "pine_script",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 14062.97,
+      "tokens": 446,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "pine_10",
+      "category": "pine_script",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 14708.73,
+      "tokens": 449,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "py_01",
+      "category": "python_quant",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 14326.44,
+      "tokens": 406,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "py_02",
+      "category": "python_quant",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 13192.34,
+      "tokens": 405,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "py_03",
+      "category": "python_quant",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 13703.31,
+      "tokens": 393,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "py_04",
+      "category": "python_quant",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 12571.02,
+      "tokens": 400,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "py_05",
+      "category": "python_quant",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 12191.26,
+      "tokens": 396,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "py_06",
+      "category": "python_quant",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 12213.0,
+      "tokens": 394,
+      "error": null,
+      "preview": "```python def kelly_fraction(p: float, b: float, half_kelly: bool = False)"
+    },
+    {
+      "id": "py_07",
+      "category": "python_quant",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 12394.96,
+      "tokens": 389,
+      "error": null,
+      "preview": "```python def rolling_windows(series, size: int):     \"\"\"Yield fixed-size rolling windows from a time-series list.\"\"\"   "
+    },
+    {
+      "id": "py_08",
+      "category": "python_quant",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 12168.44,
+      "tokens": 401,
+      "error": null,
+      "preview": "```python def satisfies_risk_bounds(order_intent: dict) -> bool:     \"\"\"     Check whether an order intent satisfies ris"
+    },
+    {
+      "id": "py_09",
+      "category": "python_quant",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 12191.04,
+      "tokens": 404,
+      "error": null,
+      "preview": "```python from dataclasses import dataclass from datetime import datetime from typing import Union   @dataclass class"
+    },
+    {
+      "id": "py_10",
+      "category": "python_quant",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 12186.29,
+      "tokens": 391,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "math_01",
+      "category": "mathematics",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 10010.46,
+      "tokens": 369,
+      "error": null,
+      "preview": "Maximum single-trade risk = $50,000 × 2.5% = **$1,250**  Risk per 1 BTC = $80,000 − $78,000 = **$2,000**  Maximum positi"
+    },
+    {
+      "id": "math_02",
+      "category": "mathematics",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 9215.69,
+      "tokens": 327,
+      "error": null,
+      "preview": "Expected value per dollar risked:  \\[ EV = (0.45 \\times 2.5) - (0.55 \\times 1) \\]  \\[ EV = 1.125 - 0.55 = 0.575 \\]  **An"
+    },
+    {
+      "id": "math_03",
+      "category": "mathematics",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 4396.32,
+      "tokens": 192,
+      "error": null,
+      "preview": "25% gain."
+    },
+    {
+      "id": "math_04",
+      "category": "mathematics",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 14346.58,
+      "tokens": 455,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "math_05",
+      "category": "mathematics",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 14451.09,
+      "tokens": 455,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "tool_01",
+      "category": "tool_calling",
+      "mode": "FAST",
+      "passed": true,
+      "latency_ms": 1454.32,
+      "tokens": 82,
+      "error": null,
+      "preview": "{\"name\": \"get_current_price\", \"arguments\": {\"symbol\": \"BTC\"}}"
+    },
+    {
+      "id": "tool_02",
+      "category": "tool_calling",
+      "mode": "FAST",
+      "passed": true,
+      "latency_ms": 2875.06,
+      "tokens": 116,
+      "error": null,
+      "preview": "```json {   \"name\": \"get_klines\",   \"arguments\": {     \"symbol\": \"ETH_USDT\",     \"interval\": \"15m\",     \"limit\": 100   }"
+    },
+    {
+      "id": "tool_03",
+      "category": "tool_calling",
+      "mode": "FAST",
+      "passed": false,
+      "latency_ms": 4687.67,
+      "tokens": 162,
+      "error": null,
+      "preview": "```json {   \"tool\": \"fetch_perpetual_funding_rate\",   \"arguments\": {     \"symbol\": \"SOL_USDT\",     \"exchange\": \"BINANCE\""
+    },
+    {
+      "id": "tool_04",
+      "category": "tool_calling",
+      "mode": "FAST",
+      "passed": false,
+      "latency_ms": 3796.79,
+      "tokens": 143,
+      "error": null,
+      "preview": "```json {   \"status\": \"error\",   \"code\": \"NETWORK_OUTAGE\",   \"message\": \"Failed to fetch ticker data: network connection"
+    },
+    {
+      "id": "tool_05",
+      "category": "tool_calling",
+      "mode": "FAST",
+      "passed": false,
+      "latency_ms": 5550.54,
+      "tokens": 188,
+      "error": null,
+      "preview": "```json {   \"tool\": \"fetch_market_data\",   \"arguments\": {     \"symbol\": \"BTC/USDT\",     \"interval\": \"1h\",     \"limit\": 1"
+    },
+    {
+      "id": "research_01",
+      "category": "deep_research",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 14325.16,
+      "tokens": 442,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "research_02",
+      "category": "deep_research",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 14017.08,
+      "tokens": 442,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "research_03",
+      "category": "deep_research",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 14023.6,
+      "tokens": 440,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "research_04",
+      "category": "deep_research",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 14046.43,
+      "tokens": 445,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "research_05",
+      "category": "deep_research",
+      "mode": "ANALYSIS",
+      "passed": true,
+      "latency_ms": 14067.92,
+      "tokens": 444,
+      "error": null,
+      "preview": ""
+    },
+    {
+      "id": "json_01",
+      "category": "structured_json",
+      "mode": "FAST",
+      "passed": true,
+      "latency_ms": 1878.48,
+      "tokens": 99,
+      "error": null,
+      "preview": "{   \"symbol\": \"AAPL\",   \"trend\": \"bullish\",   \"score\": 0.72 }"
+    },
+    {
+      "id": "json_02",
+      "category": "structured_json",
+      "mode": "FAST",
+      "passed": true,
+      "latency_ms": 2185.4,
+      "tokens": 107,
+      "error": null,
+      "preview": "{   \"max_risk_pct\": 2.0,   \"max_leverage\": 5.0,   \"allowed_directions\": [\"long\", \"short\"] }"
+    },
+    {
+      "id": "json_03",
+      "category": "structured_json",
+      "mode": "FAST",
+      "passed": true,
+      "latency_ms": 2918.49,
+      "tokens": 137,
+      "error": null,
+      "preview": "{   \"asset\": \"BTC\",   \"sentiment\": \"bullish\",   \"current_price\": 82000,   \"support\": 80000,   \"resistance\": 84000 }"
+    },
+    {
+      "id": "json_04",
+      "category": "structured_json",
+      "mode": "FAST",
+      "passed": true,
+      "latency_ms": 3854.94,
+      "tokens": 149,
+      "error": null,
+      "preview": "{   \"hypothesis\": \"Short-term momentum in high-beta equities driven by sector rotation\",   \"trigger_condition\": \"RSI cro"
+    },
+    {
+      "id": "json_05",
+      "category": "structured_json",
+      "mode": "FAST",
+      "passed": true,
+      "latency_ms": 5930.17,
+      "tokens": 206,
+      "error": null,
+      "preview": "[   {     \"name\": \"Bitcoin\",     \"symbol\": \"BTC/USDT\",     \"24h_volume\": 2850000000   },   {     \"name\": \"Ethereum\",    "
+    }
+  ]
+}

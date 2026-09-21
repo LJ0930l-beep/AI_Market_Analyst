@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -14,15 +13,17 @@ if str(ROOT) not in sys.path:
 
 from core.ai import OllamaProvider
 from core.ai.mock import MockLLMProvider
-from core.replay.runner import ReplayConfig, run_replay
+from core.model_client import model_client
+from core.model_routing import DEFAULT_SMART_MODEL
+from core.replay.runner import MOCK_MODEL_ID, ReplayConfig, run_replay
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Phase 3 real Qwen replay runner")
+    parser = argparse.ArgumentParser(description="Phase 3 Bonsai replay runner")
     parser.add_argument("--symbols", nargs="+", required=True)
     parser.add_argument("--timeframes", nargs="+", required=True)
     parser.add_argument("--samples", type=int, default=300)
-    parser.add_argument("--model", default=os.environ.get("OLLAMA_MODEL", "qwen3.5:4b"))
+    parser.add_argument("--model", help="real mode is pinned to Bonsai; mock mode is pinned to mock-llm")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--db", default="data/phase3-replay.sqlite3")
@@ -33,18 +34,25 @@ def main() -> int:
     parser.add_argument("--require-model", action="store_true")
     args = parser.parse_args()
 
+    expected_model = MOCK_MODEL_ID if args.mode == "mock" else DEFAULT_SMART_MODEL
+    model_id = args.model or expected_model
+    if model_id != expected_model:
+        print(json.dumps({"phase": 3, "status": "FAIL", "error": "MODEL_NOT_ALLOWED", "expected_model": expected_model}, ensure_ascii=False))
+        return 2
+
+    import os
     os.environ["MARKET_DATA_MODE"] = "real" if args.mode == "real" else "fixture"
     if args.mode == "real" and not args.allow_fixture:
         os.environ["DISABLE_FIXTURE_FALLBACK"] = "1"
     if args.mode == "real":
-        provider = OllamaProvider(model_name=args.model)
+        provider = OllamaProvider(base_url=model_client.base_url, model_name=DEFAULT_SMART_MODEL)
         if args.require_model:
             health = provider.health()
             if not health.get("available") or not health.get("model_available"):
                 print(json.dumps({"phase": 3, "status": "FAIL", "error": "required_model_unavailable", "health": health}, ensure_ascii=False))
                 return 2
     else:
-        provider = MockLLMProvider(model_id=args.model)
+        provider = MockLLMProvider()
 
     def progress(item: dict[str, object]) -> None:
         print(json.dumps(item, ensure_ascii=False), flush=True)
@@ -53,7 +61,8 @@ def main() -> int:
         symbols=tuple(args.symbols),
         timeframes=tuple(args.timeframes),
         samples=max(1, args.samples),
-        model_id=args.model,
+        model_id=model_id,
+        model_mode=args.mode,
         seed=args.seed,
         db_path=args.db,
         output_path=args.output,

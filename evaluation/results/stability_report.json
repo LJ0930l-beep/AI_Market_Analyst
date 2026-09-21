@@ -1,0 +1,212 @@
+{
+  "total_requests": 20,
+  "total_time_sec": 170.74,
+  "server_crashes": 0,
+  "cuda_ooms": 0,
+  "garbled_outputs": 0,
+  "json_success_rate": 100.0,
+  "tool_success_rate": 100.0,
+  "all_passed": true,
+  "details": [
+    {
+      "index": 1,
+      "type": "short",
+      "mode": "FAST",
+      "latency_ms": 1052.2,
+      "success": true,
+      "error": null,
+      "vram_used_mb": 7725.0,
+      "vram_free_mb": 233.0
+    },
+    {
+      "index": 2,
+      "type": "json",
+      "mode": "FAST",
+      "latency_ms": 1492.4,
+      "success": true,
+      "error": null,
+      "vram_used_mb": 7725.0,
+      "vram_free_mb": 233.0
+    },
+    {
+      "index": 3,
+      "type": "code",
+      "mode": "FAST",
+      "latency_ms": 1994.1,
+      "success": true,
+      "error": null,
+      "vram_used_mb": 7750.0,
+      "vram_free_mb": 208.0
+    },
+    {
+      "index": 4,
+      "type": "analysis",
+      "mode": "ANALYSIS",
+      "latency_ms": 16072.4,
+      "success": true,
+      "error": null,
+      "vram_used_mb": 7762.0,
+      "vram_free_mb": 196.0
+    },
+    {
+      "index": 5,
+      "type": "tool",
+      "mode": "FAST",
+      "latency_ms": 74.7,
+      "success": true,
+      "error": null,
+      "vram_used_mb": 7712.0,
+      "vram_free_mb": 246.0
+    },
+    {
+      "index": 6,
+      "type": "long",
+      "mode": "ANALYSIS",
+      "latency_ms": 23510.3,
+      "success": true,
+      "error": null,
+      "vram_used_mb": 7712.0,
+      "vram_free_mb": 246.0
+    },
+    {
+      "index": 7,
+      "type": "short",
+      "mode": "FAST",
+      "latency_ms": 2780.5,
+      "success": true,
+      "error": null,
+      "vram_used_mb": 7707.0,
+      "vram_free_mb": 251.0
+    },
+    {
+      "index": 8,
+      "type": "math",
+      "mode": "FAST",
+      "latency_ms": 4483.1,
+      "success": true,
+      "error": null,
+      "vram_used_mb": 7792.0,
+      "vram_free_mb": 166.0
+    },
+    {
+      "index": 9,
+      "type": "json_schema",
+      "mode": "FAST",
+      "latency_ms": 21221.9,
+      "success": true,
+      "error": null,
+      "vram_used_mb": 7767.0,
+      "vram_free_mb": 191.0
+    },
+    {
+      "index": 10,
+      "type": "code",
+      "mode": "FAST",
+      "latency_ms": 3768.8,
+      "success": true,
+      "error": null,
+      "vram_used_mb": 7706.0,
+      "vram_free_mb": 252.0
+    },
+    {
+      "index": 11,
+      "type": "tool",
+      "mode": "FAST",
+      "latency_ms": 45.8,
+      "success": true,
+      "error": null,
+      "vram_used_mb": 7683.0,
+      "vram_free_mb": 275.0
+    },
+    {
+      "index": 12,
+      "type": "analysis",
+      "mode": "ANALYSIS",
+      "latency_ms": 17946.2,
+      "success": true,
+      "error": null,
+      "vram_used_mb": 7683.0,
+      "vram_free_mb": 275.0
+    },
+    {
+      "index": 13,
+      "type": "short",
+      "mode": "FAST",
+      "latency_ms": 2669.8,
+      "success": true,
+      "error": null,
+      "vram_used_mb": 7678.0,
+      "vram_free_mb": 280.0
+    },
+    {
+      "index": 14,
+      "type": "json",
+      "mode": "FAST",
+      "latency_ms": 3775.9,
+      "success": true,
+      "error": null,
+      "vram_used_mb": 7766.0,
+      "vram_free_mb": 192.0
+    },
+    {
+      "index": 15,
+      "type": "analysis",
+      "mode": "ANALYSIS",
+      "latency_ms": 15996.0,
+      "success": true,
+      "error": null,
+      "vram_used_mb": 7677.0,
+      "vram_free_mb": 281.0
+    },
+    {
+      "index": 16,
+      "type": "code",
+      "mode": "FAST",
+      "latency_ms": 8301.6,
+      "success": true,
+      "error": null,
+      "vram_used_mb": 7683.0,
+      "vram_free_mb": 275.0
+    },
+    {
+      "index": 17,
+      "type": "tool",
+      "mode": "FAST",
+      "latency_ms": 44.4,
+      "success": true,
+      "error": null,
+      "vram_used_mb": 7767.0,
+      "vram_free_mb": 191.0
+    },
+    {
+      "index": 18,
+      "type": "json_schema",
+      "mode": "FAST",
+      "latency_ms": 24793.8,
+      "success": true,
+      "error": null,
+      "vram_used_mb": 7766.0,
+      "vram_free_mb": 192.0
+    },
+    {
+      "index": 19,
+      "type": "long",
+      "mode": "ANALYSIS",
+      "latency_ms": 20043.1,
+      "success": true,
+      "error": null,
+      "vram_used_mb": 7732.0,
+      "vram_free_mb": 226.0
+    },
+    {
+      "index": 20,
+      "type": "short",
+      "mode": "FAST",
+      "latency_ms": 671.6,
+      "success": true,
+      "error": null,
+      "vram_used_mb": 7718.0,
+      "vram_free_mb": 240.0
+    }
+  ]
+}

@@ -100,11 +100,27 @@ class V2Store:
         ]
 
     def set_strategy_subscription(self, symbol, strategy_id, enabled, params):
+        from .instruments import market_type_for_symbol
         from .quant.strategies import STRATEGIES
 
         if strategy_id not in STRATEGIES or type(enabled) is not bool:
             raise ValueError("invalid strategy or enabled flag")
-        STRATEGIES[strategy_id](
+        strategy_cls = STRATEGIES[strategy_id]
+        # A strategy declares the markets it can evaluate.  Enabling an
+        # equity-only strategy (for example opening_range_breakout) on a crypto
+        # symbol produced a candidate that was permanently UNSUPPORTED, which
+        # consumed one of the per-symbol strategy slots and gave the AI cycle a
+        # subscription that could never yield anything.  Refuse it at the only
+        # write entry instead of discovering it 1500 candidates later.
+        if enabled:
+            supported = {str(item).strip().lower() for item in strategy_cls.supported_markets}
+            market_type = market_type_for_symbol(symbol)
+            if market_type not in supported:
+                raise ValueError(
+                    f"strategy {strategy_id} does not support {market_type} instruments "
+                    f"({symbol}); supported markets: {sorted(supported)}"
+                )
+        strategy_cls(
             params
         )  # validates bounded parameters before persistence
         with self._connect() as db:

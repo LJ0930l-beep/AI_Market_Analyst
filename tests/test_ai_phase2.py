@@ -43,7 +43,7 @@ class AIPhase2Tests(unittest.TestCase):
         response, metadata = analyze_with_repair(MockLLMProvider(), context, policy)
         signal = to_signal_proposal(response, context, policy, metadata, generated_at=datetime.now(timezone.utc))
         self.assertIn(signal.action.value, {"LONG", "SHORT", "WAIT"})
-        self.assertEqual(signal.model_id, "mock-qwen3.5-4b")
+        self.assertEqual(signal.model_id, "mock-llm")
         self.assertEqual(signal.parse_status, "valid")
         self.assertEqual(signal.input_hash, context.input_hash())
         self.assertLessEqual(signal.raw_confidence, 0.65)

@@ -3,8 +3,9 @@
 from datetime import datetime, timedelta, timezone
 
 from .agent_execution import AgentDecisionService
-from .instruments import canonical_instrument_key
+from .instruments import AssetType, Instrument, TradingHours, canonical_instrument_key
 from .market_intelligence import build_market_intelligence
+from .model_routing import is_trusted_bonsai_provider
 from .monitoring import MonitoringRunResult, MonitoringService
 from .providers.gateio_provider import GatePublicProvider
 from .quant.strategies import STRATEGIES
@@ -16,9 +17,17 @@ class StrategyMonitoringService(MonitoringService):
 
     def __init__(self, **kwargs):
         self.account_id = kwargs.pop("account_id", None)
+        decision_model = kwargs.get("llm_provider")
+        decision_model_trusted = is_trusted_bonsai_provider(decision_model)
+        if decision_model is not None and not decision_model_trusted:
+            # The inherited opportunity scanner can persist model analysis too.
+            # Do not let an injected adapter reach either that path or the
+            # strategy decision service, even if it can forge a Bonsai label.
+            kwargs["llm_provider"] = None
         super().__init__(**kwargs)
         self.gate = GatePublicProvider()
         self._native_bootstrap_cache = {}
+        self._derivatives_refresh_cache = {}
         self.provider_factory = lambda _instrument: self.gate
         # Strategy-driven orders share the same gateway and durable ledger as
         # manual and AI-led orders.  The legacy simulator remains available
@@ -26,15 +35,51 @@ class StrategyMonitoringService(MonitoringService):
         self.execution_gateway = ExecutionGateway(self.store)
         self.agent = AgentDecisionService(
             self.store,
-            getattr(self.smart, "llm_provider", None),
+            decision_model,
             gateway=self.execution_gateway,
         )
+        self.strategy_model_route_status = (
+            "READY"
+            if decision_model_trusted
+            else "UNAVAILABLE"
+            if decision_model is None
+            else "REJECTED_UNTRUSTED_PROVIDER"
+        )
 
-    def refresh_ai_inputs(self, symbols):
+    def refresh_ai_inputs(self, symbols, *, scan_interval_minutes=15, context_timeframes=()):
         """Public evidence refresh owned by the AI cycle; no legacy decisions."""
         from .news_refresh import refresh_public_news
-        result = self.run(symbols=symbols, analysis_only=True)
+        result = self.run(
+            symbols=symbols,
+            analysis_only=True,
+            ai_interval=scan_interval_minutes,
+            ai_context_timeframes=context_timeframes,
+        )
+        self.refresh_derivatives(symbols, max_age_seconds=max(60, int(scan_interval_minutes) * 60))
         refresh_public_news(self.store, symbols=symbols)
+        self.refresh_execution_quotes(symbols)
+        return result
+
+    def refresh_derivatives(self, symbols, *, max_age_seconds=300):
+        """Persist bounded Gate OI/funding evidence for AI and radar surfaces."""
+        observed = datetime.now(timezone.utc)
+        for symbol in tuple(dict.fromkeys(str(item).strip().upper() for item in symbols if str(item).strip()))[: self.max_symbols]:
+            cached_at = self._derivatives_refresh_cache.get(symbol)
+            if isinstance(cached_at, datetime) and (observed - cached_at).total_seconds() < max_age_seconds:
+                continue
+            try:
+                funding = self.gate.funding_context(symbol)
+                native = str(funding.get("native_symbol") or self.gate.market(symbol).get("id") or symbol).upper()
+                self.store.save_gate_funding(symbol, native, funding, provider="gate", environment=self.gate.environment, now=observed)
+                self.store.save_gate_open_interest(symbol, native, funding.get("open_interest_history") or [], provider="gate", environment=self.gate.environment, now=observed)
+                self._derivatives_refresh_cache[symbol] = observed
+            except Exception:
+                # Derivative evidence is optional market context.  The radar
+                # keeps the venue explicitly unavailable and the trading
+                # engine still requires its independent price/risk evidence.
+                continue
+
+    def refresh_execution_quotes(self, symbols):
         # News/bootstrap may take time. Refresh executable quote and observed
         # depth last instead of aging the initial ticker during those reads.
         from .trading.autonomous_strategy import book_cost_evidence
@@ -53,9 +98,8 @@ class StrategyMonitoringService(MonitoringService):
                 snapshot.update(slippage=None, liquidity_ok=False, cost_evidence_status="UNAVAILABLE")
                 if snapshot.get("symbol"):
                     self.store.save_realtime_state(snapshot, now=datetime.now(timezone.utc))
-        return result
 
-    def run(self, *, symbols=None, now=None, analysis_only=False):
+    def run(self, *, symbols=None, now=None, analysis_only=False, ai_interval=15, ai_context_timeframes=()):
         now = now or datetime.now(timezone.utc)
         subscriptions = self.store.list_strategy_subscriptions(True)
         symbols = set(symbols or [s["symbol"] for s in subscriptions])
@@ -70,8 +114,17 @@ class StrategyMonitoringService(MonitoringService):
                 active = [s for s in subscriptions if s["symbol"] == symbol]
                 if not active and not analysis_only:
                     continue
-                instrument = self.store.resolve_instrument(symbol)
                 market = self.gate.market(symbol)
+                try:
+                    instrument = self.store.resolve_instrument(symbol)
+                except ValueError:
+                    instrument = Instrument(symbol=symbol, asset_type=AssetType.CRYPTO, exchange='GATE',
+                        currency='USDT', timezone='UTC', trading_hours=TradingHours.AROUND_THE_CLOCK,
+                        contract_type='perp', contract_size=float(market['contractSize']),
+                        tick_size=float(market['precision']['price']),
+                        step_size=float(market['precision']['amount']))
+                    self.store.save_instrument(instrument, registry_source='gate_contract_discovery',
+                        metadata_status='VERIFIED', validation_provider='gate')
                 quote = self.gate.get_quote(instrument)
                 fetched = datetime.now(timezone.utc)
                 native_symbol = str(market.get("id") or instrument.symbol).strip().upper()
@@ -105,7 +158,7 @@ class StrategyMonitoringService(MonitoringService):
                 bars_by_timeframe = {}
 
                 native_bootstrap = None
-                if getattr(self.gate, "uses_native_rest", False):
+                if getattr(self.gate, "uses_native_rest", False) and not analysis_only:
                     cached = self._native_bootstrap_cache.get(symbol)
                     cached_at = cached.get("fetched_at") if isinstance(cached, dict) else None
                     if isinstance(cached_at, datetime) and (fetched - cached_at).total_seconds() < 900:
@@ -145,16 +198,29 @@ class StrategyMonitoringService(MonitoringService):
                 required_timeframes = {STRATEGIES[s["strategy_id"]].signal_timeframe for s in active}
                 if analysis_only:
                     required_timeframes.update(("15m", "1h"))
+                    if ai_interval == 5:
+                        required_timeframes.add('5m')
+                    if isinstance(ai_context_timeframes, (list, tuple, set)):
+                        required_timeframes.update(
+                            str(item).strip().lower()
+                            for item in ai_context_timeframes
+                            if str(item).strip().lower() in {"5m", "15m", "1h", "1d"}
+                        )
                 if any("1h" in STRATEGIES[s["strategy_id"]].context_timeframes for s in active):
                     required_timeframes.add("1h")
                 if any("5m" in STRATEGIES[s["strategy_id"]].context_timeframes for s in active):
                     required_timeframes.add("5m")
                 for timeframe in sorted(required_timeframes):
-                    if analysis_only and timeframe in {"15m", "1h"}:
+                    if analysis_only and timeframe in {"5m", "15m", "1h"}:
                         # Bootstrap history is cached for calibration, but the
                         # latest closed bars must be refreshed each AI cycle.
                         bars_by_timeframe.pop(timeframe, None)
-                        load_bars(timeframe, 160)
+                        # CandidateScanner evaluates the latest 240 closed
+                        # traded-price bars. Refresh that complete window on
+                        # every AI cycle; refreshing only 160 left up to 80
+                        # legacy sparse rows in SQLite and falsely poisoned an
+                        # otherwise continuous recent series as GAP_DETECTED.
+                        load_bars(timeframe, 240)
                         continue
                     if isinstance(native_bootstrap, dict) and timeframe in bars_by_timeframe:
                         continue
@@ -186,7 +252,7 @@ class StrategyMonitoringService(MonitoringService):
                             key: market.get(key)
                             for key in (
                                 "id", "symbol", "base", "quote", "settle", "type", "swap",
-                                "linear", "contractSize", "precision", "limits", "taker", "maker",
+                                "linear", "contractSize", "precision", "limits", "leverage_max", "taker", "maker",
                                 "mark_price", "index_price", "funding_rate", "funding_next_apply",
                             )
                             if market.get(key) is not None
@@ -199,7 +265,7 @@ class StrategyMonitoringService(MonitoringService):
                         },
                         "data_quality": {
                             "status": str((native_bootstrap or {}).get("quality", {}).get("status") or "AVAILABLE") if isinstance(native_bootstrap, dict) else "AVAILABLE",
-                            "source": str((native_bootstrap or {}).get("quality", {}).get("source") or "gate_native_rest") if isinstance(native_bootstrap, dict) else "gate_ccxt_injected",
+                            "source": str((native_bootstrap or {}).get("quality", {}).get("source") or "gate_native_rest") if isinstance(native_bootstrap, dict) else ('gate_native_rest' if getattr(self.gate, 'uses_native_rest', False) else "gate_ccxt_injected"),
                             "closed_15m_bars": (native_bootstrap or {}).get("quality", {}).get("closed_15m_bars") if isinstance(native_bootstrap, dict) else None,
                             "mark_index_aligned": (native_bootstrap or {}).get("quality", {}).get("mark_index_aligned") if isinstance(native_bootstrap, dict) else None,
                             "synthetic": False,
@@ -312,6 +378,7 @@ class StrategyMonitoringService(MonitoringService):
                         "symbol": symbol,
                         "status": "DEGRADED",
                         "error_code": type(exc).__name__,
+                        "error": str(exc),
                     }
                 )
         return MonitoringRunResult(

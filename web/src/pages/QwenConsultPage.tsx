@@ -5,6 +5,7 @@ import { ApiError, type ApplicationShellApiClient } from "../api/client";
 import type {
   ConsultContextEvidence,
   ConsultMessage,
+  ModelIdentityReceipt,
   ConsultStreamEvent,
   Instrument,
   ModelHealthResponse,
@@ -21,6 +22,23 @@ type ModelState = "checking" | "available" | "unavailable" | "failed";
 
 interface DisplayMessage extends ConsultMessage {
   id: string;
+}
+
+function bonsaiReceiptArtifact(receipt: ModelIdentityReceipt | undefined): string | undefined {
+  if (!receipt || receipt.model_id !== "Bonsai-2-27B-PTQ1_0") return undefined;
+  const identity = (value: unknown): string | undefined => {
+    if (typeof value !== "string" || !value.trim()) return undefined;
+    let basename = value.trim().replace(/\\/g, "/").split("/").pop() || "";
+    if (basename.toLowerCase().endsWith(".gguf")) basename = basename.slice(0, -5);
+    if (basename.toLowerCase().startsWith("ternary-")) basename = basename.slice("ternary-".length);
+    return basename.toLowerCase() === "bonsai-2-27b-ptq1_0" ? "Bonsai-2-27B-PTQ1_0" : undefined;
+  };
+  const actual = identity(receipt.actual_model_id ?? receipt.model_version);
+  const manifest = identity(receipt.verified_manifest_model_id);
+  return actual && actual === manifest &&
+    (receipt.model_identity_source === "completion_response" || receipt.model_identity_source === "request_bound_to_verified_manifest")
+    ? actual
+    : undefined;
 }
 
 interface StoredSession {
@@ -126,7 +144,7 @@ export function QwenConsultPage({ apiClient }: { apiClient: ApplicationShellApiC
   const [confirmClear, setConfirmClear] = useState(false);
   const [modelPreference, setModelPreference] = useState<"auto" | "fast" | "smart">("auto");
   const [responseLanguage, setResponseLanguage] = useState<"follow_ui" | "en" | "zh-CN">("follow_ui");
-  const [actualRoute, setActualRoute] = useState<{ model?: string; tier?: string; reason?: string }>();
+  const [actualRoute, setActualRoute] = useState<{ model?: string; tier?: string; reason?: string; receipt?: ModelIdentityReceipt }>();
   const abortRef = useRef<AbortController | null>(null);
   const logEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -246,6 +264,7 @@ export function QwenConsultPage({ apiClient }: { apiClient: ApplicationShellApiC
           message.id === assistantId ? { ...message, content: message.content + event.content } : message
         )));
       } else if (event.type === "done") {
+        setActualRoute((current) => current ? { ...current, receipt: event.model_receipt } : current);
         setStatus("complete");
       } else {
         const unavailable = ["QWEN_UNAVAILABLE", "QWEN_NOT_CONFIGURED", "QWEN_MODEL_NOT_FOUND"].includes(event.error.code);
@@ -333,8 +352,9 @@ export function QwenConsultPage({ apiClient }: { apiClient: ApplicationShellApiC
         </div>
         <dl className="fact-list consult-capability__facts">
           <div className="fact-list__row"><dt>{t("common.provider")}</dt><dd data-i18n-skip>{modelHealth?.provider ?? "—"}</dd></div>
-          <div className="fact-list__row"><dt>{t("common.model")}</dt><dd data-i18n-skip>{actualRoute?.model ?? capability?.model_id ?? (typeof modelHealth?.model_id === "string" ? modelHealth.model_id : "—")}</dd></div>
-          <div className="fact-list__row"><dt>{t("consult.contract")}</dt><dd data-i18n-skip>{capability?.contract_version ?? "qwen_consult_v2"}</dd></div>
+          <div className="fact-list__row"><dt>{t("consult.requestedModel")}</dt><dd data-i18n-skip>{actualRoute?.model ?? capability?.model_id ?? (typeof modelHealth?.model_id === "string" ? modelHealth.model_id : "—")}</dd></div>
+          <div className="fact-list__row"><dt>{t("consult.verifiedModel")}</dt><dd data-i18n-skip>{bonsaiReceiptArtifact(actualRoute?.receipt) ?? (status === "complete" ? t("consult.modelIdentityUnverified") : actualRoute?.model ? t("consult.modelIdentityPending") : "—")}</dd></div>
+          <div className="fact-list__row"><dt>{t("consult.contract")}</dt><dd data-i18n-skip>{(capability?.contract_version || "local_model_consult_v2").replace(/qwen/gi, "local_model")}</dd></div>
           <div className="fact-list__row"><dt>{t("v11.modelPreference")}</dt><dd data-i18n-skip>{modelPreference} · {actualRoute?.tier ?? "pending"} · {actualRoute?.reason ?? "server task policy"}</dd></div>
           <div className="fact-list__row"><dt>{t("consult.sessionStorage")}</dt><dd>{t("consult.sessionOnly")}</dd></div>
         </dl>

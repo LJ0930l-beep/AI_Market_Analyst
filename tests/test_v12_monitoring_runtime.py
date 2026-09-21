@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import json
 import threading
 import time
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -12,12 +13,11 @@ from apps.api.main import create_app
 from core.instruments import instrument_for
 from core.monitoring import MonitoringPolicy, MonitoringService
 from core.monitoring_runtime import MonitoringRuntime
-from core.providers import Bar, Quote, ProviderError
+from core.providers import Bar, ProviderError, Quote
 from core.realtime import RealtimeConnectionState
 from core.storage import SQLiteStore
 
-
-POINT = datetime(2030, 1, 2, 12, tzinfo=timezone.utc)
+POINT = datetime(2030, 1, 2, 12, tzinfo=UTC)
 
 
 def bars() -> list[Bar]:
@@ -49,10 +49,17 @@ class FailingMarketProvider(FakeMarketProvider):
 
 class FakeSmartProvider:
     def health(self):
-        return {"available": True, "model_available": True, "models": ["qwen3.5:9b"]}
+        return {
+            "available": True,
+            "model_available": True,
+            "model_id": "Bonsai-2-27B-PTQ1_0",
+            "actual_model_id": "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+            "model_identity_source": "verified_manifest",
+            "models": ["Ternary-Bonsai-2-27B-PTQ1_0.gguf"],
+        }
 
-    def generate_json(self, _messages, **_kwargs):
-        return ({
+    def generate_json(self, _messages, **kwargs):
+        payload = {
             "bias": "LONG_WATCH",
             "confidence": 0.84,
             "regime": "bull_trend",
@@ -65,7 +72,17 @@ class FakeSmartProvider:
             "news_context": [],
             "event_risk": False,
             "missing_evidence": ["news unavailable"],
-        }, "{}", {"latency_ms": 1.0})
+        }
+        return (payload, json.dumps(payload, separators=(",", ":")), {
+            "latency_ms": 1.0,
+            "model_id": "Bonsai-2-27B-PTQ1_0",
+            "actual_model_id": "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+            "verified_manifest_model_id": "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+            "model_identity_source": "completion_response",
+            "prompt_version": kwargs.get("prompt_version"),
+            "input_hash": kwargs.get("input_hash"),
+            "parse_status": "valid",
+        })
 
 
 class FakeStream:
@@ -157,13 +174,15 @@ def test_runtime_is_sidecar_owned_and_pause_removes_work(tmp_path: Path) -> None
 
 
 def test_startup_false_and_resume_authorization_are_separate(tmp_path: Path) -> None:
-    store, runtime = make_runtime(tmp_path / "resume.sqlite3")
+    _store, runtime = make_runtime(tmp_path / "resume.sqlite3")
     assert runtime.status()["run_count"] == 0
     time.sleep(0.1)
     assert runtime.status()["run_count"] == 0
     refused = runtime.start(resume=True, user_initiated=False)
     assert refused["state"] == "stopped"
     assert refused["last_reason"] == "resume_not_authorized"
+    assert refused["lease"]["fencing_token"] is None
+    assert runtime.runtime_lease.current("monitoring_runtime") is None
 
     runtime.start()
     wait_for(lambda: int(runtime.status()["run_count"]) >= 1)
@@ -255,7 +274,11 @@ def test_fastapi_startup_resumes_only_an_authorized_prior_runtime(tmp_path: Path
     try:
         with TestClient(app):
             wait_for(lambda: bool(restored.status()["active"]))
-            assert restored.status()["last_reason"] in {"resume", "worker_active", "cycle_complete"}
+            # The worker may connect its stream before this assertion runs;
+            # that is a later healthy resume state, not a failed startup.
+            assert restored.status()["last_reason"] in {
+                "resume", "worker_active", "stream_connected", "cycle_complete",
+            }
     finally:
         seed.stop()
         restored.stop()

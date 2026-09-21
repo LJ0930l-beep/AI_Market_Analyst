@@ -61,9 +61,9 @@ class SignalProposal:
             raise ValueError("signal timestamps must be timezone-aware")
         if self.data_as_of is not None and self.data_as_of.tzinfo is None:
             raise ValueError("data_as_of must be timezone-aware")
-        if self.source_type not in {"live", "replay"}:
-            raise ValueError("source_type must be live or replay")
-        if self.source_type == "replay" and not self.replay_run_id:
+        if self.source_type not in {"live", "demo", "replay", "mock_replay"}:
+            raise ValueError("source_type must be live, demo, replay, or mock_replay")
+        if self.source_type in {"replay", "mock_replay"} and not self.replay_run_id:
             raise ValueError("replay predictions require replay_run_id")
         if self.calibrated_confidence is not None and not 0.0 <= self.calibrated_confidence <= 1.0:
             raise ValueError("calibrated_confidence must be in [0, 1]")

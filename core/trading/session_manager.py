@@ -174,8 +174,8 @@ class SessionManager:
                 return self.status()
 
             if self.current_state == SessionState.PAUSED:
-                # To restart a paused session, use resume()
-                raise InvalidStateTransitionError(self.current_state, SessionState.RUNNING, "Use resume to continue a paused session")
+                # Starting a paused session cleanly resumes it with incremented generation
+                return self.resume()
 
             self.current_state = SessionState.RUNNING
             self.state_version += 1

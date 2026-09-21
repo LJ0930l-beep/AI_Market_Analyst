@@ -13,7 +13,7 @@ Fulfills R01, R02, R03 requirements:
 """
 
 from __future__ import annotations
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, replace
 from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -107,6 +107,11 @@ PAPER_SIMULATION_MARKET_CONTRACT = {
     },
     "taker": 0.0005,
 }
+
+# A resting order intent whose own TTL elapsed this long ago is no longer
+# wanted.  The window lets the reconcile pass cancel it remotely rather than
+# treating a transient quote hiccup as abandonment.
+STALE_INTENT_GRACE = timedelta(minutes=5)
 
 
 class CapabilityStatus(str, enum.Enum):
@@ -1559,6 +1564,16 @@ class ExecutionGateway:
             if not intent.reduce_only:
                 if self.risk_engine is None:
                     raise GatewayError("RISK_ENGINE_UNAVAILABLE", "Unified RiskEngine is unavailable.", 503)
+                if mode != "PAPER":
+                    from .strategy_execution import venue_leverage_limit
+
+                    market_meta = fresh_market.get("market") or fresh_market.get("metadata") or {}
+                    if venue_leverage_limit(market_meta) is None:
+                        raise GatewayError(
+                            "VENUE_LEVERAGE_LIMIT_UNAVAILABLE",
+                            "Gate contract leverage ceiling is unavailable; opening order was not submitted.",
+                            422,
+                        )
                 auth_risk_limit = None
                 auth_portfolio_limit = None
                 auth_cluster_limit = None
@@ -1587,6 +1602,20 @@ class ExecutionGateway:
                 )
                 if not risk_decision.approved:
                     raise GatewayError(risk_decision.reason_code, f"RiskEngine rejected opening order: {risk_decision.reason_code}.", 422)
+                # RiskEngine is authoritative for the actual leverage. Persist
+                # the resolved value before any paper/exchange side effect so
+                # the ledger, Gate set_leverage call and audit row agree.
+                effective_leverage = int(risk_decision.leverage)
+                if hasattr(self.store, "_connect"):
+                    with self.store._connect() as db:
+                        db.execute(
+                            "UPDATE order_intents SET leverage=?, updated_at=? WHERE intent_id=?",
+                            (effective_leverage, datetime.now(timezone.utc).isoformat(), intent.intent_id),
+                        )
+                # Preserve the caller's immutable/idempotent request payload;
+                # execute with a derived copy carrying the authoritative
+                # leverage instead of mutating the original OrderIntent.
+                intent = replace(intent, leverage=effective_leverage)
                 reservation_id = risk_decision.reservation_id
                 self._update_order(intent.intent_id, OrderStatus.RISK_APPROVED.value, {"intent_id": intent.intent_id, "status": OrderStatus.RISK_APPROVED.value, "risk_decision": risk_decision.to_dict()}, reservation_id=reservation_id, risk_decision=risk_decision.to_dict())
 
@@ -2320,6 +2349,44 @@ class ExecutionGateway:
         """Convenience alias for cancel_intent."""
         return self.cancel_intent(intent_id, reason=reason)
 
+    @staticmethod
+    def _resting_intent_is_stale(row: Dict[str, Any], fallback_mode: str) -> tuple[bool, str]:
+        """Report whether a resting order intent has outlived its TTL.
+
+        Returns ``(stale, reason)``.  The order-level TTL is authoritative;
+        the row timestamp is only a fallback for rows written before the TTL
+        column was populated.
+        """
+
+        expires_raw = row.get("expires_at")
+        now = datetime.now(timezone.utc)
+        if expires_raw:
+            try:
+                parsed = datetime.fromisoformat(str(expires_raw).replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                if now >= parsed + STALE_INTENT_GRACE:
+                    return True, "STALE_TTL_EXPIRED"
+                return False, ""
+            except ValueError:
+                pass
+        ttl_seconds = row.get("ttl_seconds")
+        created_raw = row.get("created_at")
+        try:
+            ttl = int(ttl_seconds)
+        except (TypeError, ValueError):
+            ttl = 0
+        if ttl > 0 and created_raw:
+            try:
+                created = datetime.fromisoformat(str(created_raw).replace("Z", "+00:00"))
+                if created.tzinfo is None:
+                    created = created.replace(tzinfo=timezone.utc)
+                if now >= created + timedelta(seconds=ttl) + STALE_INTENT_GRACE:
+                    return True, "STALE_TTL_ELAPSED"
+            except ValueError:
+                pass
+        return False, ""
+
     def reconcile_in_flight_orders(self, account_id: str, mode: TradingMode) -> List[Dict[str, Any]]:
         """Reconcile in-flight orders without blind resubmission.
 
@@ -2502,6 +2569,25 @@ class ExecutionGateway:
                         strategy_version=row.get("strategy_version"),
                         signal_at=row.get("signal_at"),
                     )
+                    if intent.protection_plan and not intent.reduce_only and hasattr(adapter, "place_protection_orders"):
+                        prev_prot_orders = previous_receipt.get("protection_orders") or []
+                        if not prev_prot_orders and (intent.protection_plan.stop_price is not None or intent.protection_plan.take_profit is not None):
+                            try:
+                                prot_legs = adapter.place_protection_orders(
+                                    symbol=intent.instrument_id,
+                                    side=intent.side,
+                                    amount=float(filled_quantity),
+                                    stop_loss=float(intent.protection_plan.stop_price) if intent.protection_plan.stop_price is not None else None,
+                                    take_profit=float(intent.protection_plan.take_profit) if intent.protection_plan.take_profit is not None else None,
+                                    client_order_id=intent.intent_id,
+                                )
+                                remote["protection_orders"] = prot_legs
+                                remote["protection_status"] = "PROTECTED"
+                                remote["protection_verified"] = True
+                            except Exception as prot_err:
+                                logger.error("Failed to place protection orders during reconciliation for %s: %s", iid, prot_err)
+                                remote["protection_status"] = "PROTECTION_FAILED"
+
                     reconciliation = self._record_exchange_fill_report(intent, remote, None)
                     local_quantity = Decimal("0")
                     if self.ledger is not None and hasattr(self.ledger, "get_recorded_fill_totals"):
@@ -2527,7 +2613,9 @@ class ExecutionGateway:
                     receipt.update({"intent_id": iid, "reconciled": True, "execution_evidence": {"source": "execution_adapter_reconciliation", "observed_at": now_iso, "remote_order_id": remote.get("order_id") or remote.get("id") or remote_order_id}})
                     if reconciliation.get("ledger_record"):
                         receipt["ledger_record"] = reconciliation["ledger_record"]
-                    receipt["protection_status"] = reconciliation.get("protection_status")
+                    receipt["protection_status"] = reconciliation.get("protection_status") or remote.get("protection_status")
+                    if remote.get("protection_orders"):
+                        receipt["protection_orders"] = remote.get("protection_orders")
                     if reconciliation.get("economic_evidence"):
                         receipt["economic_reconciliation"] = reconciliation["economic_evidence"]
                     with self.store._connect() as db:
@@ -2544,6 +2632,69 @@ class ExecutionGateway:
                     if reservation_id and self.ledger is not None:
                         self.ledger.release_risk(account_id, reservation_id)
                     reconciled.append({"intent_id": iid, "previous_status": previous_status, "reconciled_status": OrderStatus.CANCELED.value, "reconciled": True, "reservation_held": False})
+                    continue
+
+                # A resting (``open``) remote order has no terminal state yet.
+                # Left alone it pins the account: the intent never leaves the
+                # active set and its risk reservation stays PENDING forever,
+                # so every later opening is refused.  Once the intent's own
+                # TTL has elapsed the order is no longer wanted, so cancel it
+                # remotely and only then release its budget.
+                if remote_status == "open":
+                    stale, stale_reason = self._resting_intent_is_stale(row, mode_val)
+                    if not stale:
+                        reconciled.append({"intent_id": iid, "previous_status": previous_status, "reconciled_status": previous_status, "reconciled": False, "reservation_held": True, "reason": "RESTING_WITHIN_TTL"})
+                        continue
+                    if adapter is None or not hasattr(adapter, "cancel_order"):
+                        reconciled.append({"intent_id": iid, "previous_status": previous_status, "reconciled_status": previous_status, "reconciled": False, "reservation_held": True, "reason": "CANCEL_UNSUPPORTED"})
+                        continue
+                    try:
+                        cancel_result = adapter.cancel_order(remote_order_id, row["instrument_id"])
+                    except Exception as exc:
+                        logger.warning("Stale resting order cancel failed for %s: %s", iid, exc)
+                        reconciled.append({"intent_id": iid, "previous_status": previous_status, "reconciled_status": previous_status, "reconciled": False, "reservation_held": True, "reason": "CANCEL_FAILED"})
+                        continue
+                    # Confirm the terminal state before touching local facts:
+                    # a cancel response alone is not proof of the venue state.
+                    try:
+                        after = adapter.fetch_order(remote_order_id, row["instrument_id"])
+                    except Exception as exc:
+                        logger.warning("Stale resting order verify failed for %s: %s", iid, exc)
+                        reconciled.append({"intent_id": iid, "previous_status": previous_status, "reconciled_status": previous_status, "reconciled": False, "reservation_held": True, "reason": "CANCEL_UNVERIFIED"})
+                        continue
+                    final_remote_status = str((after or {}).get("status", "")).lower()
+                    filled_after = (after or {}).get("filled_quantity", (after or {}).get("filled"))
+                    try:
+                        filled_after_dec = Decimal(str(filled_after)) if filled_after is not None else Decimal("0")
+                    except (InvalidOperation, TypeError, ValueError):
+                        filled_after_dec = Decimal("0")
+                    if filled_after_dec > 0 or final_remote_status in {"closed", "filled", "partially_filled", "partial"}:
+                        # The order filled while we were cancelling it.  Do
+                        # not report a clean cancellation; let the next pass
+                        # handle it through the fill path.
+                        reconciled.append({"intent_id": iid, "previous_status": previous_status, "reconciled_status": previous_status, "reconciled": False, "reservation_held": True, "reason": "FILLED_DURING_CANCEL"})
+                        continue
+                    if final_remote_status not in {"cancelled", "canceled", "expired", "rejected"}:
+                        reconciled.append({"intent_id": iid, "previous_status": previous_status, "reconciled_status": previous_status, "reconciled": False, "reservation_held": True, "reason": "CANCEL_NOT_TERMINAL"})
+                        continue
+                    cancel_receipt = {
+                        "intent_id": iid,
+                        "status": OrderStatus.CANCELED.value,
+                        "reconciled": True,
+                        "reason": stale_reason,
+                        "cancel_result": cancel_result if isinstance(cancel_result, dict) else str(cancel_result),
+                        "execution_evidence": {
+                            "source": "execution_adapter_reconciliation",
+                            "observed_at": now_iso,
+                            "remote_order_id": (after or {}).get("order_id") or (after or {}).get("id") or remote_order_id,
+                            "remote_status": final_remote_status,
+                        },
+                    }
+                    with self.store._connect() as db:
+                        db.execute("UPDATE order_intents SET status=?, execution_result_json=?, updated_at=? WHERE intent_id=?", (OrderStatus.CANCELED.value, json.dumps(cancel_receipt, allow_nan=False), now_iso, iid))
+                    if reservation_id and self.ledger is not None:
+                        self.ledger.release_risk(account_id, reservation_id)
+                    reconciled.append({"intent_id": iid, "previous_status": previous_status, "reconciled_status": OrderStatus.CANCELED.value, "reconciled": True, "reservation_held": False, "reason": stale_reason})
                     continue
             except Exception as exc:
                 logger.warning("Order reconciliation failed for %s: %s", iid, exc)

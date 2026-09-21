@@ -26,6 +26,14 @@ function stringList(record: JsonRecord, key: string): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
+function isBonsaiModelIdentity(value: unknown): boolean {
+  if (typeof value !== "string" || !value.trim()) return false;
+  let basename = value.trim().replace(/\\/g, "/").split("/").pop() || "";
+  if (basename.toLowerCase().endsWith(".gguf")) basename = basename.slice(0, -5);
+  if (basename.toLowerCase().startsWith("ternary-")) basename = basename.slice("ternary-".length);
+  return basename.toLowerCase() === "bonsai-2-27b-ptq1_0";
+}
+
 const countLabels: Record<string, TranslationKey> = {
   instruments: "common.instruments",
   market_snapshots: "common.marketSnapshots",
@@ -80,10 +88,27 @@ export function ModelFacts({ model }: { model: ModelHealthResponse }) {
   const availability = model.available === true ? t("common.available") : model.available === false ? t("common.unavailableValue") : t("common.notSuppliedValue");
   const consult = model.consult;
   const consultAvailability = consult?.available === true ? t("common.available") : consult?.available === false ? t("common.unavailableValue") : t("common.notSuppliedValue");
+  const actualModelId = stringValue(model, "actual_model_id") ?? stringValue(model, "model_version");
+  const actualModelLabel = actualModelId?.replace(/\\/g, "/").split("/").pop();
+  const identityVerified =
+    model.available === true &&
+    model.model_available === true &&
+    isBonsaiModelIdentity(stringValue(model, "model_id")) &&
+    isBonsaiModelIdentity(actualModelId) &&
+    stringValue(model, "model_identity_source") === "verified_manifest";
+  const identityStatus = model.available === false || model.model_available === false
+    ? t("settings.modelIdentityUnavailable")
+    : identityVerified
+      ? t("settings.modelIdentityVerified")
+      : t("settings.modelIdentityUnverified");
   return (
     <dl className="fact-list">
       <Fact label={t("common.provider")} value={model.provider ?? t("common.notSupplied")} />
       <Fact label={t("common.availability")} value={availability} />
+      <Fact label={t("settings.consultModel")} value={stringValue(model, "model_id") ?? t("common.notSupplied")} />
+      <Fact label={t("settings.modelIdentity")} value={actualModelLabel ?? t("common.notSupplied")} />
+      <Fact label={t("settings.modelIdentityStatus")} value={identityStatus} />
+      <Fact label={t("settings.modelIdentitySource")} value={stringValue(model, "model_identity_source") ?? t("common.notSupplied")} />
       {model.error_code ? <Fact label={t("common.errorCode")} value={model.error_code} /> : null}
       {consult ? <>
         <Fact label={t("settings.consultAvailability")} value={consultAvailability} />

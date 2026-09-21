@@ -10,6 +10,7 @@ from statistics import mean
 from typing import Any, Iterable
 
 from ..signals.schema import Action, SignalProposal
+from ..model_routing import DEFAULT_SMART_MODEL
 from .metrics import CONFIDENCE_BUCKETS, _float, _outcome, _prediction, _timestamp, confidence_bucket, filter_records, is_resolved_actionable
 
 
@@ -139,7 +140,7 @@ def fit_calibration(
             candidate = global_candidate
             effective_scope = {}
             fallback = "global"
-    model_id = str(effective_scope.get("model_id") or "qwen35-4b").replace(":", "-")
+    model_id = str(effective_scope.get("model_id") or DEFAULT_SMART_MODEL).replace(":", "-")
     version = version or f"cal-v1-{model_id}"
     trained_text = trained_until.astimezone(timezone.utc).isoformat() if trained_until else None
     grouped = _bucket_entries(candidate)

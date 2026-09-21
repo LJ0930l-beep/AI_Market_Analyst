@@ -27,8 +27,23 @@ web/.vite/
 web/playwright-report/
 web/test-results/
 # V1.2 generated desktop/build outputs
+web/dist/
+web/build/
 build/
 src-tauri/target/
 src-tauri/gen/
-src-tauri/binaries/*.exe
-web/dist/
+src-tauri/binaries/
+*.qwen-bak
+*.bak-*
+*.sqlite3
+logs/
+dist/
+benchmark_results.json
+benchmark_report.md
+cleanup_report.md
+migration_report.md
+benchmark_vram.py
+health.py
+infra/bonsai/bin/
+*.dll
+*.exe

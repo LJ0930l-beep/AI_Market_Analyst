@@ -27,13 +27,14 @@ describe("QwenConsultPage", () => {
     const consultStream = vi.fn(createFakeClient().consultStream);
     renderConsult(createFakeClient({ consultStream }), "/consult?symbol=NVDA");
 
-    expect(await screen.findByText("Qwen is available")).toBeInTheDocument();
+    expect(await screen.findByText("Local model is available")).toBeInTheDocument();
     expect(screen.getByLabelText("Optional instrument context")).toHaveValue("NVDA");
-    fireEvent.change(screen.getByLabelText("Message Qwen"), { target: { value: "Explain the saved evidence" } });
-    fireEvent.keyDown(screen.getByLabelText("Message Qwen"), { key: "Enter", shiftKey: false });
+    fireEvent.change(screen.getByLabelText("Message the local model"), { target: { value: "Explain the saved evidence" } });
+    fireEvent.keyDown(screen.getByLabelText("Message the local model"), { key: "Enter", shiftKey: false });
 
-    expect(await screen.findByText("Fixture Qwen answer.")).toBeInTheDocument();
+    expect(await screen.findByText("Fixture local model answer.")).toBeInTheDocument();
     expect(screen.getByText("Response complete")).toBeInTheDocument();
+    expect(screen.getByText("Verified model").parentElement).toHaveTextContent("Bonsai-2-27B-PTQ1_0");
     const context = screen.getByRole("region", { name: "Read-only context evidence" });
     expect(within(context).getByText("2030-01-02T12:00:00Z")).toBeInTheDocument();
     expect(within(context).getByText("durable_latest_live_prediction")).toBeInTheDocument();
@@ -42,7 +43,7 @@ describe("QwenConsultPage", () => {
       expect.any(Function),
       expect.any(AbortSignal),
     );
-    expect(window.sessionStorage.getItem(CONSULT_SESSION_KEY)).toContain("Fixture Qwen answer.");
+    expect(window.sessionStorage.getItem(CONSULT_SESSION_KEY)).toContain("Fixture local model answer.");
   });
 
   it("uses the selected Chinese language for UI and the server-owned prompt request", async () => {
@@ -50,11 +51,11 @@ describe("QwenConsultPage", () => {
     const consultStream = vi.fn(createFakeClient().consultStream);
     renderConsult(createFakeClient({ consultStream }));
 
-    expect(await screen.findByRole("heading", { name: "Qwen 咨询" })).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("发送给 Qwen"), { target: { value: "请解释当前证据" } });
+    expect(await screen.findByRole("heading", { name: "本地模型咨询" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("发送给本地模型"), { target: { value: "请解释当前证据" } });
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
-    await screen.findByText("Fixture Qwen answer.");
+    await screen.findByText("Fixture local model answer.");
     expect(consultStream).toHaveBeenCalledWith(
       expect.objectContaining({ language: "zh-CN", messages: [{ role: "user", content: "请解释当前证据" }] }),
       expect.any(Function),
@@ -69,7 +70,7 @@ describe("QwenConsultPage", () => {
         contract_version: "qwen_consult_v2",
         request_id: "blocking-request",
         provider: "fake_local_qwen",
-        model_id: "qwen3.5:4b",
+        model_id: "Bonsai-2-27B-PTQ1_0",
         context: { status: "unavailable", sources: [], missing_reasons: ["symbol_not_selected"], read_only: true },
       });
       return new Promise<void>((_resolve, reject) => {
@@ -78,8 +79,8 @@ describe("QwenConsultPage", () => {
     });
     renderConsult(createFakeClient({ consultStream }));
 
-    await screen.findByText("Qwen is available");
-    fireEvent.change(screen.getByLabelText("Message Qwen"), { target: { value: "Keep generating" } });
+    await screen.findByText("Local model is available");
+    fireEvent.change(screen.getByLabelText("Message the local model"), { target: { value: "Keep generating" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     fireEvent.click(await screen.findByRole("button", { name: "Stop generating" }));
 
@@ -110,23 +111,25 @@ describe("QwenConsultPage", () => {
       modelHealth: vi.fn().mockResolvedValue({
         provider: "ollama",
         available: false,
-        consult: { contract_version: "qwen_consult_v2", configured: true, available: false, model_id: "qwen3.5:4b" },
+        consult: { contract_version: "qwen_consult_v2", configured: true, available: false, model_id: "Bonsai-2-27B-PTQ1_0" },
       }),
     });
     const first = renderConsult(unavailable);
-    expect(await screen.findAllByText("Qwen is unavailable")).not.toHaveLength(0);
-    expect(screen.getByLabelText("Message Qwen")).toBeDisabled();
+    expect(await screen.findAllByText("Local model is unavailable")).not.toHaveLength(0);
+    expect(screen.getByText("local_model_consult_v2")).toBeInTheDocument();
+    expect(screen.queryByText("qwen_consult_v2")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Message the local model")).toBeDisabled();
     first.unmount();
 
     const failedStream = vi.fn(async (_request: ConsultRequest, onEvent: (event: ConsultStreamEvent) => void) => {
       onEvent({ type: "error", error: { code: "QWEN_STREAM_INTERRUPTED", message: "The local Qwen stream ended unexpectedly." } });
     });
     renderConsult(createFakeClient({ consultStream: failedStream }));
-    await screen.findByText("Qwen is available");
-    fireEvent.change(screen.getByLabelText("Message Qwen"), { target: { value: "Fail safely" } });
+    await screen.findByText("Local model is available");
+    fireEvent.change(screen.getByLabelText("Message the local model"), { target: { value: "Fail safely" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("QWEN_STREAM_INTERRUPTED");
-    expect(screen.queryByText("Fixture Qwen answer.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Fixture local model answer.")).not.toBeInTheDocument();
   });
 });

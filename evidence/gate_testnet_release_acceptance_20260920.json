@@ -1,0 +1,391 @@
+{
+  "run_id": "gate_e2e_27dfd9222f59526eba9599e7",
+  "account_id": "gate_testnet",
+  "environment": "TESTNET",
+  "venue": "gate",
+  "idempotency_key": "release-20260920-a440b2c9abf0",
+  "status": "COMPLETED",
+  "orders_sent": 2,
+  "model_called": false,
+  "authorization_called": false,
+  "local_fill_created": false,
+  "stages": [
+    {
+      "stage": "METADATA",
+      "status": "COMPLETED",
+      "started_at": "2026-09-20T02:05:05.900914+08:00",
+      "completed_at": "2026-09-20T02:05:05.900914+08:00",
+      "duration_ms": 0.0,
+      "reason_code": null,
+      "message_zh": "已从 Gate TestNet 读取合约最小数量、精度和费率。",
+      "evidence": {
+        "source": "gate_ccxt_private_market_metadata",
+        "amount": "1.0",
+        "contract_size": "0.0001"
+      }
+    },
+    {
+      "stage": "PROTECTION_DERIVED",
+      "status": "COMPLETED",
+      "started_at": "2026-09-20T02:05:06.145664+08:00",
+      "completed_at": "2026-09-20T02:05:06.145664+08:00",
+      "duration_ms": 0.0,
+      "reason_code": null,
+      "message_zh": "止损/止盈已按 Gate TestNet 价格精度和方向约束推导。",
+      "evidence": {
+        "stop": "80245.5",
+        "take_profit": "83911.7",
+        "source": "gate_testnet_market_metadata_and_ticker"
+      }
+    },
+    {
+      "stage": "LEVERAGE",
+      "status": "COMPLETED",
+      "started_at": "2026-09-20T02:05:06.564691+08:00",
+      "completed_at": "2026-09-20T02:05:06.564691+08:00",
+      "duration_ms": 0.0,
+      "reason_code": null,
+      "message_zh": "Gate TestNet 杠杆设置已确认。",
+      "evidence": {
+        "leverage": 1
+      }
+    },
+    {
+      "stage": "ORDER_SUBMITTED",
+      "status": "COMPLETED",
+      "started_at": "2026-09-20T02:05:08.343856+08:00",
+      "completed_at": "2026-09-20T02:05:08.343856+08:00",
+      "duration_ms": 0.0,
+      "reason_code": null,
+      "message_zh": "TestNet 订单已发送，正在读取远端订单状态。",
+      "evidence": {
+        "order_id": "72057594076794364",
+        "status": "FILLED",
+        "dry_run": false
+      }
+    },
+    {
+      "stage": "FILL_RECONCILED",
+      "status": "COMPLETED",
+      "started_at": "2026-09-20T02:05:08.343856+08:00",
+      "completed_at": "2026-09-20T02:05:08.343856+08:00",
+      "duration_ms": 0.0,
+      "reason_code": null,
+      "message_zh": "Gate TestNet 已返回具体成交数量，成交事实已确认。",
+      "evidence": {
+        "order_id": "72057594076794364",
+        "status": "FILLED",
+        "filled": 1.0
+      }
+    },
+    {
+      "stage": "POSITION_RECONCILED",
+      "status": "COMPLETED",
+      "started_at": "2026-09-20T02:05:09.105062+08:00",
+      "completed_at": "2026-09-20T02:05:09.105062+08:00",
+      "duration_ms": 0.0,
+      "reason_code": null,
+      "message_zh": "Gate TestNet 远端持仓已确认。",
+      "evidence": {
+        "symbol": "BTCUSDT",
+        "side": "LONG",
+        "contracts": "1.0"
+      }
+    },
+    {
+      "stage": "PROTECTION_RECONCILED",
+      "status": "COMPLETED",
+      "started_at": "2026-09-20T02:05:09.105062+08:00",
+      "completed_at": "2026-09-20T02:05:09.105062+08:00",
+      "duration_ms": 0.0,
+      "reason_code": null,
+      "message_zh": "Gate TestNet 原生 reduce-only 止损/止盈已确认。",
+      "evidence": {
+        "protection_status": "PROTECTED",
+        "protection_orders": [
+          {
+            "leg": "stop_loss",
+            "order_id": "2101372055961206784",
+            "status": "open",
+            "side": "SELL",
+            "amount": 1.0,
+            "trigger_price": 80245.5,
+            "reduce_only": true,
+            "price_type": "MARK_PRICE"
+          },
+          {
+            "leg": "take_profit",
+            "order_id": "2101372056804261888",
+            "status": "open",
+            "side": "SELL",
+            "amount": 1.0,
+            "trigger_price": 83911.7,
+            "reduce_only": true,
+            "price_type": "MARK_PRICE"
+          }
+        ]
+      }
+    },
+    {
+      "stage": "CLEANUP",
+      "status": "COMPLETED",
+      "started_at": "2026-09-20T02:05:10.518685+08:00",
+      "completed_at": "2026-09-20T02:05:10.518685+08:00",
+      "duration_ms": 0.0,
+      "reason_code": null,
+      "message_zh": "Gate TestNet reduce-only 清理已完成并复核无剩余持仓。",
+      "evidence": {
+        "cleanup_status": "FILLED"
+      }
+    }
+  ],
+  "started_at": "2026-09-20T02:05:00.799591+08:00",
+  "metadata": {
+    "symbol": "BTCUSDT",
+    "native_symbol": "BTC_USDT",
+    "ccxt_symbol": "BTC/USDT:USDT",
+    "market_type": "perpetual",
+    "contract_type": "perpetual",
+    "contractSize": 0.0001,
+    "precision": {
+      "amount": 1.0,
+      "price": 0.1
+    },
+    "limits": {
+      "amount": {
+        "step": 1.0,
+        "min": 1.0,
+        "max": 1000000.0
+      }
+    },
+    "amount_unit": "CONTRACTS",
+    "amount_semantics": "Gate futures order amount is an integer/step contract count, not base-asset quantity.",
+    "taker": 0.0005,
+    "maker": 0.0002,
+    "active": true,
+    "source": "gate_ccxt_private_market_metadata"
+  },
+  "amount": "1.0",
+  "contract_size": "0.0001",
+  "ticker": {
+    "status": "AVAILABLE",
+    "symbol": "BTCUSDT",
+    "native_symbol": "BTC/USDT:USDT",
+    "last": 81467.6,
+    "bid": 81468.0,
+    "ask": 81468.1,
+    "observed_at": "2026-09-20T02:05:06.145664+08:00",
+    "source": "gate_testnet_private_exchange_ticker"
+  },
+  "entry_reference": "81467.6",
+  "stop_price": "80245.5",
+  "take_profit": "83911.7",
+  "pre_entry_truth": {
+    "status": "AVAILABLE",
+    "observed_at": "2026-09-20T02:05:06.819282+08:00",
+    "equity": 50172.77943219892,
+    "available_margin": 50172.77943219892,
+    "positions": [],
+    "pending_orders": []
+  },
+  "entry_order": {
+    "status": "FILLED",
+    "dry_run": false,
+    "order_id": "72057594076794364",
+    "client_order_id": "t-e2e-27dfd9222f59526eba95",
+    "symbol": "BTCUSDT",
+    "side": "LONG",
+    "amount": 1.0,
+    "filled": 1.0,
+    "price": 81467.7,
+    "average": 81467.7,
+    "remote_status": "closed",
+    "remote_finish_as": "filled",
+    "remote_label": null,
+    "stop_loss": 80245.5,
+    "take_profit": 83911.7,
+    "fills": [],
+    "created_at": "2026-09-20T02:05:07.719831+08:00",
+    "protection_status": "PROTECTED",
+    "protection_orders": [
+      {
+        "leg": "stop_loss",
+        "order_id": "2101372055961206784",
+        "status": "open",
+        "side": "SELL",
+        "amount": 1.0,
+        "trigger_price": 80245.5,
+        "reduce_only": true,
+        "price_type": "MARK_PRICE"
+      },
+      {
+        "leg": "take_profit",
+        "order_id": "2101372056804261888",
+        "status": "open",
+        "side": "SELL",
+        "amount": 1.0,
+        "trigger_price": 83911.7,
+        "reduce_only": true,
+        "price_type": "MARK_PRICE"
+      }
+    ],
+    "protection_verified": true
+  },
+  "entry_reconciliation": {
+    "status": "FILLED",
+    "dry_run": false,
+    "order_id": "72057594076794364",
+    "client_order_id": "t-e2e-27dfd9222f59526eba95",
+    "symbol": "BTCUSDT",
+    "side": "LONG",
+    "amount": 1.0,
+    "filled": 1.0,
+    "price": 81467.7,
+    "average": 81467.7,
+    "remote_status": "closed",
+    "remote_finish_as": "filled",
+    "remote_label": null,
+    "stop_loss": 80245.5,
+    "take_profit": 83911.7,
+    "fills": [],
+    "created_at": "2026-09-20T02:05:07.719831+08:00",
+    "protection_status": "PROTECTED",
+    "protection_orders": [
+      {
+        "leg": "stop_loss",
+        "order_id": "2101372055961206784",
+        "status": "open",
+        "side": "SELL",
+        "amount": 1.0,
+        "trigger_price": 80245.5,
+        "reduce_only": true,
+        "price_type": "MARK_PRICE"
+      },
+      {
+        "leg": "take_profit",
+        "order_id": "2101372056804261888",
+        "status": "open",
+        "side": "SELL",
+        "amount": 1.0,
+        "trigger_price": 83911.7,
+        "reduce_only": true,
+        "price_type": "MARK_PRICE"
+      }
+    ],
+    "protection_verified": true
+  },
+  "post_entry_truth": {
+    "status": "AVAILABLE",
+    "observed_at": "2026-09-20T02:05:08.5326+08:00",
+    "equity": 50172.77325081392,
+    "available_margin": 50164.62247952692,
+    "positions": [
+      {
+        "symbol": "BTC/USDT:USDT",
+        "side": "LONG",
+        "contracts": 1.0,
+        "entry_price": 81467.7,
+        "mark_price": 81457.16,
+        "unrealized_pnl": -0.001054,
+        "realized_pnl": -0.004073385,
+        "leverage": 0.0,
+        "liquidation_price": 0.0,
+        "initial_margin": 8.151825287,
+        "contract_size": 0.0001,
+        "position_id": 2
+      }
+    ],
+    "pending_orders": [],
+    "fills": [
+      {
+        "id": "1422299722",
+        "order_id": "72057594076794364",
+        "symbol": "BTCUSDT",
+        "timestamp": 1789841114200,
+        "datetime": "2026-09-19T18:05:14.2Z",
+        "side": "BUY",
+        "price": 81467.7,
+        "amount": 1.0,
+        "cost": 8.14677,
+        "fee_cost": 0.004073385,
+        "fee_currency": "USDT",
+        "fee_evidence_status": "OBSERVED_REMOTE"
+      }
+    ]
+  },
+  "remote_position": {
+    "symbol": "BTC/USDT:USDT",
+    "side": "LONG",
+    "contracts": "1.0",
+    "entry_price": 81467.7,
+    "mark_price": 81457.16,
+    "unrealized_pnl": -0.001054,
+    "realized_pnl": -0.004073385,
+    "leverage": 0.0,
+    "liquidation_price": 0.0,
+    "initial_margin": 8.151825287,
+    "contract_size": 0.0001,
+    "position_id": 2,
+    "new_contracts": "1.0"
+  },
+  "cleanup_order": {
+    "status": "FILLED",
+    "dry_run": false,
+    "order_id": "72057594076794366",
+    "client_order_id": "t-e2e-27dfd9222f59526eba95-close",
+    "symbol": "BTCUSDT",
+    "side": "SHORT",
+    "amount": 1.0,
+    "filled": 1.0,
+    "price": 81467.6,
+    "average": 81467.6,
+    "remote_status": "closed",
+    "remote_finish_as": "filled",
+    "remote_label": null,
+    "stop_loss": null,
+    "take_profit": null,
+    "fills": [],
+    "created_at": "2026-09-20T02:05:09.105062+08:00",
+    "protection_status": "NOT_REQUESTED",
+    "protection_orders": []
+  },
+  "post_cleanup_truth": {
+    "status": "AVAILABLE",
+    "observed_at": "2026-09-20T02:05:09.503382+08:00",
+    "equity": 50172.77127543392,
+    "available_margin": 50172.77127543392,
+    "positions": [],
+    "pending_orders": [],
+    "fills": [
+      {
+        "id": "1422299726",
+        "order_id": "72057594076794366",
+        "symbol": "BTCUSDT",
+        "timestamp": 1789841115553,
+        "datetime": "2026-09-19T18:05:15.553Z",
+        "side": "SELL",
+        "price": 81467.6,
+        "amount": 1.0,
+        "cost": 8.14676,
+        "fee_cost": 0.00407338,
+        "fee_currency": "USDT",
+        "fee_evidence_status": "OBSERVED_REMOTE"
+      },
+      {
+        "id": "1422299722",
+        "order_id": "72057594076794364",
+        "symbol": "BTCUSDT",
+        "timestamp": 1789841114200,
+        "datetime": "2026-09-19T18:05:14.2Z",
+        "side": "BUY",
+        "price": 81467.7,
+        "amount": 1.0,
+        "cost": 8.14677,
+        "fee_cost": 0.004073385,
+        "fee_currency": "USDT",
+        "fee_evidence_status": "OBSERVED_REMOTE"
+      }
+    ]
+  },
+  "completed_at": "2026-09-20T02:05:10.518685+08:00"
+}

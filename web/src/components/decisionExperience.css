@@ -1,0 +1,10 @@
+.decision-experience{display:grid;gap:12px;background:linear-gradient(135deg,rgba(12,21,35,.6),rgba(7,12,22,.42))!important}
+.decision-experience__eyebrow{display:block;color:#4ce6c1;font:600 9px/1.4 "Cascadia Code",monospace;letter-spacing:.13em}
+.decision-experience__list{display:grid;gap:8px}
+.decision-experience__item{overflow:hidden;border:1px solid rgba(112,135,169,.2);border-radius:10px;background:rgba(6,11,20,.38)}
+.decision-experience__item>summary{display:grid;grid-template-columns:minmax(100px,.8fr) minmax(105px,.75fr) minmax(130px,1fr) minmax(120px,.7fr) minmax(130px,.8fr);align-items:center;gap:10px;padding:12px;cursor:pointer;list-style:none}
+.decision-experience__item>summary::-webkit-details-marker{display:none}
+.decision-experience__item>summary:after{content:"＋";justify-self:end;color:#68e8c8}
+.decision-experience__item[open]>summary:after{content:"−"}
+.decision-experience__symbol{font-weight:700;color:#e7eef8}.decision-experience__action,.decision-experience__strategy,.decision-experience__item time{color:#93a2b8;font-size:11px}.decision-experience__pnl{color:#7de2bd;font:650 12px "Cascadia Code",monospace}.decision-experience__item[data-outcome="LOSS"] .decision-experience__pnl{color:#f08c9a}.decision-experience__body{padding:0 14px 14px 14px;color:#b5c0d0;font-size:12px;line-height:1.6}.decision-experience__body p{margin:7px 0}.decision-experience__body small{color:#8290a5}.decision-experience__pending{color:#d6b96e}.decision-experience__item:focus-within{outline:2px solid rgba(76,230,193,.45);outline-offset:1px}
+@media(max-width:760px){.decision-experience__item>summary{grid-template-columns:1fr auto}.decision-experience__strategy,.decision-experience__item time{grid-column:1}.decision-experience__pnl{grid-column:2;grid-row:1}.decision-experience__item>summary:after{grid-column:2;grid-row:2}}

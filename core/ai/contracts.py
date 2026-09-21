@@ -225,6 +225,9 @@ class LLMCallMetadata:
     input_tokens_est: int | None = None
     output_chars: int | None = None
     schema_enforcement: str | None = None
+    actual_model_id: str | None = None
+    model_identity_source: str | None = None
+    verified_manifest_model_id: str | None = None
 
     def with_status(self, status: str, *, error_code: str | None = None) -> "LLMCallMetadata":
         return replace(self, parse_status=status, error_code=error_code)
@@ -242,4 +245,7 @@ class LLMCallMetadata:
             "input_tokens_est": self.input_tokens_est,
             "output_chars": self.output_chars,
             "schema_enforcement": self.schema_enforcement,
+            "actual_model_id": self.actual_model_id,
+            "model_identity_source": self.model_identity_source,
+            "verified_manifest_model_id": self.verified_manifest_model_id,
         }

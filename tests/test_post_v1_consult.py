@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import tempfile
+import threading
 import unittest
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -17,11 +18,13 @@ from core.consult import (
     ConsultServiceError,
     ConsultTransportError,
     QwenConsultService,
+    OllamaConsultTransport,
     build_consult_context,
     parse_consult_request,
     _validate_loopback_url,
 )
 from core.instruments import instrument_for
+from core.model_routing import DEFAULT_MODEL
 from core.providers import FixtureProvider
 from core.quant import build_quant_snapshot
 from core.signals import Action, build_signal
@@ -31,8 +34,8 @@ from core.storage import SQLiteStore
 def consult_config(**changes: object) -> ConsultConfig:
     base = ConsultConfig(
         enabled=True,
-        base_url="http://127.0.0.1:11434",
-        model_name="qwen-test:4b",
+        base_url="http://127.0.0.1:8080/v1",
+        model_name=DEFAULT_MODEL,
         connect_timeout_seconds=0.2,
         first_token_timeout_seconds=0.2,
         stream_idle_timeout_seconds=0.2,
@@ -52,8 +55,8 @@ def consult_config(**changes: object) -> ConsultConfig:
 
 
 class FakeConsultTransport:
-    provider_name = "fake_local_qwen"
-    model_name = "qwen-test:4b"
+    provider_name = "fake_local_bonsai"
+    model_name = DEFAULT_MODEL
 
     def __init__(self, chunks: tuple[object, ...] = ("Local ", "answer"), error: Exception | None = None, delay: float = 0.0) -> None:
         self.chunks = chunks
@@ -76,8 +79,8 @@ class FakeConsultTransport:
 
 
 class BlockingConsultTransport:
-    provider_name = "fake_local_qwen"
-    model_name = "qwen-test:4b"
+    provider_name = "fake_local_bonsai"
+    model_name = DEFAULT_MODEL
 
     def __init__(self) -> None:
         self.started = asyncio.Event()
@@ -94,8 +97,8 @@ class BlockingConsultTransport:
 
 
 class DelayedSecondChunkTransport:
-    provider_name = "fake_local_qwen"
-    model_name = "qwen-test:4b"
+    provider_name = "fake_local_bonsai"
+    model_name = DEFAULT_MODEL
 
     async def stream(self, _messages: tuple[dict[str, str], ...]):
         yield "first"
@@ -186,7 +189,7 @@ class QwenConsultApiTests(unittest.TestCase):
         self.assertEqual("".join(str(event.get("content", "")) for event in events), "Saved answer.")
         meta = events[0]
         self.assertEqual(meta["symbol"], "NVDA")
-        self.assertEqual(meta["model_id"], "qwen-test:4b")
+        self.assertEqual(meta["model_id"], DEFAULT_MODEL)
         self.assertEqual(meta["context"]["status"], "available")  # type: ignore[index]
         self.assertEqual(meta["context"]["as_of"], (self.now - timedelta(minutes=5)).isoformat())  # type: ignore[index]
         self.assertIn("默认使用中文回答", transport.prompt_messages[0]["content"])
@@ -244,7 +247,7 @@ class QwenConsultApiTests(unittest.TestCase):
             json={"language": "en", "messages": [{"role": "user", "content": "hello"}]},
         )
         self.assertEqual(response.status_code, 503)
-        self.assertEqual(response.json(), {"error": {"code": "QWEN_NOT_CONFIGURED", "message": "Local Qwen consultation is not configured."}})
+        self.assertEqual(response.json(), {"error": {"code": "QWEN_NOT_CONFIGURED", "message": "Local Bonsai consultation is not configured."}})
         model_health = client.get("/health/model").json()
         self.assertFalse(model_health["consult"]["available"])
         self.assertNotIn("base_url", json.dumps(model_health))
@@ -302,15 +305,136 @@ class QwenConsultApiTests(unittest.TestCase):
         self.assertEqual(events[-1]["error"]["code"], "QWEN_OUTPUT_LIMIT")  # type: ignore[index]
 
     def test_consult_endpoint_configuration_is_loopback_only(self) -> None:
-        self.assertEqual(_validate_loopback_url("http://localhost:11434/"), "http://localhost:11434")
+        self.assertEqual(_validate_loopback_url("http://localhost:8080/v1/"), "http://localhost:8080/v1")
+        self.assertEqual(_validate_loopback_url("http://127.0.0.1:8080/v1"), "http://127.0.0.1:8080/v1")
         for unsafe in (
-            "https://127.0.0.1:11434",
-            "http://192.168.1.8:11434",
-            "http://user:secret@127.0.0.1:11434",
-            "http://127.0.0.1:11434/private",
+            "https://127.0.0.1:8080/v1",
+            "http://192.168.1.8:8080/v1",
+            "http://user:secret@127.0.0.1:8080/v1",
+            "http://127.0.0.1:11434/v1",
+            "http://127.0.0.1:8081/v1",
+            "http://127.0.0.1:8080/",
+            "http://127.0.0.1:8080/v1/private",
+            "http://127.0.0.1/v1",
+            "http://[invalid:8080/v1",
         ):
             with self.subTest(unsafe=unsafe), self.assertRaises(ConsultServiceError):
                 _validate_loopback_url(unsafe)
+
+    def test_modelclient_transport_verifies_manifest_and_stream_receipt(self) -> None:
+        class FakeModelClient:
+            base_url = "http://127.0.0.1:8080/v1"
+            last_response_model = None
+
+            def _configuration_error(self, _model):
+                return None
+
+            def is_healthy(self, **_kwargs):
+                return True
+
+            def list_models(self, **_kwargs):
+                return [{"id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"}]
+
+            def chat_completion_stream(self, _messages, **kwargs):
+                self.call = kwargs
+                self.last_response_model = None
+                yield {"choices": [{"delta": {"content": "Bonsai "}}]}
+                yield {"choices": [{"delta": {"content": "answer"}}]}
+
+        fake_client = FakeModelClient()
+        transport = OllamaConsultTransport(consult_config())
+        transport.model_client = fake_client  # type: ignore[assignment]
+
+        async def collect() -> list[str]:
+            return [chunk async for chunk in transport.stream(({"role": "user", "content": "hello"},))]
+
+        self.assertEqual(asyncio.run(collect()), ["Bonsai ", "answer"])
+        self.assertEqual(fake_client.call["model_name"], DEFAULT_MODEL)
+        self.assertEqual(fake_client.call["timeout_sec"], consult_config().total_timeout_seconds)
+        self.assertEqual(fake_client.call["max_tokens"], consult_config().max_output_tokens)
+        self.assertEqual(transport.model_receipt["actual_model_id"], r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf")  # type: ignore[index]
+        self.assertEqual(transport.model_receipt["model_identity_source"], "request_bound_to_verified_manifest")  # type: ignore[index]
+
+    def test_modelclient_transport_fails_closed_when_manifest_is_not_bonsai(self) -> None:
+        class FakeModelClient:
+            base_url = "http://127.0.0.1:8080/v1"
+            streamed = False
+
+            def _configuration_error(self, _model):
+                return None
+
+            def is_healthy(self, **_kwargs):
+                return True
+
+            def list_models(self, **_kwargs):
+                return [{"id": "Other-Bonsai-2-27B.gguf"}]
+
+            def chat_completion_stream(self, *_args, **_kwargs):
+                self.streamed = True
+                yield {}
+
+        fake_client = FakeModelClient()
+        transport = OllamaConsultTransport(consult_config())
+        transport.model_client = fake_client  # type: ignore[assignment]
+
+        async def collect() -> list[str]:
+            return [chunk async for chunk in transport.stream(({"role": "user", "content": "hello"},))]
+
+        with self.assertRaises(ConsultTransportError) as caught:
+            asyncio.run(collect())
+        self.assertEqual(caught.exception.code, "QWEN_MODEL_NOT_FOUND")
+        self.assertFalse(fake_client.streamed)
+
+    def test_consumer_cancellation_closes_stream_and_releases_inference_slot(self) -> None:
+        class Response:
+            closed = False
+
+            def close(self):
+                self.closed = True
+
+        class FakeModelClient:
+            base_url = "http://127.0.0.1:8080/v1"
+            last_response_model = None
+
+            def __init__(self):
+                self.started = threading.Event()
+                self.response = Response()
+
+            def _configuration_error(self, _model):
+                return None
+
+            def is_healthy(self, **_kwargs):
+                return True
+
+            def list_models(self, **_kwargs):
+                return [{"id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"}]
+
+            def chat_completion_stream(self, _messages, **kwargs):
+                kwargs["on_response_open"](self.response)
+                self.started.set()
+                while not kwargs["cancel_event"].wait(0.01):
+                    yield {"choices": [{"delta": {"content": ""}}]}
+
+        fake_client = FakeModelClient()
+        transport = OllamaConsultTransport(consult_config())
+        transport.model_client = fake_client  # type: ignore[assignment]
+
+        async def exercise() -> None:
+            async def consume() -> None:
+                async for _chunk in transport.stream(({"role": "user", "content": "hello"},)):
+                    pass
+
+            consumer = asyncio.create_task(consume())
+            started = await asyncio.to_thread(fake_client.started.wait, 1.0)
+            assert started
+            consumer.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await consumer
+
+        asyncio.run(exercise())
+        assert fake_client.response.closed
+        assert transport._inference_slot.acquire(blocking=False)
+        transport._inference_slot.release()
 
     def test_missing_and_future_context_are_honest(self) -> None:
         empty_store = SQLiteStore(Path(self.temp_dir.name) / "empty.sqlite3")

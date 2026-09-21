@@ -66,7 +66,7 @@ describe("AssetDetailPage", () => {
     );
     expect(news).toHaveBeenCalledWith("NVDA", expect.any(AbortSignal));
     expect(analysis).not.toHaveBeenCalled();
-    expect(screen.getByRole("link", { name: "Consult Qwen about this instrument" })).toHaveAttribute("href", "/consult?symbol=NVDA");
+    expect(screen.getByRole("link", { name: "Consult the local model about this instrument" })).toHaveAttribute("href", "/consult?symbol=NVDA");
   });
 
   it("keeps news visible when the snapshot endpoint fails", async () => {
@@ -239,7 +239,7 @@ describe("AssetDetailPage", () => {
     expect(within(snapshotPanel).getByText("OHLCV 证据")).toBeInTheDocument();
     expect(within(snapshotPanel).getByText("此标的和时间周期未提供 OHLCV K 线。")).toBeInTheDocument();
     expect(within(snapshotPanel).getByText("无法解析")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "咨询 Qwen 此标的" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "向本地模型咨询此标的" })).toBeInTheDocument();
     expect(screen.queryByText("Not supplied", { exact: true })).not.toBeInTheDocument();
     expect(screen.queryByText("Not parseable", { exact: true })).not.toBeInTheDocument();
     expect(screen.queryByText("OHLCV evidence", { exact: true })).not.toBeInTheDocument();

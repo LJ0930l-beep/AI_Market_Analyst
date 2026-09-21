@@ -83,6 +83,7 @@ def _fresh_paper_market(symbol: str, price: float) -> dict[str, Any]:
         "fresh": True,
         "market": {
             "contractSize": 1.0,
+            "leverage_max": 100,
             "precision": {"amount": 0.001, "price": 0.01},
             "limits": {"amount": {"min": 0.001, "max": 1_000_000.0, "step": 0.001}},
             "taker": 0.0005,
@@ -121,7 +122,7 @@ def test_at01_live_execution_does_not_require_local_authorization(temp_store, ap
         trader_client=mock_trader,
         market_snapshot={
             **_fresh_paper_market("BTCUSDT", 68000.0),
-            "market": {"contractSize": 1.0, "precision": {"amount": 0.001, "price": 0.01}, "limits": {"amount": {"min": 0.001, "max": 1_000_000.0, "step": 0.001}}, "taker": 0.0005},
+            "market": {"contractSize": 1.0, "leverage_max": 100, "precision": {"amount": 0.001, "price": 0.01}, "limits": {"amount": {"min": 0.001, "max": 1_000_000.0, "step": 0.001}}, "taker": 0.0005},
         },
     )
     assert result["status"] in {"ACKNOWLEDGED", "UNKNOWN"}

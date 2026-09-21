@@ -18,7 +18,7 @@ function renderSettings() {
       error_code: "MODEL_NOT_CONFIGURED",
       consult: {
         available: false,
-        model_id: "qwen3.5:4b",
+        model_id: "Bonsai-2-27B-PTQ1_0",
         contract_version: "qwen_consult_v2",
         conversation_storage: "browser_session_only",
         database_writes: false,

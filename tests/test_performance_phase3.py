@@ -22,7 +22,7 @@ def _record(index: int, action: str, realized_r: float | None, raw: float = 0.7,
         "raw_confidence": raw,
         "calibrated_confidence": calibrated,
         "expected_hold_minutes": 1440,
-        "model_id": "qwen3.5:4b",
+        "model_id": "Bonsai-2-27B-PTQ1_0",
         "prompt_version": "phase2-json-v6",
         "source_type": "replay",
         "parse_status": "valid",
@@ -48,6 +48,14 @@ def _record(index: int, action: str, realized_r: float | None, raw: float = 0.7,
 
 
 class PerformancePhase3Tests(unittest.TestCase):
+    def test_calibration_default_provenance_uses_pinned_bonsai_model(self):
+        result = fit_calibration([], scope={"source_type": "replay"})
+        self.assertEqual(result.version, "cal-v1-Bonsai-2-27B-PTQ1_0")
+
+    def test_calibration_preserves_explicit_model_scope(self):
+        result = fit_calibration([], scope={"source_type": "replay", "model_id": "custom-model"})
+        self.assertEqual(result.version, "cal-v1-custom-model")
+
     def test_metrics_include_wait_in_coverage_but_not_win_rate(self):
         records = [_record(0, "LONG", 1.0), _record(1, "SHORT", -1.0), _record(2, "LONG", 0.5), _record(3, "WAIT", None)]
         metrics = aggregate_performance(records, scope={"source_type": "replay"})

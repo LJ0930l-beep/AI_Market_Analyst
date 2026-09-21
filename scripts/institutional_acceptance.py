@@ -85,7 +85,7 @@ def run_acceptance() -> dict[str, Any]:
         second = persist_evidence_bundle(store, bundle)
         checks.append(_check(
             "AT-EVIDENCE-IDEMPOTENCY-DIGEST",
-            first["persisted"] is True and second["persisted"] is False and validate_weight_digest("qwen3.5:9b") is None,
+            first["persisted"] is True and second["persisted"] is False and validate_weight_digest("Bonsai-2-27B-PTQ1_0") is None,
             {"first_persisted": first["persisted"], "second_persisted": second["persisted"], "model_name_is_not_digest": True},
         ))
 
