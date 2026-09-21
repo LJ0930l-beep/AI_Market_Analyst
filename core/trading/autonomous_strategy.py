@@ -43,7 +43,11 @@ market_radar 每组先查 status/source/as_of；缺失、过期、NO_DATA、UNAV
 LIMIT优先时考虑合理回踩挂单并设TTL；不得把未来触发说成已成交。仅当价格已进区、触发完成且盘口成本满足策略门槛时才用 MARKET。分析输入中的全部周期，不编造行情、新闻或成交。
 technical_context 的 indicator_columns/candle_columns 定义数组字段顺序；周期键说明间隔，candles 升序，last_closed_at 锚定末根K线。
 """
-def build_strategy_system_prompt(strategy_instructions: dict[str, Any] | None = None) -> str:
+def build_strategy_system_prompt(
+    strategy_instructions: dict[str, Any] | None = None,
+    *,
+    context_length: int | None = None,
+) -> str:
     instructions = strategy_instructions if isinstance(strategy_instructions, dict) else {}
     sections = instructions.get("sections") if isinstance(instructions.get("sections"), dict) else {}
     name = str(instructions.get("name") or "")
@@ -54,8 +58,19 @@ def build_strategy_system_prompt(strategy_instructions: dict[str, Any] | None = 
     if sections or profile:
         profile_json = json.dumps(profile, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
+        compact_limits = STRATEGY_SECTION_CHAR_LIMITS
+        if context_length and int(context_length) <= 8192:
+            compact_limits = {
+                "role": min(STRATEGY_SECTION_CHAR_LIMITS["role"], 180),
+                "frequency": min(STRATEGY_SECTION_CHAR_LIMITS["frequency"], 240),
+                "entry_standards": min(STRATEGY_SECTION_CHAR_LIMITS["entry_standards"], 400),
+                "decision_process": min(STRATEGY_SECTION_CHAR_LIMITS["decision_process"], 300),
+                "custom_prompt": min(STRATEGY_SECTION_CHAR_LIMITS["custom_prompt"], 200),
+            }
+
         def bounded_section(key: str) -> str:
-            return str(sections.get(key) or "")[:STRATEGY_SECTION_CHAR_LIMITS[key]]
+            limit = compact_limits.get(key, STRATEGY_SECTION_CHAR_LIMITS.get(key, 1000))
+            return str(sections.get(key) or "")[:limit]
 
         strategy_block = f"""
 

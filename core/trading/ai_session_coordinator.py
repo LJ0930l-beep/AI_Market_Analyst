@@ -133,7 +133,7 @@ def _assert_prompt_fits(
                         ((str(key), _estimate_tokens(json.dumps(value, ensure_ascii=False, separators=(",", ":")))) for key, value in payload.items()),
                         key=lambda item: item[1],
                         reverse=True,
-                    )[:4]
+                    )
                 ]
         except (TypeError, ValueError, json.JSONDecodeError):
             pass
@@ -231,8 +231,13 @@ def _fit_prompt_payload(
     if isinstance(news, list):
         changed = False
         for item in news:
-            if isinstance(item, dict) and isinstance(item.get("summary"), str) and len(item["summary"]) > 96:
+            if not isinstance(item, dict):
+                continue
+            if isinstance(item.get("summary"), str) and len(item["summary"]) > 96:
                 item["summary"] = item["summary"][:96]
+                changed = True
+            if "url" in item:
+                item.pop("url", None)
                 changed = True
         if record("shorten_news_summaries", changed):
             return result()
@@ -315,12 +320,15 @@ def _fit_prompt_payload(
             if not isinstance(frames, dict):
                 continue
             for timeframe, frame in frames.items():
-                if not isinstance(frame, dict) or not isinstance(frame.get("candles"), list):
+                if not isinstance(frame, dict):
+                    continue
+                bar_key = "candles" if isinstance(frame.get("candles"), list) else ("bars" if isinstance(frame.get("bars"), list) else None)
+                if not bar_key:
                     continue
                 keep_count = 3 if str(timeframe).lower() == str(signal_timeframe or "").lower() else 1
-                candles = frame["candles"]
-                if len(candles) > keep_count:
-                    frame["candles"] = candles[-keep_count:]
+                bars_list = frame[bar_key]
+                if len(bars_list) > keep_count:
+                    frame[bar_key] = bars_list[-keep_count:]
                     changed = True
         if record("trim_older_candle_history", changed):
             return result()
@@ -338,11 +346,56 @@ def _fit_prompt_payload(
                 compact_conditions = [str(item)[:28] for item in conditions[:1]]
                 changed = compact_conditions != conditions or changed
                 candidate["conditions"] = compact_conditions
+            rationale = candidate.get("rationale")
+            if isinstance(rationale, str) and len(rationale) > 96:
+                candidate["rationale"] = rationale[:96]
+                changed = True
             invalidation = candidate.get("invalidation")
             if isinstance(invalidation, str) and len(invalidation) > 56:
                 candidate["invalidation"] = invalidation[:56]
                 changed = True
+            proposal = candidate.get("proposal")
+            if isinstance(proposal, dict):
+                p_rationale = proposal.get("rationale")
+                if isinstance(p_rationale, str) and len(p_rationale) > 96:
+                    proposal["rationale"] = p_rationale[:96]
+                    changed = True
+                p_conditions = proposal.get("conditions")
+                if isinstance(p_conditions, list) and len(p_conditions) > 1:
+                    proposal["conditions"] = [str(item)[:28] for item in p_conditions[:1]]
+                    changed = True
         if record("shorten_candidate_text", changed):
+            return result()
+
+    # Trim optional raw exchange blobs and large memory summaries
+    account = projected.get("account_truth")
+    if isinstance(account, dict) and isinstance(account.get("pending_orders"), list):
+        changed = False
+        for order in account["pending_orders"]:
+            if isinstance(order, dict) and "raw_exchange_blob" in order:
+                order.pop("raw_exchange_blob", None)
+                changed = True
+        if record("trim_pending_order_blobs", changed):
+            return result()
+
+    memories = projected.get("decision_memory")
+    if isinstance(memories, list):
+        changed = False
+        for memory in memories:
+            if isinstance(memory, dict) and isinstance(memory.get("summary_zh"), str) and len(memory["summary_zh"]) > 96:
+                memory["summary_zh"] = memory["summary_zh"][:96]
+                changed = True
+        if record("shorten_decision_memory_summaries", changed):
+            return result()
+
+    universe = projected.get("universe_snapshot")
+    if isinstance(universe, dict) and isinstance(universe.get("candidate_metrics"), list):
+        changed = False
+        for metric in universe["candidate_metrics"]:
+            if isinstance(metric, dict) and "metric_blob" in metric:
+                metric.pop("metric_blob", None)
+                changed = True
+        if record("trim_universe_metric_blobs", changed):
             return result()
 
     # Preserve news meaning for the leading revision before shedding any
@@ -356,14 +409,191 @@ def _fit_prompt_payload(
             if not isinstance(frames, dict):
                 continue
             for timeframe, frame in frames.items():
-                if not isinstance(frame, dict) or not isinstance(frame.get("candles"), list):
+                if not isinstance(frame, dict):
+                    continue
+                bar_key = "candles" if isinstance(frame.get("candles"), list) else ("bars" if isinstance(frame.get("bars"), list) else None)
+                if not bar_key:
                     continue
                 keep_count = 2 if str(timeframe).lower() == str(signal_timeframe or "").lower() else 0
-                candles = frame["candles"]
-                if len(candles) > keep_count:
-                    frame["candles"] = candles[-keep_count:] if keep_count else []
+                bars_list = frame[bar_key]
+                if len(bars_list) > keep_count:
+                    frame[bar_key] = bars_list[-keep_count:] if keep_count else []
                     changed = True
         if record("trim_secondary_candles_keep_two_signal_bars", changed):
+            return result()
+
+    if not fits():
+        changed = False
+        news = projected.get("news_revisions")
+        if isinstance(news, list):
+            for item in news:
+                if isinstance(item, dict) and isinstance(item.get("summary"), str) and len(item["summary"]) > 48:
+                    item["summary"] = item["summary"][:48]
+                    changed = True
+        candidates = projected.get("candidates")
+        if isinstance(candidates, list):
+            for candidate in candidates:
+                if not isinstance(candidate, dict):
+                    continue
+                if isinstance(candidate.get("rationale"), str) and len(candidate["rationale"]) > 48:
+                    candidate["rationale"] = candidate["rationale"][:48]
+                    changed = True
+                proposal = candidate.get("proposal")
+                if isinstance(proposal, dict) and isinstance(proposal.get("rationale"), str) and len(proposal["rationale"]) > 48:
+                    proposal["rationale"] = proposal["rationale"][:48]
+                    changed = True
+        if record("deep_compact_prose_fields", changed):
+            return result()
+
+    if not fits():
+        changed = False
+        experience = projected.get("strategy_experience")
+        if isinstance(experience, dict) and isinstance(experience.get("recent_closed_trades"), list):
+            trimmed_trades = []
+            for trade in experience["recent_closed_trades"]:
+                if isinstance(trade, dict):
+                    trade_keep = ("cycle_id", "symbol", "strategy_template_id", "outcome", "pnl_usdt", "pnl_pct", "closed_at")
+                    compact_trade = {k: trade[k] for k in trade_keep if k in trade}
+                    trimmed_trades.append(compact_trade)
+                    changed = compact_trade != trade or changed
+                else:
+                    trimmed_trades.append(trade)
+            experience["recent_closed_trades"] = trimmed_trades
+        if record("compact_strategy_experience_trades", changed):
+            return result()
+
+    if not fits():
+        changed = False
+        # Dedup news to keep at most 1 leading revision per symbol while preserving symbol coverage
+        news = projected.get("news_revisions")
+        if isinstance(news, list) and len(news) > 3:
+            seen_symbols = set()
+            compacted_news = []
+            for item in news:
+                if not isinstance(item, dict):
+                    continue
+                sym = item.get("symbol")
+                if sym and sym not in seen_symbols:
+                    seen_symbols.add(sym)
+                    compacted_news.append(item)
+                elif not sym and len(compacted_news) < 3:
+                    compacted_news.append(item)
+            if compacted_news and len(compacted_news) < len(news):
+                projected["news_revisions"] = compacted_news
+                changed = True
+        if record("dedup_news_revisions_per_symbol", changed):
+            return result()
+
+    if not fits():
+        changed = False
+        radar = projected.get("market_radar")
+        if isinstance(radar, dict):
+            for key in ("cross_market", "correlations", "funding"):
+                sub = radar.get(key)
+                if isinstance(sub, dict):
+                    for sub_k in ("history", "series", "matrix", "details"):
+                        if sub_k in sub:
+                            sub.pop(sub_k, None)
+                            changed = True
+        if record("compact_market_radar_deep", changed):
+            return result()
+
+    if not fits() and isinstance(technical, dict):
+        changed = False
+        for symbol, instrument in technical.items():
+            if symbol in {"candle_columns", "indicator_columns"} or not isinstance(instrument, dict):
+                continue
+            frames = instrument.get("timeframes")
+            if not isinstance(frames, dict):
+                continue
+            for timeframe, frame in frames.items():
+                if not isinstance(frame, dict):
+                    continue
+                indicators = frame.get("indicators")
+                if isinstance(indicators, dict):
+                    for ind_name, ind_val in list(indicators.items()):
+                        if isinstance(ind_val, list) and len(ind_val) > 1:
+                            indicators[ind_name] = ind_val[-1:]
+                            changed = True
+                        elif isinstance(ind_val, dict) and "series" in ind_val:
+                            ind_val.pop("series", None)
+                            changed = True
+        if record("compact_technical_indicators_deep", changed):
+            return result()
+
+    if not fits():
+        changed = False
+        radar = projected.get("market_radar")
+        if isinstance(radar, dict):
+            for optional_key in ("onchain", "cross_market", "correlations"):
+                if optional_key in radar:
+                    radar.pop(optional_key, None)
+                    changed = True
+        if record("trim_optional_radar_subsystems", changed):
+            return result()
+
+    if not fits():
+        changed = False
+        candidates = projected.get("candidates")
+        if isinstance(candidates, list):
+            for candidate in candidates:
+                if not isinstance(candidate, dict):
+                    continue
+                if isinstance(candidate.get("reason"), str) and len(candidate["reason"]) > 16:
+                    candidate["reason"] = candidate["reason"][:16]
+                    changed = True
+                if isinstance(candidate.get("invalidation"), str) and len(candidate["invalidation"]) > 16:
+                    candidate["invalidation"] = candidate["invalidation"][:16]
+                    changed = True
+                if isinstance(candidate.get("conditions"), list) and len(candidate["conditions"]) > 1:
+                    candidate["conditions"] = [str(candidate["conditions"][0])[:16]]
+                    changed = True
+                proposal = candidate.get("proposal")
+                if isinstance(proposal, dict):
+                    if isinstance(proposal.get("rationale"), str) and len(proposal["rationale"]) > 16:
+                        proposal["rationale"] = proposal["rationale"][:16]
+                        changed = True
+                    if "conditions" in proposal:
+                        proposal.pop("conditions", None)
+                        changed = True
+        if record("ultra_compact_candidate_prose", changed):
+            return result()
+
+    if not fits():
+        changed = False
+        news = projected.get("news_revisions")
+        if isinstance(news, list):
+            for item in news:
+                if not isinstance(item, dict):
+                    continue
+                if isinstance(item.get("title"), str) and len(item["title"]) > 16:
+                    item["title"] = item["title"][:16]
+                    changed = True
+                if isinstance(item.get("summary"), str) and len(item["summary"]) > 16:
+                    item["summary"] = item["summary"][:16]
+                    changed = True
+        if record("ultra_compact_news_prose", changed):
+            return result()
+
+    if not fits():
+        changed = False
+        account = projected.get("account_truth")
+        if isinstance(account, dict):
+            positions = account.get("positions")
+            if isinstance(positions, list):
+                pos_keep = ("symbol", "side", "quantity", "entry_price", "mark_price", "leverage", "unrealized_pnl")
+                new_positions = [{k: p[k] for k in pos_keep if k in p} for p in positions if isinstance(p, dict)]
+                if new_positions != positions:
+                    account["positions"] = new_positions
+                    changed = True
+            orders = account.get("pending_orders")
+            if isinstance(orders, list):
+                ord_keep = ("order_id", "symbol", "side", "type", "price", "amount", "status")
+                new_orders = [{k: o[k] for k in ord_keep if k in o} for o in orders if isinstance(o, dict)]
+                if new_orders != orders:
+                    account["pending_orders"] = new_orders
+                    changed = True
+        if record("compact_account_truth_fields", changed):
             return result()
 
     if not fits():
@@ -1794,7 +2024,11 @@ class AISessionCoordinator:
             },
             "market_radar": market_radar,
             "news_coverage_status": "RECENT_REVISIONS_INCLUDED" if prompt_news else "NO_RECENT_RELEVANT_REVISION_IN_INPUT",
-            "news_revisions": prompt_news,
+            "news_revisions": [
+                _compact_news_revision(item)
+                for item in prompt_news
+                if isinstance(item, dict)
+            ],
             "candidates": [
                 compact_candidate(row)
                 for row in candidates
@@ -1887,10 +2121,10 @@ class AISessionCoordinator:
         ]
         prompt_payload["evidence_bundle_id"] = bundle_id
         prompt_payload["evidence_refs"] = visible_evidence_refs
-        system_prompt = build_strategy_system_prompt(context.strategy_instructions)
+        context_length = int(getattr(provider, "context_length", 0) or 0)
+        system_prompt = build_strategy_system_prompt(context.strategy_instructions, context_length=context_length)
         if "JSON字段规则：" not in system_prompt:
             system_prompt += "\n\n" + TRADE_JSON_GUIDE
-        context_length = int(getattr(provider, "context_length", 0) or 0)
         configured_output_tokens = int(getattr(provider, "max_tokens", 0) or DECISION_OUTPUT_TOKEN_BUDGET)
         if not 1 <= configured_output_tokens <= DECISION_OUTPUT_TOKEN_BUDGET:
             raise ValueError("MODEL_MAX_TOKENS_INVALID")

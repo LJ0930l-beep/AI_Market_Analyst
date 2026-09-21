@@ -225,7 +225,7 @@ class OrderSelectionPolicy:
 class TradeThrottleConfig:
     min_hold_duration_seconds: float = 5400.0  # 90 minutes
     noise_close_hold_duration_seconds: float = 10800.0  # 3 hours
-    reentry_cooldown_seconds: float = 7200.0  # 2 hours
+    reentry_cooldown_seconds: float = 300.0  # 5 minutes / 1 bar guard to prevent instant duplicate re-entry
     early_close_stop_loss_bypass_pct: float = -3.0  # Loss <= -3% bypasses hold gate
     early_close_take_profit_bypass_pct: float = 8.0  # Profit >= 8% bypasses hold gate
     noise_loss_floor_pct: float = -2.0  # Inside [-2%, +3%] requires 3h hold
@@ -242,7 +242,7 @@ class TradeThrottlePolicy:
         has_open_position: bool,
         last_closed_at: datetime | None = None,
         now: datetime | None = None,
-        cooldown_seconds: float = 7200.0,
+        cooldown_seconds: float = 300.0,
     ) -> tuple[bool, str, str]:
         """Verify open action against existing position and re-entry cooldown."""
         if has_open_position:
@@ -251,8 +251,12 @@ class TradeThrottlePolicy:
         if last_closed_at is not None:
             age_seconds = (now_dt - last_closed_at).total_seconds()
             if 0 <= age_seconds < cooldown_seconds:
-                remaining_min = int(round((cooldown_seconds - age_seconds) / 60.0))
-                return False, "STRATEGY_REENTRY_COOLDOWN", f"Trade throttle: {symbol} 刚平仓不久，进入重入冷却期（剩余约 {remaining_min} 分钟），防止追涨杀跌磨损。"
+                remaining_total = cooldown_seconds - age_seconds
+                if remaining_total >= 60:
+                    time_str = f"{int(round(remaining_total / 60.0))} 分钟"
+                else:
+                    time_str = f"{int(round(remaining_total))} 秒"
+                return False, "STRATEGY_REENTRY_COOLDOWN", f"Trade throttle: {symbol} 刚平仓，进入冷静冷却期（剩余约 {time_str}），等待新结构形成。"
         return True, "ALLOWED", "开仓频控检查通过。"
 
     @staticmethod

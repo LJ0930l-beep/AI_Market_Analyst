@@ -1006,12 +1006,27 @@ class AILedDecisionEngine:
                 if depth is None or qty > depth:
                     return finish(output, "BLOCKED", "AI_ORDER_EXCEEDS_OBSERVED_DEPTH")
 
+            initial_risk_dist = abs(float(executable_entry) - float(stop_price))
+            trailing_config = None
+            if initial_risk_dist > 0:
+                activation_p = (
+                    float(executable_entry) + 1.5 * initial_risk_dist
+                    if side == "LONG"
+                    else float(executable_entry) - 1.5 * initial_risk_dist
+                )
+                trailing_config = {
+                    "type": "DISTANCE",
+                    "value": float(round(initial_risk_dist, 6)),
+                    "activation_price": float(round(activation_p, 6)),
+                }
+
             protection = ProtectionPlan(
                 stop_price=float(stop_price),
                 take_profit=float(output.take_profit) if output.take_profit else None,
                 trigger_type="mark",
                 reduce_only=True,
                 status=ProtectionStatus.PENDING,
+                trailing_protection=trailing_config,
             )
             intent = OrderIntent(
                 intent_id=f"intent_ai_{uuid.uuid4().hex[:12]}",
