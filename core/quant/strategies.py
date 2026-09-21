@@ -460,15 +460,15 @@ class BaseStrategy(ABC):
         entry = closed[-1].close
         sign = 1 if side == "LONG" else -1
 
-        # Enforce minimum stop distance: max(1.5×ATR, 0.3% of entry)
-        # Inspired by Freqtrade/Jesse consensus: stops < 1.5×ATR are noise.
+        # Enforce minimum stop distance: max(1.8×ATR, 1.2% of entry)
+        # Prevent tight stops from being hunted as liquidity sweeps by exchange market makers.
         # Cap at 10% of entry so extreme volatility/small assets don't produce negative stops.
         atr_val = atr(closed)
-        min_stop_distance = min(max(1.5 * atr_val, entry * 0.003), entry * 0.10)
+        min_stop_distance = min(max(1.8 * atr_val, entry * 0.012), entry * 0.10)
         raw_distance = abs(entry - stop)
         if raw_distance < min_stop_distance:
             stop = entry - sign * min_stop_distance
-            reason = reason + f"；止损已按最小安全距离扩展至 {min_stop_distance:.6g}（1.5×ATR={1.5*atr_val:.6g}, 0.3%={entry*0.003:.6g}）"
+            reason = reason + f"；止损已按防流动性扫荡安全距离扩展至 {min_stop_distance:.6g}（1.8×ATR={1.8*atr_val:.6g}, 1.2%={entry*0.012:.6g}）"
 
         distance = abs(entry - stop)
         if distance <= 0 or sign * (entry - stop) <= 0:
