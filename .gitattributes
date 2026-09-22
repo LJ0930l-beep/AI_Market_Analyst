@@ -1,0 +1,4 @@
+# Shell hooks must keep LF line endings; a CRLF shebang (#!/bin/sh\r) will not
+# execute under Git for Windows, which silently disables the pre-commit gate.
+scripts/hooks/* text eol=lf
+*.sh text eol=lf

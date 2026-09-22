@@ -62,6 +62,7 @@ Write-Host "      Bonsai Server is online and responding." -ForegroundColor Gree
 Write-Host "[5/9] Starting AI Market Analyst backend service..." -ForegroundColor Yellow
 $backendPidFile = Join-Path $ProjectRoot "logs\backend.pid"
 $backendLogFile = Join-Path $ProjectRoot "logs\backend.log"
+$backendErrFile = Join-Path $ProjectRoot "logs\backend_err.log"
 
 # Kill existing if running
 if (Test-Path $backendPidFile) {
@@ -69,13 +70,13 @@ if (Test-Path $backendPidFile) {
     try { Stop-Process -Id $oldPid -Force -ErrorAction SilentlyContinue } catch {}
 }
 
-$backendProc = Start-Process -FilePath "python" -ArgumentList "-m uvicorn apps.api.main:app --host 127.0.0.1 --port 8000" -WorkingDirectory $ProjectRoot -RedirectStandardOutput $backendLogFile -RedirectStandardError $backendLogFile -PassThru -NoNewWindow
+$backendProc = Start-Process -FilePath "python" -ArgumentList "-m uvicorn apps.api.main:app --host 127.0.0.1 --port 18765" -WorkingDirectory $ProjectRoot -RedirectStandardOutput $backendLogFile -RedirectStandardError $backendErrFile -PassThru -NoNewWindow
 Set-Content -Path $backendPidFile -Value $backendProc.Id -Force
-Write-Host "      Backend started with PID $($backendProc.Id) on http://127.0.0.1:8000" -ForegroundColor Green
+Write-Host "      Backend started with PID $($backendProc.Id) on http://127.0.0.1:18765" -ForegroundColor Green
 
 # 6. Output Summary Details
 Write-Host "==================================================" -ForegroundColor Cyan
-Write-Host " [6/9] System API Address:  http://127.0.0.1:8000" -ForegroundColor Green
+Write-Host " [6/9] System API Address:  http://127.0.0.1:18765" -ForegroundColor Green
 Write-Host " [6/9] Model API Address:   http://127.0.0.1:8080/v1" -ForegroundColor Green
 Write-Host " [7/9] Model Status:        Bonsai-2-27B-PTQ1_0 (ONLINE)" -ForegroundColor Green
 Write-Host " [8/9] GPU VRAM Telemetry:  Used: $vramUsed | Free: $vramFree" -ForegroundColor Green

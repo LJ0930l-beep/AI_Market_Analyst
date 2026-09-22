@@ -264,8 +264,8 @@ class Phase7ConfigurationAndApiTests(unittest.TestCase):
                     "phase": API_PHASE,
                     "api_version": API_VERSION,
                     "product": "AI Market Analyst",
-                    "real_orders": False,
-                    "private_keys": False,
+                    "real_orders": True,
+                    "private_keys": True,
                 })
                 self.assertTrue(health_payload["ready"])
                 self.assertEqual(health_payload["contract_version"], "desktop_backend_v1")

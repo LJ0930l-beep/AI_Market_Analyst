@@ -140,6 +140,9 @@ class APIError(Exception):
 
 try:  # FastAPI is optional; the stdlib core must remain importable without it.
     from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+    # fastapi >= 0.141 no longer re-exports HTTPConnection; it is the shared
+    # base of Request and WebSocket, which the router-level guard needs.
+    from starlette.requests import HTTPConnection
     from fastapi.exceptions import RequestValidationError
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import JSONResponse, StreamingResponse
@@ -151,6 +154,7 @@ except ImportError:  # pragma: no cover - exercised only without the optional AP
     HTTPException = RuntimeError  # type: ignore[assignment,misc]
     Request = object  # type: ignore[assignment,misc]
     WebSocket = object  # type: ignore[assignment,misc]
+    HTTPConnection = object  # type: ignore[assignment,misc]
     WebSocketDisconnect = RuntimeError  # type: ignore[assignment,misc]
     RequestValidationError = RuntimeError  # type: ignore[assignment,misc]
     CORSMiddleware = None  # type: ignore[assignment,misc]
@@ -704,8 +708,48 @@ def _instrument_catalog(store: SQLiteStore) -> list[dict[str, object]]:
     ]
 
 
+def _credential_scope_attestation() -> dict[str, object]:
+    """Report what this build can actually do, not what we wish it did.
+
+    The product ships a Gate execution gateway and a DPAPI credential vault, so
+    the honest application-wide answer is that real orders and private keys are
+    in scope. TradingAuthorization is advisory only: submit_intent takes no
+    authorization argument, so no authorization gate is enforced at order time.
+    """
+    caps: dict[str, object] = {
+        "real_orders": True,
+        "private_keys": True,
+        "authorization_enforced": False,
+        "credentials_stored": None,
+        "live_credentials_stored": None,
+    }
+    try:
+        from core.security.credentials import CredentialVault
+
+        store = _store()
+        CredentialVault.ensure_account_tables(store)
+        with store._connect() as db:
+            row = db.execute(
+                "SELECT COUNT(*) AS stored,"
+                " SUM(CASE WHEN testnet = 0 THEN 1 ELSE 0 END) AS live_creds"
+                " FROM secure_account_credentials"
+            ).fetchone()
+        caps["credentials_stored"] = int(row["stored"] or 0)
+        caps["live_credentials_stored"] = int(row["live_creds"] or 0)
+    except Exception:
+        pass
+    return caps
+
+
 if FastAPI is not None:
-    router = APIRouter()
+    from core.security.local_guard import validate_local_request
+
+    def verify_local_request(connection: HTTPConnection) -> None:
+        ok, reason = validate_local_request(connection.headers.get("host"), connection.headers.get("origin"))
+        if not ok:
+            raise HTTPException(status_code=403, detail=reason)
+
+    router = APIRouter(dependencies=[Depends(verify_local_request)])
 
     @router.get("/health")
     def health(request: Request) -> dict[str, object]:
@@ -734,8 +778,7 @@ if FastAPI is not None:
             "launcher_pid": launcher_pid,
             "port": bound_port,
             "ownership_verified": ownership_verified,
-            "real_orders": False,
-            "private_keys": False,
+            **_credential_scope_attestation(),
         }
 
     @router.get("/health/providers")

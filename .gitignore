@@ -47,3 +47,11 @@ health.py
 infra/bonsai/bin/
 *.dll
 *.exe
+
+# Credentials must never be tracked; only the committed template is allowed.
+.env
+.env.*
+!.env.example
+
+# SFT/LoRA training data (contains full decision prompts incl. account_truth).
+data/fin_tuning/

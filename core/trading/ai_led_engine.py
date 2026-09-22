@@ -51,7 +51,36 @@ from core.model_routing import (
     DEFAULT_SMART_MODEL,
 )
 
-logger = logging.getLogger("core.trading.ai_led_engine")
+def _slim_technical_context(tech_context: Any, max_bars: int = 10) -> Any:
+    """Slim the persisted technical context to avoid 40KB+ raw bar dumps.
+
+    Preserves all indicator columns, snapshots, and the most recent `max_bars`
+    bars for forensic replay, while dropping ancient historical candles.
+    """
+    if not isinstance(tech_context, dict):
+        return tech_context
+    slimmed: dict[str, Any] = {}
+    for key, val in tech_context.items():
+        if key in ("indicator_columns", "candle_columns"):
+            slimmed[key] = val
+            continue
+        if isinstance(val, dict) and "timeframes" in val and isinstance(val["timeframes"], dict):
+            symbol_entry = dict(val)
+            tfs: dict[str, Any] = {}
+            for tf, tf_data in val["timeframes"].items():
+                if isinstance(tf_data, dict):
+                    tf_copy = dict(tf_data)
+                    if "bars" in tf_copy and isinstance(tf_copy["bars"], list):
+                        tf_copy["bars"] = tf_copy["bars"][-max_bars:]
+                        tf_copy["bar_count"] = len(tf_copy["bars"])
+                    tfs[tf] = tf_copy
+                else:
+                    tfs[tf] = tf_data
+            symbol_entry["timeframes"] = tfs
+            slimmed[key] = symbol_entry
+        else:
+            slimmed[key] = val
+    return slimmed
 
 
 class AIActionType(str, enum.Enum):
@@ -364,7 +393,7 @@ class AILedDecisionEngine:
             "data_quality": context.data_quality,
             "strategy_readiness": context.strategy_readiness,
             "decision_contract": context.decision_contract,
-            "technical_context": context.technical_context,
+            "technical_context": _slim_technical_context(context.technical_context),
             "news_revisions": context.news_revisions,
             "indicator_snapshot_id": context.indicator_snapshot_id,
             "decision_memory": context.decision_memory[:20],

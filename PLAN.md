@@ -1,20 +1,92 @@
-# AI Market Analyst V1.2.1 Execution Plan
+# Execution Plan
 
-The supplied V1.2 DOCX remains the stage specification, with Sol's V1.2.1 repair findings as the controlling acceptance delta. Repository history and user changes are preserved; no V1.3, broker, account, secret, order or funds scope is authorized.
+Controlling contract: `MASTER_SPEC.md` (rewritten 2026-09-22 to describe the
+autonomous trading system that actually exists). Historical V1.2 stage
+specifications remain reference material for the research pipeline only.
+
+## Current release state
+
+- Backend API `2.0.0`, contract `desktop_backend_v1`, routers `/` (v1), `/v2`, `/v3`.
+- Backend binds loopback `127.0.0.1:18765`; model server `127.0.0.1:8080`.
+- Strategy pack version `ai_strategy_pack_2026_09_v6_signal_timeframe`, 4 templates, all leverage 100.
+- Decision model: local `Bonsai-2-27B-PTQ1_0`, context 8192, temperature 0. No cloud token required.
+- Desktop build: from `src-tauri`, `cargo +stable-x86_64-pc-windows-gnu tauri build --target x86_64-pc-windows-gnu`.
+- Accepted state: **not accepted.** See the remediation log below and the Known
+  gaps section of `MASTER_SPEC.md`.
 
 ## PLAN -> BUILD -> VERIFY -> REPAIR
 
-1. PLAN — COMPLETE. Confirmed the dirty V1.2 workspace, retained V1.1/V1.2 architecture, and mapped every production-usability finding to code and real Windows evidence.
-2. BUILD — COMPLETE. Added the sidecar-owned resident monitoring runtime, dynamic tray/close lifecycle, official OS autostart, owned-backend watchdog/restart/degraded state, safe alternate-port startup, restricted WebView capabilities, always-mounted background notification bridge, schema-13 hydration audit, numeric-guard repair and current documentation.
-3. VERIFY — COMPLETE. Re-ran the full Python/V1.1/V1.2 regression, required frontend build/lint/typecheck/test order, E2E/axe/overflow, audits, Cargo check, official GNU Tauri production build, packaged sidecar smoke, real public/provider/model live smoke and installed Windows lifecycle.
-4. REPAIR — COMPLETE. Fixed every reproducible defect discovered during verification, including inactive-X not exiting, stale autostart UI state, idempotent missing-registry disable and English month-name numeric-guard equivalence, then repeated affected/full gates.
+1. **PLAN** — complete. Audited the working tree, the running session and the
+   divergence between documentation and code.
+2. **BUILD** — complete for the 2026-09-22 remediation pass (see log).
+3. **VERIFY** — `pytest tests` is the hard gate and must be green before commit.
+4. **REPAIR** — outstanding; the Known gaps in `MASTER_SPEC.md` are open work.
 
-## Release state
+## Remediation log — 2026-09-22
 
-- Contract: API/package `1.2.1`, schema `13`, `monitoring_runtime_v1`, `trigger_policy_v2`.
-- Defaults: Monitoring off, auto-start off, resume off; no trigger/model scan at startup.
-- Build entrypoint: from `D:\RJ\codex\ai-market-analyst\src-tauri`, run `cargo +stable-x86_64-pc-windows-gnu tauri build --target x86_64-pc-windows-gnu`.
-- Installer: `src-tauri\target\x86_64-pc-windows-gnu\release\bundle\nsis\AI Market Analyst_1.2.1_x64-setup.exe`.
-- Acceptance state: developer-complete; Sol independent acceptance pending.
+Triggered by an audit that found uncommitted changes converting deterministic
+risk and audit gates into auto-approval shims. Backed up first to
+`scratch/audit-20260922/worktree-before-revert.patch` (git-ignored).
 
-The implementation remains loopback-only, Python-owned for triggers/risk/validation, 9B-only for Smart opportunity analysis, 4B-only for explicit news translation, and public-data-only. TradingView Lightweight Charts is a redistributable frontend renderer, never a market-data backend. Exit/restart acts only on the exact owned sidecar and never manages Ollama, ComfyUI or unrelated processes.
+1. Terminated the running `gate_testnet` AI session via
+   `POST /v2/ai-session/terminate` before touching code. 0 open positions.
+2. Reverted every fabricated-evidence path:
+   - `autonomous_strategy.validate_entry` — restored the `NEWS_EVIDENCE_UNAVAILABLE`
+     and `NEWS_ANALYSIS_REQUIRED` rejections; removed the auto-filled
+     `timeframe_analysis`, `invalidation_condition` and `entry_zone`.
+   - `ai_session_coordinator` — removed `_normalize_strategy_plan_field` (it ran
+     *before* `validate_schema`, so the gate could not fail), the auto-appended
+     `news_revision:` evidence ref, the hardcoded `news_context` string, the
+     `trigger_completion_pct = 85.0` default, and the block that **overwrote the
+     model's `take_profit`** with `entry + 2.5×risk` to force the net-RR check to
+     pass. Restored strict `INVALID_STRATEGY_PLAN` validation.
+   - `ai_led_engine` — removed `trigger_completion_pct = min(60.0, score*0.6)`,
+     which wrote a reverse-engineered number into WAIT/HOLD audit records.
+   - Kept the legitimate changes: `_slim_technical_context`, output-token floor
+     640→1024, confidence 0–1 → 0–100 unit normalization.
+3. Restored the "every template keeps at least one 不得 prohibition" invariant
+   that the loosened `decision_process` had dropped, and aligned
+   `tests/test_strategy_cadence_universe.py` with the dual-core
+   `candidate_strategy_ids` introduced by `aacfe6c`.
+4. Net RR now has one source of truth. `validate_entry` reads
+   `execution.min_net_rr`; the prompt injects that same value per strategy
+   instead of hardcoding "净 RR≥2.0", and profile `minimum_net_rr` was aligned to
+   execution (pullback 1.8→2.0, defense 1.8→2.2). Enforced values unchanged:
+   1.6 / 1.6 / 2.0 / 2.2. Same for the completion threshold, which no longer
+   says "70%" in the static prompt while profiles say 65/55.
+5. `fin_dataset_collector` rewritten: fail-closed environment guard (PAPER and
+   TESTNET only; LIVE, RESEARCH and unknown refused; account ids containing
+   "live" refused), and the hardcoded out-of-project path
+   `D:\RJ\AI Market Analyst\data\fin_tuning` replaced by
+   `data/fin_tuning/` overridable via `AIMA_FIN_TUNING_DIR`. The caller no longer
+   swallows exceptions at `debug` level.
+6. `.gitignore` now covers `.env` / `.env.*` (keeping `!.env.example`) and
+   `data/fin_tuning/`. The v1 router in `apps/api/main.py` carries the same
+   `verify_local_request` Host/Origin guard that `/v2` and `/v3` already had.
+7. `/health` no longer hardcodes `real_orders: false` / `private_keys: false`.
+   It reports real capability plus live state
+   (`authorization_enforced: false`, `credentials_stored`, `live_credentials_stored`).
+   The four subsystem-level `real_orders: False` declarations in
+   `core/alerts.py`, `core/monitoring.py`, `core/scheduler.py` and the
+   `NOT_ATTEMPTED` provisioning response were left alone — those are accurate
+   for their own scope. `execution_gateway` now states plainly that
+   TradingAuthorization is not enforced.
+
+## Open work
+
+- Re-wire or formally retire `TradingAuthorization` (Known gap 1).
+- Decide whether a LIVE release lock should exist again (Known gap 2).
+- Enforce `AIMA_OWNERSHIP_TOKEN` on mutating endpoints, or remove it (Known gap 3).
+- Make the default idempotency key stable across minute boundaries (Known gap 4).
+- Decide whether the aggressive entry steering in `SYSTEM_PROMPT` is intended at
+  100× leverage (Known gap 5). **Answered 2026-09-22 by the user: yes — this is
+  an AI-driven autonomous trader in the NOFX class, and steering the model toward
+  entries is the product.** What remains open is not the design but the evidence:
+  the current parameter set (`required_confirmations=1`, `minimum_signal_score=2`,
+  `volume_ratio_min=0.95`, 55% limit threshold, leverage 100) has no measured
+  track record yet. It should be validated on TESTNET with a settled sample before
+  any LIVE credential is added.
+- Lint debt: `ruff` reports ~3.2k findings, including 245 blind `except
+  Exception`, 51 `try/except: pass` and 20 `B023` loop-variable closures.
+- The pre-existing SFT dataset (164 samples, ~3MB, all testnet/paper) is still at
+  the old out-of-project path and was deliberately not moved.

@@ -1,0 +1,15 @@
+#!/bin/sh
+# Hard gate: the Python suite must be green before a commit is created.
+# Bypass only with `git commit --no-verify`, and say why in the commit message.
+set -e
+
+cd "$(git rev-parse --show-toplevel)"
+
+echo "pre-commit: running pytest (hard gate)..."
+if ! python -m pytest tests -q --no-header; then
+    echo ""
+    echo "pre-commit: BLOCKED - pytest failed. Fix the suite before committing." >&2
+    exit 1
+fi
+
+echo "pre-commit: pytest green."

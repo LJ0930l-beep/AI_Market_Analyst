@@ -59,6 +59,8 @@ from .gate_account_truth import GateAccountTruthService
 from .gate_accounts import build_gate_trader
 from .ai_cycle_trace import humanize_reason, infer_block_stage
 from .autonomous_strategy import CONTRACT, POLICY, build_strategy_system_prompt, technical_context, compact_technical
+from .ai_led_engine import _slim_technical_context
+from .fin_dataset_collector import record_sft_sample
 from .strategy_schedule import StrategySchedule, aligned_at
 from .dynamic_risk_policy import ENTRY_ACTIONS, evaluate_dynamic_risk
 from ..analysis.ai_trade_analytics import build_performance_context
@@ -86,7 +88,7 @@ MARKET_MAX_AGE_SECONDS = 120.0
 MODEL_CONTEXT_LENGTH = 8192
 MIN_MODEL_CONTEXT_LENGTH = 8192
 DECISION_OUTPUT_TOKEN_BUDGET = 2048
-MIN_DECISION_OUTPUT_TOKENS = 640
+MIN_DECISION_OUTPUT_TOKENS = 1024
 PROMPT_BUDGET_SAFETY_MARGIN_TOKENS = 256
 MODEL_KEEP_ALIVE = "45m"
 
@@ -2229,7 +2231,7 @@ class AISessionCoordinator:
                 "source_evidence": {
                     "market_radar": market_radar,
                     "market_snapshots": context.market_snapshots,
-                    "technical_context": context.technical_context,
+                    "technical_context": _slim_technical_context(context.technical_context),
                     "news_revisions": context.news_revisions,
                     "candidates": context.candidates,
                     "account_truth": {
@@ -2699,8 +2701,11 @@ class AISessionCoordinator:
                 raise ValueError(f"INVALID_{field.upper()}")
             if not math.isfinite(number):
                 raise ValueError(f"INVALID_{field.upper()}")
-            if field == "confidence" and not 0 <= number <= 100:
-                raise ValueError("INVALID_CONFIDENCE")
+            if field == "confidence":
+                if not 0 <= number <= 100:
+                    raise ValueError("INVALID_CONFIDENCE")
+                if 0 < number <= 1.0:
+                    number = round(number * 100.0, 2)
             if field.startswith("take_profit") and number <= 0:
                 raise ValueError(f"INVALID_{field.upper()}")
             extra_fields[field] = number
@@ -2771,6 +2776,19 @@ class AISessionCoordinator:
             if normalized_zone["low"] is not None and normalized_zone["high"] is not None and normalized_zone["low"] > normalized_zone["high"]:
                 raise ValueError("INVALID_ENTRY_ZONE")
             extra_fields["entry_zone"] = normalized_zone
+
+        record_sft_sample(
+            cycle_id=context.cycle_id,
+            system_prompt=system_prompt,
+            user_prompt=serialized_prompt_payload,
+            model_output=decoded,
+            account_id=getattr(context, "account_id", None),
+            mode=getattr(context, "mode", None),
+            metadata={
+                "strategy_id": getattr(context, "strategy_id", None),
+                "confidence": decoded.get("confidence"),
+            },
+        )
 
         if extra_fields:
             values["extra_fields"] = extra_fields

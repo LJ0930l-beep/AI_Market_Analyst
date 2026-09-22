@@ -1438,8 +1438,14 @@ class ExecutionGateway:
 
             # Credential verification, account/environment routing, runtime
             # fencing (when a caller elects to use it), idempotency and the
-            # RiskEngine are the executable boundary.  TradingAuthorization
-            # was a duplicate local permit and deliberately is not consulted.
+            # RiskEngine are the executable boundary.
+            #
+            # NOT ENFORCED: TradingAuthorization is advisory only. This method
+            # takes no authorization argument, so its expiry, revocation and
+            # leverage/risk/instrument limits never gate an order; the
+            # RiskEngine caps below are the only ones that apply. Any UI
+            # presenting an authorization as active describes state this path
+            # does not read.
             active_auth = None
 
             if mode == "RESEARCH":

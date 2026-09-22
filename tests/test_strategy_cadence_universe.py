@@ -99,7 +99,7 @@ def test_active_strategy_profile_is_the_prompt_and_scanner_contract(tmp_path):
     signal, context, strategies = coordinator._strategy_scan_contract(active)
     assert signal == '5m'
     assert context == ('15m', '1h')
-    assert strategies == ('liquidity_sweep', 'ema_trend', 'bollinger_squeeze')
+    assert strategies == ('liquidity_sweep', 'ema_trend')
     prompt = build_strategy_system_prompt(active)
     assert '当前策略：闪电动量 · 5m 激进' in prompt
     assert 'signal_timeframe":"5m"' in prompt
