@@ -14,6 +14,7 @@ from __future__ import annotations
 import queue
 import json
 import threading
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Iterable, Protocol
@@ -371,6 +372,30 @@ class MonitoringRuntime:
     def unsubscribe(self, subscriber: queue.Queue[dict[str, object]]) -> None:
         with self._lock:
             self._subscribers.discard(subscriber)
+
+    def wait_for_stale_lease_release(self, max_seconds: float = 15.0, poll_seconds: float = 0.5) -> bool:
+        """Wait out a lease that a killed instance left behind.
+
+        ``holder_id`` is a random per-process uuid, so a dead owner cannot be
+        recognised directly and the TTL is the only safe signal. A live peer
+        renews every few seconds so its ``expires_at`` keeps moving and this
+        returns False once the budget is spent - the dual-active guard (AT10)
+        still holds. Only an abandoned lease actually lapses.
+        """
+        from .trading.session_manager import RuntimeLease
+
+        deadline = time.monotonic() + max(0.0, max_seconds)
+        while True:
+            row = self.runtime_lease.current("monitoring_runtime")
+            holder = str((row or {}).get("holder_id") or "")
+            expiry = RuntimeLease._parse_expiry((row or {}).get("expires_at")) if row else None
+            if not row or not holder or expiry is None or datetime.now(timezone.utc) >= expiry:
+                return True
+            remaining = (expiry - datetime.now(timezone.utc)).total_seconds()
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(min(poll_seconds, max(0.05, remaining)))
+
 
     def start(
         self,

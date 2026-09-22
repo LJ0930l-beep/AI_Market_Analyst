@@ -13,6 +13,7 @@ from apps.api.main import create_app
 from core.instruments import instrument_for
 from core.monitoring import MonitoringPolicy, MonitoringService
 from core.monitoring_runtime import MonitoringRuntime
+from core.trading.session_manager import RuntimeLease
 from core.providers import Bar, ProviderError, Quote
 from core.realtime import RealtimeConnectionState
 from core.storage import SQLiteStore
@@ -282,3 +283,30 @@ def test_fastapi_startup_resumes_only_an_authorized_prior_runtime(tmp_path: Path
     finally:
         seed.stop()
         restored.stop()
+
+
+def test_startup_lease_wait_reclaims_abandoned_lease_but_not_a_live_one(tmp_path):
+    """A force-killed backend leaves an unexpired lease; restart must wait it out.
+
+    The live-peer case is what keeps AT10 honest: without it, an
+    always-return-True stub would pass this test.
+    """
+    store = SQLiteStore(tmp_path / "lease.db")
+    store.initialize()
+    runtime = object.__new__(MonitoringRuntime)
+    runtime.runtime_lease = RuntimeLease(store, default_ttl_seconds=10)
+
+    assert runtime.wait_for_stale_lease_release(max_seconds=0.2) is True
+
+    peer = RuntimeLease(store, default_ttl_seconds=10)
+    assert peer.acquire("monitoring_runtime", "runtime_livepeer", ttl_seconds=30) is True
+    started = time.monotonic()
+    assert runtime.wait_for_stale_lease_release(max_seconds=0.6) is False
+    assert time.monotonic() - started >= 0.5
+
+    with store._connect() as db:
+        db.execute(
+            "UPDATE runtime_leases SET expires_at=? WHERE lease_name='monitoring_runtime'",
+            ((datetime.now(UTC) - timedelta(seconds=1)).isoformat(),),
+        )
+    assert runtime.wait_for_stale_lease_release(max_seconds=0.5) is True

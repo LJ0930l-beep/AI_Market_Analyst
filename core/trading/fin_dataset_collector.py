@@ -15,10 +15,15 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from ..config import app_data_paths
+
 logger = logging.getLogger("core.trading.fin_dataset_collector")
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DATASET_DIR = Path(os.environ.get("AIMA_FIN_TUNING_DIR") or (_PROJECT_ROOT / "data" / "fin_tuning"))
+
+# Resolved from the application data root so AIMA_DATA_ROOT is honoured: the
+# samples embed full decision prompts, so they belong with runtime data rather
+# than inside the source tree.
+DATASET_DIR = Path(os.environ.get("AIMA_FIN_TUNING_DIR") or (app_data_paths().data / "fin_tuning"))
 DATASET_FILE = DATASET_DIR / "crypto_sft_dataset.jsonl"
 
 COLLECTABLE_MODES = frozenset({"PAPER", "TESTNET"})

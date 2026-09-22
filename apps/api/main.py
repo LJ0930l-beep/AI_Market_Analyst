@@ -2671,20 +2671,25 @@ def create_app(
                     resume_account_id = str(stored_account or "").strip() or None
                 except Exception:
                     resume_account_id = None
-            try:
-                # ``enable_ai`` is the whole point: on its own the resume path
-                # only revives the fixed-strategy worker, so the AI coordinator
-                # stayed STOPPED while the session API kept reporting RUNNING.
-                # The account is left to the runtime, which infers it from the
-                # single durable owner and refuses to guess when ambiguous.
-                runtime.start(
-                    resume=True,
-                    user_initiated=False,
-                    account_id=resume_account_id,
-                    enable_ai=resume_ai,
-                )
-            except Exception as exc:
-                print(f"[startup_monitoring] auto-resume deferred: {exc}")
+            if not runtime.wait_for_stale_lease_release():
+                # Only a genuinely live second instance keeps renewing, so this
+                # is the real dual-runtime signal rather than a restart artifact.
+                print("[startup_monitoring] auto-resume deferred: lease held by a live instance")
+            else:
+                try:
+                    # ``enable_ai`` is the whole point: on its own the resume path
+                    # only revives the fixed-strategy worker, so the AI coordinator
+                    # stayed STOPPED while the session API kept reporting RUNNING.
+                    # The account is left to the runtime, which infers it from the
+                    # single durable owner and refuses to guess when ambiguous.
+                    runtime.start(
+                        resume=True,
+                        user_initiated=False,
+                        account_id=resume_account_id,
+                        enable_ai=resume_ai,
+                    )
+                except Exception as exc:
+                    print(f"[startup_monitoring] auto-resume deferred: {exc}")
 
     app.router.on_startup.append(startup_monitoring)
 
