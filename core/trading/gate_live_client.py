@@ -749,7 +749,14 @@ class GateLiveTrader:
         precision = dict(market.get("precision") or {})
         limits = dict(market.get("limits") or {})
         amount_limits = dict(limits.get("amount") or {})
+        leverage_limits = dict(limits.get("leverage") or {})
         raw_info = market.get("info") if isinstance(market.get("info"), dict) else {}
+        # CCXT maps Gate's native leverage_max/leverage_min into limits.leverage.
+        # Dropping them here made every remote open fail closed with
+        # VENUE_LEVERAGE_LIMIT_UNAVAILABLE even though the venue reported a
+        # ceiling, because the gateway reads it via venue_leverage_limit().
+        leverage_max = _optional_float(leverage_limits.get("max") or raw_info.get("leverage_max"))
+        leverage_min = _optional_float(leverage_limits.get("min") or raw_info.get("leverage_min"))
         contract_size = _optional_float(market.get("contractSize"))
         # Gate futures amounts are contract counts.  In CCXT's Gate market
         # map ``precision.amount`` is a tick size (BTC/USDT:USDT is 1), not a
@@ -775,7 +782,11 @@ class GateLiveTrader:
             "contract_type": "perpetual",
             "contractSize": contract_size,
             "precision": {"amount": amount_step, "price": price_tick},
-            "limits": {"amount": {"step": amount_step, "min": amount_min, "max": amount_max}},
+            "limits": {
+                "amount": {"step": amount_step, "min": amount_min, "max": amount_max},
+                "leverage": {"min": leverage_min, "max": leverage_max},
+            },
+            "leverage_max": leverage_max,
             "amount_unit": "CONTRACTS",
             "amount_semantics": "Gate futures order amount is an integer/step contract count, not base-asset quantity.",
             "taker": _optional_float(market.get("taker")) if market.get("taker") is not None else None,
