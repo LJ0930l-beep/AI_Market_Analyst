@@ -93,6 +93,33 @@ PROMPT_BUDGET_SAFETY_MARGIN_TOKENS = 256
 MODEL_KEEP_ALIVE = "45m"
 
 
+def derive_strategy_plan_from_text(decoded: dict[str, Any]) -> dict[str, Any] | None:
+    """Project a one-sentence strategy_plan onto the required object shape.
+
+    Only facts the model already supplied are reused here: the thesis is its
+    literal text and the conditions restate its own entry/stop/take-profit
+    numbers. Nothing is invented, and callers must stamp the derived provenance
+    so the audit record never presents this as model-authored structure.
+    """
+    text = str(decoded.get("strategy_plan") or "").strip()[:800]
+    if not text:
+        return None
+    instrument = str(decoded.get("instrument_id") or "TRADE").strip() or "TRADE"
+
+    def labelled(field: str) -> str | None:
+        value = decoded.get(field)
+        return f"{field} {value}" if value not in (None, "") else None
+
+    entry = labelled("entry_price") or labelled("limit_price")
+    exits = [item for item in (labelled("stop_price"), labelled("take_profit")) if item]
+    return {
+        "name": f"{instrument[:80]}_PLAN",
+        "thesis": text,
+        "entry_conditions": [entry or text[:300]],
+        "exit_conditions": exits or [text[:300]],
+    }
+
+
 def _estimate_tokens(text: str) -> int:
     """Conservatively estimate tokens for mixed Chinese/JSON model inputs.
 
@@ -2495,6 +2522,9 @@ class AISessionCoordinator:
                 "若 previous_decision 存在且其 action、标的和 reason 已通过基本识别与授权检查，只修复验证指出的问题并保留已有决策字段；"
                 "错误对象、缺少标的或未授权标的都不是有效决策。若无有效决策，根据 inputs 中的行情、新闻、策略和账户事实重新决策。"
                 "instrument_id 必须来自 allowed_instruments，WAIT/HOLD 也必须填写授权标的；解释用简体中文。"
+                "validation_error 里的 output.<字段>:type 表示该字段类型不符。"
+                "strategy_plan 必须是对象 {name, thesis, entry_conditions, exit_conditions}，"
+                "其中 entry_conditions 与 exit_conditions 是非空字符串数组；不得写成字符串。"
             )
             repair_system = system_prompt + repair_instruction
             empty_inputs_user = json.dumps(
@@ -2538,7 +2568,25 @@ class AISessionCoordinator:
                 schema=repair_schema,
             )
         decoded = response[0] if isinstance(response, tuple) else response
-        validate_schema(decoded, AI_ACTION_SCHEMA)
+        try:
+            validate_schema(decoded, AI_ACTION_SCHEMA)
+        except ValueError as repair_error:
+            # The repair round is the model's last chance to emit the object
+            # shape. If it still flattens strategy_plan to a sentence, convert
+            # that sentence and record that the structure is runtime-derived;
+            # every other contract violation still blocks the cycle.
+            if str(repair_error) != "INVALID_ACTION_SCHEMA:output.strategy_plan:type" or not isinstance(decoded, dict):
+                raise
+            derived = derive_strategy_plan_from_text(decoded)
+            if derived is None:
+                raise
+            decoded["strategy_plan"] = derived
+            validate_schema(decoded, AI_ACTION_SCHEMA)
+            context.model_inference_settings["strategy_plan_structure_source"] = "DERIVED_FROM_MODEL_STRING"
+            logger.warning(
+                "strategy_plan arrived as text after repair; projected onto the contract shape for %s",
+                context.cycle_id,
+            )
         require_confidence_for_open(decoded)
         context.model_inference_settings["local_schema_validation"] = "PASS"
         if not isinstance(decoded, dict):
@@ -2677,6 +2725,11 @@ class AISessionCoordinator:
                 if not isinstance(plan[key], list) or not 1 <= len(plan[key]) <= 8 or any(not isinstance(v, str) or not v.strip() or len(v) > 300 for v in plan[key]):
                     raise ValueError("INVALID_STRATEGY_PLAN")
             extra_fields["strategy_plan"] = plan
+            if (
+                context.model_inference_settings.get("strategy_plan_structure_source")
+                == "DERIVED_FROM_MODEL_STRING"
+            ):
+                extra_fields["strategy_plan_structure_source"] = "DERIVED_FROM_MODEL_STRING"
 
         def bounded_text(field: str, maximum: int) -> None:
             value = decoded.get(field)
