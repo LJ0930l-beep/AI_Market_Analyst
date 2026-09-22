@@ -409,10 +409,14 @@ def test_at30_manifest_evidence_completeness():
     """AT30: Manifest generator conforms to V2R1 specification with SHA-256 and AT01-AT42 matrix."""
     tmp_dir = tempfile.mkdtemp()
     try:
-        manifest_rel = "evidence/manifest.json"
+        # Hash the real repository, but write the manifest outside it. An
+        # absolute output path wins over workspace_root in pathlib joining;
+        # using the default "evidence/manifest.json" overwrote the tracked
+        # acceptance evidence on every test run.
+        manifest_path = Path(tmp_dir) / "manifest.json"
         manifest = generate_evidence_manifest(
             workspace_root=".",
-            output_relative_path=manifest_rel,
+            output_relative_path=str(manifest_path),
         )
 
         assert manifest["release_code"] == SPEC_RELEASE_CODE
@@ -433,7 +437,7 @@ def test_at30_manifest_evidence_completeness():
                 "WAITING_USER_AUTHORIZATION",
             )
 
-        assert Path(manifest_rel).exists()
+        assert manifest_path.exists()
 
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
