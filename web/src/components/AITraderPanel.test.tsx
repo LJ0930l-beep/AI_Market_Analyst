@@ -187,6 +187,36 @@ describe("AI trader durable plan console", () => {
     expect(v2).toHaveBeenCalledWith('/ai-session/start?account_id=paper_handoff', 'POST', undefined);
   });
 
+  it("explains a runtime account mismatch and offers a safe switch", async () => {
+    const onAccountChange = vi.fn();
+    vi.spyOn(apiClient, 'v2').mockImplementation(async (path: string) => {
+      if (path === '/accounts') return { accounts: [
+        { account_id: 'gate_testnet', mode: 'TESTNET', venue: 'gate' },
+        { account_id: 'gate_live', mode: 'LIVE', venue: 'gate' },
+      ] } as never;
+      if (path === '/ai-session/status?account_id=gate_live') {
+        throw new ApiError(409, { code: 'RUNTIME_ACCOUNT_MISMATCH', message: 'runtime bound to gate_testnet' });
+      }
+      if (path === '/ai-session/status') return {
+        session: { state: 'RUNNING' },
+        runtime_account_id: 'gate_testnet', runtime_state: 'DEGRADED',
+        ai_session: { account_id: null, state: 'STOPPED', enabled: false, worker_alive: false },
+      } as never;
+      if (path.startsWith('/trade-plans')) return { plans: [] } as never;
+      if (path.startsWith('/ai-session/cycles')) return { cycles: [] } as never;
+      return {} as never;
+    });
+    render(<MemoryRouter><AITraderPanel currentMode="LIVE" activeAccount="gate_live" onAccountChange={onAccountChange} /></MemoryRouter>);
+    const notice = await screen.findByTestId('runtime-account-mismatch');
+    expect(notice).toHaveTextContent('gate_testnet');
+    expect(notice).toHaveTextContent('gate_live');
+    expect(notice).toHaveTextContent('DEGRADED');
+    expect(screen.getByRole('button', { name: /Verify and switch AI account/ })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /Stop AI trading/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '切换到 gate_testnet' }));
+    expect(onAccountChange).toHaveBeenCalledWith('gate_testnet');
+  });
+
   it("shows the effective strategy schedule and separates model confidence from trigger completion", async () => {
     vi.spyOn(apiClient, 'v2').mockImplementation(async (path: string) => {
       if (path === '/accounts') return { accounts: [{ account_id: 'paper_ui', mode: 'PAPER', venue: 'simulated' }] } as never;
@@ -209,9 +239,27 @@ describe("AI trader durable plan console", () => {
     expect(screen.getByTestId('strategy-run-summary')).toHaveTextContent('5 分钟');
     expect(screen.getByTestId('strategy-run-summary')).toHaveTextContent('4 个');
     expect(screen.getByTestId('market-readiness')).toHaveTextContent('—');
-    expect(screen.getByTestId('market-readiness')).toHaveTextContent('暂无可信触发度');
+    expect(screen.getByTestId('market-readiness')).toHaveTextContent('暂无可信环境评分');
     expect(screen.getByRole('region', { name: 'AI execution overview' })).toHaveTextContent('AI 置信度 65 / 100 · 不代表胜率');
     expect(screen.getByRole('region', { name: 'AI execution overview' })).not.toHaveTextContent('BONSAI COMPLETE');
+  });
+
+  it("labels a historical WAIT market score as context rather than an entry trigger", async () => {
+    vi.spyOn(apiClient, 'v2').mockImplementation(async (path: string) => {
+      if (path === '/accounts') return { accounts: [{ account_id: 'paper_wait', mode: 'PAPER', venue: 'simulated' }] } as never;
+      if (path.startsWith('/ai-session/status')) return { session: { state: 'RUNNING' }, ai_session: { state: 'RUNNING', enabled: true, worker_alive: true } } as never;
+      if (path.startsWith('/ai-session/cycles')) return { cycles: [{
+        action: 'WAIT', decision_origin: 'MODEL', model_called: true, reason: '没有入场触发',
+        payload: { model_output: { extra_fields: { strategy_analysis: { trigger_completion_pct: 75.6, market_readiness: 75.6 } } } },
+      }] } as never;
+      return {} as never;
+    });
+    render(<MemoryRouter><AITraderPanel currentMode="PAPER" activeAccount="paper_wait" /></MemoryRouter>);
+    const score = await screen.findByTestId('market-readiness');
+    expect(score).toHaveTextContent('市场环境就绪度');
+    expect(score).toHaveTextContent('76');
+    expect(score).toHaveTextContent('不代表入场触发');
+    expect(score).not.toHaveTextContent('策略触发完成度');
   });
 
   it("shows Bonsai as verified only for a fresh manifest-backed runtime health response", async () => {

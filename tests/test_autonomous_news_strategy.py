@@ -12,7 +12,7 @@ from core.model_routing import DEFAULT_SMART_MODEL
 from core.trading.ai_led_engine import AICycleContext, AIActionOutput, AILedDecisionEngine
 from core.trading import ai_session_coordinator as coordinator_module
 from core.trading.ai_session_coordinator import AISessionCoordinator
-from core.trading.autonomous_strategy import CONTRACT, technical_context, validate_entry, book_cost_evidence, resolve_order_preference
+from core.trading.autonomous_strategy import CONTRACT, technical_context, compact_technical, validate_entry, book_cost_evidence, resolve_order_preference
 from core.trading.decision_memory import list_decision_memory, record_decision_memory, update_memory_outcome
 from core.trading.execution_gateway import ExecutionGateway, TradingMode
 from core.trading.ledger import AccountLedger
@@ -20,6 +20,7 @@ from core.trading.order_selection import OrderSelectionInput, OrderSelectionPoli
 from core.trading.position_guardian import PositionGuardian
 from core.trading.risk_engine import RiskEngine
 from core.trading.session_manager import SessionManager
+from core.trading.strategy_execution import normalize_execution
 
 
 def bars(now, minutes=15, count=64):
@@ -96,7 +97,6 @@ def market_radar_fixture(symbols, now):
     (lambda c, o: setattr(o, "evidence_refs", (*o.evidence_refs, "news_revision:invented")), "INVALID_EVIDENCE_REF"),
     (lambda c, o: o.extra_fields.update(confidence=50), "AI_CONFIDENCE_BELOW_POLICY"),
     (lambda c, o: o.extra_fields.update(confidence=True), "AI_CONFIDENCE_BELOW_POLICY"),
-    (lambda c, o: o.extra_fields.update(strategy_plan=None), "AI_STRATEGY_PLAN_REQUIRED"),
     (lambda c, o: o.extra_fields.update(entry_zone={"low": 101.0, "high": 102.0}), "AI_ENTRY_CONDITION_NOT_MET"),
     (lambda c, o: setattr(o, "take_profit", 110.0), "AI_NET_REWARD_RISK_TOO_LOW"),
     (lambda c, o: setattr(o, "stop_price", float("nan")), "AI_ENTRY_PRICES_REQUIRED"),
@@ -112,6 +112,34 @@ def test_unsafe_entry_is_blocked_before_any_gateway_call(mutation, reason):
     assert validate_entry(ctx, output, now) == reason
 
 
+def test_open_accepts_model_trade_without_optional_narrative_fields():
+    now = datetime.now(timezone.utc)
+    ctx, output = context_and_output(now)
+    for key in ("strategy_plan", "entry_zone", "news_context", "timeframe_analysis", "invalidation_condition"):
+        output.extra_fields.pop(key, None)
+    assert validate_entry(ctx, output, now) is None
+    assert output.extra_fields["entry_zone_source"] == "MODEL_ENTRY_AND_CURRENT_QUOTE"
+
+
+def test_limit_entry_without_optional_zone_or_limit_price_uses_model_price():
+    now = datetime.now(timezone.utc)
+    ctx, output = context_and_output(now)
+    ctx.strategy_instructions = {
+        "execution": {"symbols": [], "universe_mode": "ALL", "direction": "BOTH", "leverage": 3,
+                      "risk_per_trade_pct": .25, "min_confidence": 70, "min_net_rr": 2,
+                      "order_preference": "AUTO", "scan_interval_minutes": 15},
+        "profile": {"order_preference": "AUTO", "limit_priority": True,
+                    "allow_future_limit": True, "max_limit_distance_pct": .85},
+    }
+    output.order_preference = "LIMIT"
+    output.entry_price = 99.3
+    output.limit_price = None
+    output.extra_fields.pop("entry_zone", None)
+    assert validate_entry(ctx, output, now) is None
+    assert output.limit_price == 99.3
+    assert output.extra_fields["limit_price_source"] == "MODEL_ENTRY_PRICE"
+
+
 def test_no_fresh_news_is_disclosed_but_does_not_alone_block_verified_technical_entry():
     now = datetime.now(timezone.utc)
     ctx, output = context_and_output(now)
@@ -123,6 +151,29 @@ def test_no_fresh_news_is_disclosed_but_does_not_alone_block_verified_technical_
         "summary": "本轮输入中没有 48 小时内适用于该币种的已核验新闻。",
     }
 
+    assert validate_entry(ctx, output, now) is None
+
+
+def test_old_google_search_false_symbol_hit_is_not_a_mandatory_news_citation():
+    now = datetime.now(timezone.utc)
+    ctx, output = context_and_output(now)
+    ctx.news_revisions[0].update(
+        title="Crypto Profit Calculator — Calculate Trade P&L",
+        url="https://news.google.com/rss/articles/example",
+        symbols=["BTCUSDT"],
+    )
+    ctx.evidence_refs = tuple(ref for ref in ctx.evidence_refs if not ref.startswith("news_revision:"))
+    output.evidence_refs = tuple(ref for ref in output.evidence_refs if not ref.startswith("news_revision:"))
+    output.extra_fields["news_context"] = {"impact": "UNKNOWN", "summary": "搜索结果未证实与该币种相关。"}
+    assert validate_entry(ctx, output, now) is None
+
+
+def test_cited_news_with_unknown_impact_keeps_uncertainty_without_blocking_technical_entry():
+    now = datetime.now(timezone.utc)
+    ctx, output = context_and_output(now)
+    output.extra_fields["news_context"] = {
+        "impact": "UNKNOWN", "summary": "已引用这条新闻，但来源没有足够证据判断方向。",
+    }
     assert validate_entry(ctx, output, now) is None
 
 
@@ -148,6 +199,17 @@ def test_five_minute_strategy_loads_its_signal_frame():
     result = technical_context(store, ("BTCUSDT",), now, interval=5)
     assert tuple(result["BTCUSDT"]["timeframes"]) == ("5m", "15m", "1h")
     assert all(frame["status"] == "READY" for frame in result["BTCUSDT"]["timeframes"].values())
+
+
+def test_compact_technical_states_price_side_of_ema_without_model_arithmetic():
+    raw = {"KASUSDT": {"status": "READY", "timeframes": {"5m": {
+        "status": "READY", "last_closed_at": "2026-09-23T15:00:00+00:00",
+        "bars": [{"open": .0392, "high": .0393, "low": .0389, "close": .03901, "volume": 100}],
+        "indicators": {"ema20": .03974},
+    }}}}
+    frame = compact_technical(raw, signal_timeframe="5m")["KASUSDT"]["timeframes"]["5m"]
+    assert frame["price_vs_ema20"] == "BELOW"
+    assert frame["candles"][-1][3] == .03901
 
 
 def test_nofx_indicator_snapshot_requires_gate_perpetual_last_bar_identity():
@@ -198,6 +260,31 @@ def test_limit_profile_cannot_be_widened_to_market_by_model_output():
     }
     assert resolve_order_preference(instructions, "MARKET") == "LIMIT"
     assert resolve_order_preference(instructions, "AUTO") == "LIMIT"
+
+
+def test_auto_passive_entry_without_optional_limit_field_uses_strategy_limit_priority():
+    now = datetime.now(timezone.utc)
+    ctx, output = context_and_output(now)
+    ctx.strategy_instructions = {
+        "execution": {
+            "symbols": [], "universe_mode": "ALL", "direction": "BOTH",
+            "leverage": 3, "risk_per_trade_pct": .25, "min_confidence": 70,
+            "min_net_rr": 2, "order_preference": "AUTO", "scan_interval_minutes": 15,
+        },
+        "profile": {
+            "order_preference": "AUTO", "limit_priority": True,
+            "allow_future_limit": True, "max_limit_distance_pct": 0.85,
+        },
+    }
+    output.order_preference = "AUTO"
+    output.entry_price = 99.83
+    output.limit_price = None
+    output.extra_fields["entry_zone"] = {"low": 99.8, "high": 99.9}
+
+    assert validate_entry(ctx, output, now) is None
+    assert output.order_preference == "LIMIT"
+    assert output.limit_price == 99.83
+    assert output.extra_fields["execution_preference_override"]["reason"] == "PROFILE_LIMIT_PRIORITY_PASSIVE_ENTRY"
 
 
 @pytest.mark.parametrize("model_preference", ["AUTO", "MARKET"])
@@ -290,6 +377,129 @@ def test_depth_costs_are_observed_and_empty_depth_is_rejected():
     assert result["depth_contracts"]["asks"] == 30
     with pytest.raises(ValueError):
         book_cost_evidence({"bids": [], "asks": []}, 100)
+
+
+def test_model_net_rr_repair_uses_exact_frozen_limit_costs_without_changing_trade():
+    from core.trading.ai_session_coordinator import _model_net_rr_repair_bounds
+
+    context = SimpleNamespace(
+        allowed_instruments=('BCHUSDT',),
+        market_snapshots={'BCHUSDT': {
+            'price': 338.95, 'fee_rate': 0.00075,
+            'slippage': 0.0009735949255051946,
+        }},
+        strategy_instructions={
+            'profile': {'allow_future_limit': True},
+            'execution': {'min_net_rr': 1.6},
+        },
+    )
+    model_trade = {
+        'action': 'OPEN_LONG', 'instrument_id': 'BCHUSDT',
+        'order_preference': 'LIMIT', 'limit_price': 338.95,
+        'stop_price': 333.82, 'take_profit': 349.22,
+    }
+    bound = _model_net_rr_repair_bounds(context, model_trade)
+    assert bound is not None
+    assert bound['observed_net_rr'] == pytest.approx(1.57962, rel=1e-5)
+    assert bound['required_target_bound'] == pytest.approx(349.341669, rel=1e-6)
+    assert model_trade['take_profit'] == 349.22
+    assert _model_net_rr_repair_bounds(context, {**model_trade, 'take_profit': 349.35}) is None
+
+
+def test_net_rr_bound_detects_passive_auto_entry_without_redundant_limit_fields():
+    from core.trading.ai_session_coordinator import _model_net_rr_repair_bounds
+
+    context = SimpleNamespace(
+        allowed_instruments=('BTCUSDT',),
+        market_snapshots={'BTCUSDT': {'price': 101.0, 'fee_rate': .00075, 'slippage': .001}},
+        strategy_instructions={
+            'profile': {'allow_future_limit': True, 'limit_priority': True, 'max_limit_distance_pct': .85},
+            'execution': {'min_net_rr': 1.6},
+        },
+    )
+    trade = {'action': 'OPEN_LONG', 'instrument_id': 'BTCUSDT', 'entry_price': 100.5,
+             'stop_price': 98.0, 'take_profit': 104.5}
+    bound = _model_net_rr_repair_bounds(context, trade)
+    assert bound is not None and bound['required_target_bound'] > trade['take_profit']
+    assert _model_net_rr_repair_bounds(context, {**trade, 'entry_price': 101.5}) is None
+
+
+def test_net_rr_tick_rounding_is_not_a_false_risk_rejection():
+    now = datetime.now(timezone.utc)
+    ctx, output = context_and_output(now)
+    ctx.strategy_instructions = {
+        'profile': {'signal_timeframe': '15m', 'allow_future_limit': True},
+        'execution': normalize_execution({'universe_mode': 'ALL', 'symbols': [],
+                                          'direction': 'BOTH', 'min_net_rr': 1.6}),
+    }
+    output.order_preference = 'LIMIT'
+    output.limit_price = 100
+    fee = 0.0005  # Explicit local PAPER contract in this fixture.
+    slip = ctx.market_snapshots['BTCUSDT']['slippage']
+    loss = 100 - 95 + 95 * slip + (100 + 95) * fee
+    bound = (1.6 * loss + 100 * (1 + fee)) / (1 - slip - fee)
+    output.take_profit = bound - 1e-10
+    assert validate_entry(ctx, output, now) is None
+    output.take_profit = bound - 0.01
+    assert validate_entry(ctx, output, now) == 'AI_NET_REWARD_RISK_TOO_LOW'
+
+
+def test_low_net_rr_open_gets_one_model_authored_target_retry(setup):
+    _, _, coordinator, _ = setup
+    now = datetime.now(timezone.utc)
+    ctx, output = context_and_output(now)
+    ctx.market_snapshots['BTCUSDT']['fee_rate'] = 0.00075
+    ctx.strategy_instructions = {
+        'profile': {'signal_timeframe': '15m', 'atr_stop_multiple': 1.8,
+                    'major_stop_floor_pct': 0.6, 'alt_stop_floor_pct': 1.5,
+                    'allow_future_limit': True, 'max_limit_distance_pct': 0.85},
+        'execution': normalize_execution({'universe_mode': 'ALL', 'symbols': [],
+                                          'direction': 'BOTH', 'min_net_rr': 1.6}),
+    }
+
+    class Model:
+        model_id = 'Bonsai-2-27B-PTQ1_0'
+        context_length = 32768
+        max_tokens = 900
+
+        def __init__(self):
+            self.calls = []
+
+        def generate_json(self, messages, **kwargs):
+            self.calls.append(kwargs['prompt_version'])
+            payload = json.loads(messages[1]['content'])
+            if len(self.calls) == 1:
+                refs = [ref for ref in payload['evidence_refs']
+                        if ref.startswith(('market_snapshot:', 'technical_snapshot:', 'news_revision:'))]
+                decision = {
+                    'action': 'OPEN_LONG', 'instrument_id': 'BTCUSDT',
+                    'reason': output.reason, 'confidence': 75,
+                    'order_preference': 'LIMIT', 'entry_price': 100,
+                    'limit_price': 100, 'ttl_seconds': 900,
+                    'stop_price': 95, 'take_profit': 107,
+                    'requested_risk_fraction': .002,
+                    'evidence_refs': refs, **deepcopy(output.extra_fields),
+                }
+            else:
+                assert kwargs['prompt_version'].endswith('_net_rr_repair')
+                assert payload['required_geometry']['required_target_bound'] > 107
+                decision = dict(payload['previous_decision'], take_profit=118,
+                                reason='模型复核后选择结构目标118')
+            return decision, json.dumps(decision), {
+                'model_id': DEFAULT_SMART_MODEL,
+                'actual_model_id': r'D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf',
+                'model_identity_source': 'completion_response',
+                'verified_manifest_model_id': r'D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf',
+            }
+
+    model = Model()
+    coordinator.model_provider = model
+    revised = coordinator._model_output(ctx)
+    assert len(model.calls) == 2
+    assert revised.take_profit == 118
+    assert revised.entry_price == 100
+    assert revised.stop_price == 95
+    assert ctx.model_inference_settings['net_rr_repair']['status'] == 'MODEL_REVISED'
 
 
 @pytest.fixture
@@ -870,6 +1080,325 @@ def test_open_missing_confidence_gets_one_strict_model_repair(setup):
     assert decoded.ttl_seconds == 900
 
 
+@pytest.mark.parametrize("tamper_entry", [False, True])
+@pytest.mark.parametrize("schema_first", [False, True])
+def test_narrow_model_stop_gets_one_bounded_model_repair_without_changing_trade_identity(setup, tamper_entry, schema_first):
+    _, _, coordinator, _ = setup
+    now = datetime.now(timezone.utc)
+    ctx, output = context_and_output(now)
+    ctx.strategy_instructions = {
+        "profile": {"signal_timeframe": "15m", "atr_stop_multiple": 1.8,
+                    "major_stop_floor_pct": 0.6, "alt_stop_floor_pct": 1.5},
+        "execution": normalize_execution({
+            "universe_mode": "ALL", "symbols": [], "direction": "BOTH",
+            "risk_per_trade_pct": 0.25, "min_net_rr": 1.6,
+        }),
+    }
+
+    class Model:
+        model_id = "Bonsai-2-27B-PTQ1_0"
+        context_length = 32768
+        max_tokens = 900
+
+        def __init__(self):
+            self.calls = []
+
+        def generate_json(self, messages, **kwargs):
+            self.calls.append((messages, kwargs))
+            payload = json.loads(messages[1]["content"])
+            if len(self.calls) == 1:
+                refs = [ref for ref in payload["evidence_refs"]
+                        if ref.startswith(("market_snapshot:", "technical_snapshot:", "news_revision:"))]
+                decision = {
+                    "action": "OPEN_LONG", "instrument_id": "BTCUSDT", "reason": output.reason,
+                    "order_preference": "LIMIT", "entry_price": 100, "limit_price": 100,
+                    "ttl_seconds": 900, "stop_price": 99.9, "take_profit": 110,
+                    "requested_risk_fraction": .002, "evidence_refs": refs,
+                    **deepcopy(output.extra_fields),
+                }
+                if schema_first:
+                    decision["strategy_plan"] = "invalid plan shape"
+            else:
+                assert kwargs["prompt_version"].endswith("_stop_repair")
+                assert payload["required_geometry"]["minimum_stop_distance"] >= 3.6
+                assert payload["required_geometry"]["stop_boundary"] <= 96.4
+                decision = dict(payload["previous_decision"], stop_price=95, take_profit=118)
+                if tamper_entry:
+                    decision["entry_price"] = 101
+            return decision, json.dumps(decision), {
+                "model_id": DEFAULT_SMART_MODEL,
+                "actual_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                "model_identity_source": "completion_response",
+                "verified_manifest_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+            }
+
+    model = Model()
+    coordinator.model_provider = model
+    decoded = coordinator._model_output(ctx)
+    assert len(model.calls) == 2
+    attempts = ctx.model_inference_settings["model_attempts"]
+    assert len({item["evidence_bundle_id"] for item in attempts}) == len(attempts)
+    assert decoded.action == "OPEN_LONG"
+    assert decoded.entry_price == 100
+    assert decoded.stop_price == (99.9 if tamper_entry else 95)
+    assert ctx.model_inference_settings["stop_geometry_repair"]["status"] == (
+        "FAILED_OR_UNSAFE" if tamper_entry else "MODEL_REVISED"
+    )
+    if schema_first:
+        assert ctx.model_inference_settings["strategy_plan_structure_source"] == "DERIVED_FROM_MODEL_STRING"
+    assert validate_entry(ctx, decoded, now) == (
+        "AI_STOP_DISTANCE_TOO_NARROW" if tamper_entry else None
+    )
+
+
+@pytest.mark.parametrize("schema_first", [False, True])
+def test_crossing_short_limit_gets_model_authored_passive_entry_repair(setup, schema_first):
+    _, _, coordinator, _ = setup
+    now = datetime.now(timezone.utc)
+    ctx, output = context_and_output(now)
+    ctx.strategy_instructions = {
+        "profile": {"signal_timeframe": "15m", "atr_stop_multiple": 1.8,
+                    "major_stop_floor_pct": 0.6, "alt_stop_floor_pct": 1.5,
+                    "allow_future_limit": True, "max_limit_distance_pct": 0.85},
+        "execution": normalize_execution({"universe_mode": "ALL", "symbols": [],
+                                           "direction": "BOTH", "risk_per_trade_pct": 0.25,
+                                           "min_net_rr": 1.6}),
+    }
+
+    class Model:
+        model_id = "Bonsai-2-27B-PTQ1_0"
+        context_length = 32768
+        max_tokens = 900
+
+        def __init__(self):
+            self.calls = []
+
+        def generate_json(self, messages, **kwargs):
+            self.calls.append(kwargs["prompt_version"])
+            payload = json.loads(messages[1]["content"])
+            if len(self.calls) == 1:
+                refs = [ref for ref in payload["evidence_refs"]
+                        if ref.startswith(("market_snapshot:", "technical_snapshot:", "news_revision:"))]
+                decision = {
+                    "action": "OPEN_SHORT", "instrument_id": "BTCUSDT", "reason": output.reason,
+                    "order_preference": "LIMIT", "entry_price": 99.5, "limit_price": 99.5,
+                    "ttl_seconds": 900, "stop_price": 104, "take_profit": 90,
+                    "requested_risk_fraction": .002, "evidence_refs": refs,
+                    **deepcopy(output.extra_fields),
+                    "entry_zone": {"low": 99.5, "high": 99.5},
+                }
+                if schema_first:
+                    decision["strategy_plan"] = "invalid plan shape"
+            else:
+                assert kwargs["prompt_version"].endswith("_entry_repair")
+                assert payload["required_geometry"]["limit"]["reason"] == "CROSSES_QUOTE"
+                decision = dict(payload["previous_decision"], entry_price=100.2,
+                                limit_price=100.2, entry_zone={"low": 100.2, "high": 100.2},
+                                stop_price=104.5, take_profit=90)
+            return decision, json.dumps(decision), {
+                "model_id": DEFAULT_SMART_MODEL,
+                "actual_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                "model_identity_source": "completion_response",
+                "verified_manifest_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+            }
+
+    model = Model()
+    coordinator.model_provider = model
+    decoded = coordinator._model_output(ctx)
+    assert len(model.calls) == 2
+    assert decoded.action == "OPEN_SHORT"
+    assert decoded.order_preference == "LIMIT"
+    assert decoded.entry_price == decoded.limit_price == 100.2
+    assert ctx.model_inference_settings["entry_geometry_repair"]["status"] == (
+        "MODEL_REVISED"
+    )
+    if schema_first:
+        assert ctx.model_inference_settings["strategy_plan_structure_source"] == "DERIVED_FROM_MODEL_STRING"
+    assert len({item["evidence_bundle_id"] for item in ctx.model_inference_settings["model_attempts"]}) == 1
+    assert validate_entry(ctx, decoded, now) is None
+
+
+def test_open_without_optional_analysis_uses_one_model_call(setup):
+    _, _, coordinator, _ = setup
+    now = datetime.now(timezone.utc)
+    ctx, output = context_and_output(now)
+
+    class Model:
+        model_id = "Bonsai-2-27B-PTQ1_0"
+        context_length = 32768
+        max_tokens = 900
+
+        def __init__(self):
+            self.calls = 0
+
+        def generate_json(self, messages, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                payload = json.loads(messages[1]["content"])
+                refs = [r for r in payload["evidence_refs"] if r.startswith(("market_snapshot:", "technical_snapshot:", "news_revision:"))]
+                decision = {
+                    "action": "OPEN_LONG", "instrument_id": "BTCUSDT", "reason": output.reason,
+                    "confidence": 75, "entry_price": 100, "stop_price": 95, "take_profit": 118,
+                    "requested_risk_fraction": .002, "order_preference": "LIMIT",
+                    "evidence_refs": refs,
+                }
+            else:
+                raise AssertionError("optional narration must not trigger another model call")
+            return decision, json.dumps(decision), {
+                "model_id": DEFAULT_SMART_MODEL,
+                "actual_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                "model_identity_source": "completion_response",
+                "verified_manifest_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+            }
+
+    model = Model()
+    coordinator.model_provider = model
+    decoded = coordinator._model_output(ctx)
+    assert model.calls == 1
+    assert decoded.action == "OPEN_LONG"
+    assert decoded.entry_price == 100
+    assert "news_context" not in decoded.extra_fields
+    assert "timeframe_analysis" not in decoded.extra_fields
+    assert "strategy_plan" not in decoded.extra_fields
+    assert validate_entry(ctx, decoded, now) is None
+
+
+def test_open_missing_relevant_news_ref_repairs_by_appending_verified_ref_only(setup):
+    _, _, coordinator, _ = setup
+    now = datetime.now(timezone.utc)
+    ctx, output = context_and_output(now)
+
+    class Model:
+        model_id = "Bonsai-2-27B-PTQ1_0"
+        context_length = 32768
+        max_tokens = 900
+
+        def __init__(self):
+            self.calls = 0
+
+        def generate_json(self, messages, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                prompt = json.loads(messages[1]["content"])
+                refs = [ref for ref in prompt["evidence_refs"] if ref.startswith(("market_snapshot:BTCUSDT:", "technical_snapshot:BTCUSDT:"))]
+                decision = {
+                    "action": "OPEN_LONG", "instrument_id": "BTCUSDT", "reason": output.reason,
+                    "confidence": 75, "entry_price": 100, "stop_price": 95, "take_profit": 118,
+                    "requested_risk_fraction": .002, "order_preference": "LIMIT",
+                    "evidence_refs": refs,
+                    **deepcopy(output.extra_fields),
+                }
+            else:
+                repair = json.loads(messages[1]["content"])
+                assert repair["validation_error"].endswith("news_evidence_ref")
+                assert kwargs["prompt_version"].endswith("_repair")
+                decision = dict(repair["previous_decision"])
+                decision["evidence_refs"] = [*decision["evidence_refs"], "news_revision:news1"]
+            return decision, json.dumps(decision), {
+                "model_id": DEFAULT_SMART_MODEL,
+                "actual_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                "model_identity_source": "completion_response",
+                "verified_manifest_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+            }
+
+    model = Model()
+    coordinator.model_provider = model
+    decoded = coordinator._model_output(ctx)
+    assert model.calls == 2
+    assert decoded.action == "OPEN_LONG"
+    assert len(decoded.evidence_refs) == 3
+    assert decoded.evidence_refs[-1] == "news_revision:news1"
+
+
+def test_model_prompt_does_not_present_static_no_trigger_as_ai_entry_veto(setup):
+    _, _, coordinator, _ = setup
+    now = datetime.now(timezone.utc)
+    ctx, _ = context_and_output(now)
+    ctx.candidates = [{"candidate_id": "reference-1", "symbol": "BTCUSDT", "status": "NO_TRIGGER"}]
+    ctx.strategy_readiness = {
+        "status": "READY", "candidate_count": 1,
+        "strategies": {"ema_trend": "NO_TRIGGER", "liquidity_sweep": "NO_TRIGGER"},
+        "calibration_status": "READY",
+    }
+    ctx.strategy_instructions = {
+        "profile": {"signal_timeframe": "15m", "atr_stop_multiple": 1.8,
+                    "major_stop_floor_pct": 0.6, "alt_stop_floor_pct": 1.5},
+        "execution": {"min_net_rr": 1.6},
+    }
+    ctx.market_snapshots["BTCUSDT"]["fee_rate"] = 0.0005
+    seen = {}
+
+    class Model:
+        model_id = "Bonsai-2-27B-PTQ1_0"
+        context_length = 32768
+        max_tokens = 900
+
+        def generate_json(self, messages, **kwargs):
+            seen.update(json.loads(messages[1]["content"]))
+            decision = {"action": "WAIT", "instrument_id": "BTCUSDT", "reason": "本轮无新入场结构", "confidence": 30}
+            return decision, json.dumps(decision), {"model_id": DEFAULT_SMART_MODEL}
+
+    coordinator.model_provider = Model()
+    result = coordinator._model_output(ctx)
+    assert result.action == "WAIT"
+    assert "candidates" not in seen
+    assert "candidate_scan" not in seen
+    assert seen["strategy_readiness"] == {"status": "READY", "calibration_status": "READY"}
+    assert "BTCUSDT" in seen["technical_context"]
+    geometry = seen["active_strategy"]["risk_geometry"]["BTCUSDT"]
+    assert geometry["ema20_example_entry"] == 100.0
+    assert geometry["long_stop_must_be_at_or_below_if_entry_at_ema20"] == 96.4
+    assert geometry["short_stop_must_be_at_or_above_if_entry_at_ema20"] == 103.6
+    assert geometry["ema20_limit_distance_pct"] == 0
+    assert geometry["ema20_passive_direction"] == "AT_QUOTE"
+    long_loss = 100 - 96.4 + 96.4 * .001 + (100 + 96.4) * .0005
+    short_loss = 103.6 - 100 + 103.6 * .001 + (100 + 103.6) * .0005
+    assert geometry["long_min_target_if_entry_at_ema20"] == round((1.6 * long_loss + 100 * 1.0005) / .9985, 8)
+    assert geometry["short_max_target_if_entry_at_ema20"] == round((100 * .9995 - 1.6 * short_loss) / 1.0015, 8)
+    assert geometry["target_bounds_assume_stop_at_minimum_only"] is True
+
+
+def test_wait_with_false_ema_limit_distance_gets_one_model_fact_check(setup):
+    _, _, coordinator, _ = setup
+    now = datetime.now(timezone.utc)
+    ctx, _ = context_and_output(now)
+    ctx.strategy_instructions = {
+        "profile": {"signal_timeframe": "15m", "atr_stop_multiple": 1.8,
+                    "major_stop_floor_pct": 0.6, "alt_stop_floor_pct": 1.5,
+                    "max_limit_distance_pct": 0.85},
+        "execution": {"min_net_rr": 1.6},
+    }
+
+    class Model:
+        model_id = DEFAULT_SMART_MODEL
+        context_length = 32768
+        max_tokens = 900
+
+        def __init__(self):
+            self.calls = []
+
+        def generate_json(self, messages, **kwargs):
+            self.calls.append(kwargs["prompt_version"])
+            if len(self.calls) == 1:
+                result = {"action": "WAIT", "instrument_id": "BTCUSDT",
+                          "reason": "BTC 限价距 EMA 超 0.85% 上限", "confidence": 30}
+            else:
+                assert kwargs["prompt_version"].endswith("_wait_fact_repair")
+                payload = json.loads(messages[1]["content"])
+                assert payload["verified_fact"]["verified_distance_pct"] == 0
+                assert payload["inputs"]["allowed_instruments"] == ["BTCUSDT"]
+                result = {"action": "WAIT", "instrument_id": "BTCUSDT",
+                          "reason": "BTC 均线限价距离合格，但结构目标不足", "confidence": 30}
+            return result, json.dumps(result), {"model_id": DEFAULT_SMART_MODEL}
+
+    model = Model()
+    coordinator.model_provider = model
+    decoded = coordinator._model_output(ctx)
+    assert model.calls == [coordinator_module.AI_PROMPT_VERSION, coordinator_module.AI_PROMPT_VERSION + "_wait_fact_repair"]
+    assert decoded.reason == "BTC 均线限价距离合格，但结构目标不足"
+    assert ctx.model_inference_settings["wait_fact_check"]["status"] == "MODEL_REEVALUATED"
+
+
 def test_invalid_error_envelope_repair_keeps_original_market_and_news_inputs(setup):
     _, _, coordinator, _ = setup
     now = datetime.now(timezone.utc)
@@ -925,6 +1454,18 @@ def test_blocked_model_open_is_audited_as_open_not_fabricated_wait(setup):
     assert result.action_output.action == "OPEN_LONG"
     assert result.decision_origin == "MODEL"
     assert not ledger.get_open_positions("news-paper")
+    with store._connect() as db:
+        row = db.execute(
+            "SELECT action, decision_origin, block_stage, stage_trace_json FROM ai_led_cycles WHERE cycle_id=?",
+            (ctx.cycle_id,),
+        ).fetchone()
+    assert row["action"] == "OPEN_LONG"
+    assert row["decision_origin"] == "MODEL"
+    assert row["block_stage"] == "RISK"
+    trace = {stage["stage"]: stage for stage in json.loads(row["stage_trace_json"])}
+    assert trace["AI_MODEL"]["status"] == "PASS"
+    assert trace["RISK"]["status"] == "FAILED"
+    assert trace["EXECUTION"]["status"] == "SKIPPED"
 
 
 def test_market_wide_news_is_valid_risk_context_without_fabricating_symbol_catalyst():
@@ -935,7 +1476,7 @@ def test_market_wide_news_is_valid_risk_context_without_fabricating_symbol_catal
     assert validate_entry(ctx, output, now) is None
 
 
-def test_news_loader_adds_bounded_market_context_for_discovered_altcoin(setup):
+def test_news_loader_does_not_relabel_unrelated_symbol_news_as_market_wide(setup):
     store, _, coordinator, _ = setup
     now = datetime.now(timezone.utc)
     store.save_event_context({'events': [{
@@ -945,8 +1486,23 @@ def test_news_loader_adds_bounded_market_context_for_discovered_altcoin(setup):
         'known_at': now.isoformat(), 'source': 'fixture',
     }]})
     revisions = coordinator._news_revisions(('NEWUSDT',), now=now)
-    assert any(item['scope'] == 'MARKET_WIDE' for item in revisions)
-    assert all(item['symbol'] != 'NEWUSDT' for item in revisions if item['scope'] == 'MARKET_WIDE')
+    assert revisions == []
+
+
+def test_news_loader_keeps_explicit_market_wide_context_for_discovered_altcoin(setup):
+    store, _, coordinator, _ = setup
+    now = datetime.now(timezone.utc)
+    store.save_event_context({'events': [{
+        'event_id': 'macro-crypto-explicit', 'revision_id': 'macro-crypto-explicit-r1',
+        'affected_symbols': ['BTCUSDT'], 'scope': 'MARKET_WIDE',
+        'title': 'Broad crypto liquidity update', 'summary': 'Market-wide risk background',
+        'published_at': (now - timedelta(hours=1)).isoformat(),
+        'known_at': now.isoformat(), 'source': 'fixture',
+    }]})
+    revisions = coordinator._news_revisions(('NEWUSDT',), now=now)
+    assert len(revisions) == 1
+    assert revisions[0]['scope'] == 'MARKET_WIDE'
+    assert revisions[0]['symbol'] is None
 
 
 def test_account_strategy_sizes_real_engine_order_and_persists_economics(setup):
@@ -1088,8 +1644,8 @@ def test_narrow_stop_loss_below_institutional_threshold_is_strictly_rejected():
     assert validate_entry(ctx, output, now) is None
 
 
-def test_model_wait_is_respected_and_receives_dynamic_readiness_score(setup):
-    """验证大模型决定 WAIT 时不会被粗暴篡改为 OPEN，且能注入基于市场指标的动态就绪度评分。"""
+def test_model_wait_keeps_trigger_unknown_and_records_market_readiness_separately(setup):
+    """A market-wide score must not masquerade as a completed entry trigger."""
     store, ledger, coordinator, engine = setup
     now = datetime.now(timezone.utc)
     ctx, _ = context_and_output(now)
@@ -1105,6 +1661,8 @@ def test_model_wait_is_respected_and_receives_dynamic_readiness_score(setup):
     assert result.action_output.action == "WAIT"
     assert result.action_output.extra_fields is not None
     analysis = result.action_output.extra_fields.get("strategy_analysis") or {}
-    completion_pct = analysis.get("trigger_completion_pct")
-    assert completion_pct is not None
-    assert 0 <= completion_pct <= 100
+    assert analysis.get("trigger_completion_pct") is None
+    readiness = analysis.get("market_readiness")
+    assert readiness is not None
+    assert 0 <= readiness <= 100
+    assert result.action_output.extra_fields["market_readiness"] == readiness

@@ -208,6 +208,9 @@ class OrderIntent:
     price: Optional[float] = None
     leverage: Optional[int] = None
     protection_plan: Optional[ProtectionPlan] = None
+    # Only a managed Gate TestNet AI session may use this alternative policy.
+    # The gateway re-derives the margin cap from the active account strategy.
+    risk_policy: str = "STANDARD"
     reduce_only: bool = False
     control_mode: ControlMode = ControlMode.ASSISTED
     decision_path: DecisionPath = DecisionPath.STRATEGY_DRIVEN
@@ -289,6 +292,7 @@ class OrderIntent:
             "ttl_seconds": self.ttl_seconds,
             "selection_policy_version": self.selection_policy_version,
             "protection_plan": protection,
+            "risk_policy": self.risk_policy,
         }
         encoded = json.dumps(content, sort_keys=True).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
@@ -308,6 +312,7 @@ class OrderIntent:
             "price": self.price,
             "leverage": self.leverage,
             "protection_plan": self.protection_plan.to_dict() if self.protection_plan else None,
+            "risk_policy": self.risk_policy,
             "reduce_only": self.reduce_only,
             "position_id": self.position_id,
             "cycle_id": self.cycle_id,
@@ -788,14 +793,17 @@ class ExecutionGateway:
     @staticmethod
     def _gate_symbol_key(value: Any) -> str:
         """Compare Gate symbols without confusing CCXT and native spellings."""
-
-        return "".join(character for character in str(value or "").upper() if character.isalnum())
+        compact = "".join(character for character in str(value or "").upper() if character.isalnum())
+        # CCXT's linear swap symbol BASE/USDT:USDT repeats the settlement
+        # currency.  The native contract and model instrument use BASE_USDT.
+        return compact[:-4] if compact.endswith("USDTUSDT") else compact
 
     @classmethod
     def _gate_remote_positions_for_risk(
         cls,
         truth: Dict[str, Any],
         account_id: str,
+        mode: str = "TESTNET",
     ) -> list[Dict[str, Any]]:
         """Project observed Gate positions into the risk engine's read shape.
 
@@ -842,7 +850,7 @@ class ExecutionGateway:
                 {
                     "account_id": account_id,
                     "venue": "gate",
-                    "mode": "TESTNET",
+                    "mode": str(mode).upper(),
                     "symbol": symbol,
                     "instrument_id": symbol,
                     "side": side,
@@ -1134,6 +1142,197 @@ class ExecutionGateway:
             },
         }
 
+    def update_gate_protection(
+        self, *, account_id: str, instrument_id: str, position_id: str,
+        new_stop_price: float | None = None, new_take_profit: float | None = None,
+    ) -> Dict[str, Any]:
+        """Amend only the native protection legs of a verified system fill."""
+        if new_stop_price is None and new_take_profit is None:
+            raise GatewayError("PROTECTION_PRICE_REQUIRED", "A new stop or target is required.", 422)
+        from .gate_accounts import build_gate_trader, get_gate_account_profile
+
+        profile = get_gate_account_profile(self.store, account_id)
+        profile_mode = str(profile.get("mode") or "").upper()
+        if profile_mode not in {"TESTNET", "LIVE"}:
+            raise GatewayError("GATE_ACCOUNT_SCOPE_REQUIRED", "AI protection management requires a managed Gate account.", 422)
+        trader = build_gate_trader(self.store, account_id)
+        positions = trader.get_positions()
+        if trader.last_positions_status != "AVAILABLE":
+            raise GatewayError("GATE_POSITIONS_UNAVAILABLE", "Remote positions could not be verified.", 503)
+        compact = self._gate_symbol_key(instrument_id)
+        matching = [position for position in positions if self._gate_symbol_key(position.get("symbol")) == compact and str(position.get("position_id")) == str(position_id)]
+        if len(matching) != 1:
+            raise GatewayError("GATE_POSITION_ID_MISMATCH", "The remote position ID is not uniquely verified.", 409)
+        position = matching[0]
+        with self._lock, self.store._connect() as db:
+            rows = db.execute(
+                """SELECT intent_id,side,quantity,execution_result_json FROM order_intents
+                   WHERE account_id=? AND instrument_id=? AND mode=? AND venue='gate'
+                     AND status='FILLED' AND reduce_only=0 AND intent_id LIKE 'intent_ai_%'
+                   ORDER BY created_at DESC LIMIT 10""",
+                (account_id, instrument_id, profile_mode),
+            ).fetchall()
+            matched = None
+            for row in rows:
+                receipt = json.loads(row["execution_result_json"] or "{}")
+                if str(row["side"] or "").upper() != str(position.get("side") or "").upper():
+                    continue
+                if Decimal(str(receipt.get("filled") or 0)) != Decimal(str(position.get("contracts") or 0)):
+                    continue
+                if Decimal(str(receipt.get("average") or receipt.get("price") or 0)) != Decimal(str(position.get("entry_price") or 0)):
+                    continue
+                legs = {str(item.get("leg")): item for item in receipt.get("protection_orders") or [] if isinstance(item, dict)}
+                if all(str(legs.get(name, {}).get("order_id") or "").isdigit() for name in ("stop_loss", "take_profit")):
+                    matched = (row, receipt, legs)
+                    break
+            if matched is None:
+                raise GatewayError("SYSTEM_POSITION_OWNERSHIP_UNVERIFIED", "No matching system fill and Gate protection IDs exist.", 409)
+            row, receipt, legs = matched
+            updates = (("stop_loss", new_stop_price), ("take_profit", new_take_profit))
+            changed: list[dict[str, Any]] = []
+            replacements = receipt.setdefault("protection_replacements", {})
+
+            def persist_receipt() -> None:
+                receipt["protection_orders"] = list(legs.values())
+                db.execute(
+                    "UPDATE order_intents SET execution_result_json=?, updated_at=? WHERE intent_id=?",
+                    (json.dumps(receipt, allow_nan=False), datetime.now(timezone.utc).isoformat(), row["intent_id"]),
+                )
+                db.commit()
+
+            for name, price in updates:
+                order_id = str(legs[name]["order_id"])
+                observed = trader.fetch_protection_order(order_id, instrument_id)
+                if observed["status"] != "OPEN" and not (
+                    observed["status"] == "FINISHED" and observed.get("finish_as") in {"cancelled", "canceled"}
+                    and isinstance(replacements.get(name), dict)
+                ):
+                    raise GatewayError("GATE_PROTECTION_NOT_OPEN", f"{name} is not active on Gate.", 409)
+                if price is None:
+                    continue
+                target = float(self.validate_finite_decimal(name, price, min_val=1e-8))
+                if observed.get("trigger_price") is None:
+                    raise GatewayError("GATE_PROTECTION_PRICE_UNKNOWN", f"{name} has no observed trigger price.", 409)
+                if abs(float(observed["trigger_price"]) - target) <= max(1e-12, target * 1e-9) and name not in replacements:
+                    continue
+                pending = replacements.get(name)
+                if pending:
+                    if str(pending.get("old_id")) != order_id or not math.isclose(float(pending.get("target_price") or 0), target, rel_tol=1e-9):
+                        raise GatewayError("GATE_PROTECTION_REPLACE_PENDING", "A different protection replacement is awaiting Gate confirmation.", 409)
+                    new_id = str(pending["new_id"])
+                else:
+                    # Gate TestNet rejects PUT price_orders/amend for existing
+                    # native trigger IDs.  Arm and verify the replacement
+                    # first; only then cancel the old leg, so the position is
+                    # never left without this protection during the change.
+                    created = trader.place_protection_orders(
+                        instrument_id, side=str(position["side"]), amount=float(position["contracts"]),
+                        stop_loss=target if name == "stop_loss" else None,
+                        take_profit=target if name == "take_profit" else None,
+                        client_order_id=f"t-{row['intent_id'][:18]}",
+                    )
+                    if len(created) != 1 or str(created[0].get("leg")) != name or not str(created[0].get("order_id") or "").isdigit():
+                        raise GatewayError("GATE_PROTECTION_REPLACEMENT_UNVERIFIED", "Gate did not identify the replacement protection order.", 503)
+                    new_id = str(created[0]["order_id"])
+                    replacements[name] = {"old_id": order_id, "new_id": new_id, "target_price": target}
+                    persist_receipt()
+                replacement = trader.fetch_protection_order(new_id, instrument_id)
+                if replacement["status"] != "OPEN" or replacement["trigger_price"] is None or not math.isclose(float(replacement["trigger_price"]), target, rel_tol=1e-9):
+                    raise GatewayError("GATE_PROTECTION_REPLACEMENT_UNVERIFIED", "Replacement trigger is not open at the requested price.", 503)
+                try:
+                    trader.cancel_protection_order(order_id, instrument_id)
+                except Exception as exc:
+                    raise GatewayError("GATE_PROTECTION_REPLACE_PENDING", f"Replacement is armed but old protection cancellation is unverified: {exc}", 409) from exc
+                legs[name]["order_id"] = new_id
+                legs[name]["trigger_price"] = replacement["trigger_price"]
+                legs[name]["status"] = "open"
+                change = {"leg": name, "old_order_id": order_id, "order_id": new_id, "before": observed["trigger_price"], "after": replacement["trigger_price"]}
+                changed.append(change)
+                receipt.setdefault("protection_revisions", []).append({**change, "observed_at": replacement["observed_at"]})
+                replacements.pop(name, None)
+                persist_receipt()
+            return {"status": "VERIFIED" if changed else "UNCHANGED", "intent_id": row["intent_id"], "position_id": str(position_id), "changes": changed}
+
+    def cleanup_closed_gate_protection(self, *, account_id: str, remote_truth: Dict[str, Any]) -> list[Dict[str, Any]]:
+        """Cancel only own reduce-only triggers after Gate confirms no position.
+
+        A triggered stop may leave its paired take-profit OPEN on Gate. That
+        orphan is still shown to the model as a pending order and can anchor
+        every subsequent scan. The immutable Gate order ID in a filled AI
+        intent is required before any cancellation is attempted.
+        """
+        from .gate_accounts import build_gate_trader, get_gate_account_profile
+
+        profile = get_gate_account_profile(self.store, account_id)
+        profile_mode = str(profile.get("mode") or "").upper()
+        if profile_mode not in {"TESTNET", "LIVE"}:
+            return []
+        if not isinstance(remote_truth, dict) or remote_truth.get("status") != "AVAILABLE":
+            return []
+        if remote_truth.get("positions_status") != "AVAILABLE" or remote_truth.get("pending_orders_status") != "AVAILABLE":
+            return []
+        positions = remote_truth.get("positions")
+        pending = remote_truth.get("pending_orders")
+        if not isinstance(positions, list) or not isinstance(pending, list):
+            return []
+        held = {self._gate_symbol_key(item.get("symbol")) for item in positions if isinstance(item, dict)}
+        pending_ids = {str(item.get("order_id") or "") for item in pending if isinstance(item, dict) and item.get("reduce_only") is True}
+        trader = build_gate_trader(self.store, account_id)
+        cleaned: list[Dict[str, Any]] = []
+        with self._lock, self.store._connect() as db:
+            rows = db.execute(
+                """SELECT intent_id,instrument_id,execution_result_json FROM order_intents
+                   WHERE account_id=? AND mode=? AND venue='gate' AND status='FILLED'
+                     AND reduce_only=0 AND intent_id LIKE 'intent_ai_%'
+                   ORDER BY created_at DESC LIMIT 30""",
+                (account_id, profile_mode),
+            ).fetchall()
+            for row in rows:
+                symbol = str(row["instrument_id"] or "")
+                if self._gate_symbol_key(symbol) in held:
+                    continue
+                receipt = json.loads(row["execution_result_json"] or "{}")
+                legs = receipt.get("protection_orders")
+                if not isinstance(legs, list):
+                    continue
+                changed = False
+                for leg in legs:
+                    if not isinstance(leg, dict):
+                        continue
+                    order_id = str(leg.get("order_id") or "")
+                    if not order_id.isdigit() or str(leg.get("status") or "open").lower() not in {"open", "active"}:
+                        continue
+                    try:
+                        observed = trader.fetch_protection_order(order_id, symbol)
+                        if observed.get("reduce_only") is not True:
+                            continue
+                        if observed["status"] == "OPEN":
+                            # The independently read Gate pending list must
+                            # contain this exact ID before cancellation.
+                            if order_id not in pending_ids:
+                                continue
+                            trader.cancel_protection_order(order_id, symbol)
+                            leg["status"] = "canceled_after_position_close"
+                        elif observed["status"] == "FINISHED":
+                            leg["status"] = f"finished_{observed.get('finish_as') or 'unknown'}"
+                        else:
+                            continue
+                    except Exception:
+                        logger.exception("Could not verify closed-position protection cancellation for %s", row["intent_id"])
+                        continue
+                    cleaned.append({"intent_id": row["intent_id"], "symbol": symbol, "order_id": order_id, "leg": leg.get("leg"), "status": leg["status"]})
+                    changed = True
+                if changed:
+                    receipt.setdefault("protection_cleanup", []).extend(item for item in cleaned if item["intent_id"] == row["intent_id"])
+                    if all(str(leg.get("status") or "").lower() not in {"open", "active"} for leg in legs if isinstance(leg, dict)):
+                        receipt["protection_status"] = "CLOSED_POSITION_RECONCILED"
+                    db.execute(
+                        "UPDATE order_intents SET execution_result_json=?,updated_at=? WHERE intent_id=?",
+                        (json.dumps(receipt, allow_nan=False), datetime.now(timezone.utc).isoformat(), row["intent_id"]),
+                    )
+                    db.commit()
+        return cleaned
+
     def _update_order(self, intent_id: str, status: str, result: Dict[str, Any], *, reservation_id: Optional[str] = None, risk_decision: Optional[Dict[str, Any]] = None) -> None:
         if hasattr(self.store, "_connect"):
             with self.store._connect() as db:
@@ -1214,6 +1413,75 @@ class ExecutionGateway:
             )
             raise GatewayError("EXECUTION_FAILED", str(exc))
 
+    def _reserve_margin_only_ai_intent(
+        self, intent: OrderIntent, market_snapshot: Dict[str, Any], clock: datetime,
+    ):
+        """Reserve a Gate TestNet AI order against the active strategy margin cap.
+
+        This does not choose a position or resize the model's order.  Contract
+        units and venue fees are mechanical exchange economics; the ledger
+        rechecks fresh private equity and the current strategy atomically.
+        """
+        from .risk_engine import RiskDecision
+        from .strategy_execution import venue_leverage_limit
+
+        market = market_snapshot.get("market") or market_snapshot.get("metadata") or {}
+        ceiling = venue_leverage_limit(market)
+        try:
+            leverage = int(intent.leverage)
+            quantity = Decimal(str(intent.quantity))
+            contract_size = Decimal(str(market.get("contractSize", market.get("contract_size", market_snapshot.get("contractSize")))))
+            quote = Decimal(str(market_snapshot.get("price")))
+            entry = Decimal(str(intent.price)) if intent.order_type.lower() == "limit" else quote
+            fee = Decimal(str(market.get("taker", market_snapshot.get("fee_rate", market_snapshot.get("taker_fee")))))
+            slippage = Decimal(str(market_snapshot.get("slippage", "0.001")))
+        except (TypeError, ValueError, InvalidOperation) as exc:
+            raise GatewayError("MARKET_RULES_UNAVAILABLE", "Gate order economics are incomplete.", 422) from exc
+        if (
+            ceiling is None or leverage < 1 or leverage > ceiling
+            or any(not value.is_finite() for value in (quantity, contract_size, quote, entry, fee, slippage))
+            or min(quantity, contract_size, quote, entry) <= 0 or fee < 0 or slippage < 0
+        ):
+            raise GatewayError("GATE_ORDER_ECONOMICS_INVALID", "AI order exceeds Gate leverage or has invalid venue economics.", 422)
+        if intent.order_type.lower() == "market":
+            entry *= Decimal("1") + slippage
+        notional = quantity * contract_size * entry
+        margin = notional / Decimal(leverage) + notional * fee * Decimal("2")
+        with self.store._connect() as db:
+            row = db.execute(
+                "SELECT execution_json FROM ai_strategy_instructions WHERE account_id=? ORDER BY revision DESC LIMIT 1",
+                (intent.account_id,),
+            ).fetchone()
+        if row is None:
+            raise GatewayError("ACTIVE_STRATEGY_UNAVAILABLE", "Gate TestNet AI order has no active strategy margin cap.", 422)
+        try:
+            strategy_cap = json.loads(row["execution_json"])
+            max_margin_pct = Decimal(str(strategy_cap["max_margin_pct"]))
+            margin_cap_mode = str(strategy_cap.get("margin_cap_mode") or "PERCENT").upper()
+            max_margin_usdt = (
+                Decimal(str(strategy_cap["max_margin_usdt"]))
+                if margin_cap_mode == "FIXED_USDT" else None
+            )
+        except (KeyError, TypeError, ValueError, InvalidOperation, json.JSONDecodeError) as exc:
+            raise GatewayError("ACTIVE_STRATEGY_INVALID", "Active strategy has no valid margin cap.", 422) from exc
+        reservation_id = f"res_{intent.intent_id}"
+        expires_at = clock + timedelta(minutes=15)
+        if self.ledger is None or not self.ledger.reserve_margin_only(
+            intent.account_id, reservation_id, margin, max_margin_pct=max_margin_pct,
+            margin_cap_mode=margin_cap_mode, max_margin_usdt=max_margin_usdt,
+            instrument_id=intent.instrument_id, expires_at=expires_at, now=clock,
+        ):
+            raise GatewayError("MARGIN_CAP_OR_ACCOUNT_TRUTH_BLOCKED", "Gate TestNet available margin or active strategy margin cap does not permit this order.", 422)
+        return RiskDecision(
+            decision_id=f"margin_{intent.intent_id}", approved=True,
+            reason_code="MARGIN_ONLY_APPROVED", contracts=quantity, notional=notional,
+            risk_amount=Decimal("0"), allocated_margin=margin,
+            leverage=Decimal(leverage), entry_price=entry,
+            stop_price=Decimal(str(intent.protection_plan.stop_price)) if intent.protection_plan else Decimal("0"),
+            targets=[Decimal(str(intent.protection_plan.take_profit))] if intent.protection_plan and intent.protection_plan.take_profit is not None else [],
+            expires_at=expires_at, reservation_id=reservation_id,
+        )
+
     def _submit_intent_v12(
         self,
         intent: OrderIntent,
@@ -1265,11 +1533,24 @@ class ExecutionGateway:
             # strategy, trade-plan, and recovery submissions.
             trader_client = self._resolve_scoped_trader_client(intent, trader_client)
 
+            margin_only_ai = str(intent.risk_policy or "STANDARD").upper() == "MARGIN_ONLY"
+            if str(intent.risk_policy or "STANDARD").upper() not in {"STANDARD", "MARGIN_ONLY"}:
+                raise ParameterValidationError("Unknown risk policy.")
+            if margin_only_ai and (
+                mode not in {TradingMode.TESTNET.value, TradingMode.LIVE.value}
+                or str(intent.venue or "").lower() != "gate"
+                or intent.reduce_only
+                or intent.control_mode != ControlMode.AUTONOMOUS
+                or intent.decision_path != DecisionPath.AI_LED
+            ):
+                raise ParameterValidationError("MARGIN_ONLY is restricted to managed Gate AI opening intents.")
+
             if not intent.reduce_only:
                 if not intent.protection_plan:
                     raise ParameterValidationError("OrderIntent must carry a valid ProtectionPlan with stop_price.")
-                self.validate_finite_decimal("stop_price", intent.protection_plan.stop_price, min_val=1e-8)
-                if intent.protection_plan.take_profit is not None:
+                if intent.protection_plan:
+                    self.validate_finite_decimal("stop_price", intent.protection_plan.stop_price, min_val=1e-8)
+                if intent.protection_plan and intent.protection_plan.take_profit is not None:
                     self.validate_finite_decimal("take_profit", intent.protection_plan.take_profit, min_val=1e-8)
             elif intent.protection_plan:
                 self.validate_finite_decimal("stop_price", intent.protection_plan.stop_price, min_val=1e-8)
@@ -1284,7 +1565,7 @@ class ExecutionGateway:
 
             # The registered account row is authoritative.  A missing row is
             # never silently created or inferred from the account name.
-            managed_gate_testnet = False
+            managed_gate_account = False
             if hasattr(self.store, "_connect"):
                 with self.store._connect() as db:
                     acct = db.execute("SELECT account_id, mode, config_json FROM accounts WHERE account_id=?", (intent.account_id,)).fetchone()
@@ -1306,9 +1587,14 @@ class ExecutionGateway:
                 expected_mode = str(account_config.get("execution_mode") or account_mode).upper()
                 if account_config.get("account_type") == "GATE_TESTNET":
                     expected_mode = "TESTNET"
-                    managed_gate_testnet = True
+                    managed_gate_account = True
+                elif account_config.get("account_type") == "GATE_LIVE":
+                    expected_mode = "LIVE"
+                    managed_gate_account = True
                 if expected_mode != mode:
                     raise GatewayError("ENVIRONMENT_ACCOUNT_MISMATCH", f"Account '{intent.account_id}' is in execution mode {expected_mode}, but order intent requested mode {mode}.", 422)
+                if margin_only_ai and not managed_gate_account:
+                    raise GatewayError("MARGIN_ONLY_ACCOUNT_SCOPE_INVALID", "Margin-only AI execution requires a managed Gate account.", 422)
                 if intent.environment and str(intent.environment).upper() != mode:
                     raise GatewayError("ENVIRONMENT_ACCOUNT_MISMATCH", f"Intent environment {intent.environment} does not match account execution mode {mode}.", 422)
                 expected_venue = str(account_config.get("provider") or account_config.get("venue") or ("simulated" if expected_mode == "PAPER" else "gate")).strip().lower()
@@ -1534,7 +1820,7 @@ class ExecutionGateway:
             # exists; the dedicated recovery path remains available for an
             # already-known remote order when this gateway is unavailable.
             remote_account_truth: Dict[str, Any] | None = None
-            if managed_gate_testnet and mode == TradingMode.TESTNET:
+            if managed_gate_account and mode in {TradingMode.TESTNET, TradingMode.LIVE}:
                 from .gate_account_truth import GateAccountTruthService
 
                 if trader_client is None:
@@ -1568,7 +1854,7 @@ class ExecutionGateway:
             risk_decision = None
             reservation_id = None
             if not intent.reduce_only:
-                if self.risk_engine is None:
+                if self.risk_engine is None and not margin_only_ai:
                     raise GatewayError("RISK_ENGINE_UNAVAILABLE", "Unified RiskEngine is unavailable.", 503)
                 if mode != "PAPER":
                     from .strategy_execution import venue_leverage_limit
@@ -1592,19 +1878,21 @@ class ExecutionGateway:
                         auth_daily_limit = active_auth.limits.get("max_daily_loss_pct")
                     except AttributeError:
                         auth_risk_limit = auth_portfolio_limit = auth_cluster_limit = auth_daily_limit = None
-                risk_decision = self.risk_engine.evaluate_intent(
-                    intent,
-                    fresh_market,
-                    now=clock,
-                    open_positions=(
-                        self._gate_remote_positions_for_risk(remote_account_truth, intent.account_id)
-                        if remote_account_truth is not None
-                        else None
-                    ),
-                    max_single_risk_fraction=auth_risk_limit,
-                    max_portfolio_risk_fraction=auth_portfolio_limit,
-                    max_cluster_risk_fraction=auth_cluster_limit,
-                    max_daily_loss_fraction=auth_daily_limit,
+                risk_decision = (
+                    self._reserve_margin_only_ai_intent(intent, fresh_market, clock)
+                    if margin_only_ai else self.risk_engine.evaluate_intent(
+                        intent,
+                        fresh_market,
+                        now=clock,
+                        open_positions=(
+                            self._gate_remote_positions_for_risk(remote_account_truth, intent.account_id)
+                            if remote_account_truth is not None else None
+                        ),
+                        max_single_risk_fraction=auth_risk_limit,
+                        max_portfolio_risk_fraction=auth_portfolio_limit,
+                        max_cluster_risk_fraction=auth_cluster_limit,
+                        max_daily_loss_fraction=auth_daily_limit,
+                    )
                 )
                 if not risk_decision.approved:
                     raise GatewayError(risk_decision.reason_code, f"RiskEngine rejected opening order: {risk_decision.reason_code}.", 422)
@@ -1938,7 +2226,7 @@ class ExecutionGateway:
         contract_evidence_observed = response_contract is not None
         response_contract = response_contract or Decimal("1")
         response_event_at = parse_event_at(response.get("event_at") or response.get("timestamp") or response.get("created_at"))
-        remote_authoritative = venue.strip().lower() == "gate" and mode == "TESTNET"
+        remote_authoritative = venue.strip().lower() == "gate" and mode in {"TESTNET", "LIVE"}
 
         if raw_fills:
             parsed_items: list[tuple[str, Decimal, Decimal, Decimal | None, Decimal, str, Optional[Decimal], Optional[datetime]]] = []
@@ -2311,12 +2599,14 @@ class ExecutionGateway:
                 adapter = self._resolve_scoped_trader_client(scoped_intent, None)
                 if adapter is not None and hasattr(adapter, "cancel_order"):
                     try:
-                        remote_order_id = row["intent_id"]
+                        remote_order_id = None
                         try:
                             previous_receipt = json.loads(row["execution_result_json"] or "{}")
-                            remote_order_id = previous_receipt.get("order_id") or previous_receipt.get("id") or remote_order_id
+                            remote_order_id = previous_receipt.get("order_id") or previous_receipt.get("id")
                         except (TypeError, ValueError, json.JSONDecodeError):
                             pass
+                        if not remote_order_id or not str(remote_order_id).isdigit():
+                            raise GatewayError("REMOTE_ORDER_ID_UNVERIFIED", "Cannot cancel without a real Gate order ID.", 409)
                         # Gate adapters follow the exchange convention
                         # cancel_order(order_id, symbol); the old call passed
                         # those arguments in reverse order and could report a
@@ -2324,7 +2614,11 @@ class ExecutionGateway:
                         # open.
                         result = adapter.cancel_order(remote_order_id, row["instrument_id"])
                         remote_status = str((result or {}).get("status", "")).lower()
-                        if remote_status in {"cancelled", "canceled", "closed"}:
+                        verified_order = adapter.fetch_order(str(remote_order_id), row["instrument_id"]) if remote_status in {"cancelled", "canceled", "closed"} and hasattr(adapter, "fetch_order") else {}
+                        verified_status = str(verified_order.get("status") or "").lower()
+                        if (remote_status in {"cancelled", "canceled", "closed"} and verified_status in {"canceled", "cancelled", "expired"}
+                                and float(verified_order.get("filled") or 0) == 0
+                                and str(verified_order.get("order_id") or "") == str(remote_order_id)):
                             db.execute("UPDATE order_intents SET status=?, updated_at=? WHERE intent_id=?", (OrderStatus.CANCELED.value, now_iso, intent_id))
                             db.commit()
                             if reservation_id and self.ledger is not None:
@@ -2354,6 +2648,34 @@ class ExecutionGateway:
     def cancel_order(self, intent_id: str, reason: str = "USER_REQUESTED") -> Dict[str, Any]:
         """Convenience alias for cancel_intent."""
         return self.cancel_intent(intent_id, reason=reason)
+
+    def cancel_owned_gate_order(self, *, account_id: str, instrument_id: str, remote_order_id: str) -> Dict[str, Any]:
+        """Let AI cancel only a current system intent with the exact Gate ID."""
+        if not str(remote_order_id).isdigit():
+            raise GatewayError("REMOTE_ORDER_ID_UNVERIFIED", "Gate order ID must be numeric.", 422)
+        from .gate_accounts import get_gate_account_profile
+        profile_mode = str(get_gate_account_profile(self.store, account_id).get("mode") or "").upper()
+        if profile_mode not in {"TESTNET", "LIVE"}:
+            raise GatewayError("GATE_ACCOUNT_SCOPE_REQUIRED", "AI cancellation requires a managed Gate account.", 422)
+        with self.store._connect() as db:
+            rows = db.execute(
+                """SELECT intent_id,execution_result_json FROM order_intents
+                   WHERE account_id=? AND instrument_id=? AND mode=? AND venue='gate'
+                     AND reduce_only=0 AND intent_id LIKE 'intent_ai_%'
+                     AND status IN ('ACKNOWLEDGED','SUBMITTED','PARTIALLY_FILLED','CANCEL_PENDING')""",
+                (account_id, instrument_id, profile_mode),
+            ).fetchall()
+        matches = []
+        for row in rows:
+            try:
+                receipt = json.loads(row["execution_result_json"] or "{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+            if str(receipt.get("order_id") or "") == str(remote_order_id):
+                matches.append(str(row["intent_id"]))
+        if len(matches) != 1:
+            raise GatewayError("SYSTEM_ORDER_OWNERSHIP_UNVERIFIED", "No unique system-owned Gate order matches this ID.", 409)
+        return self.cancel_intent(matches[0], reason="AI_CANCEL_ORDER")
 
     @staticmethod
     def _resting_intent_is_stale(row: Dict[str, Any], fallback_mode: str) -> tuple[bool, str]:
@@ -2393,7 +2715,7 @@ class ExecutionGateway:
                 pass
         return False, ""
 
-    def reconcile_in_flight_orders(self, account_id: str, mode: TradingMode) -> List[Dict[str, Any]]:
+    def reconcile_in_flight_orders(self, account_id: str, mode: TradingMode, *, remote_truth: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
         """Reconcile in-flight orders without blind resubmission.
 
         UNKNOWN is deliberately queried rather than treated as terminal.  A
@@ -2632,12 +2954,16 @@ class ExecutionGateway:
                     reconciled.append({"intent_id": iid, "previous_status": previous_status, "reconciled_status": final_status, "reconciled": True, "reservation_held": not (final_status == OrderStatus.FILLED.value and protection_verified)})
                     continue
 
-                if remote_status in {"cancelled", "canceled"}:
+                if remote_status in {"cancelled", "canceled", "rejected", "expired"}:
+                    final_status = (
+                        OrderStatus.CANCELED.value if remote_status in {"cancelled", "canceled"}
+                        else OrderStatus.REJECTED.value
+                    )
                     with self.store._connect() as db:
-                        db.execute("UPDATE order_intents SET status=?, execution_result_json=?, updated_at=? WHERE intent_id=?", (OrderStatus.CANCELED.value, json.dumps({"intent_id": iid, "reconciled": True, "status": OrderStatus.CANCELED.value, "execution_evidence": {"source": "execution_adapter_reconciliation", "observed_at": now_iso, "remote_order_id": remote.get("order_id") or remote.get("id") or remote_order_id}}, allow_nan=False), now_iso, iid))
+                        db.execute("UPDATE order_intents SET status=?, execution_result_json=?, updated_at=? WHERE intent_id=?", (final_status, json.dumps({"intent_id": iid, "reconciled": True, "status": final_status, "reason": remote.get("remote_finish_as") or remote_status, "execution_evidence": {"source": "execution_adapter_reconciliation", "observed_at": now_iso, "remote_order_id": remote.get("order_id") or remote.get("id") or remote_order_id, "remote_status": remote_status}}, allow_nan=False), now_iso, iid))
                     if reservation_id and self.ledger is not None:
                         self.ledger.release_risk(account_id, reservation_id)
-                    reconciled.append({"intent_id": iid, "previous_status": previous_status, "reconciled_status": OrderStatus.CANCELED.value, "reconciled": True, "reservation_held": False})
+                    reconciled.append({"intent_id": iid, "previous_status": previous_status, "reconciled_status": final_status, "reconciled": True, "reservation_held": False})
                     continue
 
                 # A resting (``open``) remote order has no terminal state yet.
@@ -2704,6 +3030,64 @@ class ExecutionGateway:
                     continue
             except Exception as exc:
                 logger.warning("Order reconciliation failed for %s: %s", iid, exc)
+                # Gate can lose lookup access to an old order.  A missing
+                # order is not proof of cancellation or of zero historical
+                # fills.  Fresh, complete account truth *can* establish that
+                # it consumes no current exposure.  Keep the outcome UNKNOWN
+                # and auditable while freeing only its current risk budget.
+                if (
+                    row_mode_value == TradingMode.TESTNET.value
+                    and "ORDER_NOT_FOUND" in str(exc)
+                    and reservation_id
+                    and self.ledger is not None
+                    and not bool(row.get("reduce_only"))
+                    and isinstance(remote_truth, dict)
+                    and str(remote_truth.get("account_id") or "") == account_id
+                    and str(remote_truth.get("status") or "").upper() == "AVAILABLE"
+                    and str(remote_truth.get("positions_status") or "").upper() == "AVAILABLE"
+                    and str(remote_truth.get("pending_orders_status") or "").upper() == "AVAILABLE"
+                    and remote_truth.get("positions") == []
+                    and remote_truth.get("pending_orders") == []
+                ):
+                    try:
+                        observed = datetime.fromisoformat(str(remote_truth["observed_at"]).replace("Z", "+00:00"))
+                        created = datetime.fromisoformat(str(row["created_at"]).replace("Z", "+00:00"))
+                        observed = observed.replace(tzinfo=timezone.utc) if observed.tzinfo is None else observed.astimezone(timezone.utc)
+                        created = created.replace(tzinfo=timezone.utc) if created.tzinfo is None else created.astimezone(timezone.utc)
+                        fresh = -60 <= (datetime.now(timezone.utc) - observed).total_seconds() <= 120
+                        old_enough = (observed - created).total_seconds() >= 3600
+                    except (KeyError, TypeError, ValueError):
+                        fresh = old_enough = False
+                    if fresh and old_enough:
+                        prior_receipt = {}
+                        try:
+                            prior_receipt = json.loads(row.get("execution_result_json") or "{}")
+                        except (TypeError, ValueError, json.JSONDecodeError):
+                            pass
+                        receipt = {
+                            **(prior_receipt if isinstance(prior_receipt, dict) else {}),
+                            "intent_id": iid,
+                            "status": OrderStatus.UNKNOWN.value,
+                            "reason": "REMOTE_ORDER_NOT_FOUND_NO_CURRENT_EXPOSURE",
+                            "historical_fill_unverified": True,
+                            "risk_exposure_cleared": True,
+                            "execution_evidence": {
+                                "source": "gate_private_account_truth",
+                                "snapshot_id": remote_truth.get("snapshot_id"),
+                                "observed_at": remote_truth["observed_at"],
+                                "positions": 0,
+                                "pending_orders": 0,
+                                "remote_order_lookup": "ORDER_NOT_FOUND",
+                            },
+                        }
+                        self.ledger.release_risk(account_id, reservation_id)
+                        with self.store._connect() as db:
+                            db.execute(
+                                "UPDATE order_intents SET status=?, execution_result_json=?, updated_at=? WHERE intent_id=?",
+                                (OrderStatus.UNKNOWN.value, json.dumps(receipt, allow_nan=False), now_iso, iid),
+                            )
+                        reconciled.append({"intent_id": iid, "previous_status": previous_status, "reconciled_status": OrderStatus.UNKNOWN.value, "reconciled": False, "reservation_held": False, "reason": "NO_CURRENT_EXPOSURE_HISTORICAL_FILL_UNVERIFIED"})
+                        continue
             reconciled.append({"intent_id": iid, "previous_status": previous_status, "reconciled_status": previous_status, "reconciled": False, "reservation_held": True})
         return reconciled
 

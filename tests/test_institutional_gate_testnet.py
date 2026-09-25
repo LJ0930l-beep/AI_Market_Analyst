@@ -91,12 +91,16 @@ def test_gate_testnet_remote_receipt_reconcile_cancel_and_symbol_mapping():
                     "settle": "USDT",
                     "swap": True,
                     "linear": True,
+                    "contractSize": 0.001,
+                    "precision": {"amount": 1, "price": 0.1},
+                    "limits": {"amount": {"min": 1, "max": 100000}, "leverage": {"max": 100}},
+                    "taker": 0.0005,
                 }
             }
 
         def set_leverage(self, leverage, symbol, params=None):
             self.leverage_calls.append((leverage, symbol, params))
-            return {"leverage": leverage, "symbol": symbol}
+            return {"leverage": "0", "cross_leverage_limit": str(leverage), "pos_margin_mode": "cross", "symbol": symbol}
 
         def fetch_positions(self):
             return [{"symbol": "BTC/USDT:USDT", "side": "LONG", "contracts": 1.0, "marginMode": "cross"}]
@@ -196,6 +200,10 @@ def test_gate_leverage_uses_explicit_default_only_after_remote_empty_position_re
                 "SOL/USDT:USDT": {
                     "symbol": "SOL/USDT:USDT", "id": "SOL_USDT", "base": "SOL", "quote": "USDT",
                     "settle": "USDT", "swap": True, "linear": True,
+                    "contractSize": 0.01,
+                    "precision": {"amount": 1, "price": 0.001},
+                    "limits": {"amount": {"min": 1, "max": 100000}, "leverage": {"max": 50}},
+                    "taker": 0.0005,
                 }
             }
 
@@ -204,16 +212,109 @@ def test_gate_leverage_uses_explicit_default_only_after_remote_empty_position_re
 
         def set_leverage(self, leverage, symbol, params=None):
             self.calls.append((leverage, symbol, params))
-            return {"leverage": leverage, "symbol": symbol}
+            return {"leverage": "0", "cross_leverage_limit": str(leverage), "pos_margin_mode": "cross", "symbol": symbol}
 
     exchange = Exchange()
     trader = GateLiveTrader("testnet-key", "testnet-secret", testnet=True, exchange=exchange, live_trading_enabled=True)
     result = trader.set_leverage("SOLUSDT", 2)
 
     assert result["acknowledged"] is True
-    assert result["margin_mode"] == "isolated"
-    assert result["margin_mode_source"] == "NO_EXISTING_POSITION_DEFAULT"
-    assert exchange.calls == [(2, "SOL/USDT:USDT", {"marginMode": "isolated"})]
+    assert result["margin_mode"] == "cross"
+    assert result["margin_mode_source"] == "ACTIVE_STRATEGY_CROSS_REQUIRED"
+    assert exchange.calls == [(2, "SOL/USDT:USDT", {"marginMode": "cross"})]
+
+
+def test_gate_rejects_isolated_or_wrong_cross_leverage_readback_before_order():
+    class Exchange:
+        def __init__(self):
+            self.created = []
+
+        def load_markets(self):
+            return {
+                "BTC/USDT:USDT": {
+                    "symbol": "BTC/USDT:USDT", "id": "BTC_USDT", "base": "BTC", "quote": "USDT",
+                    "settle": "USDT", "swap": True, "linear": True, "contractSize": 0.001,
+                    "precision": {"amount": 1, "price": 0.1},
+                    "limits": {"amount": {"min": 1, "max": 100000}, "leverage": {"max": 100}},
+                    "taker": 0.0005,
+                }
+            }
+
+        def fetch_positions(self, _symbols):
+            return []
+
+        def set_leverage(self, leverage, symbol, params=None):
+            assert params == {"marginMode": "cross"}
+            return {"leverage": "10", "cross_leverage_limit": "0", "pos_margin_mode": "isolated"}
+
+        def create_order(self, **kwargs):
+            self.created.append(kwargs)
+            raise AssertionError("order must not be submitted")
+
+    exchange = Exchange()
+    trader = GateLiveTrader("testnet-key", "testnet-secret", testnet=True, exchange=exchange, live_trading_enabled=True)
+    result = trader.place_order("BTCUSDT", "LONG", 1, 100, "limit", leverage=100)
+    assert result["status"] == "EXECUTION_FAILED"
+    assert result["error_code"] == "GATE_CROSS_LEVERAGE_UNVERIFIED"
+    assert exchange.created == []
+
+
+def test_gate_cross_position_reports_actual_cross_limit_instead_of_native_zero():
+    class Exchange:
+        def load_markets(self):
+            return {"BTC/USDT:USDT": {"symbol": "BTC/USDT:USDT", "id": "BTC_USDT", "contractSize": 0.001}}
+
+        def fetch_positions(self):
+            return [{
+                "symbol": "BTC/USDT:USDT", "side": "long", "contracts": 2,
+                "leverage": 0, "marginMode": "cross", "initialMargin": 5,
+                "info": {"contract": "BTC_USDT", "leverage": "0", "cross_leverage_limit": "100", "pos_margin_mode": "cross"},
+            }]
+
+    trader = GateLiveTrader("testnet-key", "testnet-secret", testnet=True, exchange=Exchange(), live_trading_enabled=True)
+    position = trader.get_positions()[0]
+    assert position["margin_mode"] == "cross"
+    assert position["leverage"] == 100
+    assert position["cross_leverage_limit"] == 100
+
+
+def test_gate_accepts_verified_dual_leg_cross_leverage_response():
+    receipt = [
+        {"contract": "BTC_USDT", "leverage": "0", "cross_leverage_limit": "100", "pos_margin_mode": "cross", "size": 0},
+        {"contract": "BTC_USDT", "leverage": "0", "cross_leverage_limit": "100", "pos_margin_mode": "cross", "size": 0},
+    ]
+    assert GateLiveTrader._cross_leverage_readback(receipt, 100, "BTC/USDT:USDT")
+    receipt[1]["cross_leverage_limit"] = "10"
+    assert not GateLiveTrader._cross_leverage_readback(receipt, 100, "BTC/USDT:USDT")
+
+
+def test_gate_protection_amend_reads_back_exact_order_and_price():
+    class Exchange:
+        def __init__(self):
+            self.price = "144.09"
+            self.requests = []
+
+        def privateFuturesGetSettlePriceOrdersOrderId(self, params):
+            assert params == {"settle": "usdt", "order_id": "123456"}
+            return {
+                "id": 123456, "status": "open", "order_type": "close-short-order",
+                "initial": {"contract": "SPCX_USDT", "size": 0},
+                "trigger": {"price": self.price, "price_type": 1},
+            }
+
+        def request(self, path, api, method, params):
+            self.requests.append((path, api, method, params))
+            self.price = params["trigger_price"]
+            return {"id": 123456}
+
+    exchange = Exchange()
+    trader = GateLiveTrader("testnet-key", "testnet-secret", testnet=True, exchange=exchange, live_trading_enabled=True)
+    result = trader.amend_protection_order("123456", "SPCXUSDT", 144.08)
+    assert result["status"] == "VERIFIED"
+    assert result["before"]["trigger_price"] == 144.09
+    assert result["after"]["trigger_price"] == 144.08
+    assert exchange.requests[0][:3] == ("{settle}/price_orders/amend", ["private", "futures"], "PUT")
+    assert exchange.requests[0][3]["order_id"] == 123456
 
 
 def test_gate_credentials_are_verified_before_direct_compatibility_write(tmp_path, monkeypatch):

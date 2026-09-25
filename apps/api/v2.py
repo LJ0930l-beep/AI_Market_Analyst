@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import json
+import logging
 import math
 import os
 import time
@@ -34,6 +35,8 @@ from core.providers.gateio_provider import GatePublicProvider
 from core.quant.strategies import STRATEGIES
 from core.security.credentials import CredentialVault
 from core.security.local_guard import validate_local_request
+
+logger = logging.getLogger("apps.api.v2")
 from core.trading.account_aliases import GATE_TESTNET_ACCOUNT_ID, canonical_account_id
 from core.trading.account_scope import resolve_account_scope
 from core.trading.ai_calibration import AICalibrationService
@@ -115,6 +118,11 @@ class GateOrderBody(BaseModel):
     # Kept for old UI clients.  Environment and account scope remain
     # authoritative; this is only a validate-only request hint.
     dry_run: bool | None = None
+
+
+class GateManualLiveLockBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    unlocked: bool
 
 
 class GateConnectionTestBody(BaseModel):
@@ -352,7 +360,10 @@ def router_for(get_store, get_runtime, get_translation):
         bound = getattr(runtime, "account_id", None)
         if bound is None:
             bound = getattr(runtime, "_account_id", None)
-        if bound and str(bound) != str(account_id):
+        # Start/resume must reach MonitoringRuntime.start: it owns the
+        # active-session and outstanding-duty checks for a safe account rebind.
+        # Rejecting here made switching accounts impossible even after Stop.
+        if bound and str(bound) != str(account_id) and action not in {"start", "resume"}:
             raise HTTPException(
                 status_code=409,
                 detail=f"RUNTIME_ACCOUNT_MISMATCH: cannot {action} account '{account_id}' while runtime is bound to '{bound}'",
@@ -437,21 +448,27 @@ def router_for(get_store, get_runtime, get_translation):
             if contracts is None or side not in {"LONG", "SHORT"} or not symbol:
                 continue
             close_side = "SELL" if side == "LONG" else "BUY"
-            protection_order = next(
-                (
-                    order
-                    for order in pending_orders
-                    if isinstance(order, dict)
-                    and bool(order.get("reduce_only"))
-                    and str(order.get("side") or "").upper() == close_side
-                    and positive(order.get("stop_price")) is not None
-                    and compact_symbol(order.get("symbol")) == symbol
-                ),
-                None,
-            )
-            stop = raw.get("stop_price") or raw.get("stop_loss")
-            if stop is None and isinstance(protection_order, dict):
-                stop = protection_order.get("stop_price")
+            entry_price = positive(raw.get("entry_price"))
+            protection_orders = [
+                order for order in pending_orders
+                if isinstance(order, dict)
+                and bool(order.get("reduce_only"))
+                and str(order.get("side") or "").upper() == close_side
+                and positive(order.get("stop_price")) is not None
+                and compact_symbol(order.get("symbol")) == symbol
+                and str(order.get("status") or "").upper() == "OPEN"
+            ]
+            stop_order = next((order for order in protection_orders if entry_price is not None and (
+                positive(order.get("stop_price")) > entry_price if side == "SHORT"
+                else positive(order.get("stop_price")) < entry_price
+            )), None)
+            target_order = next((order for order in protection_orders if entry_price is not None and (
+                positive(order.get("stop_price")) < entry_price if side == "SHORT"
+                else positive(order.get("stop_price")) > entry_price
+            )), None)
+            stop = stop_order.get("stop_price") if stop_order else None
+            targets = [target_order["stop_price"]] if target_order else []
+            protected = stop_order is not None and target_order is not None
             position_id = raw.get("position_id")
             if not position_id:
                 # This is a stable UI/read-model key, not a fabricated
@@ -468,19 +485,25 @@ def router_for(get_store, get_runtime, get_translation):
                     "position_id": position_id,
                     "position_id_source": "GATE_REMOTE" if raw.get("position_id") else "DERIVED_READ_MODEL_KEY",
                     "side": side,
+                    "margin_mode": raw.get("margin_mode"),
+                    "leverage": raw.get("leverage"),
                     "entry": raw.get("entry_price"),
                     "entry_price": raw.get("entry_price"),
                     "stop": stop,
                     "stop_loss": stop,
-                    "targets": raw.get("targets") if isinstance(raw.get("targets"), list) else [],
+                    "targets": targets,
                     "remaining_contracts": contracts,
                     "filled_contracts": contracts,
                     "realized_pnl": raw.get("realized_pnl"),
                     "unrealized_pnl": raw.get("unrealized_pnl"),
                     "mark_price": raw.get("mark_price"),
                     "contract_size": raw.get("contract_size"),
-                    "protected": protection_order is not None,
-                    "protection_status": "ACTIVE" if protection_order is not None else "UNKNOWN",
+                    "protected": protected,
+                    "protection_status": "ACTIVE" if protected else "UNKNOWN",
+                    "protection_order_ids": {
+                        "stop_loss": str(stop_order["order_id"]) if stop_order else None,
+                        "take_profit": str(target_order["order_id"]) if target_order else None,
+                    },
                     "local_mirror": False,
                     "remote_truth": True,
                     "source": "GATE_REMOTE_PRIVATE_API_SNAPSHOT",
@@ -1661,6 +1684,16 @@ def router_for(get_store, get_runtime, get_translation):
             status_code = 404 if "NOT_FOUND" in code else 422
             raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
+    @router.get("/gate/manual-live-lock")
+    def get_gate_manual_live_lock(store=Depends(get_store)):
+        setting = store.get_app_setting("gate.live.manual_order_unlocked")
+        return {"account_id": "gate_live", "unlocked": setting["value"] is True, "updated_at": setting.get("updated_at")}
+
+    @router.put("/gate/manual-live-lock")
+    def set_gate_manual_live_lock(body: GateManualLiveLockBody, store=Depends(get_store)):
+        setting = store.upsert_app_setting("gate.live.manual_order_unlocked", body.unlocked)
+        return {"account_id": "gate_live", "unlocked": setting["value"] is True, "updated_at": setting.get("updated_at")}
+
     @router.post("/gate/orders")
     def place_gate_order(
         body: GateOrderBody,
@@ -1696,6 +1729,15 @@ def router_for(get_store, get_runtime, get_translation):
             # An executable order must name its registered account.  The API
             # does not infer a credential scope from a global default.
             raise HTTPException(status_code=422, detail="ACCOUNT_REQUIRED: account_id is required")
+
+        if (
+            managed_profile is not None
+            and managed_profile["account_type"] == "GATE_LIVE"
+            and body.dry_run is not True
+            and not body.reduce_only
+            and store.get_app_setting("gate.live.manual_order_unlocked")["value"] is not True
+        ):
+            raise HTTPException(status_code=423, detail="GATE_LIVE_MANUAL_LOCKED: unlock manual Live orders in the API connection page")
 
         if body.stop_loss is None and not body.reduce_only:
             raise HTTPException(422, detail="ProtectionPlan parameter 'stop_loss' is required.")
@@ -1770,10 +1812,14 @@ def router_for(get_store, get_runtime, get_translation):
                             candidate_metadata = trader.get_market_metadata(body.symbol)
                             if isinstance(candidate_metadata, dict):
                                 metadata = candidate_metadata
-                        except Exception:
+                        except Exception as exc:
                             # The remote adapter remains the final authority
                             # for a reduction; openings fail closed below if
                             # the required contract/cost facts are absent.
+                            logger.warning(
+                                "manual Gate order: contract metadata unavailable for %s: %s",
+                                body.symbol, exc,
+                            )
                             metadata = {}
                         bid = ticker.get("bid")
                         ask = ticker.get("ask")
@@ -1800,7 +1846,11 @@ def router_for(get_store, get_runtime, get_translation):
                             "market": metadata,
                             "source": "gate_private_ticker_and_market_metadata",
                         }
-            except Exception:
+            except Exception as exc:
+                logger.warning(
+                    "manual Gate order: proceeding without market snapshot for %s: %s",
+                    body.symbol, exc,
+                )
                 market_snapshot = None
 
         # A manual, account-scoped Gate order is explicit user action.  Do
@@ -2488,6 +2538,16 @@ def router_for(get_store, get_runtime, get_translation):
                         "symbols": list(dict.fromkeys(scoped_symbols)),
                     }
 
+        if account_id and expected_mode == TradingMode.TESTNET.value and expected_venue == "gate" and is_managed_gate_account(store, account_id):
+            remote_positions, remote_status = gate_remote_position_records(store, account_id)
+            protection_summary = {
+                "active_positions": len(remote_positions) if remote_status == "AVAILABLE" else None,
+                "protected_positions": sum(1 for position in remote_positions if position.get("protected")) if remote_status == "AVAILABLE" else None,
+                "symbols": [position["symbol"] for position in remote_positions] if remote_status == "AVAILABLE" else [],
+                "status": remote_status,
+                "source": "GATE_REMOTE_PRIVATE_API_SNAPSHOT",
+            }
+
         last_market_at = getattr(runtime, "_last_market_event_at", None) if runtime else None
         if runtime and hasattr(runtime, "check_market_freshness"):
             is_fresh = bool(runtime.check_market_freshness())
@@ -2499,6 +2559,7 @@ def router_for(get_store, get_runtime, get_translation):
         else:
             freshness = {"status": "RUNTIME_UNAVAILABLE", "fresh": False, "gap_seconds": None}
         ai_status = getattr(runtime, "ai_coordinator", None).status() if runtime and getattr(runtime, "ai_coordinator", None) is not None else {"status": "RUNTIME_UNAVAILABLE", "required_model": "Bonsai-2-27B-PTQ1_0"}
+        runtime_status = runtime.status() if runtime and callable(getattr(runtime, "status", None)) else {}
 
         return {
             "session": sess_status,
@@ -2509,6 +2570,8 @@ def router_for(get_store, get_runtime, get_translation):
             "market_freshness": freshness,
             "last_market_event_at": last_market_at.isoformat() if last_market_at else None,
             "account_id": account_id,
+            "runtime_account_id": str(getattr(runtime, "account_id", None) or getattr(runtime, "_account_id", None) or "") if runtime else None,
+            "runtime_state": str(runtime_status.get("state") or "UNKNOWN") if runtime else "RUNTIME_UNAVAILABLE",
             "model_status": ai_status.get("model", ai_status),
             "ai_session": ai_status,
         }

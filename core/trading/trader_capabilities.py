@@ -176,17 +176,19 @@ def _gate_remote_position(account_id: str, raw: Any, pending_orders: list[dict[s
     side = "LONG" if side_raw in {"LONG", "BUY", "1"} else "SHORT" if side_raw in {"SHORT", "SELL", "-1"} else None
     if contracts is None or not symbol or side is None:
         return None
-    protected = any(
-        isinstance(order, dict)
-        and bool(order.get("reduce_only"))
-        and _gate_symbol(order.get("symbol")) in {"", symbol}
-        and (
-            order.get("stop_price") is not None
-            or str(order.get("type") or "").lower() in {"stop", "stop_market", "take_profit", "trigger"}
-        )
-        for order in pending_orders
-    )
     entry = _number(raw.get("entry_price", raw.get("entryPrice")), positive=True)
+    close_side = "SELL" if side == "LONG" else "BUY"
+    protection_prices = [
+        _number(order.get("stop_price"), positive=True)
+        for order in pending_orders
+        if isinstance(order, dict)
+        and bool(order.get("reduce_only"))
+        and _gate_symbol(order.get("symbol")) == symbol
+        and str(order.get("side") or "").upper() == close_side
+        and str(order.get("status") or "").upper() == "OPEN"
+    ]
+    protected = bool(entry is not None and any(price is not None and (price < entry if side == "LONG" else price > entry) for price in protection_prices)
+                     and any(price is not None and (price > entry if side == "LONG" else price < entry) for price in protection_prices))
     mark = _number(raw.get("mark_price", raw.get("markPrice")), positive=True)
     contract_size = _number(raw.get("contract_size", raw.get("contractSize")), positive=True)
     return {

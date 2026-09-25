@@ -296,6 +296,7 @@ def _production_sized_prompt_payload() -> dict[str, object]:
         "market_snapshots": {
             symbol: {"symbol": symbol, "price": 61200.0 + index * 100, "bid": 61199.5 + index * 100,
                      "ask": 61200.5 + index * 100, "baseVolume": 12345.6789,
+                     "slippage": 0.0012, "market": {"taker": "0.00075"},
                      "quoteVolume": 765432100.12, "fundingRate": 0.000062,
                      "openInterest": 123456.789, "data_as_of": "2026-09-21T12:30:00+00:00",
                      "received_at": "2026-09-21T12:30:00.100+00:00", "source": "gate_native_rest",
@@ -384,9 +385,39 @@ def test_prompt_payload_is_compacted_to_verified_budget_without_losing_decision_
     }
     for symbol in symbols:
         assert projected["technical_context"][symbol]["timeframes"]["5m"]["candles"][-2:] == original["technical_context"][symbol]["timeframes"]["5m"]["candles"][-2:]
+        assert projected["market_snapshots"][symbol]["slippage"] == 0.0012
+        assert projected["market_snapshots"][symbol]["fee_rate"] == 0.00075
     for key in ("status", "entry_allowed", "blocked_until", "reasons", "evidence_status", "atr_adaptive_sizing"):
         assert projected["dynamic_risk"][key] == original["dynamic_risk"][key]
     assert payload == original, "compaction must not mutate the frozen cycle input"
+
+
+def test_empty_trade_history_and_unavailable_radar_do_not_displace_closed_candles() -> None:
+    payload = _production_sized_prompt_payload()
+    payload["performance_context"] = {
+        "status": "AVAILABLE", "stance": "INSUFFICIENT_SAMPLE", "closed_trades": 0,
+        "guidance_zh": "没有已结算交易" * 20, "win_rate_pct": 0,
+        "profit_factor": 1, "current_equity_usdt": 10000,
+    }
+    payload["decision_memory"] = [{"action": "WAIT", "reason": "没有触发" * 20}]
+    payload["market_radar"]["cross_market"] = {
+        "status": "CONFIG_REQUIRED", "source": "UNKNOWN", "missing_symbols": ["DXY", "NQ"],
+    }
+    payload["market_radar"]["onchain"] = {"status": "CONFIG_REQUIRED", "source": "UNKNOWN"}
+    payload["market_radar"]["derivatives_matrix"] = [["BTCUSDT", "AVAILABLE", 1.2, 0.01]]
+
+    projected, metadata = _fit_prompt_payload(
+        payload, "系统规则" * 620, context_length=8192, reserve=640,
+        signal_timeframe="5m",
+    )
+
+    assert metadata["estimated_input_tokens"] + metadata["reserve_tokens"] + metadata["safety_margin_tokens"] <= 8192
+    for symbol in payload["allowed_instruments"]:
+        for timeframe, expected in (("5m", 4), ("15m", 2), ("1h", 2)):
+            actual = projected["technical_context"][symbol]["timeframes"][timeframe]["candles"]
+            assert actual == payload["technical_context"][symbol]["timeframes"][timeframe]["candles"][-expected:]
+    assert projected["decision_memory"] == []
+    assert projected["performance_context"]["closed_trades"] == 0
 
 
 def test_prompt_payload_fails_closed_when_required_decision_contract_cannot_fit() -> None:
@@ -428,6 +459,31 @@ def test_prompt_payload_uses_an_injected_runtime_token_counter() -> None:
     assert metadata["tokenizer"] == "BONSAI_RUNTIME"
     assert metadata["estimated_input_tokens"] == exact_input_tokens
     assert exact_input_tokens + metadata["reserve_tokens"] + metadata["safety_margin_tokens"] <= 8192
+
+
+def test_extended_scan_defers_lower_ranked_symbols_but_keeps_held_position() -> None:
+    payload = _production_sized_prompt_payload()
+    template = copy.deepcopy(payload["technical_context"]["BTCUSDT"])
+    snapshot = copy.deepcopy(payload["market_snapshots"]["BTCUSDT"])
+    for index in range(5):
+        symbol = f"EXTRA{index}USDT"
+        payload["allowed_instruments"].append(symbol)
+        payload["technical_context"][symbol] = copy.deepcopy(template)
+        payload["market_snapshots"][symbol] = copy.deepcopy(snapshot)
+    payload["account_truth"]["positions"] = [{"symbol": "EXTRA4USDT", "side": "SHORT", "quantity": 1}]
+    original = copy.deepcopy(payload)
+
+    projected, metadata = _fit_prompt_payload(
+        payload, "系统规则" * 620, context_length=8192, reserve=640,
+        signal_timeframe="5m",
+    )
+
+    assert any(step.startswith("defer_symbol_for_model_window:") for step in metadata["steps"])
+    assert "EXTRA4USDT" in projected["allowed_instruments"]
+    assert len(projected["allowed_instruments"]) < len(original["allowed_instruments"])
+    assert set(projected["market_snapshots"]) == set(projected["allowed_instruments"])
+    assert set(projected["technical_context"]) - {"candle_columns", "indicator_columns"} == set(projected["allowed_instruments"])
+    assert payload == original
     assert projected["news_revisions"][0]["summary"]
 
 

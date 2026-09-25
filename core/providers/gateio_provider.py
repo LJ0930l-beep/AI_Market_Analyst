@@ -193,6 +193,15 @@ class GatePublicProvider:
             raise ProviderError("Gate ticker response is not an object", code="schema_invalid", provider="gate")
         return payload
 
+    def native_ticker_source(self) -> str:
+        """Label native REST quotes by the environment they came from.
+
+        A testnet public feed and a live public feed must not share one source
+        string in audit records; the environment is the only difference between
+        them and the label is what survives into persisted snapshots.
+        """
+        return "gate_testnet_native_rest_ticker" if self.testnet else "gate_live_native_rest_ticker"
+
     def get_quote(self, instrument: Instrument) -> Quote:
         if self.exchange is not None:
             with self._lock:
@@ -202,7 +211,7 @@ class GatePublicProvider:
         ticker = self._native_ticker(instrument.symbol)
         observed = datetime.now(timezone.utc)
         price = _number(ticker.get("last"), name="last", positive=True)
-        self.last_snapshot = {"provider": "gate", "environment": self.environment, "native_symbol": ticker.get("contract"), "data_as_of": _iso(observed), "source": "gate_native_rest_ticker"}
+        self.last_snapshot = {"provider": "gate", "environment": self.environment, "native_symbol": ticker.get("contract"), "data_as_of": _iso(observed), "source": self.native_ticker_source()}
         return Quote(
             instrument,
             observed,
@@ -429,7 +438,7 @@ class GatePublicProvider:
             contracts = []
             for market in markets.values():
                 if market.get("swap") and market.get("linear") and str(market.get("settle") or "").upper() == "USDT" and market.get("active") is True:
-                    contracts.append({"symbol": f"{market.get('base', '')}{market.get('quote', '')}".upper(), "gate_id": market.get("id"), "ccxt_symbol": market.get("symbol"), "base": market.get("base"), "quote": market.get("quote"), "contract_size": float(market.get("contractSize", 1.0) or 1.0), "price_precision": market.get("precision", {}).get("price"), "amount_precision": market.get("precision", {}).get("amount")})
+                    contracts.append({"symbol": f"{market.get('base', '')}{market.get('quote', '')}".upper(), "gate_id": market.get("id"), "ccxt_symbol": market.get("symbol"), "base": market.get("base"), "quote": market.get("quote"), "contract_size": float(market.get("contractSize", 1.0) or 1.0), "price_precision": market.get("precision", {}).get("price"), "amount_precision": market.get("precision", {}).get("amount"), "taker_fee_rate": market.get("taker"), "source": "gate_injected_exchange_markets"})
             return contracts if limit is None else contracts[: max(1, min(int(limit), 1000))]
         payload = self._request("/futures/usdt/contracts")
         if not isinstance(payload, list):
@@ -441,7 +450,7 @@ class GatePublicProvider:
             native = str(row.get("name") or "").upper()
             if not native.endswith("_USDT"):
                 continue
-            contracts.append({"symbol": native.replace("_", ""), "gate_id": native, "ccxt_symbol": f"{native[:-5]}/USDT:USDT", "base": native[:-5], "quote": "USDT", "contract_size": float(row.get("quanto_multiplier") or 0), "price_precision": row.get("order_price_round"), "amount_precision": row.get("order_size_min"), "source": "gate_native_rest_contracts"})
+            contracts.append({"symbol": native.replace("_", ""), "gate_id": native, "ccxt_symbol": f"{native[:-5]}/USDT:USDT", "base": native[:-5], "quote": "USDT", "contract_size": float(row.get("quanto_multiplier") or 0), "price_precision": row.get("order_price_round"), "amount_precision": row.get("order_size_min"), "taker_fee_rate": row.get("taker_fee_rate"), "source": "gate_native_rest_contracts"})
         major_priority = {"BTCUSDT": 1, "ETHUSDT": 2, "SOLUSDT": 3, "DOGEUSDT": 4, "PEPEUSDT": 5, "SUIUSDT": 6, "XRPUSDT": 7, "NEARUSDT": 8, "AVAXUSDT": 9, "BNBUSDT": 10, "APTUSDT": 11, "LINKUSDT": 12}
         contracts.sort(key=lambda item: (major_priority.get(item["symbol"], 999), item["symbol"]))
         return contracts if limit is None else contracts[: max(1, min(int(limit), 1000))]

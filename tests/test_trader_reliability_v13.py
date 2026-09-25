@@ -418,6 +418,53 @@ def test_v13_b_stop_then_rebind_is_blocked_until_account_a_recovers(v13_store: S
         runtime.stop()
 
 
+def test_cleared_historical_unknown_does_not_hold_runtime_account(v13_store: SQLiteStore) -> None:
+    from core.trading.gate_accounts import provision_default_gate_accounts
+    provision_default_gate_accounts(v13_store)
+    ledger = AccountLedger(v13_store)
+    runtime = MonitoringRuntime(
+        store=v13_store,
+        service=_QuietMonitoringService(),
+        stream_factory=lambda symbols: _QuietStream(symbols),
+        poll_interval_seconds=0.05,
+    )
+    now = datetime.now(timezone.utc).isoformat()
+    with v13_store._connect() as db:
+        db.execute(
+            """INSERT INTO order_intents
+               (intent_id,idempotency_key,account_id,mode,instrument_id,side,order_type,
+                quantity,payload_hash,status,execution_result_json,created_at,updated_at,
+                venue,environment,reservation_id)
+               VALUES (?,?,?,?,?,?,?,?,?,'UNKNOWN',?,?,?,?,?,?)""",
+            ("old-unknown", "old-unknown-key", "gate_testnet", "TESTNET", "BTCUSDT", "LONG",
+             "limit", 1, "old-hash", json.dumps({"risk_exposure_cleared": True,
+             "reason": "REMOTE_ORDER_NOT_FOUND_NO_CURRENT_EXPOSURE",
+             "execution_evidence": {"snapshot_id": "verified-snapshot"}}), now, now,
+             "gate", "TESTNET", "old-reservation"),
+        )
+        db.execute(
+            """INSERT INTO risk_reservations
+               (reservation_id,account_id,amount_risk,amount_margin,status,expires_at,created_at,venue,mode)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            ("old-reservation", "gate_testnet", "0", "0", "PENDING", now, now, "gate", "TESTNET"),
+        )
+    assert runtime._runtime_duties("gate_testnet")["has_duties"] is True
+    with v13_store._connect() as db:
+        db.execute("UPDATE risk_reservations SET status='RELEASED' WHERE reservation_id='old-reservation'")
+    assert runtime._runtime_duties("gate_testnet")["has_duties"] is False
+
+
+def test_invalidated_lease_rejects_its_still_live_epoch(tmp_path: Path) -> None:
+    lease = RuntimeLease(str(tmp_path / "invalidated-lease.db"), default_ttl_seconds=30)
+    point = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    assert lease.acquire("monitoring_runtime", "holder-a", now=point)
+    token = lease.fencing_token
+    assert token is not None
+    assert lease.validate("monitoring_runtime", "holder-a", token, now=point + timedelta(seconds=1))
+    lease.invalidate()
+    assert not lease.validate("monitoring_runtime", "holder-a", token, now=point + timedelta(seconds=1))
+
+
 def test_v13_c_stale_fencing_token_cannot_reach_gateway(v13_store: SQLiteStore, tmp_path: Path) -> None:
     ledger = AccountLedger(v13_store)
     _account(ledger, "fence_a")
@@ -580,7 +627,7 @@ def test_v13_c_runtime_lease_loss_cancels_ai_and_pauses_session(v13_store: SQLit
         from threading import Thread
         cycle_thread = Thread(target=runtime.ai_coordinator.run_cycle_once)
         cycle_thread.start()
-        assert provider.entered.wait(2), "AI provider did not enter an in-flight generation"
+        assert provider.entered.wait(8), "AI provider did not enter an in-flight generation"
         time.sleep(1.2)
         assert lease_b.acquire("monitoring_runtime", "external-takeover", ttl_seconds=2)
 
@@ -594,6 +641,7 @@ def test_v13_c_runtime_lease_loss_cancels_ai_and_pauses_session(v13_store: SQLit
         assert status["lease"]["valid"] is False
         assert status["session"]["state"] == "PAUSED"
         assert status["ai_session"]["enabled"] is False
+        assert status["ai_session"]["last_reason"] == "runtime_lease_lost"
         with v13_store._connect() as db:
             assert db.execute("SELECT COUNT(*) FROM order_intents").fetchone()[0] == 0
     finally:

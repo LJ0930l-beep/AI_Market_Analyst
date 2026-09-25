@@ -138,7 +138,10 @@
 .market-radar__cross-market > article > div > b { color: #d7e1ef; font: 650 10px "Cascadia Code", ui-monospace, monospace; }
 .market-radar__cross-market > article > strong { overflow-wrap: anywhere; color: #eaf1fa; font: 650 15px "Cascadia Code", ui-monospace, monospace; }
 .market-radar__cross-market > article > span { color: var(--radar-muted); font-size: 11px; }
+.market-radar__cross-market > article > small { display: block; overflow: hidden; color: var(--radar-muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .market-radar__cross-market > article[data-status="SOURCE_REQUIRED"] { border-color: rgba(232, 189, 113, .2); }
+.market-radar__cross-market > article[data-status="DELAYED"],
+.market-radar__cross-market > article[data-status="LAST_CLOSE"] { border-color: rgba(232, 189, 113, .28); }
 .market-radar__footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 5px 12px; }
 
 .market-radar--analysis { background: linear-gradient(145deg, rgba(10, 18, 31, .48), rgba(7, 12, 22, .36)) !important; }

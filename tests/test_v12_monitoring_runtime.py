@@ -310,3 +310,44 @@ def test_startup_lease_wait_reclaims_abandoned_lease_but_not_a_live_one(tmp_path
             ((datetime.now(UTC) - timedelta(seconds=1)).isoformat(),),
         )
     assert runtime.wait_for_stale_lease_release(max_seconds=0.5) is True
+
+
+def test_transient_lease_write_failure_keeps_verified_owner_running():
+    class TwoBeatStop:
+        calls = 0
+
+        def wait(self, _seconds):
+            self.calls += 1
+            return self.calls > 2
+
+    class ContendedLease:
+        default_ttl = 30
+        renew_calls = 0
+        validate_calls = 0
+        invalidated = False
+
+        def renew(self, _name, _holder, _token, *, ttl_seconds):
+            assert ttl_seconds == 30
+            self.renew_calls += 1
+            return self.renew_calls > 1
+
+        def validate(self, _name, _holder, _token):
+            self.validate_calls += 1
+            return True
+
+        def invalidate(self):
+            self.invalidated = True
+
+    runtime = object.__new__(MonitoringRuntime)
+    runtime._lease_heartbeat_stop = TwoBeatStop()
+    runtime._fencing_token = 7
+    runtime._lease_lost = False
+    runtime.runtime_lease = ContendedLease()
+    runtime.holder_id = "holder-a"
+
+    runtime._lease_heartbeat_loop()
+
+    assert runtime.runtime_lease.renew_calls == 2
+    assert runtime.runtime_lease.validate_calls == 1
+    assert runtime.runtime_lease.invalidated is False
+    assert runtime._lease_lost is False

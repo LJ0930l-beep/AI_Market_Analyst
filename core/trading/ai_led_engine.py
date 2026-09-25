@@ -12,7 +12,7 @@ Fulfills N08 & AT31–AT35 requirements:
 from __future__ import annotations
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN, ROUND_UP
 import enum
 import hashlib
 import json
@@ -91,6 +91,8 @@ class AIActionType(str, enum.Enum):
     REDUCE_POSITION = "REDUCE_POSITION"
     CLOSE_POSITION = "CLOSE_POSITION"
     TIGHTEN_STOP = "TIGHTEN_STOP"
+    UPDATE_PROTECTION = "UPDATE_PROTECTION"
+    CANCEL_ORDER = "CANCEL_ORDER"
 
 
 ALLOWED_AI_ACTIONS = {a.value for a in AIActionType}
@@ -167,7 +169,9 @@ class AIActionOutput:
     reason: str
     decision_id: str = field(default_factory=lambda: f"dec_{uuid.uuid4().hex[:12]}")
     position_id: Optional[str] = None
+    order_id: Optional[str] = None
     entry_condition: Optional[str] = None
+    next_trigger_price: Optional[float] = None
     entry_price: Optional[float] = None
     stop_price: Optional[float] = None
     take_profit: Optional[float] = None
@@ -175,6 +179,7 @@ class AIActionOutput:
     position_size_usdt: Optional[float] = None
     requested_leverage: Optional[int] = None
     new_stop_price: Optional[float] = None
+    new_take_profit: Optional[float] = None
     reduce_fraction: Optional[float] = None
     order_preference: str = "AUTO"
     limit_price: Optional[float] = None
@@ -317,7 +322,17 @@ class AILedDecisionEngine:
             extra.get("model_result")
             or (output.action if origin == "MODEL" else "INVALID_OR_DISCARDED" if model_called else "NOT_RUN")
         )
-        block_stage = infer_block_stage(result.reason, extra.get("block_stage") or getattr(context, "stage_block", None)) if origin != "MODEL" else None
+        if origin == "MODEL" and result.status in {"BLOCKED", "REJECTED"}:
+            # A genuine model OPEN can still fail deterministic entry checks.
+            # Keep the model action, but show that the post-model gate failed.
+            block_stage = (
+                "RISK" if output.action in {"OPEN_LONG", "OPEN_SHORT"} and result.order_intent is None
+                else infer_block_stage(result.reason, extra.get("block_stage") or getattr(context, "stage_block", None))
+            )
+        elif origin != "MODEL":
+            block_stage = infer_block_stage(result.reason, extra.get("block_stage") or getattr(context, "stage_block", None))
+        else:
+            block_stage = None
         human_message = str(extra.get("human_message") or humanize_reason(result.reason, stage=block_stage))
         persisted_action = output.action if origin == "MODEL" else "SYSTEM_BLOCKED"
         stage_trace = build_stage_trace(
@@ -330,6 +345,7 @@ class AILedDecisionEngine:
             completed_at=datetime.now(timezone.utc),
             execution_result=result.execution_result,
             order_intent=result.order_intent,
+            block_stage_override=block_stage,
         )
         is_model = (origin == "MODEL")
         payload = {
@@ -699,13 +715,15 @@ class AILedDecisionEngine:
         if output.action in ("WAIT", "HOLD"):
             extra = dict(getattr(output, "extra_fields", None) or {})
             strat_analysis = dict(extra.get("strategy_analysis") or {})
-            if "trigger_completion_pct" not in strat_analysis or strat_analysis.get("trigger_completion_pct") is None:
-                dynamic_score = self._compute_market_readiness_score(context)
-                strat_analysis["trigger_completion_pct"] = dynamic_score
-                strat_analysis["market_readiness"] = dynamic_score
-                extra["strategy_analysis"] = strat_analysis
-                extra["market_readiness"] = dynamic_score
-                output.extra_fields = extra
+            # Market-wide readiness is context, not proof that this symbol's
+            # entry trigger completed.  A WAIT without a model-supplied
+            # trigger score must remain unknown rather than acquiring a
+            # synthetic completion percentage from 15m RSI/proximity.
+            dynamic_score = self._compute_market_readiness_score(context)
+            strat_analysis["market_readiness"] = dynamic_score
+            extra["strategy_analysis"] = strat_analysis
+            extra["market_readiness"] = dynamic_score
+            output.extra_fields = extra
             return finish(
                 output,
                 "WAITING" if output.action == "WAIT" else "HOLDING",
@@ -721,7 +739,7 @@ class AILedDecisionEngine:
 
         mode_scope = context.mode.value if isinstance(context.mode, TradingMode) else str(context.mode)
         if (
-            str(mode_scope).upper() == TradingMode.TESTNET.value
+            str(mode_scope).upper() in {TradingMode.TESTNET.value, TradingMode.LIVE.value}
             and str(context.venue or "").lower() == "gate"
             and isinstance(context.account_truth, dict)
             and context.account_truth
@@ -729,6 +747,7 @@ class AILedDecisionEngine:
             open_positions = ExecutionGateway._gate_remote_positions_for_risk(
                 context.account_truth,
                 context.account_id,
+                mode=str(mode_scope).upper(),
             )
         else:
             open_positions = self.ledger.get_open_positions(
@@ -746,9 +765,27 @@ class AILedDecisionEngine:
         if output.action in ("CLOSE_POSITION", "REDUCE_POSITION") and output.position_id is None and len(existing_positions) != 1:
             return finish(output, "REJECTED", "POSITION_ID_REQUIRED: Multiple or zero scoped positions require an explicit position_id")
         existing_pos = next(
-            (position for position in existing_positions if not output.position_id or position.get("position_id") == output.position_id),
+            (position for position in existing_positions if not output.position_id or str(position.get("position_id")) == str(output.position_id)),
             None,
         )
+
+        if output.action == "CANCEL_ORDER":
+            if not (mode_scope.upper() in {TradingMode.TESTNET.value, TradingMode.LIVE.value} and str(context.venue or "").lower() == "gate"):
+                return finish(output, "REJECTED", "GATE_TESTNET_CANCEL_ACTION_REQUIRED")
+            if not output.order_id:
+                return finish(output, "REJECTED", "GATE_ORDER_ID_REQUIRED")
+            try:
+                cancellation = self.gateway.cancel_owned_gate_order(
+                    account_id=context.account_id,
+                    instrument_id=output.instrument_id,
+                    remote_order_id=output.order_id,
+                )
+            except GatewayError as exc:
+                return finish(output, "REJECTED", f"GATE_ORDER_CANCEL_FAILED: {exc.code}: {exc.message}")
+            status = str(cancellation.get("status") or "")
+            if status == OrderStatus.CANCELED.value and cancellation.get("verified_reconciled"):
+                return finish(output, "EXECUTED", "Gate order cancellation verified by order ID", execution_result=cancellation)
+            return finish(output, "BLOCKED", "GATE_ORDER_CANCEL_NOT_VERIFIED", execution_result=cancellation)
 
         if output.action in ("OPEN_LONG", "OPEN_SHORT"):
             from .autonomous_strategy import CONTRACT, validate_entry
@@ -768,6 +805,117 @@ class AILedDecisionEngine:
                 ):
                     output = system_output("BONSAI_INFERENCE_RECEIPT_UNVERIFIED", block_stage="AI_MODEL")
                     return finish(output, "BLOCKED", "BONSAI_INFERENCE_RECEIPT_UNVERIFIED")
+                if mode_scope.upper() in {TradingMode.TESTNET.value, TradingMode.LIVE.value} and str(context.venue or "").lower() == "gate":
+                    # NoFx-style route: the model chooses the trade and its
+                    # economics; the application checks positions, balance,
+                    # precision and exchange constraints before submission.
+                    # All four strategy templates share this same path.
+                    side = "LONG" if output.action == "OPEN_LONG" else "SHORT"
+                    strategy_exec = (context.strategy_instructions or {}).get("execution") or {}
+                    if not isinstance(strategy_exec, dict):
+                        strategy_exec = {}
+                    try:
+                        notional = Decimal(str(output.position_size_usdt))
+                        configured_leverage = int(strategy_exec.get("leverage") or 1)
+                        model_leverage = int(output.requested_leverage) if output.requested_leverage is not None else None
+                        stop = Decimal(str(output.stop_price))
+                        target = Decimal(str(output.take_profit))
+                        market_snap = market_for(output.instrument_id)
+                        quote = Decimal(str(market_snap.get("price")))
+                        market_info = market_snap.get("market") or market_snap.get("metadata") or {}
+                        contract_size = Decimal(str(market_info.get("contractSize", market_info.get("contract_size", market_snap.get("contractSize")))))
+                        amount_rules = (market_info.get("limits") or {}).get("amount") or {}
+                        amount_step = Decimal(str((market_info.get("precision") or {}).get("amount") or amount_rules.get("step")))
+                        min_amount = Decimal(str(amount_rules.get("min")))
+                        max_amount = Decimal(str(amount_rules.get("max")))
+                        if not all(value.is_finite() and value > 0 for value in (notional, stop, target, quote, contract_size, amount_step, min_amount, max_amount)) or configured_leverage < 1:
+                            raise ValueError("non-positive or missing trading economics")
+                        from .strategy_execution import venue_leverage_limit
+                        venue_max_leverage = venue_leverage_limit(market_info)
+                        if venue_max_leverage is None:
+                            return finish(output, "BLOCKED", "VENUE_LEVERAGE_LIMIT_UNAVAILABLE")
+                        leverage = min(configured_leverage, venue_max_leverage)
+                        output.extra_fields["leverage_selection"] = {
+                            "source": "ACTIVE_STRATEGY_WITH_GATE_CONTRACT_CEILING",
+                            "configured": configured_leverage,
+                            "model_suggestion": model_leverage,
+                            "gate_contract_ceiling": venue_max_leverage,
+                            "submitted": leverage,
+                        }
+                        truth = context.account_truth or {}
+                        if str(truth.get("status") or "").upper() != "AVAILABLE":
+                            return finish(output, "BLOCKED", "REMOTE_ACCOUNT_TRUTH_UNAVAILABLE")
+                        available = Decimal(str(truth.get("available_margin")))
+                        if not available.is_finite() or available <= 0:
+                            return finish(output, "BLOCKED", "GATE_AVAILABLE_MARGIN_UNAVAILABLE")
+                        # As in NoFx, reduce an unaffordable proposal before
+                        # rounding to venue contracts.  The gateway's atomic
+                        # reservation rechecks the exact active margin cap.
+                        affordable = available * Decimal("0.98") * Decimal(leverage)
+                        if notional > affordable:
+                            output.extra_fields["notional_adjustment"] = {"requested": str(notional), "capped_to": str(affordable), "reason": "AVAILABLE_MARGIN"}
+                            notional = affordable
+                        if any(str(position.get("side") or "").upper() == side for position in existing_positions):
+                            return finish(output, "BLOCKED", "NOFX_SAME_SIDE_POSITION_EXISTS")
+                        preference = str(output.order_preference or "").upper()
+                        if preference not in {"LIMIT", "MARKET"}:
+                            return finish(output, "REJECTED", "AI_ORDER_TYPE_REQUIRED")
+                        if preference == "LIMIT":
+                            price_tick = Decimal(str(((market_info.get("limits") or {}).get("price") or {}).get("step") or (market_info.get("precision") or {}).get("price") or market_snap.get("price_tick")))
+                            if not price_tick.is_finite() or price_tick <= 0:
+                                return finish(output, "BLOCKED", "GATE_PRICE_TICK_UNAVAILABLE")
+                            raw_entry = Decimal(str(output.limit_price or output.entry_price))
+                            rounding = ROUND_DOWN if side == "LONG" else ROUND_UP
+                            entry = (raw_entry / price_tick).to_integral_value(rounding=rounding) * price_tick
+                        else:
+                            entry = quote
+                        if entry <= 0 or (side == "LONG" and not (stop < entry < target)) or (side == "SHORT" and not (target < entry < stop)):
+                            return finish(output, "REJECTED", "NOFX_PROTECTION_GEOMETRY_INVALID")
+                        quantity = (notional / (entry * contract_size) / amount_step).to_integral_value(rounding=ROUND_DOWN) * amount_step
+                        if quantity < min_amount or quantity > max_amount:
+                            return finish(output, "REJECTED", "GATE_AMOUNT_OUTSIDE_CONTRACT_LIMITS")
+                    except (TypeError, ValueError, ArithmeticError) as exc:
+                        return finish(output, "REJECTED", f"NOFX_ORDER_ECONOMICS_INVALID: {exc}")
+
+                    protection = ProtectionPlan(
+                        stop_price=float(stop), take_profit=float(target), trigger_type="mark",
+                        reduce_only=True, status=ProtectionStatus.PENDING,
+                    )
+                    intent = OrderIntent(
+                        intent_id=f"intent_ai_{uuid.uuid4().hex[:12]}",
+                        idempotency_key=f"idemp_{context.account_id}_{context.cycle_id}_{output.instrument_id}_{side}",
+                        account_id=context.account_id, mode=TradingMode(mode_scope.upper()),
+                        instrument_id=output.instrument_id, side=side,
+                        order_type=preference.lower(), quantity=float(quantity), price=float(entry),
+                        leverage=leverage, protection_plan=protection, risk_policy="MARGIN_ONLY",
+                        reduce_only=False, control_mode=ControlMode.AUTONOMOUS,
+                        decision_path=DecisionPath.AI_LED, session_id=context.session_id or context.cycle_id,
+                        strategy_id=str(context.strategy_instructions.get("template_id") or "ai_led"),
+                        strategy_version=str(context.strategy_instructions.get("revision") or self.agent_policy_id),
+                        signal_at=now_iso, status=OrderStatus.CREATED, created_at=now_iso,
+                        venue=context.venue, environment=context.environment or "TESTNET",
+                        cycle_id=context.cycle_id, generation=context.generation,
+                        authorization_id=context.authorization_id, authorization_version=context.authorization_version,
+                        lease_holder_id=context.lease_holder_id, fencing_token=context.fencing_token,
+                        expires_at=context.expires_at, candidate_id=output.candidate_id,
+                        closed_15m_bar=output.closed_15m_bar, order_preference=preference,
+                        final_order_type=preference.lower(), selection_reason_code="AI_SELECTED",
+                        selection_reason=f"NoFx-style AI-authored Gate {mode_scope.upper()} order",
+                        selection_evidence={"requested_notional_usdt": output.position_size_usdt, "submitted_notional_usdt": str(quantity * entry * contract_size), "model_evidence_refs": list(output.evidence_refs)},
+                        limit_price=float(entry) if preference == "LIMIT" else None,
+                        ttl_seconds=output.ttl_seconds or DEFAULT_LIMIT_TTL_SECONDS,
+                        selection_policy_version="nofx_gate_v1",
+                    )
+                    try:
+                        execution = self.gateway.submit_intent(intent, market_snapshot=market_snap)
+                    except GatewayError as exc:
+                        return finish(output, "REJECTED", f"GATEWAY_REJECTED: {exc.code}: {exc.message}", intent=intent)
+                    final_status = str(execution.get("status") or "")
+                    if final_status == OrderStatus.ACKNOWLEDGED.value:
+                        return finish(output, "SUBMITTED", "Gate order accepted; awaiting exchange fill", intent=intent, execution_result=execution)
+                    if final_status in {OrderStatus.FILLED.value, OrderStatus.PARTIALLY_FILLED.value}:
+                        return finish(output, "EXECUTED", f"Gate order {final_status} with exchange fill evidence", intent=intent, execution_result=execution)
+                    return finish(output, "REJECTED", f"GATEWAY_NOT_ACCEPTED: {final_status or 'UNKNOWN'}", intent=intent, execution_result=execution)
                 rejection = validate_entry(context, output, now)
                 if rejection:
                     return finish(output, "BLOCKED", rejection)
@@ -1207,7 +1355,26 @@ class AILedDecisionEngine:
                 return finish(output, "REJECTED", f"GATEWAY_REJECTED: {exc.message}", intent=intent)
             return finish(output, "EXECUTED", f"Position {output.action} executed through the scoped gateway", intent=intent, execution_result=execution)
 
+        if output.action == "UPDATE_PROTECTION":
+            if not (mode_scope.upper() in {TradingMode.TESTNET.value, TradingMode.LIVE.value} and str(context.venue or "").lower() == "gate"):
+                return finish(output, "REJECTED", "GATE_TESTNET_PROTECTION_ACTION_REQUIRED")
+            if not existing_pos or existing_pos.get("position_id") is None:
+                return finish(output, "REJECTED", "OWNED_REMOTE_POSITION_REQUIRED")
+            try:
+                execution = self.gateway.update_gate_protection(
+                    account_id=context.account_id,
+                    instrument_id=output.instrument_id,
+                    position_id=str(existing_pos["position_id"]),
+                    new_stop_price=output.new_stop_price,
+                    new_take_profit=output.new_take_profit,
+                )
+            except GatewayError as exc:
+                return finish(output, "REJECTED", f"GATE_PROTECTION_UPDATE_FAILED: {exc.code}: {exc.message}")
+            return finish(output, "EXECUTED", "Gate native protection replaced and read back", execution_result=execution)
+
         if output.action == "TIGHTEN_STOP":
+            if mode_scope.upper() in {TradingMode.TESTNET.value, TradingMode.LIVE.value} and str(context.venue or "").lower() == "gate":
+                return finish(output, "REJECTED", "USE_UPDATE_PROTECTION_FOR_GATE")
             if not existing_pos:
                 return finish(output, "REJECTED", "NO_OPEN_POSITION_TO_TIGHTEN")
             new_stop = output.new_stop_price

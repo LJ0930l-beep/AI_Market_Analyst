@@ -53,12 +53,13 @@ from .decision_memory import (
 )
 from .institutional_schema import ensure_institutional_trader_schema
 from .market_universe import MarketUniverse
-from .model_schemas import AI_ACTION_SCHEMA, require_confidence_for_open, validate_schema
+from .model_schemas import AI_ACTION_SCHEMA, normalize_limit_ttl_alias, normalize_misplaced_strategy_plan, normalize_news_impact, normalize_wait_conditions, normalize_wait_symbol_alias, require_confidence_for_open, require_entry_analysis_for_open, require_nofx_gate_open_contract, validate_schema
 from .account_aliases import canonical_account_id, GATE_TESTNET_ACCOUNT_ID
 from .gate_account_truth import GateAccountTruthService
 from .gate_accounts import build_gate_trader
+from .bonsai_recovery import schedule_bonsai_recovery
 from .ai_cycle_trace import humanize_reason, infer_block_stage
-from .autonomous_strategy import CONTRACT, POLICY, build_strategy_system_prompt, technical_context, compact_technical
+from .autonomous_strategy import CONTRACT, POLICY, NOFX_GATE_POLICY, NET_RR_ROUNDING_TOLERANCE, build_strategy_system_prompt, technical_context, compact_technical, relevant_news_for_entry, minimum_stop_distance, book_cost_evidence, number
 from .ai_led_engine import _slim_technical_context
 from .fin_dataset_collector import record_sft_sample
 from .strategy_schedule import StrategySchedule, aligned_at
@@ -68,21 +69,27 @@ from ..analysis.ai_trade_analytics import build_performance_context
 logger = logging.getLogger("core.trading.ai_session_coordinator")
 
 AI_COORDINATOR_CONTRACT_VERSION = "ai_session_coordinator_v1"
-AI_PROMPT_VERSION = "ai_news_technical_strategy_v7"
+AI_PROMPT_VERSION = "ai_news_technical_strategy_v8_nofx_gate"
 TRADE_JSON_GUIDE = (
-    "JSON字段规则：只输出单个JSON对象。必需action、instrument_id、reason、confidence；action只能WAIT/HOLD/OPEN_LONG/OPEN_SHORT/REDUCE_POSITION/CLOSE_POSITION/TIGHTEN_STOP，"
+    "JSON字段规则：只输出单个JSON对象。必需action、instrument_id、reason、confidence；action只能WAIT/HOLD/OPEN_LONG/OPEN_SHORT/REDUCE_POSITION/CLOSE_POSITION/TIGHTEN_STOP/UPDATE_PROTECTION/CANCEL_ORDER，"
     "reason用简体中文且不超过120字，只写结论和可审计依据；不输出思维链或逐步推理。confidence为0-100数字或null。开仓填写entry_price、stop_price、take_profit、requested_risk_fraction、requested_leverage、"
     "position_size_usdt（可选名义金额请求，只会被策略金额、止损风险、保证金和交易所规则进一步下压）、"
-    "order_preference、limit_price、ttl_seconds、entry_zone、evidence_refs、news_context、timeframe_analysis、strategy_analysis、strategy_plan、"
-    "invalidation_condition；strategy_plan含name/thesis/entry_conditions/exit_conditions。持仓管理按动作填写position_id/new_stop_price/reduce_fraction。"
+    "order_preference、limit_price、ttl_seconds、evidence_refs；entry_zone、news_context、timeframe_analysis、strategy_analysis、strategy_plan、"
+    "invalidation_condition都是可选解释字段，别为凑格式编造。持仓管理按动作填写position_id/new_stop_price/new_take_profit/reduce_fraction。"
+    "若填写news_context.impact，只能为POSITIVE/NEGATIVE/NEUTRAL/UNKNOWN字符串。"
+    "按market_snapshots中的slippage与fee_rate估算净盈亏比；成本过高时优先审视被动限价，不能据实满足策略门槛就WAIT。"
     "requested_risk_fraction用小数，例如0.0025表示0.25%；不允许超过策略单笔风险上限。"
-    "只用固定字段及其规定类型，不加额外键；WAIT/HOLD不填开仓字段。"
+    "只用固定字段及其规定类型，不加额外键；WAIT/HOLD不填开仓字段。等待的缺失条件写在strategy_analysis.missing_conditions数组，下一触发价写next_trigger_price。"
 )
 MIN_CYCLE_INTERVAL_SECONDS = 60.0
 DEFAULT_CYCLE_INTERVAL_SECONDS = 900.0
-MAX_CYCLE_SYMBOLS = 5
+MAX_CYCLE_SYMBOLS = 8
 MAX_UNIVERSE_SYMBOLS = 3
-MODEL_BUDGET_SECONDS = 120.0
+INITIAL_DEEP_SCAN_SYMBOLS = 2
+MAX_DEEP_SCAN_SYMBOLS = 3
+MODEL_BUDGET_SECONDS = 170.0
+DECISION_MODEL_REQUEST_TIMEOUT_SECONDS = 120.0
+INFERENCE_SOFT_CONTEXT_LIMIT = 7000  # Leave room for local 27B prefill latency as well as JSON output.
 INTENT_TTL_SECONDS = 240.0
 MARKET_MAX_AGE_SECONDS = 120.0
 MODEL_CONTEXT_LENGTH = 8192
@@ -91,6 +98,13 @@ DECISION_OUTPUT_TOKEN_BUDGET = 2048
 MIN_DECISION_OUTPUT_TOKENS = 1024
 PROMPT_BUDGET_SAFETY_MARGIN_TOKENS = 256
 MODEL_KEEP_ALIVE = "45m"
+
+
+def _deep_scan_symbol_limit(wait_streak: int) -> int:
+    """Keep model-facing breadth small even after repeated WAIT decisions."""
+    if wait_streak >= 6:
+        return MAX_DEEP_SCAN_SYMBOLS
+    return INITIAL_DEEP_SCAN_SYMBOLS
 
 
 def derive_strategy_plan_from_text(decoded: dict[str, Any]) -> dict[str, Any] | None:
@@ -313,28 +327,112 @@ def _fit_prompt_payload(
     if isinstance(snapshots, dict):
         snapshot_fields = (
             "symbol", "price", "bid", "ask", "mark", "index", "fundingRate", "openInterest",
-            "data_as_of", "source", "freshness_status", "fresh",
+            "data_as_of", "source", "freshness_status", "fresh", "slippage", "fee_rate",
         )
         changed = False
         for symbol, item in list(snapshots.items()):
             if not isinstance(item, dict):
                 continue
             compact_snapshot = {key: item[key] for key in snapshot_fields if key in item and item[key] is not None}
+            market = item.get("market") if isinstance(item.get("market"), dict) else {}
+            if "fee_rate" not in compact_snapshot and market.get("taker") is not None:
+                try:
+                    fee_rate = float(market["taker"])
+                except (TypeError, ValueError):
+                    fee_rate = None
+                if fee_rate is not None and math.isfinite(fee_rate) and fee_rate >= 0:
+                    compact_snapshot["fee_rate"] = fee_rate
             changed = compact_snapshot != item or changed
             snapshots[symbol] = compact_snapshot
         if record("compact_market_snapshots", changed):
             return result()
 
-    # Keep recent CVD ladder steps for each symbol, but leave the full history
-    # available to the market-radar UI and source evidence.
+    # Keep the latest trade-flow sample for each symbol. The full CVD ladder
+    # remains available to the radar UI and frozen source evidence.
     cvd = radar.get("cvd")
     if isinstance(cvd, dict) and isinstance(cvd.get("series"), dict):
         changed = False
         for symbol, rows in list(cvd["series"].items()):
-            if isinstance(rows, list) and len(rows) > 2:
-                cvd["series"][symbol] = rows[-2:]
+            if isinstance(rows, list) and len(rows) > 1:
+                cvd["series"][symbol] = rows[-1:]
                 changed = True
         if record("shorten_cvd_history", changed):
+            return result()
+
+    # The per-symbol derivatives matrix carries the current OI status and
+    # values. Its top-level OI summary repeats those facts in the prompt.
+    if isinstance(radar.get("derivatives_matrix"), list) and radar["derivatives_matrix"]:
+        if record("remove_redundant_oi_summary", radar.pop("open_interest", None) is not None):
+            return result()
+
+    # A previous WAIT is not experience about whether today's setup works.
+    # Repeating it wastes candle budget and anchors the next model decision.
+    memories = projected.get("decision_memory")
+    if isinstance(memories, list) and memories and all(
+        isinstance(row, dict)
+        and str(row.get("action") or "").upper() in {"WAIT", "HOLD", "SYSTEM_BLOCKED"}
+        for row in memories
+    ):
+        projected["decision_memory"] = []
+        if record("drop_unsettled_wait_memory", True):
+            return result()
+
+    # The account balance is already supplied in account_truth. When there
+    # are no settled AI trades, zero win rate and PnL are not a performance
+    # signal and should not displace closed candles from an 8K prompt.
+    performance = projected.get("performance_context")
+    if isinstance(performance, dict) and performance.get("closed_trades") == 0:
+        keep = ("status", "stance", "closed_trades", "capital_stale")
+        compact_performance = {key: performance[key] for key in keep if key in performance}
+        changed = compact_performance != performance
+        if changed:
+            projected["performance_context"] = compact_performance
+        if record("compact_unsettled_performance", changed):
+            return result()
+
+    # Unconfigured radar feeds are UNKNOWN, not zero-valued trade evidence.
+    # Their full status remains in the frozen source bundle and UI.
+    changed = False
+    for key in ("cross_market", "onchain"):
+        item = radar.get(key)
+        if isinstance(item, dict) and str(item.get("status") or "").upper() in {
+            "CONFIG_REQUIRED", "NO_DATA", "UNAVAILABLE",
+        }:
+            radar.pop(key, None)
+            changed = True
+    if record("drop_unavailable_optional_radar", changed):
+        return result()
+
+    # A bounded 8K decision needs the newest identified headline per symbol;
+    # older same-symbol revisions remain frozen for audit. Preserve every
+    # symbol's news coverage and all market-wide events.
+    news = projected.get("news_revisions")
+    if isinstance(news, list) and len(news) > 1:
+        latest_by_symbol: set[str] = set()
+        compact_news = []
+        for item in news:
+            if not isinstance(item, dict):
+                continue
+            symbol = str(item.get("symbol") or "").upper()
+            if str(item.get("scope") or "").upper() == "MARKET_WIDE" or not symbol:
+                compact_news.append(item)
+            elif symbol not in latest_by_symbol:
+                compact_news.append(item)
+                latest_by_symbol.add(symbol)
+        changed = len(compact_news) < len(news)
+        if changed:
+            projected["news_revisions"] = compact_news
+        if record("keep_latest_news_per_symbol", changed):
+            return result()
+
+    universe = projected.get("market_universe")
+    if isinstance(universe, dict):
+        keep = ("status", "environment", "eligible_count", "selected_symbols", "mode", "unsupported_sources")
+        compact_universe = {key: universe[key] for key in keep if key in universe}
+        changed = compact_universe != universe
+        if changed:
+            projected["market_universe"] = compact_universe
+        if record("compact_universe_metadata", changed):
             return result()
 
     # Candles on the selected signal frame remain the main evidence. Context
@@ -505,6 +603,11 @@ def _fit_prompt_payload(
                 if sym and sym not in seen_symbols:
                     seen_symbols.add(sym)
                     compacted_news.append(item)
+                elif (
+                    str(item.get("scope") or "").upper() == "MARKET_WIDE"
+                    and not any(str(row.get("scope") or "").upper() == "MARKET_WIDE" for row in compacted_news)
+                ):
+                    compacted_news.append(item)
                 elif not sym and len(compacted_news) < 3:
                     compacted_news.append(item)
             if compacted_news and len(compacted_news) < len(news):
@@ -624,6 +727,54 @@ def _fit_prompt_payload(
                     changed = True
         if record("compact_account_truth_fields", changed):
             return result()
+
+    # An extended no-opportunity scan can select eight contracts while the
+    # verified 8K model window only fits a smaller decision set. Keep every
+    # held/pending contract and the highest-ranked remaining candidates;
+    # omit complete lower-ranked symbols instead of sending a truncated prompt
+    # or letting one oversized scan suppress the model call altogether.
+    if not fits():
+        allowed = projected.get("allowed_instruments")
+        account = projected.get("account_truth")
+        owned: set[str] = set()
+        if isinstance(account, dict):
+            for key in ("positions", "pending_orders"):
+                for item in account.get(key) or []:
+                    if isinstance(item, dict):
+                        symbol = str(item.get("symbol") or item.get("instrument_id") or "").upper()
+                        if symbol:
+                            owned.add(symbol)
+        if isinstance(allowed, list):
+            for symbol in reversed(list(allowed)):
+                if fits() or len(allowed) <= max(1, len(owned)):
+                    break
+                if str(symbol).upper() in owned:
+                    continue
+                allowed.remove(symbol)
+                if isinstance(projected.get("technical_context"), dict):
+                    projected["technical_context"].pop(symbol, None)
+                if isinstance(projected.get("market_snapshots"), dict):
+                    projected["market_snapshots"].pop(symbol, None)
+                if isinstance(projected.get("candidates"), list):
+                    projected["candidates"] = [
+                        row for row in projected["candidates"]
+                        if not isinstance(row, dict) or str(row.get("symbol") or row.get("instrument_id") or "").upper() != str(symbol).upper()
+                    ]
+                universe = projected.get("market_universe")
+                if isinstance(universe, dict) and isinstance(universe.get("selected_symbols"), list):
+                    universe["selected_symbols"] = [item for item in universe["selected_symbols"] if str(item).upper() != str(symbol).upper()]
+                quality = projected.get("data_quality")
+                if isinstance(quality, dict) and isinstance(quality.get("symbols"), list):
+                    quality["symbols"] = [item for item in quality["symbols"] if str(item).upper() != str(symbol).upper()]
+                refs = projected.get("evidence_refs")
+                if isinstance(refs, list):
+                    projected["evidence_refs"] = [
+                        ref for ref in refs
+                        if not str(ref).startswith((f"market_snapshot:{symbol}:", f"technical_snapshot:{symbol}:"))
+                    ]
+                steps.append(f"defer_symbol_for_model_window:{symbol}")
+            if fits():
+                return result()
 
     if not fits():
         _assert_prompt_fits(
@@ -1008,7 +1159,9 @@ def _compact_news_revision(revision: dict[str, Any]) -> dict[str, Any]:
         for key in ("revision_id", "scope", "symbol", "published_at", "known_at", "source", "impact")
         if key in revision and revision[key] is not None
     }
-    if revision.get("symbols") and str(revision.get("scope") or "").upper() == "MARKET_WIDE":
+    if revision.get("symbols") and (
+        str(revision.get("scope") or "").upper() == "MARKET_WIDE" or not result.get("symbol")
+    ):
         result["symbols"] = list(dict.fromkeys(str(value) for value in revision["symbols"] if str(value).strip()))[:8]
     result["title"] = str(revision.get("title") or "")[:56]
     result["summary"] = str(revision.get("summary") or "")[:56]
@@ -1052,6 +1205,206 @@ def _select_prompt_news(revisions: list[Any], symbols: tuple[str, ...], *, limit
     return [_compact_news_revision(row) for row in selected]
 
 
+def _focused_entry_repair_inputs(inputs: dict[str, Any], symbol: str) -> dict[str, Any]:
+    """Keep the frozen facts needed to complete an existing OPEN, one asset only.
+
+    The first completion has already chosen action, price and size. Repeating
+    the entire multi-asset decision payload for missing analysis fields wastes
+    the local model's 55-second transport window. This projection contains no
+    new facts and the immutable-field check still forbids a changed trade.
+    """
+    market = inputs.get("market_snapshots") or {}
+    technical = inputs.get("technical_context") or {}
+    news = [
+        row for row in (inputs.get("news_revisions") or [])
+        if isinstance(row, dict) and (
+            str(row.get("scope") or "").upper() == "MARKET_WIDE"
+            or str(row.get("symbol") or "").upper() == symbol
+            or symbol in {str(item).upper() for item in (row.get("symbols") or [])}
+        )
+    ][:4]
+    news_ids = {str(row.get("revision_id") or "") for row in news}
+    refs = [
+        ref for ref in (inputs.get("evidence_refs") or [])
+        if isinstance(ref, str) and (
+            ref.startswith((f"market_snapshot:{symbol}:", f"technical_snapshot:{symbol}:"))
+            or (ref.startswith("news_revision:") and ref.split(":", 1)[1] in news_ids)
+        )
+    ]
+    return {
+        "repair_scope": "COMPLETE_ANALYSIS_FOR_EXISTING_OPEN_ONLY",
+        "account_id": inputs.get("account_id"),
+        "mode": inputs.get("mode"),
+        "venue": inputs.get("venue"),
+        "allowed_instruments": [symbol],
+        "market_snapshots": {symbol: market[symbol]} if symbol in market else {},
+        "technical_context": {
+            key: technical[key]
+            for key in ("indicator_columns", "candle_columns", symbol)
+            if key in technical
+        },
+        "news_coverage_status": "RECENT_REVISIONS_INCLUDED" if news else "NO_RECENT_RELEVANT_REVISION_IN_INPUT",
+        "news_revisions": news,
+        "evidence_refs": refs,
+    }
+
+
+def _model_stop_repair_bounds(context: AICycleContext, decoded: dict[str, Any]) -> dict[str, float] | None:
+    """Identify a model's narrow stop using the exact execution-side floor."""
+    action = str(decoded.get("action") or "").upper()
+    symbol = str(decoded.get("instrument_id") or "").upper()
+    if action not in {"OPEN_LONG", "OPEN_SHORT"} or symbol not in context.allowed_instruments:
+        return None
+    try:
+        entry = float(decoded["entry_price"])
+        stop = float(decoded["stop_price"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not all(math.isfinite(value) and value > 0 for value in (entry, stop)):
+        return None
+    profile = (context.strategy_instructions or {}).get("profile") or {}
+    timeframe = str(profile.get("signal_timeframe") or "15m")
+    frames = ((context.technical_context.get(symbol) or {}).get("timeframes") or {})
+    minimum = minimum_stop_distance(entry, symbol, frames, profile, timeframe)
+    if abs(entry - stop) >= minimum - max(entry * 1e-10, 1e-12):
+        return None
+    boundary = entry - minimum if action == "OPEN_LONG" else entry + minimum
+    return {
+        "entry_price": entry,
+        "proposed_stop_price": stop,
+        "minimum_stop_distance": round(minimum, 10),
+        "stop_boundary": round(boundary, 10),
+        "minimum_net_rr": float(((context.strategy_instructions or {}).get("execution") or {}).get("min_net_rr") or POLICY["min_net_reward_risk"]),
+    }
+
+
+def _model_limit_repair_bounds(context: AICycleContext, decoded: dict[str, Any]) -> dict[str, Any] | None:
+    """Detect a limit that would cross the frozen executable quote."""
+    action = str(decoded.get("action") or "").upper()
+    symbol = str(decoded.get("instrument_id") or "").upper()
+    if action not in {"OPEN_LONG", "OPEN_SHORT"} or symbol not in context.allowed_instruments:
+        return None
+    if str(decoded.get("order_preference") or "AUTO").upper() != "LIMIT":
+        return None
+    try:
+        quote = float((context.market_snapshots.get(symbol) or {}).get("price"))
+        limit = float(decoded["limit_price"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not all(math.isfinite(value) and value > 0 for value in (quote, limit)):
+        return None
+    profile = (context.strategy_instructions or {}).get("profile") or {}
+    try:
+        max_distance = float(profile.get("max_limit_distance_pct") or 0)
+    except (TypeError, ValueError):
+        max_distance = 0.0
+    crosses = limit > quote if action == "OPEN_LONG" else limit < quote
+    too_far = max_distance > 0 and abs(limit - quote) / quote * 100 > max_distance
+    if not crosses and not too_far:
+        return None
+    return {
+        "quote": quote,
+        "proposed_limit_price": limit,
+        "passive_side": "AT_OR_BELOW_QUOTE" if action == "OPEN_LONG" else "AT_OR_ABOVE_QUOTE",
+        "max_distance_pct": max_distance,
+        "reason": "CROSSES_QUOTE" if crosses else "LIMIT_TOO_FAR",
+    }
+
+
+def _model_net_rr_repair_bounds(context: AICycleContext, decoded: dict[str, Any]) -> dict[str, float] | None:
+    """Give Bonsai the exact cost-adjusted target bound for its own passive entry."""
+    action = str(decoded.get("action") or "").upper()
+    symbol = str(decoded.get("instrument_id") or "").upper()
+    if action not in {"OPEN_LONG", "OPEN_SHORT"} or symbol not in context.allowed_instruments:
+        return None
+    profile = (context.strategy_instructions or {}).get("profile") or {}
+    if not profile.get("allow_future_limit"):
+        return None
+    snap = context.market_snapshots.get(symbol) or {}
+    market = snap.get("market") if isinstance(snap.get("market"), dict) else {}
+    try:
+        entry = float(decoded.get("limit_price") if decoded.get("limit_price") is not None else decoded["entry_price"])
+        quote = float(snap["price"])
+        stop = float(decoded["stop_price"])
+        target = float(decoded["take_profit"])
+        fee = float(snap.get("fee_rate") if snap.get("fee_rate") is not None else market.get("taker"))
+        slip = float(snap["slippage"])
+        minimum = float(((context.strategy_instructions or {}).get("execution") or {}).get("min_net_rr") or POLICY["min_net_reward_risk"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not all(math.isfinite(value) for value in (entry, quote, stop, target, fee, slip, minimum)):
+        return None
+    if min(entry, stop, target, minimum) <= 0 or fee < 0 or not 0 <= slip < 1:
+        return None
+    sign = 1 if action == "OPEN_LONG" else -1
+    preference = str(decoded.get("order_preference") or "AUTO").upper()
+    if preference != "LIMIT":
+        if preference != "AUTO" or not profile.get("limit_priority"):
+            return None
+        max_distance_pct = number(profile.get("max_limit_distance_pct"))
+        if (sign == 1 and entry >= quote) or (sign == -1 and entry <= quote):
+            return None
+        if max_distance_pct is not None and abs(entry - quote) / quote * 100 > max_distance_pct:
+            return None
+    if sign * (entry - stop) <= 0 or sign * (target - entry) <= 0:
+        return None
+    loss = sign * (entry - stop) + stop * slip + (entry + stop) * fee
+    reward = sign * (target - entry) - target * slip - (entry + target) * fee
+    if loss <= 0 or reward / loss + NET_RR_ROUNDING_TOLERANCE >= minimum:
+        return None
+    if sign == 1:
+        denominator = 1 - slip - fee
+        bound = (minimum * loss + entry * (1 + fee)) / denominator if denominator > 0 else float("nan")
+    else:
+        denominator = 1 + slip + fee
+        bound = (entry * (1 - fee) - minimum * loss) / denominator
+    if not math.isfinite(bound) or bound <= 0:
+        return None
+    return {
+        "entry_price": entry,
+        "stop_price": stop,
+        "proposed_target": target,
+        "observed_net_rr": round(reward / loss, 6),
+        "minimum_net_rr": minimum,
+        "required_target_bound": round(bound, 10),
+    }
+
+
+def _wait_limit_distance_contradiction(prompt_payload: dict[str, Any], decoded: dict[str, Any]) -> dict[str, Any] | None:
+    """Catch a WAIT that calls a verified in-range EMA limit out of range."""
+    if str(decoded.get("action") or "").upper() != "WAIT":
+        return None
+    symbol = str(decoded.get("instrument_id") or "").upper()
+    strategy = prompt_payload.get("active_strategy") or {}
+    geometry = (strategy.get("risk_geometry") or {}).get(symbol)
+    if not isinstance(geometry, dict) or geometry.get("ema20_within_limit_distance") is not True:
+        return None
+    try:
+        maximum = float(geometry.get("max_limit_distance_pct"))
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(maximum) or maximum <= 0:
+        return None
+    reason = str(decoded.get("reason") or "")
+    ticker = symbol[:-4] if symbol.endswith("USDT") else symbol
+    start = reason.upper().find(ticker)
+    if start < 0:
+        return None
+    # Only inspect the chosen asset's first claim, not a different asset's
+    # legitimately distant EMA later in a multi-symbol explanation.
+    segment = reason[start:start + 180]
+    cap = re.escape(format(maximum, "g"))
+    if re.search(rf"(?:超|超过|超出)\s*{cap}\s*%", segment) is None:
+        return None
+    return {
+        "symbol": symbol,
+        "quote": geometry.get("quote"),
+        "ema20": geometry.get("ema20_example_entry"),
+        "verified_distance_pct": geometry.get("ema20_limit_distance_pct"),
+        "max_limit_distance_pct": maximum,
+    }
+
+
 def _select_prompt_candidates(candidates: list[Any], symbols: tuple[str, ...]) -> list[dict[str, Any]]:
     rows = [item for item in candidates if isinstance(item, dict)]
     rows.sort(
@@ -1075,6 +1428,27 @@ def _select_prompt_candidates(candidates: list[Any], symbols: tuple[str, ...]) -
     if not symbols:
         selected = rows[:6]
     return selected
+
+
+def _require_relevant_news_ref_for_open(
+    decoded: object, prompt_news: list[dict[str, Any]], now: datetime,
+) -> None:
+    """Let the one model repair supply a missing verified news citation.
+
+    This is a model-authored analysis requirement, not a Python-made trading
+    decision. The execution validator independently checks the same citation.
+    """
+    if not isinstance(decoded, dict) or decoded.get("action") not in {"OPEN_LONG", "OPEN_SHORT"}:
+        return
+    symbol = str(decoded.get("instrument_id") or "").upper()
+    required = {
+        f"news_revision:{row.get('revision_id')}"
+        for row in prompt_news
+        if isinstance(row, dict) and row.get("revision_id")
+        and relevant_news_for_entry(row, symbol, now)
+    }
+    if required and not required.intersection(decoded.get("evidence_refs") or []):
+        raise ValueError("INVALID_ACTION_SCHEMA:OPEN_CONTEXT_REQUIRED:news_evidence_ref")
 
 
 class AISessionCoordinator:
@@ -1111,7 +1485,7 @@ class AISessionCoordinator:
             original = self.model_provider
             self.model_provider = OllamaProvider(
                 base_url=original.base_url, model_name=DEFAULT_SMART_MODEL,
-                timeout=55, context_length=_session_context_length(), max_tokens=DECISION_OUTPUT_TOKEN_BUDGET,
+                timeout=DECISION_MODEL_REQUEST_TIMEOUT_SECONDS, context_length=_session_context_length(), max_tokens=DECISION_OUTPUT_TOKEN_BUDGET,
                 temperature=0, retries=0, quantization=original.quantization, think=False,
                 keep_alive=_session_keep_alive(),
             )
@@ -1156,6 +1530,7 @@ class AISessionCoordinator:
         self._last_duration_ms: float | None = None
         self._next_scan_at: str | None = None
         self._candidate_count = 0
+        self._current_symbol_limit = INITIAL_DEEP_SCAN_SYMBOLS
         self._ensure_tables()
 
     @staticmethod
@@ -1304,11 +1679,16 @@ class AISessionCoordinator:
         """
         action = str(getattr(output, "action", "") or "").strip().upper()
         risk = context.dynamic_risk if isinstance(context.dynamic_risk, dict) else {}
+        margin_only_gate = (
+            context.decision_contract == CONTRACT
+            and str(context.venue or "").lower() == "gate"
+            and str(context.mode.value if isinstance(context.mode, TradingMode) else context.mode).upper() in {"TESTNET", "LIVE"}
+        )
         # Persist the evaluated facts alongside the model output so the
         # decision timeline can explain both the advice and any system gate.
         output.extra_fields = dict(getattr(output, "extra_fields", {}) or {})
         output.extra_fields["dynamic_risk"] = risk
-        if action in ENTRY_ACTIONS:
+        if action in ENTRY_ACTIONS and not margin_only_gate:
             if risk.get("entry_allowed") is not True:
                 reasons = risk.get("reasons") if isinstance(risk.get("reasons"), list) else []
                 reason = "DYNAMIC_RISK_ENTRY_BLOCKED: " + (
@@ -1340,6 +1720,7 @@ class AISessionCoordinator:
         scheduled_at: datetime,
         positions: list[dict[str, Any]] | tuple[dict[str, Any], ...] = (),
         account_id: str | None = None,
+        symbol_limit: int = MAX_UNIVERSE_SYMBOLS,
     ) -> dict[str, Any]:
         execution = strategy.get("execution") if isinstance(strategy.get("execution"), dict) else {}
         if mode is TradingMode.PAPER:
@@ -1368,7 +1749,7 @@ class AISessionCoordinator:
                 for item in [*positions, *local_positions]
                 if isinstance(item, dict)
             ]
-            selected = list(dict.fromkeys([*held, *local_symbols]))[:MAX_UNIVERSE_SYMBOLS]
+            selected = list(dict.fromkeys([*held, *local_symbols]))[:symbol_limit]
             return {
                 "status": "READY" if selected else "EMPTY",
                 "environment": "PAPER",
@@ -1389,7 +1770,7 @@ class AISessionCoordinator:
             testnet=mode is TradingMode.TESTNET,
             scheduled_at=scheduled_at,
             positions=positions,
-            limit=MAX_UNIVERSE_SYMBOLS,
+            limit=symbol_limit,
             nofx_runtime=strategy.get("nofx_runtime") if isinstance(strategy.get("nofx_runtime"), dict) else None,
         )
 
@@ -1470,7 +1851,7 @@ class AISessionCoordinator:
                     provider = OllamaProvider(
                         base_url="http://127.0.0.1:8080/v1",
                         model_name=DEFAULT_SMART_MODEL,
-                        timeout=55,
+                        timeout=DECISION_MODEL_REQUEST_TIMEOUT_SECONDS,
                         context_length=_session_context_length(),
                         max_tokens=DECISION_OUTPUT_TOKEN_BUDGET,
                         temperature=0,
@@ -1540,6 +1921,9 @@ class AISessionCoordinator:
                     "error": f"{type(exc).__name__}: {exc}",
                     "checked_at": _iso(now),
                 }
+        if result.get("status") == "UNAVAILABLE" and result.get("reason_code") in {"MODEL_UNAVAILABLE", "SMART_MODEL_UNAVAILABLE"}:
+            if schedule_bonsai_recovery():
+                result["recovery"] = "STARTING_LOCAL_BONSAI"
         with self._lock:
             self._health_cache = dict(result)
             self._health_checked_at = now
@@ -1582,7 +1966,19 @@ class AISessionCoordinator:
             "contract_version": AI_COORDINATOR_CONTRACT_VERSION,
             "state": state,
             "decision_contract": CONTRACT,
-            "decision_policy": dict(POLICY),
+            "decision_policy": (
+                {
+                    **NOFX_GATE_POLICY,
+                    "execution_route": f"AI_AUTHORED_GATE_{str(mode).upper()}",
+                    "opening_checks": [
+                        "managed_gate_account" if check == "managed_gate_testnet_account" else check
+                        for check in NOFX_GATE_POLICY["opening_checks"]
+                    ],
+                    "max_margin_pct": (strategy.get("execution") or {}).get("max_margin_pct"),
+                }
+                if str(mode or "").upper() in {"TESTNET", "LIVE"} and str(venue or "").lower() == "gate"
+                else dict(POLICY)
+            ),
             "enabled": enabled,
             "worker_alive": bool(thread and thread.is_alive()),
             "account_id": account_id,
@@ -1617,7 +2013,7 @@ class AISessionCoordinator:
                 "next_scan_at": next_scan_at,
             },
             "max_symbols": MAX_CYCLE_SYMBOLS,
-            "universe_symbol_limit": MAX_UNIVERSE_SYMBOLS,
+            "universe_symbol_limit": getattr(self, "_current_symbol_limit", INITIAL_DEEP_SCAN_SYMBOLS),
             "candidate_count": candidate_count,
             "calibration_state": calibration_state,
             "calibration_run": calibration_run,
@@ -1659,14 +2055,70 @@ class AISessionCoordinator:
         *,
         now: datetime,
         timeframe: str = "15m",
+        universe_snapshot: dict[str, Any] | None = None,
     ) -> dict[str, dict[str, Any]]:
         snapshots: dict[str, dict[str, Any]] = {}
+        metrics = (universe_snapshot or {}).get("candidate_metrics")
+        universe_metrics = {
+            str(item.get("symbol") or "").upper(): item
+            for item in (metrics if isinstance(metrics, list) else [])
+            if isinstance(item, dict)
+        }
+        with self._lock:
+            scoped_mode = self._mode
+        scoped_provider = None
         for symbol in symbols:
             raw: dict[str, Any] | None = None
             try:
                 raw = self.store.get_realtime_state(symbol)
             except Exception:
                 raw = None
+            expected_public_environment = (
+                "TESTNET_PUBLIC" if scoped_mode is TradingMode.TESTNET else "LIVE_PUBLIC"
+            )
+            if scoped_mode in {TradingMode.TESTNET, TradingMode.LIVE} and (
+                not isinstance(raw, dict)
+                or str(raw.get("market_data_environment") or raw.get("environment") or "").upper() != expected_public_environment
+            ):
+                # The app-scoped background monitor can overwrite a symbol's
+                # global realtime row with LIVE_PUBLIC data between the AI
+                # refresh and this read. Never let that quote price a TestNet
+                # proposal; obtain account-environment evidence directly.
+                try:
+                    if scoped_provider is None:
+                        from ..providers.gateio_provider import GatePublicProvider
+                        scoped_provider = GatePublicProvider(testnet=scoped_mode is TradingMode.TESTNET)
+                    market = scoped_provider.market(symbol)
+                    ticker = scoped_provider._native_ticker(symbol)
+                    observed = _as_utc(self.clock())
+                    last = float(ticker.get("last"))
+                    if not math.isfinite(last) or last <= 0:
+                        raise ValueError("GATE_TICKER_INVALID")
+                    raw = {
+                        "symbol": symbol, "price": last,
+                        "data_as_of": _iso(observed), "received_at": _iso(observed),
+                        "source": (
+                            "gate_testnet_native_rest_ticker"
+                            if expected_public_environment == "TESTNET_PUBLIC"
+                            else "gate_live_native_rest_ticker"
+                        ),
+                        "environment": expected_public_environment,
+                        "market_data_environment": expected_public_environment,
+                        "freshness_status": "fresh",
+                        "market": {key: market[key] for key in (
+                            "id", "symbol", "contractSize", "precision", "limits",
+                            "leverage_max", "taker", "maker",
+                        ) if key in market},
+                    }
+                    try:
+                        raw.update(book_cost_evidence(scoped_provider.order_book(symbol, limit=20), last))
+                    except Exception as exc:
+                        raw.update(slippage=None, liquidity_ok=False,
+                                   cost_evidence_status="UNAVAILABLE",
+                                   cost_evidence_error=str(getattr(exc, "code", None) or type(exc).__name__))
+                except Exception:
+                    logger.warning("Gate scoped snapshot unavailable for %s", symbol, exc_info=True)
+                    continue
             if raw and raw.get("price") is not None:
                 snapshot = dict(raw)
                 snapshot.setdefault("source", snapshot.get("provider", "realtime"))
@@ -1694,7 +2146,12 @@ class AISessionCoordinator:
                 continue
             if not math.isfinite(price) or price <= 0 or data_as_of is None:
                 continue
-            age = (now - data_as_of).total_seconds()
+            # A direct TestNet quote may be observed after the cycle's earlier
+            # `now` was frozen for calibration/scanning. Compare with the
+            # current clock, or a correct late refresh looks 5+ seconds into
+            # the future and gets silently discarded.
+            freshness_now = max(now, _as_utc(self.clock()))
+            age = (freshness_now - data_as_of).total_seconds()
             freshness = str(snapshot.get("freshness_status", "fresh")).lower()
             if (
                 snapshot.get("fresh") is False
@@ -1710,13 +2167,27 @@ class AISessionCoordinator:
             snapshot["data_as_of"] = _iso(data_as_of)
             snapshot["received_at"] = _iso(received_at or now)
             snapshot["fresh"] = True
+            # The universe has already fetched this cycle's active Gate
+            # contracts. Preserve its observed fee before the model and entry
+            # validator run; neither may invent a fee when Gate omits it.
+            if scoped_mode is not TradingMode.PAPER:
+                metric = universe_metrics.get(symbol)
+                if metric is not None:
+                    fee = metric.get("taker_fee_rate")
+                    if fee is not None:
+                        try:
+                            fee = float(fee)
+                        except (TypeError, ValueError):
+                            fee = None
+                    if fee is not None and math.isfinite(fee) and fee >= 0:
+                        snapshot["fee_rate"] = fee
+                        snapshot["fee_rate_source"] = metric.get("contract_source") or "gate_contract_universe"
+                        snapshot["fee_rate_observed_at"] = (universe_snapshot or {}).get("observed_at")
             # Only the local PAPER simulator has an application-owned
             # matching contract.  A remote account must provide venue rules
             # through its adapter/market snapshot; otherwise the gateway
             # cannot size new risk without inventing a contract, fee, or
             # slippage assumption.
-            with self._lock:
-                scoped_mode = self._mode
             if scoped_mode is TradingMode.PAPER:
                 if not isinstance(snapshot.get("market"), dict):
                     snapshot["market"] = {
@@ -1802,10 +2273,10 @@ class AISessionCoordinator:
             if str((account_truth or {}).get("status") or "").upper() == "AVAILABLE" and isinstance(remote_positions, list)
             else self.ledger.get_open_positions(account_id, venue=venue, mode=mode.value)
         )
-        dynamic_risk = self._evaluate_cycle_dynamic_risk(
-            account_id,
-            strategy_instructions,
-            now,
+        dynamic_risk = (
+            {"status": "NOT_APPLICABLE", "entry_allowed": True, "reasons": [], "policy": "MARGIN_ONLY"}
+            if nofx_runtime is not None and mode in {TradingMode.TESTNET, TradingMode.LIVE} and str(venue).lower() == "gate"
+            else self._evaluate_cycle_dynamic_risk(account_id, strategy_instructions, now)
         )
         runtime_timeframes = None
         runtime_indicator_config = None
@@ -1904,7 +2375,7 @@ class AISessionCoordinator:
             provider = OllamaProvider(
                 base_url="http://127.0.0.1:8080/v1",
                 model_name=DEFAULT_SMART_MODEL,
-                timeout=55,
+                timeout=DECISION_MODEL_REQUEST_TIMEOUT_SECONDS,
                 context_length=_session_context_length(),
                 max_tokens=DECISION_OUTPUT_TOKEN_BUDGET,
                 temperature=0,
@@ -1948,6 +2419,10 @@ class AISessionCoordinator:
 
         strategy_profile = context.strategy_instructions.get("profile")
         strategy_execution = context.strategy_instructions.get("execution")
+        nofx_gate = (
+            (context.mode.value if isinstance(context.mode, TradingMode) else str(context.mode)).upper() in {"TESTNET", "LIVE"}
+            and str(context.venue or "").lower() == "gate"
+        )
         execution_fields = (
             "direction", "universe_mode", "symbols", "scan_interval_minutes", "order_preference",
             # Keep the AI's account of the execution envelope aligned with the
@@ -1959,6 +2434,11 @@ class AISessionCoordinator:
             "min_confidence", "min_net_rr", "cooldown_minutes", "atr_adaptive_sizing",
             "consecutive_loss_lock_enabled", "us_open_defense_enabled",
         )
+        if nofx_gate:
+            execution_fields = (
+                "direction", "universe_mode", "symbols", "scan_interval_minutes",
+                "max_notional_usdt", "max_positions", "max_margin_pct",
+            )
         strategy_summary = {
             key: context.strategy_instructions[key]
             for key in ("name", "template_id", "style")
@@ -1972,6 +2452,83 @@ class AISessionCoordinator:
                 for key in execution_fields
                 if key in strategy_execution
             }
+        # The local model repeatedly proposed 1.3-ATR stops while the fixed
+        # gate requires a wider floor.  Give it the actual signal ATR and
+        # machine-policy geometry before it chooses prices.  This is guidance
+        # from observed data; the execution gate still recalculates at the
+        # model's exact entry and rejects any narrow stop or low net RR.
+        if isinstance(strategy_profile, dict) and not nofx_gate:
+            signal_frame = str(strategy_profile.get("signal_timeframe") or "15m")
+            geometry: dict[str, dict[str, Any]] = {}
+            for symbol in context.allowed_instruments[:MAX_UNIVERSE_SYMBOLS]:
+                snap = context.market_snapshots.get(symbol)
+                technical = context.technical_context.get(symbol)
+                if not isinstance(snap, dict) or not isinstance(technical, dict):
+                    continue
+                frame = (technical.get("timeframes") or {}).get(signal_frame)
+                indicators = frame.get("indicators") if isinstance(frame, dict) else None
+                try:
+                    quote = float(snap.get("price") or snap.get("last"))
+                    atr = float((indicators or {}).get("atr14_simple"))
+                    atr_multiple = float(strategy_profile["atr_stop_multiple"])
+                    floor_pct = float(strategy_profile["major_stop_floor_pct" if symbol.startswith(("BTC", "ETH")) else "alt_stop_floor_pct"])
+                except (TypeError, ValueError, KeyError):
+                    continue
+                if not all(math.isfinite(v) and v > 0 for v in (quote, atr, atr_multiple, floor_pct)):
+                    continue
+                try:
+                    ema20 = float((indicators or {}).get("ema20"))
+                except (TypeError, ValueError):
+                    ema20 = 0.0
+                geometry[symbol] = {
+                    "quote": round(quote, 8),
+                    "signal_atr": round(atr, 8),
+                    "min_stop_distance_at_quote": round(max(atr * atr_multiple, quote * floor_pct / 100), 8),
+                    "min_net_rr": (strategy_execution or {}).get("min_net_rr", strategy_profile.get("minimum_net_rr")),
+                }
+                if math.isfinite(ema20) and ema20 > 0:
+                    ema_stop_distance = max(atr * atr_multiple, ema20 * floor_pct / 100)
+                    try:
+                        max_limit_pct = float(strategy_profile.get("max_limit_distance_pct") or 0)
+                    except (TypeError, ValueError):
+                        max_limit_pct = 0.0
+                    ema_limit_distance_pct = abs(ema20 - quote) / quote * 100
+                    geometry[symbol].update({
+                        "ema20_example_entry": round(ema20, 8),
+                        "long_stop_must_be_at_or_below_if_entry_at_ema20": round(ema20 - ema_stop_distance, 8),
+                        "short_stop_must_be_at_or_above_if_entry_at_ema20": round(ema20 + ema_stop_distance, 8),
+                        "ema20_limit_distance_pct": round(ema_limit_distance_pct, 4),
+                        "max_limit_distance_pct": max_limit_pct,
+                        "ema20_within_limit_distance": max_limit_pct > 0 and ema_limit_distance_pct <= max_limit_pct,
+                        "ema20_passive_direction": "OPEN_LONG" if ema20 < quote else "OPEN_SHORT" if ema20 > quote else "AT_QUOTE",
+                    })
+                    # Show the model the *minimum* target required by the
+                    # same fee/slippage math as validate_entry. A structural
+                    # stop farther than this floor requires a farther target;
+                    # these figures are guidance, never an execution waiver.
+                    try:
+                        market = snap.get("market") or {}
+                        fee = float(snap.get("fee_rate", market.get("taker")))
+                        slip = float(snap["slippage"])
+                        rr = float((strategy_execution or {}).get("min_net_rr") or POLICY["min_net_reward_risk"])
+                    except (TypeError, ValueError, KeyError):
+                        fee = slip = rr = float("nan")
+                    if all(math.isfinite(v) for v in (fee, slip, rr)) and 0 <= fee < 1 and 0 <= slip < 1 and rr > 0:
+                        long_stop = ema20 - ema_stop_distance
+                        short_stop = ema20 + ema_stop_distance
+                        long_loss = ema20 - long_stop + long_stop * slip + (ema20 + long_stop) * fee
+                        short_loss = short_stop - ema20 + short_stop * slip + (ema20 + short_stop) * fee
+                        long_denominator = 1 - slip - fee
+                        short_denominator = 1 + slip + fee
+                        if long_stop > 0 and long_denominator > 0 and long_loss > 0 and short_loss > 0:
+                            geometry[symbol].update({
+                                "long_min_target_if_entry_at_ema20": round((rr * long_loss + ema20 * (1 + fee)) / long_denominator, 8),
+                                "short_max_target_if_entry_at_ema20": round((ema20 * (1 - fee) - rr * short_loss) / short_denominator, 8),
+                                "target_bounds_include_fee_slippage": True,
+                                "target_bounds_assume_stop_at_minimum_only": True,
+                            })
+            if geometry:
+                strategy_summary["risk_geometry"] = geometry
         nofx_runtime = context.strategy_instructions.get("nofx_runtime")
         if isinstance(nofx_runtime, dict):
             strategy_summary["nofx_runtime"] = {
@@ -1999,15 +2556,28 @@ class AISessionCoordinator:
         ]
         pending_orders = context.account_truth.get("pending_orders")
         if isinstance(pending_orders, list):
-            order_fields = ("order_id", "client_order_id", "symbol", "instrument_id", "side", "type", "price", "amount", "remaining", "status")
+            order_fields = ("order_id", "client_order_id", "symbol", "instrument_id", "side", "type", "price", "stop_price", "amount", "remaining", "status", "reduce_only")
             account_truth["pending_orders"] = [
                 {key: item[key] for key in order_fields if key in item and item[key] is not None}
                 for item in pending_orders[:4] if isinstance(item, dict)
             ]
 
         candidates = _select_prompt_candidates(context.candidates, context.allowed_instruments)
-        prompt_news = _select_prompt_news(context.news_revisions, context.allowed_instruments)
+        static_proposals = [
+            row for row in candidates
+            if str(row.get("status") or "").upper() in {"PROPOSAL", "READY"}
+        ]
         decision_time = _parse_time(context.started_at) or _as_utc(self.clock())
+        prompt_news = _select_prompt_news(
+            [
+                row for row in context.news_revisions
+                if isinstance(row, dict) and any(
+                    relevant_news_for_entry(row, symbol, decision_time)
+                    for symbol in context.allowed_instruments
+                )
+            ],
+            context.allowed_instruments,
+        )
         market_radar = _load_market_radar_snapshot(self.store, context.allowed_instruments, decision_time)
         try:
             # Outcomes are reconciled only against locally mirrored, fully
@@ -2058,10 +2628,6 @@ class AISessionCoordinator:
                 for item in prompt_news
                 if isinstance(item, dict)
             ],
-            "candidates": [
-                compact_candidate(row)
-                for row in candidates
-            ],
             "calibration": {
                 key: context.calibration[key]
                 for key in ("status", "profile_id", "sample_size", "expires_at", "error_code", "profile")
@@ -2069,7 +2635,16 @@ class AISessionCoordinator:
             },
             "market_data_environment": context.market_data_environment,
             "data_quality": context.data_quality,
-            "strategy_readiness": context.strategy_readiness,
+            # Readiness is an operational gate, but registered candidate
+            # NO_TRIGGER counts are not a veto on an AI-authored setup. The
+            # candidate list below already exposes positive proposals; keep
+            # negative scanner results only in the frozen audit evidence.
+            "strategy_readiness": {
+                key: context.strategy_readiness[key]
+                for key in ("status", "calibration_status")
+                if isinstance(context.strategy_readiness, dict)
+                and key in context.strategy_readiness
+            },
             "indicator_snapshot_id": context.indicator_snapshot_id,
             "decision_memory": recent_decisions,
             "strategy_experience": strategy_experience,
@@ -2077,6 +2652,13 @@ class AISessionCoordinator:
             "dynamic_risk": context.dynamic_risk,
             "generation": context.generation,
         }
+        # A zero-valued static scan is not evidence against a model-authored
+        # setup. Repeating that count in every prompt anchored the local model
+        # on "no candidates" even when the strategy explicitly allows a
+        # verified K-line entry. Keep the full scan in the audit cycle; only
+        # pass actual positive proposals as optional supporting evidence.
+        if static_proposals:
+            prompt_payload["candidates"] = [compact_candidate(row) for row in static_proposals]
         provider_name = str(
             getattr(provider, "provider_name", None)
             or getattr(provider, "model_id", None)
@@ -2151,7 +2733,14 @@ class AISessionCoordinator:
         prompt_payload["evidence_bundle_id"] = bundle_id
         prompt_payload["evidence_refs"] = visible_evidence_refs
         context_length = int(getattr(provider, "context_length", 0) or 0)
-        system_prompt = build_strategy_system_prompt(context.strategy_instructions, context_length=context_length)
+        system_prompt = build_strategy_system_prompt(
+            context.strategy_instructions, context_length=context_length, nofx_gate=nofx_gate,
+        )
+        open_contract = require_nofx_gate_open_contract if nofx_gate else require_entry_analysis_for_open
+
+        def validate_open_news(decision: object) -> None:
+            if not nofx_gate:
+                _require_relevant_news_ref_for_open(decision, prompt_news, decision_time)
         if "JSON字段规则：" not in system_prompt:
             system_prompt += "\n\n" + TRADE_JSON_GUIDE
         configured_output_tokens = int(getattr(provider, "max_tokens", 0) or DECISION_OUTPUT_TOKEN_BUDGET)
@@ -2186,17 +2775,32 @@ class AISessionCoordinator:
         prompt_budget_error: ValueError | None = None
         prompt_budget: dict[str, Any]
         try:
-            prompt_payload, prompt_budget = _fit_prompt_payload(
-                prompt_payload,
-                system_prompt,
-                context_length,
-                reserve=minimum_output_tokens,
-                signal_timeframe=(
-                    str(strategy_profile.get("signal_timeframe") or "15m")
-                    if isinstance(strategy_profile, dict) else "15m"
-                ),
-                token_counter=count_prompt_tokens,
+            signal_timeframe = (
+                str(strategy_profile.get("signal_timeframe") or "15m")
+                if isinstance(strategy_profile, dict) else "15m"
             )
+            soft_context = min(context_length, INFERENCE_SOFT_CONTEXT_LIMIT)
+            try:
+                prompt_payload, prompt_budget = _fit_prompt_payload(
+                    prompt_payload, system_prompt, soft_context,
+                    reserve=minimum_output_tokens,
+                    signal_timeframe=signal_timeframe,
+                    token_counter=count_prompt_tokens,
+                )
+                model_inference_settings["soft_context_fallback"] = False
+            except ValueError as soft_error:
+                if context_length <= soft_context or "AI_INPUT_BUDGET_EXCEEDED" not in str(soft_error):
+                    raise
+                # The soft target is for latency, not an extra entry gate.
+                # Preserve the verified full-window path when decision-critical
+                # facts cannot fit in the smaller projection.
+                prompt_payload, prompt_budget = _fit_prompt_payload(
+                    prompt_payload, system_prompt, context_length,
+                    reserve=minimum_output_tokens,
+                    signal_timeframe=signal_timeframe,
+                    token_counter=count_prompt_tokens,
+                )
+                model_inference_settings["soft_context_fallback"] = True
             prompt_output_budget = min(
                 int(getattr(provider, "max_tokens", 0) or DECISION_OUTPUT_TOKEN_BUDGET),
                 context_length
@@ -2210,6 +2814,7 @@ class AISessionCoordinator:
             model_inference_settings.update({
                 "estimated_input_tokens": prompt_budget["estimated_input_tokens"],
                 "verified_context_length": context_length,
+                "inference_soft_context_limit": soft_context,
                 "output_token_reserve": prompt_output_budget,
                 "tokenizer": tokenizer_state["name"],
                 "prompt_compaction": {
@@ -2378,7 +2983,12 @@ class AISessionCoordinator:
                     "output_token_reserve": output_token_budget,
                     "tokenizer": tokenizer_state["name"],
                 }
-                repair_bundle_id = f"{context.evidence_bundle_id}_repair"
+                repair_suffix = (
+                    "stop_repair" if prompt_version.endswith("_stop_repair")
+                    else "entry_repair" if prompt_version.endswith("_entry_repair")
+                    else "repair"
+                )
+                repair_bundle_id = f"{context.evidence_bundle_id}_{repair_suffix}"
                 repair_bundle = EvidenceBundle.freeze(
                     dataset_id=f"ai_cycle:{context.cycle_id}:repair",
                     as_of=context.started_at,
@@ -2442,11 +3052,35 @@ class AISessionCoordinator:
 
         response: Any = None
         previous_decision: dict[str, Any] | None = None
+        schema_repaired = False
+        wait_fact_repaired = False
         try:
             response = call_model(messages, AI_PROMPT_VERSION)
             candidate_decoded = response[0] if isinstance(response, tuple) else response
+            if isinstance(candidate_decoded, dict) and isinstance(candidate_decoded.get("strategy_plan"), str):
+                derived_plan = derive_strategy_plan_from_text(candidate_decoded)
+                if derived_plan is not None:
+                    candidate_decoded["strategy_plan"] = derived_plan
+                    context.model_inference_settings["strategy_plan_structure_source"] = "DERIVED_FROM_MODEL_STRING"
+            projection = normalize_news_impact(candidate_decoded)
+            if projection is not None:
+                context.model_inference_settings.setdefault("model_output_normalizations", []).append(projection)
+            projection = normalize_limit_ttl_alias(candidate_decoded)
+            if projection is not None:
+                context.model_inference_settings.setdefault("model_output_normalizations", []).append(projection)
+            projection = normalize_misplaced_strategy_plan(candidate_decoded)
+            if projection is not None:
+                context.model_inference_settings.setdefault("model_output_normalizations", []).append(projection)
+            projection = normalize_wait_conditions(candidate_decoded)
+            if projection is not None:
+                context.model_inference_settings.setdefault("model_output_normalizations", []).append(projection)
+            projection = normalize_wait_symbol_alias(candidate_decoded, context.allowed_instruments)
+            if projection is not None:
+                context.model_inference_settings.setdefault("model_output_normalizations", []).append(projection)
             validate_schema(candidate_decoded, AI_ACTION_SCHEMA)
             require_confidence_for_open(candidate_decoded)
+            open_contract(candidate_decoded)
+            validate_open_news(candidate_decoded)
         except Exception as first_error:
             if "AI_INPUT_BUDGET_EXCEEDED" in str(first_error) or "MODEL_CONTEXT_UNKNOWN" in str(first_error):
                 raise
@@ -2509,13 +3143,26 @@ class AISessionCoordinator:
                     confidence_schema = dict(repair_schema["properties"].get("confidence") or {})
                     confidence_schema["type"] = "number"
                     repair_schema["properties"]["confidence"] = confidence_schema
+                    for required_field in (
+                        ("entry_price", "stop_price", "take_profit", "position_size_usdt", "requested_leverage", "order_preference", "evidence_refs")
+                        if nofx_gate else
+                        ("entry_price", "stop_price", "take_profit", "requested_risk_fraction", "evidence_refs")
+                    ):
+                        if required_field not in repair_schema["required"]:
+                            repair_schema["required"].append(required_field)
+            repair_inputs = (
+                _focused_entry_repair_inputs(prompt_payload, candidate_instrument)
+                if proposed_action in {"OPEN_LONG", "OPEN_SHORT"}
+                and str(first_error).startswith("INVALID_ACTION_SCHEMA:OPEN_CONTEXT_REQUIRED")
+                else prompt_payload
+            )
             repair_payload = {
                 "validation_error": str(first_error)[:240],
                 "previous_decision": previous_decision,
-                # Always retain the original bounded facts.  A failed first
-                # completion must not turn the repair call into an evidence-
-                # free guess merely because its error payload was a dict.
-                "inputs": prompt_payload,
+                # Error envelopes still retain the full original facts. A
+                # recognized OPEN with missing analysis gets only its chosen
+                # asset's frozen facts; it may not change the decision.
+                "inputs": repair_inputs,
             }
             repair_instruction = (
                 "\n\n修复任务：只输出符合本次 JSON 动作契约的对象。"
@@ -2523,8 +3170,12 @@ class AISessionCoordinator:
                 "错误对象、缺少标的或未授权标的都不是有效决策。若无有效决策，根据 inputs 中的行情、新闻、策略和账户事实重新决策。"
                 "instrument_id 必须来自 allowed_instruments，WAIT/HOLD 也必须填写授权标的；解释用简体中文。"
                 "validation_error 里的 output.<字段>:type 表示该字段类型不符。"
-                "strategy_plan 必须是对象 {name, thesis, entry_conditions, exit_conditions}，"
-                "其中 entry_conditions 与 exit_conditions 是非空字符串数组；不得写成字符串。"
+                + ("OPEN 必须填写入场价、止损、止盈、名义金额、杠杆、LIMIT/MARKET 和真实 evidence_refs；"
+                   if nofx_gate else "OPEN 必须填写入场价、止损、止盈、单笔风险和真实 evidence_refs；")
+                + "策略计划、新闻摘要、逐周期说明与入场区间可选。"
+                "若填写 strategy_plan，必须是对象 {name, thesis, entry_conditions, exit_conditions}。"
+                "如果只缺 news_evidence_ref，可在原 evidence_refs 后追加一条 inputs 中适用于该标的的 news_revision 引用；"
+                "不得删除或改写原引用，也不得改变动作、标的、入场、止损、止盈或金额。"
             )
             repair_system = system_prompt + repair_instruction
             empty_inputs_user = json.dumps(
@@ -2535,7 +3186,7 @@ class AISessionCoordinator:
             )
             wrapper_tokens = count_prompt_tokens(empty_inputs_user)
             repair_payload["inputs"], repair_compaction = _fit_prompt_payload(
-                prompt_payload,
+                repair_inputs,
                 repair_system,
                 context_length=max(0, context_length - wrapper_tokens - 32),
                 reserve=minimum_output_tokens,
@@ -2567,7 +3218,23 @@ class AISessionCoordinator:
                 AI_PROMPT_VERSION + "_repair",
                 schema=repair_schema,
             )
+            schema_repaired = True
         decoded = response[0] if isinstance(response, tuple) else response
+        projection = normalize_news_impact(decoded)
+        if projection is not None:
+            context.model_inference_settings.setdefault("model_output_normalizations", []).append(projection)
+        projection = normalize_limit_ttl_alias(decoded)
+        if projection is not None:
+            context.model_inference_settings.setdefault("model_output_normalizations", []).append(projection)
+        projection = normalize_misplaced_strategy_plan(decoded)
+        if projection is not None:
+            context.model_inference_settings.setdefault("model_output_normalizations", []).append(projection)
+        projection = normalize_wait_conditions(decoded)
+        if projection is not None:
+            context.model_inference_settings.setdefault("model_output_normalizations", []).append(projection)
+        projection = normalize_wait_symbol_alias(decoded, context.allowed_instruments)
+        if projection is not None:
+            context.model_inference_settings.setdefault("model_output_normalizations", []).append(projection)
         try:
             validate_schema(decoded, AI_ACTION_SCHEMA)
         except ValueError as repair_error:
@@ -2588,6 +3255,8 @@ class AISessionCoordinator:
                 context.cycle_id,
             )
         require_confidence_for_open(decoded)
+        open_contract(decoded)
+        validate_open_news(decoded)
         context.model_inference_settings["local_schema_validation"] = "PASS"
         if not isinstance(decoded, dict):
             raise ValueError("INVALID_MODEL_JSON")
@@ -2596,13 +3265,229 @@ class AISessionCoordinator:
                 "action", "instrument_id", "entry_price", "stop_price", "take_profit",
                 "requested_risk_fraction", "position_size_usdt", "requested_leverage", "order_preference",
                 "limit_price", "ttl_seconds", "candidate_id", "strategy_candidate_id",
-                "evidence_refs",
             )
             if any(
                 field in previous_decision and decoded.get(field) != previous_decision[field]
                 for field in immutable_fields
             ):
                 raise ValueError("MODEL_REPAIR_CHANGED_DECISION")
+            if "evidence_refs" in previous_decision:
+                before = previous_decision["evidence_refs"]
+                after = decoded.get("evidence_refs")
+                repair_news_refs = {
+                    f"news_revision:{row.get('revision_id')}"
+                    for row in (repair_payload["inputs"].get("news_revisions") or [])
+                    if isinstance(row, dict) and row.get("revision_id")
+                    and relevant_news_for_entry(row, str(previous_decision["instrument_id"]).upper(), decision_time)
+                }
+                if (
+                    not isinstance(before, list) or not isinstance(after, list)
+                    or after[:len(before)] != before
+                    or any(ref not in repair_news_refs for ref in after[len(before):])
+                ):
+                    raise ValueError("MODEL_REPAIR_CHANGED_DECISION")
+
+        if not schema_repaired and not nofx_gate:
+            wait_conflict = _wait_limit_distance_contradiction(prompt_payload, decoded)
+            if wait_conflict is not None:
+                symbol = wait_conflict["symbol"]
+                focused_inputs = _focused_entry_repair_inputs(prompt_payload, symbol)
+                selected_strategy = dict(prompt_payload.get("active_strategy") or {})
+                selected_strategy["risk_geometry"] = {symbol: (selected_strategy.get("risk_geometry") or {})[symbol]}
+                focused_inputs["active_strategy"] = selected_strategy
+                focused_inputs["account_truth"] = prompt_payload.get("account_truth")
+                fact_system = system_prompt + (
+                    "\n\n事实复核：上一份 WAIT 声称所选标的 EMA20 限价超过策略距离上限，"
+                    "但冻结输入已计算该距离在上限内。只修正这一事实后重新评估所选标的；"
+                    "如结构失效价或费用后目标仍不成立可继续 WAIT，须写真实原因。"
+                    "如条件均成立可由你自主输出 OPEN；不得捏造结构或降低风控。只输出完整 JSON。"
+                )
+                fact_user = json.dumps({
+                    "previous_decision": decoded,
+                    "verified_fact": wait_conflict,
+                    "inputs": focused_inputs,
+                }, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+                fact_schema = {**AI_ACTION_SCHEMA, "properties": dict(AI_ACTION_SCHEMA["properties"])}
+                instrument_schema = dict(fact_schema["properties"]["instrument_id"])
+                instrument_schema["enum"] = [symbol]
+                fact_schema["properties"]["instrument_id"] = instrument_schema
+                context.model_inference_settings["wait_fact_check"] = {"status": "PENDING", **wait_conflict}
+                if (
+                    count_prompt_tokens(fact_system) + count_prompt_tokens(fact_user)
+                    + minimum_output_tokens + PROMPT_BUDGET_SAFETY_MARGIN_TOKENS > context_length
+                ):
+                    raise ValueError("MODEL_WAIT_FACT_REPAIR_BUDGET_EXCEEDED")
+                corrected_response = call_model(
+                    [{"role": "system", "content": fact_system}, {"role": "user", "content": fact_user}],
+                    AI_PROMPT_VERSION + "_wait_fact_repair", schema=fact_schema,
+                )
+                corrected = corrected_response[0] if isinstance(corrected_response, tuple) else corrected_response
+                normalize_news_impact(corrected)
+                normalize_limit_ttl_alias(corrected)
+                normalize_wait_conditions(corrected)
+                normalize_wait_symbol_alias(corrected, context.allowed_instruments)
+                validate_schema(corrected, AI_ACTION_SCHEMA)
+                require_confidence_for_open(corrected)
+                open_contract(corrected)
+                validate_open_news(corrected)
+                if str(corrected.get("instrument_id") or "").upper() != symbol:
+                    raise ValueError("MODEL_WAIT_FACT_REPAIR_CHANGED_SYMBOL")
+                if _wait_limit_distance_contradiction(prompt_payload, corrected) is not None:
+                    raise ValueError("MODEL_WAIT_FACT_REPAIR_REPEATED_CONTRADICTION")
+                decoded = corrected
+                wait_fact_repaired = True
+                context.model_inference_settings["wait_fact_check"]["status"] = "MODEL_REEVALUATED"
+
+        # Give a schema-valid OPEN one bounded model-authored geometry retry
+        # when its stop is too narrow or its LIMIT would cross the frozen
+        # quote. Python never edits trade prices; risk remains authoritative.
+        if isinstance(decoded, dict) and not nofx_gate:
+            stop_bounds = _model_stop_repair_bounds(context, decoded)
+            limit_bounds = _model_limit_repair_bounds(context, decoded)
+            rr_bounds = _model_net_rr_repair_bounds(context, decoded) if stop_bounds is None and limit_bounds is None else None
+            if (stop_bounds is not None or limit_bounds is not None or rr_bounds is not None) and (schema_repaired or wait_fact_repaired):
+                # Bonsai's first response plus its schema repair already use
+                # the bounded two-call budget. A third 27B inference has
+                # repeatedly timed out and discarded an otherwise auditable
+                # OPEN. Keep the exact model prices for the risk gate to reject
+                # with its concrete reason instead of hiding them as timeout.
+                repair_key = "entry_geometry_repair" if limit_bounds is not None else "stop_geometry_repair" if stop_bounds is not None else "net_rr_repair"
+                context.model_inference_settings[repair_key] = {
+                    "attempted": False,
+                    "status": "SKIPPED_AFTER_SCHEMA_REPAIR" if schema_repaired else "SKIPPED_AFTER_WAIT_FACT_REPAIR",
+                    "reason": "TWO_MODEL_CALL_LIMIT",
+                    "required_min_stop_distance": stop_bounds["minimum_stop_distance"] if stop_bounds else None,
+                    "limit_issue": limit_bounds["reason"] if limit_bounds else None,
+                    "observed_net_rr": rr_bounds["observed_net_rr"] if rr_bounds else None,
+                }
+            elif stop_bounds is not None or limit_bounds is not None or rr_bounds is not None:
+                original_decision = dict(decoded)
+                original_raw_response = context.model_raw_response
+                original_call_prompt_version = context.model_call_prompt_version
+                original_prompt_version = context.prompt_version
+                repair_key = "entry_geometry_repair" if limit_bounds is not None else "stop_geometry_repair" if stop_bounds is not None else "net_rr_repair"
+                repair_version = "_entry_repair" if limit_bounds is not None else "_stop_repair" if stop_bounds is not None else "_net_rr_repair"
+                symbol = str(decoded["instrument_id"]).upper()
+                focused_inputs = _focused_entry_repair_inputs(prompt_payload, symbol)
+                selected_strategy = dict(prompt_payload.get("active_strategy") or {})
+                risk_geometry = selected_strategy.get("risk_geometry")
+                if isinstance(risk_geometry, dict):
+                    selected_strategy["risk_geometry"] = {
+                        symbol: risk_geometry[symbol]
+                    } if symbol in risk_geometry else {}
+                focused_inputs["active_strategy"] = selected_strategy
+                repair_schema = {
+                    **AI_ACTION_SCHEMA,
+                    "properties": dict(AI_ACTION_SCHEMA.get("properties") or {}),
+                }
+                for field, value in (("action", decoded["action"]), ("instrument_id", symbol)):
+                    field_schema = dict(repair_schema["properties"].get(field) or {})
+                    field_schema["enum"] = [value]
+                    repair_schema["properties"][field] = field_schema
+                if limit_bounds is not None:
+                    repair_instruction = (
+                        "\n\n限价几何修正：上一份 OPEN 的 LIMIT 穿越当前报价或距离超限，尚未送单。"
+                        "保持动作、标的、订单类型、风险金额、杠杆、置信度及证据引用不变。"
+                        "你可以重新给出被动侧的 entry_price=limit_price、相应 entry_zone、结构外 stop_price、"
+                        "费用后达标的 take_profit，并同步更新 reason、invalidation_condition、strategy_plan。"
+                        "做多限价不得高于报价，做空限价不得低于报价；距报价不得超过策略上限。"
+                        "止损仍须满足 ATR/百分比底线。不得改为市价或编造结构；做不到就保持原提案供风控拒绝。"
+                    )
+                elif stop_bounds is not None:
+                    repair_instruction = (
+                        "\n\n止损几何修正：上一份 OPEN 的止损小于固定风险底线，尚未送单。"
+                        "保持原动作、标的、入场价、订单类型、金额、杠杆及证据引用，"
+                        "重新给出结构外的 stop_price 与费用后达标的 take_profit，"
+                        "并同步更新 reason、invalidation_condition、strategy_plan。"
+                        "不得改为市价、改变入场价或捏造目标结构；做不到就保持原提案供风控拒绝。"
+                    )
+                else:
+                    repair_instruction = (
+                        "\n\n费用后盈亏比复核：上一份 OPEN 的目标未达到冻结盘口手续费、滑点和策略净 RR 门槛，尚未送单。"
+                        "保持动作、标的、入场价、止损、限价类型、金额、杠杆、置信度及证据引用不变。"
+                        "核对 required_target_bound，只有已收盘 K 线结构支持该方向更远的目标时，"
+                        "才重新给出 take_profit，并同步更新 reason、strategy_plan。"
+                        "不能验证该目标时保持原提案供风控拒绝，不得编造结构或降低门槛。"
+                    )
+                repair_system = system_prompt + repair_instruction + "只输出完整 JSON 对象。"
+                repair_user = json.dumps({
+                    "previous_decision": original_decision,
+                    "required_geometry": (
+                        {"stop": stop_bounds, "limit": limit_bounds}
+                        if limit_bounds is not None else stop_bounds if stop_bounds is not None else rr_bounds
+                    ),
+                    "inputs": focused_inputs,
+                }, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+                context.model_inference_settings[repair_key] = {
+                    "attempted": True,
+                    "original_entry": original_decision.get("entry_price"),
+                    "original_stop": original_decision.get("stop_price"),
+                    "required_min_stop_distance": stop_bounds["minimum_stop_distance"] if stop_bounds else None,
+                    "quote": limit_bounds["quote"] if limit_bounds else None,
+                    "limit_issue": limit_bounds["reason"] if limit_bounds else None,
+                    "observed_net_rr": rr_bounds["observed_net_rr"] if rr_bounds else None,
+                    "status": "PENDING",
+                }
+                try:
+                    if (
+                        count_prompt_tokens(repair_system)
+                        + count_prompt_tokens(repair_user)
+                        + minimum_output_tokens
+                        + PROMPT_BUDGET_SAFETY_MARGIN_TOKENS
+                        > context_length
+                    ):
+                        raise ValueError("AI_GEOMETRY_REPAIR_BUDGET_EXCEEDED")
+                    corrected_response = call_model(
+                        [{"role": "system", "content": repair_system},
+                         {"role": "user", "content": repair_user}],
+                        AI_PROMPT_VERSION + repair_version,
+                        schema=repair_schema,
+                    )
+                    corrected = corrected_response[0] if isinstance(corrected_response, tuple) else corrected_response
+                    normalize_news_impact(corrected)
+                    normalize_limit_ttl_alias(corrected)
+                    normalize_wait_conditions(corrected)
+                    normalize_wait_symbol_alias(corrected, context.allowed_instruments)
+                    validate_schema(corrected, AI_ACTION_SCHEMA)
+                    require_confidence_for_open(corrected)
+                    require_entry_analysis_for_open(corrected)
+                    _require_relevant_news_ref_for_open(corrected, prompt_news, decision_time)
+                    mutable = (
+                        {"stop_price", "take_profit", "reason", "invalidation_condition", "strategy_plan"}
+                        if stop_bounds is not None or limit_bounds is not None
+                        else {"take_profit", "reason", "strategy_plan"}
+                    )
+                    if limit_bounds is not None:
+                        mutable.update({"entry_price", "limit_price", "entry_zone"})
+                    if any(
+                        corrected.get(field) != value
+                        for field, value in original_decision.items() if field not in mutable
+                    ) or any(field not in original_decision and field not in mutable for field in corrected):
+                        raise ValueError("MODEL_GEOMETRY_REPAIR_CHANGED_DECISION")
+                    if _model_stop_repair_bounds(context, corrected) is not None:
+                        raise ValueError("MODEL_GEOMETRY_REPAIR_STILL_NARROW")
+                    if _model_limit_repair_bounds(context, corrected) is not None:
+                        raise ValueError("MODEL_GEOMETRY_REPAIR_LIMIT_INVALID")
+                    if rr_bounds is not None and _model_net_rr_repair_bounds(context, corrected) is not None:
+                        raise ValueError("MODEL_GEOMETRY_REPAIR_NET_RR_TOO_LOW")
+                    decoded = corrected
+                    context.model_inference_settings[repair_key].update(
+                        status="MODEL_REVISED",
+                        revised_entry=corrected.get("entry_price"),
+                        revised_stop=corrected.get("stop_price"),
+                        revised_target=corrected.get("take_profit"),
+                    )
+                except Exception as repair_error:
+                    # Keep the first verified model proposal and its explicit
+                    # rejection path. A failed retry may never create an order.
+                    decoded = original_decision
+                    context.model_raw_response = original_raw_response
+                    context.model_call_prompt_version = original_call_prompt_version
+                    context.prompt_version = original_prompt_version
+                    context.model_inference_settings[repair_key].update(
+                        status="FAILED_OR_UNSAFE",
+                        reason=f"{type(repair_error).__name__}: {repair_error}"[:160],
+                    )
         action = str(decoded.get("action", "")).strip().upper()
         if action not in ALLOWED_AI_ACTIONS:
             raise ValueError("INVALID_ACTION_SCHEMA")
@@ -2628,9 +3513,9 @@ class AISessionCoordinator:
         if not reason or len(reason) > 2000:
             raise ValueError("INVALID_ACTION_REASON")
         allowed_fields = {
-            "action", "instrument_id", "reason", "position_id", "entry_condition",
+            "action", "instrument_id", "reason", "position_id", "order_id", "entry_condition", "next_trigger_price",
             "entry_price", "stop_price", "take_profit", "requested_risk_fraction",
-            "position_size_usdt", "requested_leverage", "new_stop_price", "reduce_fraction", "evidence_refs",
+            "position_size_usdt", "requested_leverage", "new_stop_price", "new_take_profit", "reduce_fraction", "evidence_refs",
             "order_preference", "limit_price", "ttl_seconds", "candidate_id", "closed_15m_bar",
             "strategy_candidate_id", "strategy_id", "market_summary", "timeframe_analysis",
             "strategy_analysis", "news_context", "entry_zone", "take_profit_1", "take_profit_2",
@@ -2645,6 +3530,11 @@ class AISessionCoordinator:
             if not isinstance(position_id, str) or not position_id.strip() or len(position_id) > 160:
                 raise ValueError("INVALID_POSITION_ID")
             values["position_id"] = position_id.strip()
+        order_id = decoded.get("order_id")
+        if order_id is not None:
+            if not isinstance(order_id, str) or not order_id.strip() or len(order_id) > 160:
+                raise ValueError("INVALID_ORDER_ID")
+            values["order_id"] = order_id.strip()
         entry_condition = decoded.get("entry_condition")
         if entry_condition is not None:
             if not isinstance(entry_condition, str) or len(entry_condition) > 500:
@@ -2652,7 +3542,7 @@ class AISessionCoordinator:
             values["entry_condition"] = entry_condition
         numeric_fields = (
             "entry_price", "stop_price", "take_profit", "requested_risk_fraction", "position_size_usdt",
-            "new_stop_price", "reduce_fraction",
+            "new_stop_price", "new_take_profit", "next_trigger_price", "reduce_fraction",
         )
         for field in numeric_fields:
             if field not in decoded or decoded[field] is None:
@@ -2675,7 +3565,7 @@ class AISessionCoordinator:
                 leverage = int(decoded["requested_leverage"])
             except (TypeError, ValueError):
                 raise ValueError("INVALID_REQUESTED_LEVERAGE")
-            if leverage < 1 or leverage > 100:
+            if leverage < 1:
                 raise ValueError("INVALID_REQUESTED_LEVERAGE")
             values["requested_leverage"] = leverage
         preference = decoded.get("order_preference", "AUTO")
@@ -2714,7 +3604,7 @@ class AISessionCoordinator:
             raise ValueError("INVALID_EVIDENCE_REF")
         values["evidence_refs"] = tuple(evidence_refs[:32])
         extra_fields: dict[str, Any] = {}
-        if "strategy_plan" in decoded:
+        if decoded.get("strategy_plan") is not None:
             plan = decoded["strategy_plan"]
             if not isinstance(plan, dict) or set(plan) != {"name", "thesis", "entry_conditions", "exit_conditions"}:
                 raise ValueError("INVALID_STRATEGY_PLAN")
@@ -2765,7 +3655,7 @@ class AISessionCoordinator:
 
         timeframe_analysis = decoded.get("timeframe_analysis")
         if timeframe_analysis is not None:
-            if not isinstance(timeframe_analysis, dict) or set(timeframe_analysis) - {"15m", "1h"}:
+            if not isinstance(timeframe_analysis, dict) or set(timeframe_analysis) - {"5m", "15m", "1h", "4h", "1d"}:
                 raise ValueError("INVALID_TIMEFRAME_ANALYSIS")
             extra_fields["timeframe_analysis"] = {}
             for key, value in timeframe_analysis.items():
@@ -2775,7 +3665,10 @@ class AISessionCoordinator:
 
         strategy_analysis = decoded.get("strategy_analysis")
         if strategy_analysis is not None:
-            if not isinstance(strategy_analysis, dict) or set(strategy_analysis) - {"strategy_id", "matched_conditions", "missing_conditions", "trigger_completion_pct"}:
+            if not isinstance(strategy_analysis, dict) or set(strategy_analysis) - {
+                "strategy_id", "matched_conditions", "missing_conditions",
+                "trigger_completion_pct", "next_trigger_price", "entry_condition",
+            }:
                 raise ValueError("INVALID_STRATEGY_ANALYSIS")
             normalized_analysis: dict[str, Any] = {}
             if strategy_analysis.get("strategy_id") is not None:
@@ -2795,6 +3688,19 @@ class AISessionCoordinator:
                 if not math.isfinite(completion) or not 0 <= completion <= 100:
                     raise ValueError("INVALID_STRATEGY_ANALYSIS")
                 normalized_analysis["trigger_completion_pct"] = completion
+            if strategy_analysis.get("next_trigger_price") is not None:
+                try:
+                    trigger_price = float(strategy_analysis["next_trigger_price"])
+                except (TypeError, ValueError):
+                    raise ValueError("INVALID_STRATEGY_ANALYSIS")
+                if not math.isfinite(trigger_price) or trigger_price <= 0:
+                    raise ValueError("INVALID_STRATEGY_ANALYSIS")
+                normalized_analysis["next_trigger_price"] = trigger_price
+            entry_condition = strategy_analysis.get("entry_condition")
+            if entry_condition is not None:
+                if not isinstance(entry_condition, str) or not entry_condition.strip() or len(entry_condition) > 500:
+                    raise ValueError("INVALID_STRATEGY_ANALYSIS")
+                normalized_analysis["entry_condition"] = entry_condition
             extra_fields["strategy_analysis"] = normalized_analysis
 
         news_context = decoded.get("news_context")
@@ -2845,6 +3751,15 @@ class AISessionCoordinator:
 
         if extra_fields:
             values["extra_fields"] = extra_fields
+        if (action == "WAIT" and context.decision_contract == CONTRACT
+                and str(context.venue or "").lower() == "gate"
+                and str(context.mode.value if isinstance(context.mode, TradingMode) else context.mode).upper() in {"TESTNET", "LIVE"}):
+            analysis = decoded.get("strategy_analysis") if isinstance(decoded.get("strategy_analysis"), dict) else {}
+            missing = analysis.get("missing_conditions") if isinstance(analysis.get("missing_conditions"), list) else []
+            if not any(str(item).strip() for item in missing):
+                raise ValueError("WAIT_MISSING_CONDITIONS_REQUIRED")
+            if values.get("next_trigger_price") is None and not str(values.get("entry_condition") or "").strip():
+                raise ValueError("WAIT_NEXT_TRIGGER_REQUIRED")
         return AIActionOutput(action=action, instrument_id=instrument, reason=reason, **values)
 
     def _cancel_model_generation(self, context: AICycleContext) -> None:
@@ -2954,8 +3869,7 @@ class AISessionCoordinator:
                 if scope not in {"SYMBOL", "MARKET_WIDE"}:
                     scope = "SYMBOL"
                 event_symbol = symbol if scope == "SYMBOL" else None
-                revisions.append(
-                    {
+                revision = {
                         "revision_id": str(revision_id),
                         "scope": scope,
                         "symbol": event_symbol,
@@ -2968,7 +3882,8 @@ class AISessionCoordinator:
                         "source": str(item.get("source") or item.get("publisher") or "")[:160],
                         "impact": str(item.get("impact") or item.get("sentiment") or "UNKNOWN").upper(),
                     }
-                )
+                if relevant_news_for_entry(revision, symbol, now):
+                    revisions.append(revision)
         deduped: list[dict[str, Any]] = []
         seen: dict[str, int] = {}
         for item in revisions:
@@ -3047,7 +3962,8 @@ class AISessionCoordinator:
         """
 
         scope = resolve_account_scope(self.store, account_id) or {}
-        if mode is not TradingMode.TESTNET or str(scope.get("account_type") or "").upper() != "GATE_TESTNET":
+        expected_type = "GATE_TESTNET" if mode is TradingMode.TESTNET else "GATE_LIVE" if mode is TradingMode.LIVE else ""
+        if not expected_type or str(scope.get("account_type") or "").upper() != expected_type:
             return {}
         truth_service = GateAccountTruthService(self.store, clock=self.clock)
         try:
@@ -3141,7 +4057,7 @@ class AISessionCoordinator:
         # missing credential or degraded private response cannot be turned
         # into a model WAIT or a local 10000-unit risk budget.
         account_truth = self._refresh_remote_account_truth(account_id, mode)
-        if mode is TradingMode.TESTNET and (
+        if mode in {TradingMode.TESTNET, TradingMode.LIVE} and (
             str(account_truth.get("status") or "").upper() != "AVAILABLE"
             or account_truth.get("equity") is None
             or account_truth.get("available_margin") is None
@@ -3166,6 +4082,25 @@ class AISessionCoordinator:
             result = self._blocked_cycle(context, reason)
             self._record_result(result, context=context, scheduled_at=scheduled_text, started_at=cycle_started)
             return result
+
+        # Exchange truth has been read and the runtime lease is valid.  Settle
+        # old submitted intents before asking the model for new risk: a Gate
+        # order can finish with zero fills while its local ACK/reservation
+        # survives, making every subsequent OPEN fail at reservation time.
+        if mode in {TradingMode.TESTNET, TradingMode.LIVE} and hasattr(self.gateway, "reconcile_in_flight_orders"):
+            try:
+                self.gateway.reconcile_in_flight_orders(account_id, mode, remote_truth=account_truth)
+            except Exception:
+                logger.exception("Gate TestNet in-flight order reconciliation failed")
+        if mode in {TradingMode.TESTNET, TradingMode.LIVE} and hasattr(self.gateway, "cleanup_closed_gate_protection"):
+            try:
+                cleaned = self.gateway.cleanup_closed_gate_protection(account_id=account_id, remote_truth=account_truth)
+                if cleaned:
+                    # The model must receive a fresh Gate snapshot after the
+                    # orphan is removed, not the pre-cancel pending list.
+                    account_truth = self._refresh_remote_account_truth(account_id, mode)
+            except Exception:
+                logger.exception("Gate TestNet closed-position protection cleanup failed")
 
         # Probe the required Smart model before calibration.  This prevents a
         # provider whose normal default is Bonsai-2-27B-PTQ1_0 from making any
@@ -3194,14 +4129,57 @@ class AISessionCoordinator:
 
         signal_timeframe, context_timeframes, candidate_strategy_ids = self._strategy_scan_contract(strategy)
         remote_positions = account_truth.get("positions") if isinstance(account_truth.get("positions"), list) else []
+        remote_pending = account_truth.get("pending_orders") if isinstance(account_truth.get("pending_orders"), list) else []
+        owned_pending: list[dict[str, Any]] = []
+        if mode in {TradingMode.TESTNET, TradingMode.LIVE} and remote_pending:
+            with self.store._connect() as db:
+                rows = db.execute(
+                    """SELECT execution_result_json FROM order_intents WHERE account_id=? AND mode=?
+                       AND venue='gate' AND reduce_only=0 AND intent_id LIKE 'intent_ai_%'
+                       AND status IN ('ACKNOWLEDGED','SUBMITTED','PARTIALLY_FILLED','CANCEL_PENDING')""",
+                    (account_id, mode.value),
+                ).fetchall()
+            own_ids = set()
+            for row in rows:
+                try:
+                    receipt = json.loads(row["execution_result_json"] or "{}")
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    continue
+                if receipt.get("order_id"):
+                    own_ids.add(str(receipt["order_id"]))
+            owned_pending = [
+                {"symbol": order.get("symbol"), "instrument_id": order.get("symbol")}
+                for order in remote_pending if isinstance(order, dict)
+                and not order.get("reduce_only") and str(order.get("order_id") or "") in own_ids
+            ]
+        wait_streak = 0
+        if mode in {TradingMode.TESTNET, TradingMode.LIVE}:
+            with self.store._connect() as db:
+                recent = db.execute(
+                    """SELECT action,status FROM ai_led_cycles WHERE account_id=?
+                       AND COALESCE(decision_origin,'MODEL')='MODEL'
+                       ORDER BY created_at DESC LIMIT 12""",
+                    (account_id,),
+                ).fetchall()
+            for previous in recent:
+                if str(previous["action"] or "").upper() == "WAIT" and str(previous["status"] or "").upper() == "WAITING":
+                    wait_streak += 1
+                else:
+                    break
+        symbol_limit = _deep_scan_symbol_limit(wait_streak)
+        with self._lock:
+            self._current_symbol_limit = symbol_limit
         try:
             universe_snapshot = self._select_market_universe(
                 strategy,
                 mode=mode,
                 scheduled_at=scheduled_point,
-                positions=[dict(item) for item in remote_positions if isinstance(item, dict)],
+                positions=[*[dict(item) for item in remote_positions if isinstance(item, dict)], *owned_pending],
                 account_id=account_id,
+                symbol_limit=symbol_limit,
             )
+            universe_snapshot["wait_streak"] = wait_streak
+            universe_snapshot["symbol_limit"] = symbol_limit
             symbols = tuple(
                 dict.fromkeys(
                     str(item).strip().upper()
@@ -3272,6 +4250,7 @@ class AISessionCoordinator:
                         symbols,
                         scan_interval_minutes=scan_interval_minutes,
                         context_timeframes=context_timeframes,
+                        **({"testnet": mode is TradingMode.TESTNET} if "testnet" in parameters else {}),
                     )
                 else:
                     refresh(symbols, scan_interval_minutes=scan_interval_minutes)
@@ -3321,7 +4300,7 @@ class AISessionCoordinator:
         )
         with self._lock:
             self._candidate_count = len(candidates)
-        snapshots = self._market_snapshots(symbols, now=now, timeframe=signal_timeframe)
+        snapshots = self._market_snapshots(symbols, now=now, timeframe=signal_timeframe, universe_snapshot=universe_snapshot)
         news_revisions = self._news_revisions(symbols, now=now)
         context = self._build_context(
             cycle_id=cycle_id,
@@ -3370,7 +4349,16 @@ class AISessionCoordinator:
             return result
         except Exception as exc:
             future.cancel()
-            result = self._blocked_cycle(context, f"SMART_MODEL_UNAVAILABLE: {type(exc).__name__}: {exc}")
+            if bool(context.model_call_completed) and isinstance(exc, ValueError):
+                # A completed Bonsai response that fails local validation is
+                # not a model outage. Keep the exact validation detail while
+                # presenting the correct stage and user-facing cause.
+                reason = f"INVALID_MODEL_OUTPUT_SCHEMA: {type(exc).__name__}: {exc}"
+            elif str(exc).startswith("AI_INPUT_BUDGET_EXCEEDED"):
+                reason = f"AI_INPUT_BUDGET_EXCEEDED: {exc}"
+            else:
+                reason = f"SMART_MODEL_UNAVAILABLE: {type(exc).__name__}: {exc}"
+            result = self._blocked_cycle(context, reason)
             self._record_result(result, context=context, scheduled_at=scheduled_text, started_at=cycle_started)
             return result
         finally:
@@ -3566,13 +4554,13 @@ class AISessionCoordinator:
             self._thread.start()
             return self.status()
 
-    def pause(self) -> dict[str, Any]:
+    def pause(self, *, reason: str = "explicit_pause") -> dict[str, Any]:
         with self._lock:
             self._stop_event.set()
             self._wake_event.set()
             thread = self._thread
             self._enabled = False
-            self._last_reason = "explicit_pause"
+            self._last_reason = reason
         self._cancel_active_generation()
         if thread is not None and thread is not threading.current_thread():
             thread.join(timeout=2.0)

@@ -524,6 +524,50 @@ def test_api_scope_and_runtime_unavailable_are_explicit(repair_store):
         assert "AI_RUNTIME_UNAVAILABLE" in denied.text
 
 
+def test_ai_start_reaches_runtime_rebind_check_but_cross_account_stop_is_rejected(repair_store):
+    ledger = AccountLedger(repair_store)
+    ledger.create_account("switch_a", mode="PAPER", initial_deposit=Decimal("1000"))
+    ledger.create_account("switch_b", mode="PAPER", initial_deposit=Decimal("1000"))
+
+    class Runtime:
+        account_id = "switch_a"
+
+        def __init__(self):
+            self.start_calls = []
+
+        def start(self, **kwargs):
+            self.start_calls.append(kwargs)
+            return {"state": "running", "account_id": kwargs["account_id"]}
+
+    runtime = Runtime()
+    app = FastAPI()
+    app.include_router(router_for(lambda: repair_store, lambda: runtime, lambda: None))
+    with TestClient(app) as client:
+        denied = client.post("/v2/ai-session/terminate", params={"account_id": "switch_b"})
+        assert denied.status_code == 409
+        assert "RUNTIME_ACCOUNT_MISMATCH" in denied.text
+        started = client.post("/v2/ai-session/start", params={"account_id": "switch_b"})
+        assert started.status_code == 200
+        assert runtime.start_calls == [{"resume": False, "account_id": "switch_b", "enable_ai": True}]
+
+
+def test_unscoped_ai_status_reports_runtime_owner_when_ai_worker_is_stopped(repair_store):
+    ledger = AccountLedger(repair_store)
+    ledger.create_account("bound_testnet", mode="PAPER", initial_deposit=Decimal("1000"))
+    runtime = SimpleNamespace(
+        account_id="bound_testnet",
+        status=lambda: {"state": "degraded", "account_id": "bound_testnet"},
+    )
+    app = FastAPI()
+    app.include_router(router_for(lambda: repair_store, lambda: runtime, lambda: None))
+    with TestClient(app) as client:
+        response = client.get("/v2/ai-session/status")
+    assert response.status_code == 200
+    assert response.json()["runtime_account_id"] == "bound_testnet"
+    assert response.json()["runtime_state"] == "degraded"
+    assert response.json()["ai_session"]["status"] == "RUNTIME_UNAVAILABLE"
+
+
 def test_testnet_capability_is_not_run_without_adapter_and_verified_with_probe():
     service = TestnetCapabilityService()
     missing = service.get_capabilities()

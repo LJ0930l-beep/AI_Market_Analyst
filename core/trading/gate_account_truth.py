@@ -109,7 +109,7 @@ class GateAccountTruthService:
         return {
             "status": "UNAVAILABLE",
             "source": "Gate.io private API",
-            "api_environment": "TESTNET",
+            "api_environment": "LIVE" if account_id == "gate_live" else "TESTNET",
             "endpoint": None,
             "observed_at": observed_at,
             "equity": None,
@@ -155,6 +155,9 @@ class GateAccountTruthService:
         snapshot_id = f"gate_remote_{account_id}_{raw_hash[:20]}_{hashlib.sha256(created_at.encode()).hexdigest()[:8]}"
         source = str(truth.get("source") or "Gate.io private API")[:200]
         endpoint = str(truth.get("endpoint") or "")[:300] or None
+        environment = str(truth.get("api_environment") or "TESTNET").strip().lower()
+        if environment not in {"testnet", "live"}:
+            environment = "testnet"
         with self.store._connect() as db:
             db.execute(
                 """INSERT OR IGNORE INTO gate_remote_account_snapshots(
@@ -162,10 +165,11 @@ class GateAccountTruthService:
                     status, equity, available_margin, used_margin, unrealized_pnl,
                     realized_pnl, balance_json, positions_json, pending_orders_json, fills_json,
                     source, endpoint, raw_hash, error_code, message_zh, created_at
-                ) VALUES (?, ?, 'gate', 'testnet', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                ) VALUES (?, ?, 'gate', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     snapshot_id,
                     account_id,
+                    environment,
                     observed_at,
                     str(truth.get("status") or "UNAVAILABLE").upper(),
                     str(truth.get("equity")) if truth.get("equity") is not None else None,
@@ -189,7 +193,7 @@ class GateAccountTruthService:
             "snapshot_id": snapshot_id,
             "account_id": account_id,
             "provider": "gate",
-            "environment": "testnet",
+            "environment": environment,
             "observed_at": observed_at,
             "created_at": created_at,
             "raw_hash": raw_hash,

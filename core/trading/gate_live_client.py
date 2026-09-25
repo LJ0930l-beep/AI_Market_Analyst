@@ -143,6 +143,7 @@ class GateLiveTrader:
         self.last_positions_status = "NOT_CHECKED"
         self.last_trades_status = "NOT_CHECKED"
         self.last_open_orders_status = "NOT_CHECKED"
+        self.last_trigger_orders_status = "NOT_CHECKED"
         self.last_positions_error_code: Optional[str] = None
         self.last_trades_error_code: Optional[str] = None
         self.last_open_orders_error_code: Optional[str] = None
@@ -287,6 +288,7 @@ class GateLiveTrader:
         values = [position.get("marginMode")]
         raw = position.get("info")
         if isinstance(raw, dict):
+            values.append(raw.get("pos_margin_mode"))
             values.append(raw.get("margin_mode"))
             values.append(raw.get("mode"))
         for value in values:
@@ -340,6 +342,33 @@ class GateLiveTrader:
                 return mode, True
             fallback = fallback or mode
         return fallback, True
+
+    @classmethod
+    def _cross_leverage_readback(cls, position: Any, target: int, symbol: str | None = None) -> bool:
+        """Check Gate's native cross-margin fields, never CCXT's `leverage=0`."""
+        if isinstance(position, list):
+            matching = [
+                item for item in position
+                if isinstance(item, dict) and (
+                    symbol is None or _symbol_compact(item.get("contract") or (item.get("info") or {}).get("contract")) == _symbol_compact(symbol)
+                )
+            ]
+            return bool(matching) and all(cls._cross_leverage_readback(item, target, symbol) for item in matching)
+        if not isinstance(position, dict):
+            return False
+        raw = position.get("info") if isinstance(position.get("info"), dict) else position
+        contract = raw.get("contract")
+        if contract and symbol and _symbol_compact(contract) != _symbol_compact(symbol):
+            return False
+        native_leverage = _optional_float(raw.get("leverage"))
+        cross_limit = _optional_float(raw.get("cross_leverage_limit"))
+        observed_mode = cls._position_margin_mode(position)
+        return (
+            native_leverage == 0
+            and cross_limit is not None
+            and math.isclose(cross_limit, float(target), rel_tol=0, abs_tol=1e-9)
+            and observed_mode in {None, "cross"}
+        )
 
     def validate_credentials(self) -> Dict[str, Any]:
         """Verify the current environment with a read-only futures balance call."""
@@ -646,7 +675,13 @@ class GateLiveTrader:
                     "mark_price": _optional_float(position.get("markPrice", position.get("mark_price", info.get("mark_price")))),
                     "unrealized_pnl": _optional_float(position.get("unrealizedPnl", position.get("unrealized_pnl", position.get("unrealisedPnl", info.get("unrealised_pnl"))))),
                     "realized_pnl": _optional_float(position.get("realizedPnl", position.get("realized_pnl", position.get("realisedPnl", info.get("realised_pnl"))))),
-                    "leverage": _optional_float(position.get("leverage", info.get("leverage"))),
+                    "leverage": (
+                        _optional_float(info.get("cross_leverage_limit"))
+                        if self._position_margin_mode(position) == "cross"
+                        else _optional_float(position.get("leverage", info.get("leverage")))
+                    ),
+                    "margin_mode": self._position_margin_mode(position),
+                    "cross_leverage_limit": _optional_float(info.get("cross_leverage_limit")),
                     "liquidation_price": _optional_float(position.get("liquidationPrice", position.get("liquidation_price", info.get("liq_price")))),
                     "initial_margin": _optional_float(position.get("initialMargin", position.get("initial_margin", info.get("initial_margin")))),
                     "contract_size": contract_size,
@@ -676,6 +711,7 @@ class GateLiveTrader:
             self.last_open_orders_status = "NOT_CONFIGURED"
             self.last_open_orders_error_code = "GATE_CREDENTIALS_REQUIRED"
             return []
+
         self.last_open_orders_error_code = None
         try:
             ex = self._get_exchange()
@@ -727,6 +763,46 @@ class GateLiveTrader:
             logger.warning("Failed to fetch Gate %s open orders (%s)", self.api_environment, mapped["code"])
             self.last_open_orders_status = "UNAVAILABLE"
             self.last_open_orders_error_code = mapped["code"]
+            return []
+
+    def get_open_trigger_orders(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Read Gate native price-trigger orders, including protective SL/TP."""
+        if not self.is_configured:
+            self.last_trigger_orders_status = "NOT_CONFIGURED"
+            return []
+        try:
+            exchange = self._get_exchange()
+            fetcher = getattr(exchange, "privateFuturesGetSettlePriceOrders", None)
+            if not callable(fetcher):
+                self.last_trigger_orders_status = "UNSUPPORTED"
+                return []
+            raw_orders = _execute_with_retry(lambda: fetcher({"settle": "usdt", "status": "open", "limit": max(1, min(int(limit), 100))}))
+            if not isinstance(raw_orders, list):
+                raise ValueError("GATE_TRIGGER_ORDERS_RESPONSE_INVALID")
+            results: list[dict[str, Any]] = []
+            for raw in raw_orders:
+                if not isinstance(raw, dict) or not raw.get("id"):
+                    raise ValueError("GATE_TRIGGER_ORDER_ID_MISSING")
+                initial = raw.get("initial") if isinstance(raw.get("initial"), dict) else {}
+                trigger = raw.get("trigger") if isinstance(raw.get("trigger"), dict) else {}
+                size = _optional_float(initial.get("amount", initial.get("size")))
+                order_type = str(raw.get("order_type") or "").lower()
+                side = "BUY" if (size is not None and size > 0) or "close-short" in order_type else "SELL"
+                reduced = bool(initial.get("reduce_only") or initial.get("is_reduce_only") or initial.get("is_close") or "close-" in order_type)
+                results.append({
+                    "order_id": str(raw["id"]), "symbol": _symbol_compact(initial.get("contract")),
+                    "side": side, "type": "trigger", "status": str(raw.get("status") or "UNKNOWN").upper(),
+                    "amount": abs(size) if size is not None else None,
+                    "price": _optional_float(initial.get("price")),
+                    "stop_price": _optional_float(trigger.get("price")),
+                    "reduce_only": reduced, "is_protection": reduced,
+                    "timestamp": raw.get("create_time"),
+                })
+            self.last_trigger_orders_status = "AVAILABLE"
+            return results
+        except Exception as exc:
+            logger.warning("Failed to fetch Gate %s trigger orders (%s)", self.api_environment, _map_gate_error(exc)["code"])
+            self.last_trigger_orders_status = "UNAVAILABLE"
             return []
 
     def get_market_metadata(self, symbol: str) -> Dict[str, Any]:
@@ -923,13 +999,40 @@ class GateLiveTrader:
         balance = self.get_account_balance()
         positions = self.get_positions()
         pending_orders = self.get_open_orders(limit=100)
+        trigger_orders = self.get_open_trigger_orders(limit=100)
+        if self.last_trigger_orders_status == "AVAILABLE":
+            pending_orders = [*pending_orders, *trigger_orders]
+        # Gate's cross-margin account payload can report zero position margin
+        # while its positions endpoint reports a non-zero initial_margin.  The
+        # latter is an observed exchange fact and must not disappear from the
+        # account-wide cap after an entry reservation is committed.
+        position_margins = [_optional_float(item.get("initial_margin")) for item in positions]
+        position_margin_known = all(value is not None and value >= 0 for value in position_margins)
+        observed_position_margin = sum(position_margins) if position_margin_known else None
+        native_used = _optional_float(balance.get("used"))
+        native_order_margin = _optional_float(balance.get("order_margin"))
+        derived_used = (
+            observed_position_margin + max(0.0, native_order_margin or 0.0)
+            if observed_position_margin is not None else None
+        )
+        used_margin = max(native_used or 0.0, derived_used or 0.0) if native_used is not None or derived_used is not None else None
         fills = self.get_trades(limit=100) if include_trades else []
         values = [item.get("unrealized_pnl") for item in positions]
         unrealized = sum((float(value) for value in values if _optional_float(value) is not None), 0.0) if values and all(_optional_float(value) is not None for value in values) else None
-        statuses = [str(balance.get("data_status") or "UNKNOWN"), self.last_positions_status, self.last_open_orders_status]
+        statuses = [str(balance.get("data_status") or "UNKNOWN"), self.last_positions_status, self.last_open_orders_status, self.last_trigger_orders_status]
         if include_trades:
             statuses.append(self.last_trades_status)
         status = "AVAILABLE" if all(value == "AVAILABLE" for value in statuses) else ("DEGRADED" if any(value in {"AVAILABLE", "DEGRADED"} for value in statuses) else "UNAVAILABLE")
+        if positions and not position_margin_known:
+            status = "DEGRADED"
+        unreserved_pending = any(
+            not bool(order.get("reduce_only"))
+            for order in pending_orders if isinstance(order, dict)
+        )
+        pending_margin_unverified = unreserved_pending and (native_order_margin is None or native_order_margin <= 0)
+        # Keep account facts available so the model can cancel owned orders.
+        # The reservation transaction blocks new entries when pending margin
+        # cannot be measured from Gate's private account response.
         return {
             "status": status,
             "source": f"Gate.io v4 {self.api_environment} Private API",
@@ -938,7 +1041,8 @@ class GateLiveTrader:
             "observed_at": balance.get("observed_at") or datetime.now(timezone.utc).isoformat(),
             "equity": balance.get("equity"),
             "available_margin": balance.get("free"),
-            "used_margin": balance.get("used"),
+            "used_margin": used_margin,
+            "used_margin_basis": "MAX_GATE_ACCOUNT_AND_POSITION_INITIAL_MARGIN" if derived_used is not None else balance.get("used_margin_basis"),
             "unrealized_pnl": balance.get("unrealized_pnl") if balance.get("unrealized_pnl") is not None else unrealized,
             "realized_pnl": balance.get("realized_pnl"),
             "balance": balance,
@@ -947,6 +1051,8 @@ class GateLiveTrader:
             "fills": fills,
             "positions_status": self.last_positions_status,
             "pending_orders_status": self.last_open_orders_status,
+            "trigger_orders_status": self.last_trigger_orders_status,
+            "pending_margin_status": "UNVERIFIED" if pending_margin_unverified else "AVAILABLE",
             "fills_status": self.last_trades_status if include_trades else "NOT_REQUESTED",
             "error_code": next((getattr(self, attr, None) for attr in ("last_positions_error_code", "last_open_orders_error_code", "last_trades_error_code") if getattr(self, attr, None)), None),
             "remote_truth": True,
@@ -1002,19 +1108,29 @@ class GateLiveTrader:
     def set_leverage(self, symbol: str, leverage: Optional[int] = None) -> Dict[str, Any]:
         """Set position leverage on Gate.io futures."""
         if leverage is None:
-            return {"acknowledged": False, "error": "LEVERAGE_REQUIRED: explicit leverage in [1, 100] is required", "symbol": symbol, "leverage": None}
+            return {"acknowledged": False, "error": "LEVERAGE_REQUIRED: explicit positive leverage is required", "symbol": symbol, "leverage": None}
         try:
-            leverage_int = int(round(float(leverage)))
+            leverage_value = float(leverage)
+            leverage_int = int(leverage_value)
         except (TypeError, ValueError):
-            return {"acknowledged": False, "error": "LEVERAGE_REQUIRED: explicit leverage in [1, 100] is required", "symbol": symbol, "leverage": None}
-        if leverage_int < 1 or leverage_int > 100:
-            return {"acknowledged": False, "error": "LEVERAGE_REQUIRED: explicit leverage in [1, 100] is required", "symbol": symbol, "leverage": None}
+            return {"acknowledged": False, "error": "LEVERAGE_REQUIRED: explicit positive integer leverage is required", "symbol": symbol, "leverage": None}
+        if not math.isfinite(leverage_value) or leverage_int < 1 or leverage_value != leverage_int:
+            return {"acknowledged": False, "error": "LEVERAGE_REQUIRED: explicit positive integer leverage is required", "symbol": symbol, "leverage": None}
         leverage = leverage_int
         if not self.live_trading_enabled:
             return {"acknowledged": True, "dry_run": True, "symbol": symbol, "leverage": leverage}
         try:
             ex = self._get_exchange()
             exchange_symbol = self._exchange_symbol(ex, symbol)
+            from .strategy_execution import venue_leverage_limit
+            market_meta = self.get_market_metadata(symbol)
+            venue_max = venue_leverage_limit(market_meta)
+            if venue_max is None or leverage > venue_max:
+                return {
+                    "acknowledged": False, "error_code": "VENUE_LEVERAGE_EXCEEDED_OR_UNKNOWN",
+                    "message_zh": "Gate 合约杠杆上限未取得，或所请求杠杆超过交易所上限。",
+                    "symbol": symbol, "leverage": leverage, "venue_max_leverage": venue_max,
+                }
             margin_mode, positions_observed = self._remote_margin_mode(ex, exchange_symbol)
             if not positions_observed:
                 return {
@@ -1024,12 +1140,21 @@ class GateLiveTrader:
                     "symbol": symbol,
                     "leverage": leverage,
                 }
-            # No existing position means there is no remote mode to preserve.
-            # Choose the explicit Gate isolated default rather than allowing
-            # CCXT to make an undocumented implicit choice.
-            margin_mode_source = "REMOTE_POSITION" if margin_mode is not None else "NO_EXISTING_POSITION_DEFAULT"
-            margin_mode = margin_mode or "isolated"
+            # The active Gate strategy requires cross margin.  Never silently
+            # preserve an isolated setting: Gate may reject a switch while an
+            # isolated position is open, in which case the entry is not sent.
+            margin_mode_source = "ACTIVE_STRATEGY_CROSS_REQUIRED"
+            margin_mode = "cross"
             res = ex.set_leverage(leverage, exchange_symbol, {"marginMode": margin_mode})
+            if not self._cross_leverage_readback(res, leverage, exchange_symbol):
+                return {
+                    "acknowledged": False,
+                    "error_code": "GATE_CROSS_LEVERAGE_UNVERIFIED",
+                    "message_zh": "Gate 未回执目标全仓杠杆，已停止提交开仓订单。",
+                    "symbol": symbol,
+                    "leverage": leverage,
+                    "result": res,
+                }
             return {
                 "acknowledged": True,
                 "dry_run": False,
@@ -1037,6 +1162,8 @@ class GateLiveTrader:
                 "leverage": leverage,
                 "margin_mode": margin_mode,
                 "margin_mode_source": margin_mode_source,
+                "verified_native_leverage": 0,
+                "verified_cross_leverage_limit": leverage,
                 "result": res,
             }
         except Exception as exc:
@@ -1171,6 +1298,9 @@ class GateLiveTrader:
                 "side": side_clean,
                 "amount": amount,
                 "filled": filled,
+                "requested_leverage": leverage,
+                "margin_mode": "cross" if leverage else None,
+                "leverage_setting_verified": bool(leverage and lev_res.get("acknowledged")) if leverage else False,
                 "price": order.get("price"),
                 "average": order.get("average"),
                 # Preserve only decision-relevant remote receipt facts.  A
@@ -1189,6 +1319,20 @@ class GateLiveTrader:
                 "stop_loss": stop_loss,
                 "take_profit": take_profit,
             }
+            # Gate can return a terminal futures order with zero fills (for
+            # example finish_as=price_rate_proteced).  CCXT may call that
+            # order "closed"; it is neither resting nor executed.  Reporting
+            # ACKNOWLEDGED here leaves a phantom order and risk reservation.
+            remote_finish = str(raw_info.get("finish_as") or "").strip().lower()
+            remote_status = str(raw_info.get("status") or "").strip().lower()
+            if filled <= 0 and (
+                raw_status in {"closed", "canceled", "cancelled", "rejected", "expired"}
+                or remote_status == "finished"
+                or remote_finish
+            ):
+                response["status"] = "CANCELED" if remote_finish in {"cancelled", "canceled"} else "REJECTED"
+                response["error_code"] = "GATE_ORDER_FINISHED_WITHOUT_FILL"
+                response["message_zh"] = "Gate 订单已结束且无成交；未建立仓位。"
             if order.get("status") in {"canceled", "cancelled", "rejected", "expired"}:
                 response["status"] = {"canceled": "CANCELED", "cancelled": "CANCELED", "rejected": "REJECTED", "expired": "EXPIRED"}[str(order.get("status"))]
             if stop_loss is not None or take_profit is not None:
@@ -1349,6 +1493,81 @@ class GateLiveTrader:
             client_order_id=client_order_id,
         )
 
+    def fetch_protection_order(self, order_id: str, symbol: str) -> Dict[str, Any]:
+        """Verify a native Gate conditional order by its immutable venue ID."""
+        if not str(order_id).isdigit():
+            raise ValueError("GATE_PROTECTION_ORDER_ID_INVALID")
+        exchange = self._get_exchange()
+        fetcher = getattr(exchange, "privateFuturesGetSettlePriceOrdersOrderId", None)
+        if not callable(fetcher):
+            raise ValueError("GATE_PROTECTION_QUERY_UNSUPPORTED")
+        raw = _execute_with_retry(lambda: fetcher({"settle": "usdt", "order_id": str(order_id)}))
+        if not isinstance(raw, dict) or str(raw.get("id")) != str(order_id):
+            raise ValueError("GATE_PROTECTION_ORDER_ID_MISMATCH")
+        initial = raw.get("initial") if isinstance(raw.get("initial"), dict) else {}
+        trigger = raw.get("trigger") if isinstance(raw.get("trigger"), dict) else {}
+        if _symbol_compact(initial.get("contract")) != _symbol_compact(symbol):
+            raise ValueError("GATE_PROTECTION_SYMBOL_MISMATCH")
+        reduced = bool(initial.get("reduce_only") or initial.get("is_reduce_only") or initial.get("is_close") or "close-" in str(raw.get("order_type") or ""))
+        if not reduced:
+            raise ValueError("GATE_PROTECTION_NOT_REDUCE_ONLY")
+        return {
+            "order_id": str(order_id), "symbol": _symbol_compact(symbol),
+            "status": str(raw.get("status") or "UNKNOWN").upper(),
+            "finish_as": str(raw.get("finish_as") or "").lower() or None,
+            "trigger_price": _optional_float(trigger.get("price")),
+            "price_type": trigger.get("price_type"),
+            "reduce_only": True,
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    def amend_protection_order(self, order_id: str, symbol: str, trigger_price: float) -> Dict[str, Any]:
+        """Amend and independently read back a system-owned Gate SL/TP leg."""
+        price = _optional_float(trigger_price)
+        if price is None or price <= 0:
+            raise ValueError("GATE_PROTECTION_PRICE_INVALID")
+        before = self.fetch_protection_order(order_id, symbol)
+        if before["status"] != "OPEN":
+            raise ValueError("GATE_PROTECTION_ORDER_NOT_OPEN")
+        exchange = self._get_exchange()
+        # CCXT 4.5.77 exposes Gate's signed request transport but predates the
+        # generated wrapper for the documented PUT price_orders/amend route.
+        request = getattr(exchange, "request", None)
+        if not callable(request):
+            raise ValueError("GATE_PROTECTION_AMEND_UNSUPPORTED")
+        amended = request(
+            "{settle}/price_orders/amend", ["private", "futures"], "PUT",
+            {"settle": "usdt", "order_id": int(order_id), "trigger_price": str(price)},
+        )
+        if not isinstance(amended, dict) or str(amended.get("id", amended.get("id_string"))) != str(order_id):
+            raise ValueError("GATE_PROTECTION_AMEND_NOT_ACKNOWLEDGED")
+        after = self.fetch_protection_order(order_id, symbol)
+        if after["status"] != "OPEN" or after["trigger_price"] is None or not math.isclose(after["trigger_price"], price, rel_tol=1e-9, abs_tol=1e-12):
+            raise ValueError("GATE_PROTECTION_AMEND_NOT_VERIFIED")
+        return {"status": "VERIFIED", "before": before, "after": after}
+
+    def cancel_protection_order(self, order_id: str, symbol: str) -> Dict[str, Any]:
+        """Cancel one verified Gate trigger and require a terminal readback."""
+        before = self.fetch_protection_order(order_id, symbol)
+        if before["status"] == "FINISHED" and before.get("finish_as") in {"cancelled", "canceled"}:
+            return {"status": "CANCELED", "order_id": str(order_id), "already_terminal": True}
+        if before["status"] != "OPEN":
+            raise ValueError("GATE_PROTECTION_NOT_OPEN")
+        exchange = self._get_exchange()
+        cancel = getattr(exchange, "privateFuturesDeleteSettlePriceOrdersOrderId", None)
+        if not callable(cancel):
+            raise ValueError("GATE_PROTECTION_CANCEL_UNSUPPORTED")
+        try:
+            cancel({"settle": "usdt", "order_id": str(order_id)})
+        except Exception:
+            # A transport failure can occur after Gate has accepted DELETE.
+            # The independent GET below is the authority for the outcome.
+            pass
+        after = self.fetch_protection_order(order_id, symbol)
+        if after["status"] != "FINISHED" or after.get("finish_as") not in {"cancelled", "canceled"}:
+            raise ValueError("GATE_PROTECTION_CANCEL_NOT_VERIFIED")
+        return {"status": "CANCELED", "order_id": str(order_id), "before": before, "after": after}
+
     def reconcile_order(self, order_id: str, symbol: str) -> Dict[str, Any]:
         """Query actual status and fills from exchange to reconcile UNKNOWN orders."""
         if not self.live_trading_enabled:
@@ -1362,12 +1581,14 @@ class GateLiveTrader:
             filled = _optional_float(order.get("filled")) or 0.0
             amount = _optional_float(order.get("amount")) or 0.0
             raw_status = str(order.get("status") or "").lower()
+            raw_info = order.get("info") if isinstance(order.get("info"), dict) else {}
+            finish_as = str(raw_info.get("finish_as") or "").strip().lower()
             if filled >= amount and amount > 0:
                 final_status = "FILLED"
             elif filled > 0:
                 final_status = "PARTIALLY_FILLED"
-            elif raw_status in {"canceled", "cancelled", "expired", "rejected"}:
-                final_status = "CANCELED"
+            elif raw_status in {"closed", "canceled", "cancelled", "expired", "rejected"} or finish_as:
+                final_status = "CANCELED" if finish_as in {"cancelled", "canceled"} else "REJECTED"
             else:
                 final_status = "ACKNOWLEDGED"
 
@@ -1394,15 +1615,22 @@ class GateLiveTrader:
         order = ex.fetch_order(order_id, exchange_symbol)
         if not isinstance(order, dict):
             raise ValueError("GATE_RESPONSE_SCHEMA_INVALID")
+        filled = _optional_float(order.get("filled")) or 0.0
+        raw_status = str(order.get("status") or "unknown").lower()
+        raw_info = order.get("info") if isinstance(order.get("info"), dict) else {}
+        finish_as = str(raw_info.get("finish_as") or "").strip().lower()
+        if filled <= 0 and (raw_status == "closed" or str(raw_info.get("status") or "").lower() == "finished" or finish_as):
+            raw_status = "canceled" if finish_as in {"cancelled", "canceled"} else "rejected"
         return {
             "order_id": str(order.get("id") or order_id),
             "symbol": symbol,
-            "status": str(order.get("status") or "unknown").lower(),
-            "filled": _optional_float(order.get("filled")) or 0.0,
+            "status": raw_status,
+            "filled": filled,
             "amount": _optional_float(order.get("amount")) or 0.0,
             "average": order.get("average"),
             "price": order.get("price"),
             "fee": order.get("fee"),
+            "remote_finish_as": finish_as or None,
             "fills": order.get("fills") if isinstance(order.get("fills"), list) else [],
         }
 

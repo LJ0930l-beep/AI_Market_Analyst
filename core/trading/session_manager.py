@@ -538,6 +538,8 @@ class RuntimeLease:
     def validate(self, lease_name: str, holder_id: str, fencing_token: int, *, now: Optional[datetime] = None) -> bool:
         now = now or datetime.now(timezone.utc)
         with self._lock:
+            if self._invalidated:
+                return False
             try:
                 conn = self._get_conn()
                 row = conn.execute(

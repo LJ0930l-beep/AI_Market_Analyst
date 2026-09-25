@@ -82,6 +82,17 @@ function Invoke-Start {
     if (-not (Test-Path -LiteralPath $AppExe -PathType Leaf)) {
         throw "未找到客户端可执行文件：$AppExe`n请先安装客户端，或运行 scripts\sync-client.ps1 完成构建与安装。"
     }
+    # The desktop owns its API sidecar, but the local Bonsai inference server
+    # is a separate process.  Bring it up before the AI coordinator resumes;
+    # otherwise every scheduled cycle is SYSTEM_BLOCKED at AI_MODEL.
+    $modelLauncher = Join-Path $PSScriptRoot "..\infra\bonsai\start_model.ps1"
+    if (-not (Test-Path -LiteralPath $modelLauncher -PathType Leaf)) {
+        throw "未找到 Bonsai 启动脚本：$modelLauncher"
+    }
+    & $modelLauncher
+    if ($LASTEXITCODE -ne 0) {
+        throw "Bonsai 模型服务启动失败；客户端未启动以免 AI 扫描持续被阻塞。"
+    }
     $existing = @(Get-OwnedProcesses $AppExe)
     if ($existing.Count -gt 0) {
         Write-Host "客户端已在运行 (PID $($existing[0].Id))，本次启动只会唤回已有窗口。" -ForegroundColor Yellow

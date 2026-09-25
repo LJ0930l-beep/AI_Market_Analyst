@@ -14,8 +14,11 @@ Enforces:
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
+import logging
 import math
 import uuid
+
+logger = logging.getLogger("core.trading.risk_engine")
 from typing import Any, Dict, List, Optional, Tuple
 
 from .ledger import AccountLedger, AccountSnapshot
@@ -685,6 +688,13 @@ class RiskEngine:
             exclude_intent_id=exclude_intent_id,
         )
         if not reserved:
+            logger.warning(
+                "risk reservation refused: account=%s reservation=%s risk=%s margin=%s "
+                "limits(single=%.5f portfolio=%.5f cluster=%.5f daily=%.5f) net_equity=%s",
+                account_id, res_id, actual_risk, allocated_margin, target_fraction,
+                portfolio_limit, cluster_limit, daily_limit_fraction,
+                getattr(snapshot, "net_equity", None),
+            )
             return RiskDecision(
                 decision_id=decision_id,
                 approved=False,

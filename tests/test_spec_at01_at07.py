@@ -10,7 +10,8 @@ Covers:
 - AT07: Credential scan (zero plaintext secrets in DB/logs/responses) & untrusted cross-origin request rejection.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 import json
 import pathlib
 import tempfile
@@ -35,6 +36,7 @@ from core.trading.execution_gateway import (
 )
 from core.trading.gate_live_client import GateLiveTrader
 from core.trading.ledger import AccountLedger
+from core.trading.gate_account_truth import GateAccountTruthService
 from apps.api.v2 import router_for
 
 
@@ -184,6 +186,136 @@ def test_at02_open_unfilled_receipt_is_acknowledged(temp_store):
     assert "stop_loss" not in call_args["params"]
     assert "take_profit" not in call_args["params"]
     assert res["protection_status"] == "PENDING_ENTRY_FILL"
+
+
+def test_gate_terminal_zero_fill_receipt_is_not_a_resting_order():
+    trader = GateLiveTrader("key", "secret", testnet=True, live_trading_enabled=True)
+    mock_exchange = MagicMock()
+    mock_exchange.create_order.return_value = {
+        "id": "gate_rejected_by_price_protection",
+        "status": "closed",
+        "filled": 0.0,
+        "amount": 1.0,
+        "info": {"status": "finished", "finish_as": "price_rate_proteced"},
+    }
+    mock_exchange.fetch_order.return_value = dict(mock_exchange.create_order.return_value)
+    trader._get_exchange = MagicMock(return_value=mock_exchange)
+
+    receipt = trader.place_order(
+        symbol="BTCUSDT", side="LONG", amount=1.0, order_type="market",
+        stop_loss=65000.0, client_order_id="price_protection_case",
+    )
+
+    assert receipt["status"] == "REJECTED"
+    assert receipt["error_code"] == "GATE_ORDER_FINISHED_WITHOUT_FILL"
+    assert receipt["remote_finish_as"] == "price_rate_proteced"
+    assert receipt["filled"] == 0.0
+    assert receipt["protection_status"] == "PENDING_ENTRY_FILL"
+
+    fetched = trader.fetch_order(receipt["order_id"], "BTCUSDT")
+    assert fetched["status"] == "rejected"
+    assert fetched["filled"] == 0.0
+    assert fetched["remote_finish_as"] == "price_rate_proteced"
+
+
+def test_gate_terminal_zero_fill_reconciliation_releases_reservation(tmp_path):
+    store = SQLiteStore(tmp_path / "terminal-zero-fill.db")
+    store.initialize()
+    ledger = AccountLedger(store)
+    ledger.create_account("gate_demo", mode="TESTNET", initial_deposit=10000, config={"venue": "gate"})
+
+    class Adapter:
+        def place_order(self, **kwargs):
+            return {"status": "open", "order_id": "gate-terminal-1", "filled": 0.0, "amount": kwargs["amount"]}
+
+        def fetch_order(self, order_id, symbol):
+            return {
+                "status": "rejected", "order_id": order_id, "symbol": symbol,
+                "filled": 0.0, "amount": 1.0,
+                "remote_finish_as": "price_rate_proteced",
+            }
+
+    gateway = ExecutionGateway(store, ledger=ledger, trader_client=Adapter())
+    intent = OrderIntent(
+        intent_id="terminal-zero", idempotency_key="terminal-zero", account_id="gate_demo",
+        mode=TradingMode.TESTNET, venue="gate", environment="TESTNET", instrument_id="BTCUSDT",
+        side="LONG", order_type="market", quantity=1.0, price=None, leverage=2,
+        protection_plan=ProtectionPlan(stop_price=90.0, take_profit=120.0),
+    )
+    gateway.submit_intent(intent, market_snapshot=_fresh_paper_market("BTCUSDT", 100.0))
+    result = gateway.reconcile_in_flight_orders("gate_demo", TradingMode.TESTNET)
+
+    assert result == [{
+        "intent_id": "terminal-zero", "previous_status": "ACKNOWLEDGED",
+        "reconciled_status": "REJECTED", "reconciled": True, "reservation_held": False,
+    }]
+    with store._connect() as db:
+        row = db.execute(
+            "SELECT status, execution_result_json FROM order_intents WHERE intent_id=?", ("terminal-zero",),
+        ).fetchone()
+    assert row["status"] == "REJECTED"
+    assert json.loads(row["execution_result_json"])["reason"] == "price_rate_proteced"
+
+
+def test_missing_old_gate_order_clears_current_exposure_without_claiming_historical_fill(tmp_path):
+    store = SQLiteStore(tmp_path / "orphan-gate-order.db")
+    store.initialize()
+    ledger = AccountLedger(store)
+    ledger.create_account(
+        "gate_orphan", mode="TESTNET", initial_deposit=10000,
+        config={"venue": "gate", "account_type": "GATE_TESTNET"},
+    )
+
+    class MissingOrder:
+        def fetch_order(self, order_id, symbol):
+            raise ValueError('{"label":"ORDER_NOT_FOUND","message":"order not found"}')
+
+    gateway = ExecutionGateway(store, ledger=ledger)
+    gateway._resolve_scoped_trader_client = lambda *_args: MissingOrder()
+    old = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    with store._connect() as db:
+        db.execute(
+            """INSERT INTO order_intents(intent_id,idempotency_key,account_id,mode,instrument_id,side,
+               order_type,quantity,payload_hash,status,execution_result_json,created_at,updated_at,
+               venue,environment,reservation_id)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            ("orphan-1", "orphan-1", "gate_orphan", "TESTNET", "BTCUSDT", "LONG",
+             "limit", 1, "hash", "ACKNOWLEDGED", json.dumps({"order_id": "gone-1"}),
+             old, old, "gate", "TESTNET", "res-orphan-1"),
+        )
+        db.execute(
+            """INSERT INTO risk_reservations(reservation_id,account_id,amount_risk,amount_margin,
+               status,expires_at,created_at,instrument_id,venue,mode)
+               VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            ("res-orphan-1", "gate_orphan", "1", "2", "PENDING",
+             (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(), old,
+             "BTCUSDT", "gate", "TESTNET"),
+        )
+
+    assert gateway.reconcile_in_flight_orders("gate_orphan", TradingMode.TESTNET)[0]["reservation_held"] is True
+    with store._connect() as db:
+        assert db.execute("SELECT status FROM risk_reservations WHERE reservation_id='res-orphan-1'").fetchone()[0] == "PENDING"
+
+    truth = GateAccountTruthService(store)._record(
+        "gate_orphan",
+        {"account_id": "gate_orphan", "status": "AVAILABLE", "observed_at": datetime.now(timezone.utc).isoformat(),
+         "equity": 10000, "available_margin": 10000, "positions": [], "pending_orders": [],
+         "positions_status": "AVAILABLE", "pending_orders_status": "AVAILABLE", "source": "Gate TestNet private API"},
+        created_at=datetime.now(timezone.utc).isoformat(),
+    )
+    result = gateway.reconcile_in_flight_orders("gate_orphan", TradingMode.TESTNET, remote_truth=truth)
+    assert result[0]["reconciled_status"] == "UNKNOWN"
+    assert result[0]["reservation_held"] is False
+    with store._connect() as db:
+        row = db.execute("SELECT status,execution_result_json FROM order_intents WHERE intent_id='orphan-1'").fetchone()
+        reservation = db.execute("SELECT status FROM risk_reservations WHERE reservation_id='res-orphan-1'").fetchone()
+    assert row["status"] == "UNKNOWN"
+    assert json.loads(row["execution_result_json"])["historical_fill_unverified"] is True
+    assert reservation["status"] == "RELEASED"
+    assert ledger.reserve_risk(
+        "gate_orphan", "fresh-order", Decimal("1"), Decimal("2"),
+        instrument_id="BTCUSDT", venue="gate", mode="TESTNET",
+    ) is True
 
 
 # =========================================================================

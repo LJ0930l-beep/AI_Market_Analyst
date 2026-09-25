@@ -13,7 +13,7 @@ def test_account_instructions_are_versioned_and_conflicting_edits_fail(tmp_path)
     sections['custom_prompt'] = '关注真实新闻催化后的价格确认。'
     saved = book.save('gate_testnet', name='事件策略', sections=sections, expected_revision=0)
     assert saved['revision'] == 1 and saved['digest'] != frozen['digest']
-    assert frozen['sections']['custom_prompt'] == DEFAULT_SECTIONS['custom_prompt']
+    assert frozen['sections']['custom_prompt'] == TEMPLATES[2]['sections']['custom_prompt']
     assert book.active('gate_live')['revision'] == 0
     assert AIStrategyBook(store).active('gate_testnet') == saved
     with pytest.raises(ValueError, match='REVISION_CONFLICT'):
@@ -141,7 +141,7 @@ def test_template_order_preference_is_authoritative_and_repairs_legacy_prose(tmp
     assert saved['execution']['order_preference'] == 'AUTO'
     assert saved['execution']['scan_interval_minutes'] == 15
     assert '每 15 分钟' in saved['sections']['frequency']
-    assert '全天候' in saved['sections']['entry_standards'] or '限价' in saved['sections']['entry_standards']
+    assert '突破' in saved['sections']['entry_standards']
     # The operator's own supplement is preserved across the canonical repair.
     assert saved['sections']['custom_prompt'] == '仅关注 BTCUSDT 的日内动量。'
 
@@ -153,4 +153,4 @@ def test_invalid_instruction_sections_cannot_override_policy(tmp_path, bad):
     book = AIStrategyBook(store)
     with pytest.raises(ValueError, match='SECTIONS_INVALID'):
         book.save('gate_testnet', name='无效', sections=bad, expected_revision=0)
-    assert book.view('gate_testnet')['fixed_policy']['max_leverage'] == 100
+    assert book.view('gate_testnet')['fixed_policy']['leverage_source'] == 'ACTIVE_STRATEGY_WITH_GATE_CONTRACT_CEILING'

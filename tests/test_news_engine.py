@@ -2,11 +2,22 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 from core.instruments import instrument_for
-from core.news_engine import NewsEngine, cluster_news_events, dedupe_news_events
+from core.news_engine import NewsEngine, cluster_news_events, dedupe_news_events, headline_mentions_symbol
 from core.providers import FixtureNewsProvider, NewsEvent
 
 
 class NewsEngineTests(unittest.TestCase):
+    def test_search_headline_must_name_queried_asset(self):
+        self.assertTrue(headline_mentions_symbol("Bitcoin futures launch", "BTCUSDT"))
+        self.assertTrue(headline_mentions_symbol("XRP Ledger upgrade", "XRPUSDT"))
+        self.assertTrue(headline_mentions_symbol("CME to launch Bitcoin Cash futures", "BCHUSDT"))
+        self.assertTrue(headline_mentions_symbol("Uniswap futures launch", "UNIUSDT"))
+        self.assertFalse(headline_mentions_symbol("Bitcoin consolidates near $86k", "XRPUSDT"))
+        self.assertFalse(headline_mentions_symbol("Crypto Profit Calculator", "TSTBSCUSDT"))
+        self.assertFalse(headline_mentions_symbol("DRACO CHAIN insights", "TSTBSCUSDT"))
+        self.assertFalse(headline_mentions_symbol("Goodyear Tire & Rubber Co (GT) Stock Price Today", "GTUSDT"))
+        self.assertTrue(headline_mentions_symbol("GateToken GT rallies as crypto volume grows", "GTUSDT"))
+
     def test_duplicate_titles_and_urls_are_collapsed(self):
         published = datetime(2026, 1, 1, tzinfo=timezone.utc)
         newer = NewsEvent(

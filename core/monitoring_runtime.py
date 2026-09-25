@@ -97,7 +97,11 @@ class MonitoringRuntime:
 
         self.ledger = ledger or AccountLedger(self.store)
         self.session_manager = session_manager or SessionManager(self.store)
-        self.runtime_lease = runtime_lease or RuntimeLease(self.store)
+        # A model cycle and SQLite housekeeping can briefly delay the renewal
+        # thread on a busy desktop.  Keep the three-second heartbeat, but give
+        # the production lease enough headroom for a transient write lock.
+        # Explicitly injected leases retain their own TTL (including tests).
+        self.runtime_lease = runtime_lease or RuntimeLease(self.store, default_ttl_seconds=30)
         self.holder_id = f"runtime_{uuid.uuid4().hex[:8]}"
         self._fencing_token: int | None = None
         self._lease_lost = False
@@ -264,16 +268,27 @@ class MonitoringRuntime:
             renewed = False
             try:
                 if token is not None and callable(getattr(self.runtime_lease, "renew", None)):
-                    renewed = bool(self.runtime_lease.renew("monitoring_runtime", self.holder_id, token, ttl_seconds=10))
+                    renewed = bool(self.runtime_lease.renew("monitoring_runtime", self.holder_id, token, ttl_seconds=getattr(self.runtime_lease, "default_ttl", 10)))
                 elif token is None:
                     # Compatibility runtimes without the v1.3 lease API cannot
                     # claim a fencing guarantee; retain their old behavior but
                     # expose the degraded capability in status.
-                    renewed = bool(self.runtime_lease.acquire("monitoring_runtime", self.holder_id, ttl_seconds=10))
+                    renewed = bool(self.runtime_lease.acquire("monitoring_runtime", self.holder_id, ttl_seconds=getattr(self.runtime_lease, "default_ttl", 10)))
             except Exception:
                 renewed = False
             if renewed:
                 continue
+            # A single SQLite writer-contention failure is not a lost lease.
+            # Keep retrying only while the exact holder/token is still valid;
+            # the gateway independently validates the fence before any order.
+            # If validation cannot prove ownership, fail closed below.
+            if token is not None:
+                try:
+                    validator = getattr(self.runtime_lease, "validate", None)
+                    if callable(validator) and validator("monitoring_runtime", self.holder_id, token):
+                        continue
+                except Exception:
+                    pass
             if callable(getattr(self.runtime_lease, "invalidate", None)):
                 self.runtime_lease.invalidate()
             with self._lock:
@@ -287,7 +302,7 @@ class MonitoringRuntime:
                 self._stop_event.set()
                 self._wake_event.set()
             try:
-                self.ai_coordinator.pause()
+                self.ai_coordinator.pause(reason="runtime_lease_lost")
             except Exception:
                 pass
             try:
@@ -442,6 +457,8 @@ class MonitoringRuntime:
                     self._status["transition_at"] = _iso(self.clock())
                     self._persist_locked()
                     return self.status()
+        if account_id and self._account_id and self._account_id != str(account_id):
+            self._prepare_account_rebind(str(account_id))
         with self._lock:
             if account_id and self._account_id and self._account_id != str(account_id):
                 current = str(self._status.get("state"))
@@ -538,6 +555,51 @@ class MonitoringRuntime:
             self._worker = threading.Thread(target=self._worker_loop, name="aima-monitoring-runtime", daemon=True)
             self._worker.start()
             return self.status()
+
+    def _prepare_account_rebind(self, requested_account_id: str) -> None:
+        """Discharge old Gate duties against fresh private truth before switching.
+
+        A stale local receipt is not evidence that an exchange order vanished.
+        The reconciler may clear it only after the exchange reports both no
+        positions and no pending orders for the old account.
+        """
+        old_account_id = self._account_id
+        if not old_account_id or old_account_id == requested_account_id:
+            return
+        scope = resolve_account_scope(self.store, old_account_id) or {}
+        if str(scope.get("venue") or "").lower() == "gate":
+            from .trading.gate_accounts import build_gate_trader
+            from .trading.gate_account_truth import GateAccountTruthService
+            from .trading.execution_gateway import TradingMode
+
+            trader = build_gate_trader(self.store, old_account_id)
+            if trader is None:
+                raise RuntimeError("RUNTIME_REBIND_BLOCKED: old Gate account credentials are unavailable for reconciliation")
+            truth = GateAccountTruthService(self.store, clock=self.clock).refresh(old_account_id, trader)
+            if not (
+                truth.get("status") == "AVAILABLE"
+                and truth.get("positions_status") == "AVAILABLE"
+                and truth.get("pending_orders_status") == "AVAILABLE"
+                and truth.get("trigger_orders_status") == "AVAILABLE"
+            ):
+                raise RuntimeError("RUNTIME_REBIND_BLOCKED: old Gate account truth is incomplete")
+            if truth.get("positions") or truth.get("pending_orders"):
+                raise RuntimeError("RUNTIME_REBIND_BLOCKED: old Gate account still has remote positions or orders")
+            old_mode = TradingMode(str(scope.get("mode") or "TESTNET").upper())
+            self.execution_gateway.reconcile_in_flight_orders(old_account_id, old_mode, remote_truth=truth)
+        duties = self._runtime_duties(old_account_id)
+        if duties["has_duties"]:
+            raise RuntimeError(
+                "RUNTIME_REBIND_BLOCKED: old account retains current positions, pending orders, or unresolved reservations"
+            )
+        with self._lock:
+            active = self._active_state(str(self._status.get("state")))
+        if active:
+            self.stop(clear_resume=True)
+            with self._lock:
+                worker = self._worker
+            if worker is not None and worker.is_alive():
+                raise RuntimeError("RUNTIME_REBIND_BLOCKED: old account worker is still stopping")
 
     def _protected_symbols(self) -> tuple[str, ...]:
         conn = self.store._connect() if hasattr(self.store, "_connect") else None
@@ -648,28 +710,84 @@ class MonitoringRuntime:
                         open_position_count += 1
             order_count = 0
             has_orders = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='order_intents'").fetchone()
+            has_reservations = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='risk_reservations'").fetchone()
             if has_orders:
                 # A resting intent past its own TTL is a duty the reconcile
                 # pass still has to discharge (cancel remotely, release the
                 # budget), so it stays counted here.  Only the trade gate in
                 # ``AccountLedger.reserve_risk`` treats an expired resting
                 # intent as non-blocking for *new* risk.
-                order_row = db.execute(
-                    """SELECT COUNT(*) FROM order_intents
+                order_rows = db.execute(
+                    """SELECT status, reservation_id, execution_result_json FROM order_intents
                        WHERE account_id=? AND mode=? AND venue=?
                          AND status IN ('CREATED','RISK_APPROVED','ACKNOWLEDGED','PARTIALLY_FILLED','UNKNOWN','SUBMITTED','SUBMITTING','CANCEL_PENDING')""",
                     (account_id, account_mode, account_venue),
-                ).fetchone()
-                order_count = int(order_row[0] if order_row else 0)
+                ).fetchall()
+                for order in order_rows:
+                    # An old Gate order can remain UNKNOWN for historical
+                    # fill/PnL audit even after a fresh remote reconciliation
+                    # proved no current exposure and released its reservation.
+                    # Keep that audit record, but it no longer owns the
+                    # single-account runtime. Every other UNKNOWN remains a
+                    # protection duty and blocks rebind.
+                    if account_venue == "gate" and str(order["status"] or "").upper() == "UNKNOWN":
+                        try:
+                            receipt = json.loads(order["execution_result_json"] or "{}")
+                        except (TypeError, ValueError, json.JSONDecodeError):
+                            receipt = {}
+                        cleared = (
+                            receipt.get("risk_exposure_cleared") is True
+                            and receipt.get("reason") == "REMOTE_ORDER_NOT_FOUND_NO_CURRENT_EXPOSURE"
+                            and bool((receipt.get("execution_evidence") or {}).get("snapshot_id"))
+                        )
+                        if cleared and order["reservation_id"] and has_reservations:
+                            reservation = db.execute(
+                                "SELECT status FROM risk_reservations WHERE reservation_id=? AND account_id=?",
+                                (order["reservation_id"], account_id),
+                            ).fetchone()
+                            if reservation and str(reservation["status"] or "").upper() == "RELEASED":
+                                continue
+                    order_count += 1
             reservation_count = 0
-            has_reservations = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='risk_reservations'").fetchone()
             if has_reservations:
+                # COMMITTED records are historical filled-margin accounting.
+                # They cease to be a runtime duty only after a fresh, complete
+                # private Gate snapshot proves there is no current exposure.
+                # PENDING reservations always remain duties until reconciled.
+                cleared_remote_exposure = False
+                if account_venue == "gate" and account_mode in {"TESTNET", "LIVE"}:
+                    has_remote = db.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='gate_remote_account_snapshots'"
+                    ).fetchone()
+                    remote = db.execute(
+                        """SELECT status, observed_at, positions_json, pending_orders_json
+                           FROM gate_remote_account_snapshots WHERE account_id=?
+                           ORDER BY observed_at DESC, created_at DESC, snapshot_id DESC LIMIT 1""",
+                        (account_id,),
+                    ).fetchone() if has_remote else None
+                    if remote and str(remote["status"] or "").upper() == "AVAILABLE":
+                        try:
+                            observed = datetime.fromisoformat(str(remote["observed_at"]).replace("Z", "+00:00"))
+                            if observed.tzinfo is None:
+                                observed = observed.replace(tzinfo=timezone.utc)
+                            now = self.clock()
+                            if now.tzinfo is None:
+                                now = now.replace(tzinfo=timezone.utc)
+                            age = (now.astimezone(timezone.utc) - observed.astimezone(timezone.utc)).total_seconds()
+                            cleared_remote_exposure = (
+                                -60 <= age <= 120
+                                and json.loads(remote["positions_json"] or "null") == []
+                                and json.loads(remote["pending_orders_json"] or "null") == []
+                            )
+                        except (TypeError, ValueError, KeyError, json.JSONDecodeError):
+                            cleared_remote_exposure = False
                 res_row = db.execute(
                     """SELECT COUNT(*) FROM risk_reservations
                        WHERE account_id=? AND status IN ('PENDING','COMMITTED')
                          AND (mode IS NULL OR UPPER(mode)=?)
-                         AND (venue IS NULL OR LOWER(venue)=?)""",
-                    (account_id, account_mode, account_venue),
+                         AND (venue IS NULL OR LOWER(venue)=?)
+                         AND (?=0 OR status='PENDING')""",
+                    (account_id, account_mode, account_venue, int(cleared_remote_exposure)),
                 ).fetchone()
                 reservation_count = int(res_row[0] if res_row else 0)
         result.update({
@@ -796,13 +914,14 @@ class MonitoringRuntime:
 
     def pause(self) -> dict[str, object]:
         with self._lock:
+            pause_reason = "runtime_lease_lost" if self._lease_lost else "explicit_pause"
             if not self._active_state(str(self._status.get("state"))):
-                self._set_status("paused", reason="already_inactive")
+                self._set_status("paused", reason=pause_reason if self._lease_lost else "already_inactive")
                 return self.status()
             self._stop_event.set()
             self._wake_event.set()
             worker = self._worker
-        self.ai_coordinator.pause()
+        self.ai_coordinator.pause(reason=pause_reason)
         try:
             self.session_manager.pause()
         except Exception:
@@ -814,7 +933,7 @@ class MonitoringRuntime:
         protected = self._protected_symbols()
         if protected:
             # Maintain active market stream for protected positions during pause
-            self._set_status("paused", reason="explicit_pause", active_symbols=list(protected), retry_after_at=None)
+            self._set_status("paused", reason=pause_reason, active_symbols=list(protected), retry_after_at=None)
             with self._lock:
                 stream_payload = self._status.get("stream") or {}
                 current_symbols = tuple(str(item) for item in stream_payload.get("symbols", []))
@@ -827,7 +946,7 @@ class MonitoringRuntime:
                 # itself reports a transient degradation.
                 with self._lock:
                     if self._status.get("state") == "degraded":
-                        self._set_status("paused", reason="explicit_pause_stream_degraded", active_symbols=list(protected), retry_after_at=None)
+                        self._set_status("paused", reason="runtime_lease_lost" if self._lease_lost else "explicit_pause_stream_degraded", active_symbols=list(protected), retry_after_at=None)
         else:
             with self._lock:
                 stream = self._stream
@@ -837,7 +956,7 @@ class MonitoringRuntime:
                 except Exception:
                     pass
             self._clear_stream()
-            self._set_status("paused", reason="explicit_pause", active_symbols=[], retry_after_at=None)
+            self._set_status("paused", reason=pause_reason, active_symbols=[], retry_after_at=None)
         return self.status()
 
     def stop(self, *, clear_resume: bool = True) -> dict[str, object]:

@@ -25,6 +25,48 @@ _POSITIVE = {"beat", "growth", "surge", "strong", "upgrade", "record", "profit",
 _NEGATIVE = {"miss", "fall", "drop", "weak", "downgrade", "loss", "probe", "lawsuit", "recall", "cut"}
 _NEGATION = {"not", "no", "never", "without", "failed", "fail", "didn't", "didnt", "未", "没有", "未能", "不"}
 
+_CRYPTO_HEADLINE_ALIASES: dict[str, tuple[str, ...]] = {
+    "BTC": ("bitcoin", "btc"),
+    "ETH": ("ethereum", "ether", "eth"),
+    "SOL": ("solana",),
+    "BCH": ("bitcoin cash", "bch"),
+    "XRP": ("xrp", "ripple"),
+    "BNB": ("bnb", "binance coin"),
+    "DOGE": ("dogecoin", "doge"),
+    "ADA": ("cardano", "ada"),
+    "TRX": ("tron", "trx"),
+    "UNI": ("uniswap", "uni"),
+}
+
+
+def headline_mentions_symbol(title: str, symbol: str) -> bool:
+    """Keep search-feed hits only when the headline identifies the requested asset.
+
+    Google News search can return unrelated headlines. A search result is not
+    evidence that its article is about the queried contract; false positives
+    would otherwise become mandatory news citations in the trading gate.
+    """
+    headline = str(title or "").casefold()
+    instrument = str(symbol or "").strip().upper()
+    if not headline or not instrument:
+        return False
+    base = instrument[:-4] if instrument.endswith("USDT") else instrument
+    # Short unknown tickers collide heavily with equities and common words
+    # (GT is also Goodyear Tire). A bare 2-3 letter match is not enough to
+    # turn a search result into trading evidence for a crypto contract.
+    if base not in _CRYPTO_HEADLINE_ALIASES and len(base) <= 3:
+        has_full_pair = bool(re.search(r"(?<![a-z0-9])" + re.escape(instrument.casefold()) + r"(?![a-z0-9])", headline))
+        has_crypto_context = bool(re.search(r"\b(?:crypto|cryptocurrency|token|coin|blockchain|gate\.io|gatetoken|digital asset)\b|加密|代币|链上", headline))
+        if not has_full_pair and not has_crypto_context:
+            return False
+    aliases = _CRYPTO_HEADLINE_ALIASES.get(base, (base,))
+    if instrument != base:
+        aliases = (*aliases, instrument)
+    return any(
+        re.search(r"(?<![a-z0-9])" + re.escape(alias.casefold()) + r"(?![a-z0-9])", headline)
+        for alias in aliases if alias
+    )
+
 
 def _clean_text(value: str | None, max_chars: int = 800) -> str:
     text = html.unescape(_TAG_RE.sub(" ", value or ""))
@@ -223,6 +265,8 @@ class RSSNewsProvider(NewsProvider):
             source = _clean_text(item.findtext("source"), 120) or self.provider_name
             published_at = _parse_date(item.findtext("pubDate"))
             if not title or published_at is None or not cutoff - timedelta(hours=48) <= published_at <= cutoff:
+                continue
+            if not headline_mentions_symbol(title, instrument.symbol):
                 continue
             category, sentiment, importance, credibility, horizon = _classify(title, summary)
             event_id = hashlib.sha256(f"{title.lower()}|{url or ''}|{published_at.date()}".encode("utf-8")).hexdigest()[:24]

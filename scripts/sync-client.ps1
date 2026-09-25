@@ -230,6 +230,15 @@ $sidecarHash = (Get-FileHash -LiteralPath $SidecarSource -Algorithm SHA256).Hash
 Copy-Item -LiteralPath $builtExe -Destination (Join-Path $InstallDir $AppExeName) -Force
 Copy-Item -LiteralPath $SidecarSource -Destination (Join-Path $InstallDir $BackendExeName) -Force
 
+# The installed sidecar can restart Bonsai after an unexpected model-process
+# exit.  Pin it to this checkout's verified runner and the build interpreter;
+# never search PATH or launch a different local model on a health failure.
+$runnerPath = Join-Path $ProjectRoot "infra\bonsai\server_runner.py"
+if (-not (Test-Path -LiteralPath $runnerPath -PathType Leaf)) { throw "Bonsai runner missing: $runnerPath" }
+@{ python = $buildPython; runner = $runnerPath } |
+    ConvertTo-Json -Compress |
+    Set-Content -LiteralPath (Join-Path $InstallDir "bonsai-recovery.json") -Encoding UTF8
+
 $installedAppHash = (Get-FileHash -LiteralPath (Join-Path $InstallDir $AppExeName) -Algorithm SHA256).Hash
 $installedSidecarHash = (Get-FileHash -LiteralPath (Join-Path $InstallDir $BackendExeName) -Algorithm SHA256).Hash
 if ($appHash -ne $installedAppHash) { throw "ai-market-analyst.exe 安装后校验不一致" }
@@ -246,7 +255,7 @@ if ($installer) {
 
 if (-not $NoRestart) {
     Write-Step "启动客户端"
-    Start-Process -FilePath (Join-Path $InstallDir $AppExeName) -WorkingDirectory $InstallDir
+    & (Join-Path $PSScriptRoot "desktop-client.ps1") -Action start -InstallDir $InstallDir
     Start-Sleep -Seconds 12
     Get-Process -Name 'ai-market-analyst' -ErrorAction SilentlyContinue |
         ForEach-Object { "已启动 pid=$($_.Id) 窗口=$($_.MainWindowHandle)" }

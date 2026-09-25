@@ -21,6 +21,8 @@ from core.trading.execution_gateway import (
 )
 from core.trading.gate_accounts import (
     GATE_LIVE_ACCOUNT_ID,
+    GATE_LIVE_API_BASE_URL,
+    GATE_LEGACY_FUTURES_LIVE_API_BASE_URL,
     GATE_PAPER_API_BASE_URL,
     GATE_PAPER_ACCOUNT_ID,
     get_gate_account_profile,
@@ -28,6 +30,7 @@ from core.trading.gate_accounts import (
     save_gate_account_credentials,
 )
 from core.trading.gate_account_truth import GateAccountTruthService
+from core.trading.gate_live_client import GateLiveTrader
 from core.trading.ledger import AccountLedger
 from core.trading.decision_memory import record_decision_memory, update_memory_outcome
 from core.trading.trader_capabilities import TraderCapabilityError, TraderCapabilityService
@@ -45,6 +48,26 @@ def _v3_client(store: SQLiteStore) -> TestClient:
     return TestClient(app)
 
 
+def test_manual_live_lock_is_persisted_and_enforced_by_order_api(tmp_path):
+    store = SQLiteStore(tmp_path / "manual-live-lock.sqlite3")
+    store.initialize()
+    provision_default_gate_accounts(store)
+    client = _v2_client(store)
+    assert client.get("/v2/gate/manual-live-lock").json()["unlocked"] is False
+    order = {
+        "account_id": "gate_live", "venue": "gate", "symbol": "BTCUSDT",
+        "side": "BUY", "amount": 1, "order_type": "MARKET",
+        "leverage": 2, "stop_loss": 100,
+    }
+    blocked = client.post("/v2/gate/orders", json=order)
+    assert blocked.status_code == 423
+    assert "GATE_LIVE_MANUAL_LOCKED" in blocked.json()["detail"]
+    response = client.put("/v2/gate/manual-live-lock", json={"unlocked": True})
+    assert response.status_code == 200
+    assert _v2_client(store).get("/v2/gate/manual-live-lock").json()["unlocked"] is True
+    assert client.put("/v2/gate/manual-live-lock", json={"unlocked": False}).json()["unlocked"] is False
+
+
 def _fresh_market(now: datetime) -> dict:
     return {
         "symbol": "BTCUSDT",
@@ -60,6 +83,32 @@ def _fresh_market(now: datetime) -> dict:
             "taker": 0.0005,
         },
     }
+
+
+def test_legacy_futures_live_profile_uses_canonical_ccxt_route_only(tmp_path):
+    store = SQLiteStore(tmp_path / "gate-live-legacy-endpoint.db")
+    store.initialize()
+    provision_default_gate_accounts(store)
+    with store._connect() as db:
+        row = db.execute("SELECT config_json FROM accounts WHERE account_id=?", (GATE_LIVE_ACCOUNT_ID,)).fetchone()
+        config = json.loads(row["config_json"])
+        config["gate_api_base_url"] = GATE_LEGACY_FUTURES_LIVE_API_BASE_URL
+        db.execute("UPDATE accounts SET config_json=? WHERE account_id=?", (json.dumps(config), GATE_LIVE_ACCOUNT_ID))
+        db.commit()
+
+    profile = get_gate_account_profile(store, GATE_LIVE_ACCOUNT_ID)
+    assert profile["api_base_url"] == GATE_LIVE_API_BASE_URL
+    trader = GateLiveTrader("read-only-test-key", "read-only-test-secret", api_base_url=profile["api_base_url"])
+    assert trader._get_exchange().urls["api"]["private"]["futures"].startswith("https://api.gateio.ws/")
+
+    with store._connect() as db:
+        config["gate_api_base_url"] = "https://example.invalid/api/v4"
+        db.execute("UPDATE accounts SET config_json=? WHERE account_id=?", (json.dumps(config), GATE_LIVE_ACCOUNT_ID))
+        db.commit()
+    unknown = get_gate_account_profile(store, GATE_LIVE_ACCOUNT_ID)
+    assert unknown["api_base_url"] == "https://example.invalid/api/v4"
+    with pytest.raises(ValueError, match="GATE_CUSTOM_ENDPOINT_REQUIRES_EXPLICIT_EXCHANGE"):
+        GateLiveTrader("test-key", "test-secret", api_base_url=unknown["api_base_url"])._get_exchange()
 
 
 def test_gate_default_accounts_are_distinct_and_api_provision_is_idempotent(tmp_path):
@@ -194,7 +243,7 @@ def test_gate_workspace_and_positions_ignore_historical_local_mirror(tmp_path):
     assert body["positions_source"] == "GATE_REMOTE_PRIVATE_API_SNAPSHOT"
     assert body["positions_data_status"] == "AVAILABLE"
     assert [position["symbol"] for position in body["positions"]] == ["ETHUSDT"]
-    assert body["positions"][0]["protected"] is True
+    assert body["positions"][0]["protected"] is False  # both Gate SL and TP must be observed
     assert body["positions"][0]["local_mirror"] is False
 
     positions = client.get(f"/v2/positions?account_id={GATE_PAPER_ACCOUNT_ID}")

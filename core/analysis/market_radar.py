@@ -19,6 +19,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from core.trading.institutional_schema import ensure_institutional_trader_schema
+from .cross_market import fetch_cross_market
 
 
 _BINANCE_CACHE: dict[str, tuple[datetime, dict[str, Any]]] = {}
@@ -495,7 +496,7 @@ def build_market_radar(store: Any, *, symbols: Iterable[str] | None = None, now:
         "derivatives_matrix": matrix,
         "liquidations": liquidations,
         "onchain": onchain,
-        "cross_market": {
+        "cross_market": fetch_cross_market(now=observed) if include_external else {
             "status": "CONFIG_REQUIRED",
             "source": None,
             "message": "DXY、US10Y 与 NQ 需要用户配置具备相应授权的实时行情源；BTC.D 尚未连接。",

@@ -6,30 +6,22 @@ from copy import deepcopy
 import hashlib
 import json
 
-from .autonomous_strategy import POLICY
+from .autonomous_strategy import POLICY, NOFX_GATE_POLICY
 from .strategy_execution import normalize_execution
 
 DEFAULT_SECTIONS = {
-    "role": "你是专注于加密货币合约的多空双向实战量化交易员。以已收盘 15m 为信号周期、1h 为宏观背景结构，结合全市场资金面与新闻情绪，捕捉高确定性趋势突破与箱体高抛低吸机会。执行严格的工业级风险控制与防插针保护，拒绝过度观望与分析瘫痪。",
-    "frequency": "按配置周期定期扫描评估。已有持仓保护与防插针风控第一优先；当出现符合量化规则的高盈亏比技术结构时果断下单，严禁频繁追涨杀跌。",
-    "entry_standards": "全天候多空自适应工业级交易规则（严格对齐 GitHub 成熟量化策略库标准）：\n"
-    "1. 【单边趋势突破市（顺势策略）】：15m 收盘价放量突破唐奇安/布林挤压通道或站上 EMA20，且 1h 宏观同向共振；成交量 ≥ 过去 20 根均量的 1.25 倍。\n"
-    "2. 【震荡整理箱体市（均值回归策略）】：采用结构边缘高抛低吸——在 15m support20 支撑位或布林下轨处**本轮立刻挂出**做多限价单（OPEN_LONG）；在 15m resistance20 阻力位或布林上轨处**本轮立刻挂出**做空限价单（OPEN_SHORT）。净盈亏比必须 ≥ 2.0。「预埋」是现在挂单等被动成交，不是等插针发生后再挂；未触达关键位正是挂限价预埋单的充分理由。\n"
-    "3. 【工业级防插针止损硬约束（绝对底线）】：严禁设置紧贴市价的极窄自杀止损！止损必须依托 15m/1h 有效摆动分型（Swing High/Low）或订单块外侧：\n"
-    "   - 主流标的（BTC/ETH 等）：止损距离必须 ≥ max(1.8×ATR, entry_price × 0.015)（至少 1.8 倍 ATR 且不低于入场价的 1.5%）；\n"
-    "   - 高波动/山寨标的（SOL、DOGE 等）：止损距离必须 ≥ max(2.2×ATR, entry_price × 0.025)（至少 2.2 倍 ATR 且不低于入场价的 2.5%）；\n"
-    "   - 任何小于该安全垫的止损提案将被风控引擎直接硬拦截（AI_STOP_DISTANCE_TOO_NARROW）。\n"
-    "4. 【梯级止盈与保本推损】：目标盈亏比 ≥ 2.2R ~ 3.5R；当浮盈触及 1.5R 时触发保本推损（Break-Even Trailing），锁定胜局，防范极端插针利润回吐。\n"
-    "5. 【新闻与宏观情绪】：中性新闻（NEUTRAL）属于标准有效交易背景；只要无直接同品种强力反向利空/利好，即按量化技术位坚定执行。",
-    "decision_process": "横向扫描全市场候选标的；优先识别顺势突破或震荡边缘具备充裕防插针安全垫的标的；根据 ATR 严密计算宽幅止损与梯级止盈确保净盈亏比 ≥ 2.0；技术与风控指标达标时果断下单；按严格结构化 JSON 输出决策。",
-    "custom_prompt": "拒绝分析瘫痪与过度等待。加密市场 70% 时间处于震荡整理，关键结构位的被动限价挂单正是成熟量化系统获取高盈亏比的基石！严禁以‘处于震荡整理/均线纠缠/新闻中性’为由机械式持续 WAIT！【预埋限价单纪律】：预埋 = 本轮立刻把限价单挂在关键支撑阻力位上等待被动成交，价格尚未到达关键位恰恰是挂预埋单的唯一理由。只有当按当前策略模板确实算不出净盈亏比 ≥ 2.0 的有效入场时，才允许 WAIT，并必须写明缺失的具体条件。严禁编造不存在的价格、指标或新闻。",
+    "role": "你是 Gate TestNet 的自主合约交易员；从真实行情、已有持仓与新闻中选择有依据的一笔机会。",
+    "frequency": "按策略配置的周期扫描；先管理已有持仓，再比较允许标的。",
+    "entry_standards": "依据已收盘K线和账户事实自主选择趋势、突破、回踩或反转机会；任何缺失数据都标为未知。",
+    "decision_process": "自主给出 LONG、SHORT 或 WAIT；开仓时填写限价或市价、USDT 名义金额、杠杆、入场、止损和目标。限价优先，账户及交易所约束由程序复核。",
+    "custom_prompt": "不要把单个指标或置信分数当作唯一门槛。新闻缺失不自动否决技术机会；证据不足则写明缺口。",
 }
 
 # Strategy profiles are deliberately data, not executable code.  The model may
 # use these values to choose a setup, while the execution gateway continues to
 # enforce the account's hard limits.  Keeping the profile versioned makes a
 # later replay explain which rules were active for a decision.
-STRATEGY_PROFILE_VERSION = "ai_strategy_pack_2026_09_v6_signal_timeframe"
+STRATEGY_PROFILE_VERSION = "ai_strategy_pack_2026_09_v7_nofx_gate"
 
 
 def _profile(**values):
@@ -41,13 +33,13 @@ TEMPLATES = [
      "execution_defaults": {"universe_mode": "ALL", "symbols": [], "risk_per_trade_pct": 0.25, "leverage": 100, "max_positions": 3, "max_margin_pct": 18.0, "max_notional_usdt": 2500.0, "min_confidence": 68, "min_net_rr": 1.6, "cooldown_minutes": 5, "order_preference": "AUTO", "scan_interval_minutes": 5, "atr_adaptive_sizing": True, "consecutive_loss_lock_enabled": True, "us_open_defense_enabled": False},
      "profile": _profile(strategy_id="aggressive_impulse", family="MOMENTUM_LIQUIDITY_SWEEP", candidate_strategy_ids=["liquidity_sweep", "ema_trend"], signal_timeframe="5m", context_timeframes=["15m", "1h"], required_confirmations=1, minimum_signal_score=2, volume_ratio_min=0.95, atr_stop_multiple=1.80, major_stop_floor_pct=0.60, alt_stop_floor_pct=1.50, minimum_net_rr=1.6, target_r_multiples=[1.8, 3.0], order_preference="AUTO", limit_priority=True, limit_ttl_seconds=480, max_limit_distance_pct=0.85, allow_market_entry=True, market_min_trigger_completion=65, limit_min_trigger_completion=55, allow_future_limit=True, max_entries_per_hour=3, cooldown_minutes=5, news_mode="RISK_FILTER_WITH_SYMBOL_CATALYST"),
      "sections": {**DEFAULT_SECTIONS, "role": "你是专注于加密货币合约的多空双向实战交易员。以已收盘 5m 为触发周期、15m 与 1h 为结构背景，结合全市场资金面与新闻情绪，捕捉 EMA20 动量突破与流动性扫荡反转机会。执行防插针结构化宽止损与动态仓位自适应风控，拒绝死板百分比与过度等待。", "frequency": "由系统每 5 分钟对齐触发评估，信号周期为已收盘 5m，背景周期为 15m 与 1h。每轮先管理已有持仓，再从候选池中挑选唯一最优的单笔机会；宁可一笔做透，不要分散下单。",
-      "entry_standards": "入场判定规则（双核驱动：EMA20 顺势动量 + 前高前低流动性扫荡）：\n"
-      "1. 【强信号优先（status = PROPOSAL）】：策略规则已被客观触发，按 direction_bias 方向果断给出 OPEN_LONG / OPEN_SHORT。\n"
-      "2. 【全 NO_TRIGGER 绝不等于必须 WAIT】：独立依据 5m 触发（单项证据确认即达标，不强求 15m/1h 大周期同向）：(a) EMA20 动量突破或回踩——5m 站上/跌破 EMA20 后在回踩位预埋 LIMIT 挂单；(b) 流动性扫荡——5m 刺破 support20/resistance20 后收回结构内可反向开仓；(c) 箱体边缘——靠近 15m 支撑阻力时预埋限价单。\n"
-      "3. 【结构化宽止损哲学（防扫荡第一准则）】：严禁设置贴近现价的自杀式窄止损（极易被做市商当成流动性猎杀扫损）！止损必须由 AI 依据技术结构（前高/前低 Swing Point、假突破插针极值或订单块外侧）设置合理宽止损（例如 ETH 1650 开多，止损可设在关键支撑结构外侧如 1600，留足呼吸空间）。底层风控引擎会自动根据止损距离等比例缩放开仓数量，无论止损多宽，单笔亏损金额均被严格锁定在 0.25% 账户净值。净盈亏比保持 ≥ 1.6，止盈建议 1.8R ~ 3.0R。\n"
-      "4. 【美股开盘与新闻】：美股开市时段（21:15~21:45）正常交易进场，遇大幅插针优先以关键位被动限价单（LIMIT）承接，同时重点扫描突发新闻；无重大反向利空即可坚决执行。",
-      "decision_process": "1. 检查已有持仓，确认止损与推损保护。\n2. 交叉核对 5m 与背景周期，选定最优标的与方向，只要 5m 单项结构明确即可开单，但不得用固定分数代替证据。\n3. 依托摆动低点/高点结构计算合理宽止损，确保净盈亏比达标。\n4. 按严格 JSON 格式输出。",
-      "custom_prompt": "系统自动预埋限价或市价进场。执行分级开仓门槛：限价（LIMIT）挂单预埋门槛为 55%，市价（MARKET）快速开仓门槛为 65%。当完成度达到 55% 时，优先在突破回测位或 EMA20 回踩位挂出被动限价单（LIMIT）；当完成度达到 65% 且价格在入场区内时支持直接市价（MARKET）开仓。严禁在无持仓且完成度达标时无故放弃开单选择 WAIT。不要无脑追求极端高胜率，55% 即可在关键位挂单，美股开市正常交易。"}},
+      "entry_standards": "入场判定（5m 激进，限价优先）：\n"
+      "1. 扫描器 PROPOSAL 是优先机会，按证据评估，不因固定分数直接开仓。\n"
+      "2. NO_TRIGGER 非否决。自主比较已收盘 5m 的趋势延续、放量突破、EMA/局部结构回踩、区间边缘和流动性扫荡反转；一类形态成立即可，不强制每轮都回踩 EMA20 或等待新穿越。15m/1h 是背景风险，非机械同向门槛。\n"
+      "3. 优先在可核验关键位挂非穿越被动限价，距现价≤0.85%；已收盘突破且报价、盘口和费用允许时可选市价，不追离结构过远的价格。现价取 market_snapshots.price；止损在摆动结构外且距离≥max(信号 ATR×1.8、入场价对应百分比底线)，按止损缩小仓位；费用后净 RR≥1.6，否则 WAIT。\n"
+      "4. 美股开盘照常评估，突发重大反向新闻与异常盘口须重新核验；不捏造新闻或结构。",
+      "decision_process": "先保护已有持仓；再比较真实 5m 突破延续、回踩与扫荡反转等机会，AI 自主选一笔最有依据的交易。说清选择的结构、失效价及新闻风险，优先被动限价；确有即时触发才市价。用摆动点、ATR 和费用后净 RR 复核，不满足风控就 WAIT；不得虚构证据，JSON 只填可执行字段与必要证据。",
+      "custom_prompt": "不要把 EMA20 回踩当作唯一入场模式。已收盘 5m 若出现有量能和局部结构支持的趋势延续或突破，可独立形成机会；回踩、区间边缘和扫荡也可评估。根据新闻、市场报价与盘口，自主选择 LONG、SHORT 或 WAIT。限价优先且距现价≤0.85%，仅在确认后的可成交价格使用市价；止损取结构外侧与 ATR/百分比底线较宽者，费用后净 RR≥1.6。任何关键价格或证据无法确定时说明原因并 WAIT，不虚构。"}},
     {"id": "aggressive_breakout", "name": "趋势回测 · 15m 激进", "style": "AGGRESSIVE", "scan_interval_minutes": 15, "order_preference": "AUTO",
      "execution_defaults": {"universe_mode": "ALL", "symbols": [], "risk_per_trade_pct": 0.22, "leverage": 100, "max_positions": 3, "max_margin_pct": 16.0, "max_notional_usdt": 2200.0, "min_confidence": 70, "min_net_rr": 1.6, "cooldown_minutes": 10, "order_preference": "AUTO", "scan_interval_minutes": 15, "atr_adaptive_sizing": True, "consecutive_loss_lock_enabled": True, "us_open_defense_enabled": False},
      "profile": _profile(strategy_id="aggressive_breakout", family="VOLATILITY_EXPANSION_RETEST", candidate_strategy_ids=["ema_trend", "liquidity_sweep"], signal_timeframe="15m", context_timeframes=["1h"], required_confirmations=2, minimum_signal_score=3, volume_ratio_min=1.20, atr_stop_multiple=2.00, major_stop_floor_pct=1.80, alt_stop_floor_pct=2.80, minimum_net_rr=1.6, target_r_multiples=[1.8, 3.2], order_preference="AUTO", limit_priority=True, limit_ttl_seconds=900, max_limit_distance_pct=0.95, allow_market_entry=True, market_min_trigger_completion=70, allow_future_limit=True, max_entries_per_hour=2, cooldown_minutes=10, news_mode="RISK_FILTER_WITH_SYMBOL_CATALYST"),
@@ -58,7 +50,7 @@ TEMPLATES = [
       "3. 【结构化宽止损哲学】：止损依托有效摆动结构设立合理宽止损，严禁贴脸窄止损。止损距离与开仓数量自动等比例缩放，确保单笔风险恒定。\n"
       "4. 【美股开盘与新闻面】：美股开市正常交易进场，以关键位限价单为主，无重大反向利空利好即可执行。",
       "decision_process": "评估 1h 宏观与 15m 局部；优先在突破回测位预埋限价，满足市价条件才可即时成交；不得在回测未确认时追价市价开单；输出结构化 JSON。",
-      "custom_prompt": "优先提交回测限价单或直接市价开仓。市价与限价开仓门槛均为 70%。不要无脑追求极端高胜率，满足 70% 触发完成度即可果断开仓或预埋限价单，不得无故 WAIT。美股开市正常进场。"}},
+      "custom_prompt": "每轮独立确认已收盘 15m 突破的方向、量能和 1h 背景；优先在突破位首次回测时预埋不穿越现价的限价单。市价仅用于已确认的延续行情、现价仍在入场区且盘口成本合格。用结构外止损、真实 ATR 和费用后的净盈亏比检查订单；若回测位过远、失效位不清楚或净盈亏比不足则 WAIT 并列明原因，不得虚构完成度。"}},
     {"id": "conservative_pullback", "name": "顺势回踩 · 15m 稳健", "style": "CONSERVATIVE", "scan_interval_minutes": 15, "order_preference": "AUTO",
      "execution_defaults": {"universe_mode": "ALL", "symbols": [], "risk_per_trade_pct": 0.15, "leverage": 100, "max_positions": 2, "max_margin_pct": 12.0, "max_notional_usdt": 1500.0, "min_confidence": 70, "min_net_rr": 2.0, "cooldown_minutes": 45, "order_preference": "AUTO", "scan_interval_minutes": 15, "atr_adaptive_sizing": True, "consecutive_loss_lock_enabled": True, "us_open_defense_enabled": False},
      "profile": _profile(strategy_id="conservative_pullback", family="HTF_TREND_PULLBACK", candidate_strategy_ids=["ema_trend", "liquidity_sweep", "session_vwap"], signal_timeframe="15m", context_timeframes=["1h"], required_confirmations=3, minimum_signal_score=4, volume_ratio_min=1.05, atr_stop_multiple=2.20, major_stop_floor_pct=2.00, alt_stop_floor_pct=3.00, minimum_net_rr=2.0, target_r_multiples=[2.0, 3.2], order_preference="AUTO", limit_priority=True, limit_ttl_seconds=1200, max_limit_distance_pct=0.80, allow_market_entry=True, market_min_trigger_completion=70, allow_future_limit=True, max_entries_per_hour=1, cooldown_minutes=45, news_mode="REVERSE_NEWS_VETO"),
@@ -67,7 +59,7 @@ TEMPLATES = [
       "1. 1h 方向明确后，在 15m EMA20、session VWAP 或前突破位 0.45% 内挂被动限价单；净盈亏比 ≥ 2.0。\n"
       "2. 只有回踩已经在收盘 K 线上确认、触发完成度 ≥94% 且盘口成本合格时才可市价；止损放在结构外并由固定风控复核。\n"
       "3. 【新闻背景】：中性新闻正常交易，无相反重大突发新闻即可执行。",
-      "decision_process": "检查 1h 方向、15m 结构、量能与新闻否决；不得在方向冲突时开单；在最近可成交关键位设置限价，精算成本后盈亏比并输出标准 JSON。"}},
+      "decision_process": "检查 1h 方向、已收盘 15m 回踩、量能与新闻风险；顺势结构和失效位明确时，在可成交关键位预埋被动限价，只有回踩已确认且盘口合格才考虑市价。用真实 ATR、费用和止损距离核算净盈亏比及仓位；不得虚构缺失证据，缺少任一关键证据时 WAIT 并说明缺口，输出标准 JSON。"}},
     {"id": "conservative_defense", "name": "多维防守 · 15m 保守", "style": "CONSERVATIVE", "scan_interval_minutes": 15, "order_preference": "AUTO",
      "execution_defaults": {"universe_mode": "ALL", "symbols": [], "risk_per_trade_pct": 0.10, "leverage": 100, "max_positions": 2, "max_margin_pct": 10.0, "max_notional_usdt": 1000.0, "min_confidence": 70, "min_net_rr": 2.2, "cooldown_minutes": 75, "order_preference": "AUTO", "scan_interval_minutes": 15, "atr_adaptive_sizing": True, "consecutive_loss_lock_enabled": True, "us_open_defense_enabled": False},
      "profile": _profile(strategy_id="conservative_defense", family="VWAP_FUNDING_MEAN_REVERSION", candidate_strategy_ids=["session_vwap", "funding_extreme", "liquidity_sweep"], signal_timeframe="15m", context_timeframes=["1h"], required_confirmations=3, minimum_signal_score=4, volume_ratio_min=1.00, atr_stop_multiple=2.50, major_stop_floor_pct=2.20, alt_stop_floor_pct=3.50, minimum_net_rr=2.2, target_r_multiples=[2.2, 3.5], order_preference="AUTO", limit_priority=True, limit_ttl_seconds=1200, max_limit_distance_pct=0.75, allow_market_entry=True, market_min_trigger_completion=70, allow_future_limit=True, max_entries_per_hour=1, cooldown_minutes=75, news_mode="REVERSE_NEWS_VETO"),
@@ -76,8 +68,28 @@ TEMPLATES = [
       "1. 1h、15m、资金费率/OI 至少三项共振，在距现价 0.75% 内的 VWAP/结构位预埋限价单，净盈亏比 ≥ 2.2。\n"
       "2. 市价用于触发完成度 ≥70%、收盘确认且盘口成本合格的即时反转；止损必须位于结构失效点外。\n"
       "3. 【新闻背景】：无重大反向利空利好，中性新闻为常规环境。",
-      "decision_process": "核查资金费率、OI、VWAP 偏离、1h 方向与新闻否决；不得在少于三项共振时开单；优先挂限价并输出可审计 JSON。"}},
+      "decision_process": "核查已核验的资金费率、OI、VWAP、已收盘 15m 结构、1h 背景与新闻风险；缺失的衍生品数据标 UNKNOWN，不得当作共振。三项可核验证据、结构失效位及净盈亏比均成立时优先挂被动限价；否则 WAIT 并列明缺口，输出可审计 JSON。"}},
 ]
+
+# One common decision/execution route, four distinct market hypotheses.  The
+# older percentage-score, compulsory ATR/RR and market-entry prose conflicted
+# with the model-led Gate route.  Keep the cadence and equity/margin settings
+# while replacing only that obsolete instruction text.
+_NOFX_STYLE_BRIEFS = {
+    "aggressive_impulse": "5m 动量与扫荡反转：寻找已收盘突破、放量延续或假突破回收。15m/1h 只作背景；有一类清晰结构即可提出交易。",
+    "aggressive_breakout": "15m 波动扩张：关注突破、首次回测及结构延续，并结合 1h 背景判断是否追价。",
+    "conservative_pullback": "15m 顺势回踩：先确定 1h 方向，再观察关键位、均线或 VWAP 回踩是否有合理入场空间。",
+    "conservative_defense": "15m 防守反转：比较价格、VWAP、资金费率及 OI；缺失的衍生品数据保持未知，不能当确认信号。",
+}
+for _template_item in TEMPLATES:
+    _brief = _NOFX_STYLE_BRIEFS[_template_item["id"]]
+    _template_item["sections"] = {
+        "role": "你是 Gate TestNet 的自主合约交易员；从真实行情、已有持仓与新闻中选一笔最有依据的机会。",
+        "frequency": f"每 {_template_item['scan_interval_minutes']} 分钟扫描一次；先管理已有持仓，再比较允许标的。",
+        "entry_standards": _brief,
+        "decision_process": "自主给出 LONG、SHORT 或 WAIT。开仓时明确限价或市价、USDT 名义金额、杠杆、入场、结构止损和目标；限价优先，已确认且需即时入场时可用市价。账户持仓、交易所精度和策略保证金上限由程序复核。",
+        "custom_prompt": "不要把某个固定指标或置信分数当作唯一开仓门槛。以可核验的 K 线和资金流证据做决定，新闻缺失不自动否决技术机会；证据不足则说明具体缺口。",
+    }
 
 
 class AIStrategyBook:
@@ -387,6 +399,10 @@ class AIStrategyBook:
             revision = db.execute("SELECT COALESCE(MAX(revision),0) FROM ai_strategy_instructions WHERE account_id=?", (account_id,)).fetchone()[0]
             if revision != expected_revision:
                 raise ValueError("STRATEGY_REVISION_CONFLICT")
+            # Decision records already snapshot the strategy used for each
+            # cycle.  The strategy library itself keeps only the latest
+            # executable instruction set, as requested by the operator.
+            db.execute("DELETE FROM ai_strategy_instructions WHERE account_id=?", (account_id,))
             db.execute(
                 """INSERT INTO ai_strategy_instructions(
                     account_id, revision, name, sections_json, updated_at,
@@ -408,4 +424,9 @@ class AIStrategyBook:
         return self.active(account_id)
 
     def view(self, account_id: str) -> dict:
-        return {"active": self.active(account_id), "templates": TEMPLATES, "fixed_policy": dict(POLICY)}
+        active = self.active(account_id)
+        policy = (
+            {**NOFX_GATE_POLICY, "max_margin_pct": active["execution"]["max_margin_pct"]}
+            if str(account_id).lower() == "gate_testnet" else dict(POLICY)
+        )
+        return {"active": active, "templates": TEMPLATES, "fixed_policy": policy}

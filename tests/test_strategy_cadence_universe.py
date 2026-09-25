@@ -9,10 +9,14 @@ from core.trading.strategy_execution import normalize_execution
 from core.trading.strategy_schedule import StrategySchedule, aligned_at
 from core.trading.market_universe import MarketUniverse
 from core.trading.autonomous_strategy import strategy_frames
-from core.trading.ai_session_coordinator import AISessionCoordinator
+from core.trading.ai_session_coordinator import AISessionCoordinator, _deep_scan_symbol_limit
 from core.trading.candidate_scanner import CandidateScanner
 from core.trading.institutional_schema import ensure_institutional_trader_schema
 from core.trading.execution_gateway import TradingMode
+
+
+def test_deep_scan_breadth_stays_bounded_after_repeated_waits():
+    assert [_deep_scan_symbol_limit(count) for count in (0, 5, 6, 11, 12, 50)] == [2, 2, 3, 3, 3, 3]
 
 
 def test_four_templates_have_two_aggressive_two_defensive_and_one_five_minute():
@@ -23,7 +27,8 @@ def test_four_templates_have_two_aggressive_two_defensive_and_one_five_minute():
     decision_text = " ".join(t['sections']['decision_process'] for t in TEMPLATES)
     assert '75~85' not in decision_text
     assert '75~82' not in decision_text
-    assert all('不得' in t['sections']['decision_process'] for t in TEMPLATES)
+    assert all('名义金额' in t['sections']['decision_process'] for t in TEMPLATES)
+    assert all('限价' in t['sections']['decision_process'] for t in TEMPLATES)
     assert strategy_frames(5) == (('5m',5),('15m',15),('1h',60))
 
 
@@ -103,6 +108,12 @@ def test_active_strategy_profile_is_the_prompt_and_scanner_contract(tmp_path):
     prompt = build_strategy_system_prompt(active)
     assert '当前策略：闪电动量 · 5m 激进' in prompt
     assert 'signal_timeframe":"5m"' in prompt
+    compact_prompt = build_strategy_system_prompt(active, context_length=8192)
+    assert active['sections']['entry_standards'] in compact_prompt
+    assert active['sections']['custom_prompt'] in compact_prompt
+    assert 'LIMIT' in compact_prompt
+    assert '不要把某个固定指标或置信分数当作唯一开仓门槛' in compact_prompt
+    assert '不得擅自增加大周期同向门槛' in compact_prompt
 
 
 def test_five_minute_profile_drives_ai_technical_context(monkeypatch):
@@ -514,6 +525,113 @@ def test_dynamic_universe_rotates_without_fixed_symbol_allowlist():
     assert selected['selected_symbols'] == ['NEW8USDT','NEW12USDT']
 
 
+def test_gate_contract_fee_reaches_testnet_ai_snapshot_without_a_default(tmp_path):
+    store = SQLiteStore(tmp_path / 'fee-bridge.db'); store.initialize()
+    now = datetime(2026, 9, 24, 15, 20, tzinfo=timezone.utc)
+    store.save_realtime_state({
+        'symbol': 'BTCUSDT', 'provider': 'gate_testnet', 'price': 84300,
+        'data_as_of': now.isoformat(), 'freshness_status': 'fresh',
+        'market_data_environment': 'TESTNET_PUBLIC', 'slippage': 0.0004,
+    }, now=now)
+
+    class Provider:
+        def list_active_usdt_contracts(self, _limit):
+            return [{'symbol': 'BTCUSDT', 'taker_fee_rate': '0.00075',
+                     'source': 'gate_native_rest_contracts'}]
+
+        def list_contract_tickers(self):
+            return [{'contract': 'BTC_USDT', 'last': '84300',
+                     'volume_24h_quote': '1000000'}]
+
+    universe = MarketUniverse(lambda _testnet: Provider()).select(
+        normalize_execution({'symbols': [], 'universe_mode': 'ALL'}),
+        testnet=True, scheduled_at=now, limit=1,
+    )
+    coordinator = _coordinator_for_symbols(store)
+    snapshots = coordinator._market_snapshots(
+        ('BTCUSDT',), now=now, timeframe='5m', universe_snapshot=universe,
+    )
+    assert universe['candidate_metrics'][0]['taker_fee_rate'] == 0.00075
+    assert snapshots['BTCUSDT']['fee_rate'] == 0.00075
+    assert snapshots['BTCUSDT']['fee_rate_source'] == 'gate_native_rest_contracts'
+
+    missing = {**universe, 'candidate_metrics': [{
+        **universe['candidate_metrics'][0], 'taker_fee_rate': None,
+    }]}
+    snapshots_without_fee = coordinator._market_snapshots(
+        ('BTCUSDT',), now=now, timeframe='5m', universe_snapshot=missing,
+    )
+    assert snapshots_without_fee['BTCUSDT'].get('fee_rate') is None
+
+
+def test_ai_input_refresh_uses_one_account_environment_provider(monkeypatch):
+    import core.strategy_monitoring as monitoring_module
+    import core.news_refresh as news_module
+
+    providers = []
+    calls = []
+
+    class Provider:
+        def __init__(self, *, testnet):
+            self.testnet = testnet
+            self.environment = 'TESTNET_PUBLIC' if testnet else 'LIVE_PUBLIC'
+            providers.append(self)
+
+    service = object.__new__(monitoring_module.StrategyMonitoringService)
+    service.store = object()
+    service.gate = object()
+    service.run = lambda **kwargs: calls.append(('run', kwargs['gate_provider']))
+    service.refresh_derivatives = lambda _symbols, **kwargs: calls.append(('derivatives', kwargs['gate_provider']))
+    service.refresh_execution_quotes = lambda _symbols, **kwargs: calls.append(('quotes', kwargs['gate_provider']))
+    monkeypatch.setattr(monitoring_module, 'GatePublicProvider', Provider)
+    monkeypatch.setattr(news_module, 'refresh_public_news', lambda *_args, **_kwargs: None)
+
+    service.refresh_ai_inputs(('BTCUSDT',), scan_interval_minutes=5, testnet=True)
+    assert len(providers) == 1
+    assert providers[0].environment == 'TESTNET_PUBLIC'
+    assert [name for name, _provider in calls] == ['run', 'derivatives', 'quotes']
+    assert all(provider is providers[0] for _name, provider in calls)
+    assert service.gate is not providers[0]
+
+
+def test_testnet_ai_snapshot_reloads_if_background_live_quote_overwrites_it(tmp_path, monkeypatch):
+    import core.providers.gateio_provider as gate_module
+
+    store = SQLiteStore(tmp_path / 'cross-environment.db'); store.initialize()
+    now = datetime(2026, 9, 24, 15, 45, tzinfo=timezone.utc)
+    store.save_realtime_state({
+        'symbol': 'BTCUSDT', 'provider': 'gate_public_swap', 'price': 90,
+        'data_as_of': now.isoformat(), 'freshness_status': 'fresh',
+        'market_data_environment': 'LIVE_PUBLIC', 'slippage': 0.001,
+    }, now=now)
+
+    class TestNetProvider:
+        def __init__(self, *, testnet):
+            assert testnet is True
+
+        def market(self, _symbol):
+            return {'id': 'BTC_USDT', 'contractSize': 0.0001,
+                    'precision': {'amount': 1, 'price': 0.1},
+                    'taker': 0.00075}
+
+        def _native_ticker(self, _symbol):
+            return {'last': '100'}
+
+        def order_book(self, _symbol, *, limit):
+            assert limit == 20
+            return {'bids': [{'p': '99.9', 's': '100'}],
+                    'asks': [{'p': '100.1', 's': '100'}], 'source': 'gate_testnet_book'}
+
+    monkeypatch.setattr(gate_module, 'GatePublicProvider', TestNetProvider)
+    coordinator = _coordinator_for_symbols(store)
+    coordinator.clock = lambda: now + timedelta(seconds=30)
+    snapshot = coordinator._market_snapshots(('BTCUSDT',), now=now)['BTCUSDT']
+    assert snapshot['price'] == 100
+    assert snapshot['market_data_environment'] == 'TESTNET_PUBLIC'
+    assert snapshot['slippage'] == pytest.approx(0.001)
+    assert snapshot['source'] == 'gate_testnet_native_rest_ticker'
+
+
 def test_universe_includes_both_momentum_directions_before_rotation():
     symbols = ['BTCUSDT', 'UPUSDT', 'DOWNUSDT', 'WIDEUSDT', 'OTHERUSDT']
     class Provider:
@@ -532,6 +650,31 @@ def test_universe_includes_both_momentum_directions_before_rotation():
     )
     assert result['selected_symbols'][0] == 'BTCUSDT'
     assert {'UPUSDT', 'DOWNUSDT', 'WIDEUSDT'}.issubset(result['selected_symbols'])
+
+
+def test_thin_extreme_mover_cannot_occupy_the_factor_slot_each_cycle():
+    symbols = ['BTCUSDT'] + [f'LIQ{i}USDT' for i in range(25)] + ['THINUSDT']
+
+    class Provider:
+        def list_active_usdt_contracts(self, _limit):
+            return [{'symbol': symbol} for symbol in symbols]
+
+        def list_contract_tickers(self):
+            return [
+                {'contract': symbol[:-4] + '_USDT', 'last': '1',
+                 'volume_24h_quote': str(100000 - i * 1000),
+                 'change_percentage': '900' if symbol == 'THINUSDT' else str(i % 5),
+                 'high_24h': '1.1', 'low_24h': '0.9'}
+                for i, symbol in enumerate(symbols)
+            ]
+
+    universe = MarketUniverse(lambda _testnet: Provider())
+    config = normalize_execution({'symbols': [], 'universe_mode': 'ALL', 'scan_interval_minutes': 5})
+    point = datetime(2026, 9, 13, 8, tzinfo=timezone.utc)
+    selections = [universe.select(config, testnet=True, scheduled_at=point + timedelta(minutes=5*i))
+                  for i in range(30)]
+    assert all(row['selected_symbols'][1] != 'THINUSDT' for row in selections)
+    assert any('THINUSDT' in row['selected_symbols'] for row in selections)
 
 
 def _coordinator_for_symbols(store):
@@ -570,7 +713,7 @@ def test_allowed_symbols_is_authorization_scoped_and_falls_back_to_majors(tmp_pa
 
     # 4) 上限始终是 MAX_CYCLE_SYMBOLS
     from core.trading.ai_session_coordinator import MAX_CYCLE_SYMBOLS
-    wide = SimpleNamespace(allowed_instruments=['AUSDT', 'BUSDT', 'CUSDT', 'DUSDT', 'EUSDT', 'FUSDT'])
+    wide = SimpleNamespace(allowed_instruments=['AUSDT', 'BUSDT', 'CUSDT', 'DUSDT', 'EUSDT', 'FUSDT', 'GUSDT', 'HUSDT', 'IUSDT'])
     assert len(coordinator._allowed_symbols(wide)) == MAX_CYCLE_SYMBOLS
 
 

@@ -49,6 +49,7 @@ GATE_LIVE_ACCOUNT_ID = "gate_live"
 # second local PAPER account.
 GATE_PAPER_API_BASE_URL = "https://api-testnet.gateapi.io/api/v4"
 GATE_LIVE_API_BASE_URL = "https://api.gateio.ws/api/v4"
+GATE_LEGACY_FUTURES_LIVE_API_BASE_URL = "https://fx-api.gateio.ws/api/v4"
 GATE_PROFILE_VERSION = "gate-account-v1"
 GATE_TESTNET_ACCOUNT_TYPE = "GATE_TESTNET"
 GATE_LIVE_ACCOUNT_TYPE = "GATE_LIVE"
@@ -232,6 +233,12 @@ def get_gate_account_profile(store, account_id: str) -> Dict[str, Any]:
         ):
             if key not in config or (key == "execution_adapter" and config.get(key) == "LOCAL_PAPER_SIMULATOR"):
                 config[key] = defaults[key]
+        # An older managed LIVE profile may contain Gate's futures-only live
+        # alternative. CCXT owns a nested route map for its canonical live
+        # host; route this one known legacy alias through that map. Arbitrary
+        # custom hosts still reach the adapter's fail-closed check unchanged.
+        if mode == "LIVE" and str(config.get("gate_api_base_url") or "").rstrip("/") == GATE_LEGACY_FUTURES_LIVE_API_BASE_URL:
+            config["gate_api_base_url"] = GATE_LIVE_API_BASE_URL
         # Previous builds persisted a release lock in existing LIVE profile
         # rows.  Treat those markers as stale profile metadata so a user does
         # not need to delete/recreate a correctly scoped credential to use

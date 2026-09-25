@@ -753,6 +753,137 @@ class AccountLedger:
                     pass
                 self._conn = None
 
+    def reserve_margin_only(
+        self,
+        account_id: str,
+        reservation_id: str,
+        amount_margin: Decimal,
+        *,
+        max_margin_pct: Decimal,
+        margin_cap_mode: str = "PERCENT",
+        max_margin_usdt: Decimal | None = None,
+        instrument_id: str,
+        expires_at: datetime,
+        now: Optional[datetime] = None,
+    ) -> bool:
+        """Atomically reserve only the active Gate TestNet strategy's margin cap.
+
+        The caller's percentage is never trusted: this transaction loads the
+        currently active strategy again, alongside fresh private Gate equity.
+        Standard loss-based reservations remain unchanged.
+        """
+        now = now or datetime.now(timezone.utc)
+        now = now.replace(tzinfo=timezone.utc) if now.tzinfo is None else now.astimezone(timezone.utc)
+        account_id = self._canonical_account_id(account_id)
+        margin = Decimal(str(amount_margin))
+        requested_pct = Decimal(str(max_margin_pct))
+        requested_mode = str(margin_cap_mode).upper()
+        requested_fixed = Decimal(str(max_margin_usdt)) if max_margin_usdt is not None else None
+        if (not margin.is_finite() or margin <= 0 or not requested_pct.is_finite()
+                or requested_mode not in {"PERCENT", "FIXED_USDT"}
+                or (requested_mode == "PERCENT" and requested_pct <= 0)
+                or (requested_mode == "FIXED_USDT" and (requested_fixed is None or not requested_fixed.is_finite() or requested_fixed <= 0))):
+            return False
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                account = conn.execute("SELECT config_json FROM accounts WHERE account_id=?", (account_id,)).fetchone()
+                if account is None:
+                    conn.rollback()
+                    return False
+                try:
+                    config = json.loads(account["config_json"] or "{}")
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    config = {}
+                account_type = str(config.get("account_type") or "").upper()
+                account_mode = "TESTNET" if account_type == "GATE_TESTNET" else "LIVE" if account_type == "GATE_LIVE" else ""
+                if not account_mode or not self._remote_truth_ready(conn, account_id, now):
+                    conn.rollback()
+                    return False
+                strategy_row = conn.execute(
+                    "SELECT execution_json FROM ai_strategy_instructions WHERE account_id=? ORDER BY revision DESC LIMIT 1",
+                    (account_id,),
+                ).fetchone()
+                if strategy_row is None:
+                    conn.rollback()
+                    return False
+                try:
+                    strategy = json.loads(strategy_row["execution_json"] or "{}")
+                    active_pct = Decimal(str(strategy["max_margin_pct"]))
+                    active_mode = str(strategy.get("margin_cap_mode") or "PERCENT").upper()
+                    active_fixed = Decimal(str(strategy.get("max_margin_usdt"))) if active_mode == "FIXED_USDT" else None
+                except (KeyError, TypeError, ValueError, InvalidOperation, json.JSONDecodeError):
+                    conn.rollback()
+                    return False
+                if (active_pct != requested_pct or active_mode != requested_mode
+                        or (active_mode == "PERCENT" and not Decimal("0") < active_pct <= Decimal("80"))
+                        or (active_mode == "FIXED_USDT" and (active_fixed is None or active_fixed != requested_fixed or active_fixed <= 0))):
+                    conn.rollback()
+                    return False
+                remote = conn.execute(
+                    """SELECT status,equity,available_margin,used_margin,balance_json,pending_orders_json
+                       FROM gate_remote_account_snapshots
+                       WHERE account_id=? ORDER BY observed_at DESC,created_at DESC,snapshot_id DESC LIMIT 1""",
+                    (account_id,),
+                ).fetchone()
+                if remote is None or str(remote["status"] or "").upper() != "AVAILABLE":
+                    conn.rollback()
+                    return False
+                try:
+                    remote_balance = json.loads(remote["balance_json"] or "{}")
+                    remote_pending_orders = json.loads(remote["pending_orders_json"] or "[]")
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    conn.rollback()
+                    return False
+                if not isinstance(remote_balance, dict) or not isinstance(remote_pending_orders, list):
+                    conn.rollback()
+                    return False
+                order_margin = _decimal_or_none(remote_balance.get("order_margin"))
+                has_entry_order = any(
+                    isinstance(order, dict) and not bool(order.get("reduce_only"))
+                    for order in remote_pending_orders
+                )
+                if has_entry_order and (order_margin is None or order_margin <= 0):
+                    conn.rollback()
+                    return False
+                equity = _decimal_or_none(remote["equity"])
+                available = _decimal_or_none(remote["available_margin"])
+                used = _decimal_or_none(remote["used_margin"])
+                if equity is None or available is None or used is None or equity <= 0 or available < 0 or used < 0:
+                    conn.rollback()
+                    return False
+                existing = conn.execute(
+                    "SELECT account_id,amount_margin,status FROM risk_reservations WHERE reservation_id=?",
+                    (reservation_id,),
+                ).fetchone()
+                if existing is not None:
+                    conn.commit()
+                    return bool(existing["account_id"] == account_id and existing["status"] == "PENDING" and Decimal(str(existing["amount_margin"])) == margin)
+                conn.execute("UPDATE risk_reservations SET status='EXPIRED' WHERE status='PENDING' AND expires_at < ?", (now.isoformat(),))
+                reserved = conn.execute(
+                    "SELECT COALESCE(SUM(CAST(amount_margin AS REAL)),0) FROM risk_reservations WHERE account_id=? AND status='PENDING'",
+                    (account_id,),
+                ).fetchone()
+                pending = Decimal(str(reserved[0] or 0))
+                observed_used = max(used, equity - available, Decimal("0"))
+                cap_amount = active_fixed if active_mode == "FIXED_USDT" else equity * active_pct / Decimal("100")
+                remaining = min(available - pending, cap_amount - observed_used - pending)
+                if margin > remaining:
+                    conn.rollback()
+                    return False
+                conn.execute(
+                    """INSERT INTO risk_reservations
+                       (reservation_id,account_id,amount_risk,amount_margin,status,expires_at,created_at,instrument_id,venue,mode)
+                       VALUES (?,?,'0',?,'PENDING',?,?,?,'gate',?)""",
+                    (reservation_id, account_id, str(margin), expires_at.isoformat(), now.isoformat(), instrument_id, account_mode),
+                )
+                conn.commit()
+                return True
+            except Exception:
+                conn.rollback()
+                raise
+
     def reserve_risk(
         self,
         account_id: str,
@@ -844,7 +975,7 @@ class AccountLedger:
                     account_config = json.loads(acct[2] or "{}")
                 except (TypeError, ValueError, json.JSONDecodeError):
                     account_config = {}
-                is_gate_testnet = str(account_config.get("account_type") or "").upper() == "GATE_TESTNET"
+                is_gate_testnet = str(account_config.get("account_type") or "").upper() in {"GATE_TESTNET", "GATE_LIVE"}
                 expected_venue = str(
                     (scope or {}).get("venue")
                     or account_config.get("venue")
@@ -856,7 +987,7 @@ class AccountLedger:
                 # snapshot has been persisted.  Reduce-only recovery does
                 # not call this method and therefore remains available when
                 # the private endpoint is degraded.
-                if str(account_config.get("account_type") or "").upper() == "GATE_TESTNET":
+                if is_gate_testnet:
                     if not self._remote_truth_ready(conn, account_id, now):
                         conn.rollback()
                         return False
@@ -928,7 +1059,7 @@ class AccountLedger:
                     )
                     placeholders = ",".join("?" for _ in active_statuses)
                     order_rows = conn.execute(
-                        f"SELECT intent_id, account_id, mode, venue, status, expires_at FROM order_intents WHERE account_id=? AND status IN ({placeholders})",
+                        f"SELECT intent_id, account_id, mode, venue, status, expires_at, execution_result_json FROM order_intents WHERE account_id=? AND status IN ({placeholders})",
                         (account_id, *active_statuses),
                     ).fetchall()
                     stale_intent_ids: list[str] = []
@@ -941,6 +1072,21 @@ class AccountLedger:
                             conn.rollback()
                             return False
                         order_status = str(order_row["status"] or "").strip().upper()
+                        if is_gate_testnet and order_status == "UNKNOWN":
+                            try:
+                                receipt = json.loads(order_row["execution_result_json"] or "{}")
+                            except (TypeError, ValueError, json.JSONDecodeError):
+                                receipt = {}
+                            if isinstance(receipt, dict) and receipt.get("risk_exposure_cleared") is True:
+                                # This exemption is valid only while the
+                                # latest complete private snapshot still
+                                # shows no positions or pending orders.
+                                truth_row = conn.execute(
+                                    "SELECT positions_json, pending_orders_json FROM gate_remote_account_snapshots WHERE account_id=? ORDER BY observed_at DESC, created_at DESC, snapshot_id DESC LIMIT 1",
+                                    (account_id,),
+                                ).fetchone()
+                                if truth_row and truth_row["positions_json"] == "[]" and truth_row["pending_orders_json"] == "[]":
+                                    continue
                         # Terminal-but-unreconciled states stay blocking: their
                         # true exposure is genuinely unknown, so a TTL must
                         # never be treated as proof that they are harmless.
@@ -1013,7 +1159,7 @@ class AccountLedger:
                         funding += amount
                 wallet = initial + realized - fees + funding
                 remote_available_margin: Optional[Decimal] = None
-                if str(account_config.get("account_type") or "").upper() == "GATE_TESTNET":
+                if is_gate_testnet:
                     # ``_remote_truth_ready`` above only checks freshness and
                     # presence.  Re-read the same append-only fact inside the
                     # transaction so the atomic reservation uses Gate's
@@ -1336,7 +1482,7 @@ class AccountLedger:
             ).fetchall()
             reserved_risk = sum((Decimal(r[0]) for r in res_rows), Decimal("0"))
 
-            is_gate_testnet = str(account_config.get("account_type") or "").upper() == "GATE_TESTNET"
+            is_gate_testnet = str(account_config.get("account_type") or "").upper() in {"GATE_TESTNET", "GATE_LIVE"}
             if open_positions is None and not is_gate_testnet:
                 has_sim_table = conn.execute(
                     "SELECT 1 FROM sqlite_master WHERE type='table' AND name='simulated_positions'"
@@ -1434,7 +1580,7 @@ class AccountLedger:
             remote_truth_status = "NOT_AVAILABLE"
             remote_observed_at: Optional[str] = None
             remote_snapshot_id: Optional[str] = None
-            if str((scope or {}).get("account_type") or "").upper() == "GATE_TESTNET":
+            if str((scope or {}).get("account_type") or "").upper() in {"GATE_TESTNET", "GATE_LIVE"}:
                 try:
                     remote_row = conn.execute(
                         """SELECT snapshot_id, observed_at, status, equity,
@@ -1472,12 +1618,12 @@ class AccountLedger:
                                 realized_pnl = remote_realized
                             if remote_used is not None:
                                 allocated_margin = remote_used
-                            source = "GATE_TESTNET_REMOTE"
+                            source = "GATE_TESTNET_REMOTE" if str((scope or {}).get("account_type") or "").upper() == "GATE_TESTNET" else "GATE_LIVE_REMOTE"
                         else:
                             remote_truth_status = "DEGRADED"
-                            source = "GATE_TESTNET_REMOTE_DEGRADED"
+                            source = "GATE_TESTNET_REMOTE_DEGRADED" if str((scope or {}).get("account_type") or "").upper() == "GATE_TESTNET" else "GATE_LIVE_REMOTE_DEGRADED"
                     else:
-                        source = "GATE_TESTNET_REMOTE_UNAVAILABLE"
+                        source = "GATE_TESTNET_REMOTE_UNAVAILABLE" if str((scope or {}).get("account_type") or "").upper() == "GATE_TESTNET" else "GATE_LIVE_REMOTE_UNAVAILABLE"
 
             trading_day = self._get_trading_day(now, tz_name)
             dl_row = conn.execute(
@@ -1535,7 +1681,7 @@ class AccountLedger:
         if self._store is not None:
             scope = resolve_account_scope(self._store, account_id)
             if scope is not None:
-                if str(scope.get("account_type") or "").upper() == "GATE_TESTNET":
+                if str(scope.get("account_type") or "").upper() in {"GATE_TESTNET", "GATE_LIVE"}:
                     # The exchange private API, not the compatibility table,
                     # owns Gate TestNet positions.  Keep old rows intact for
                     # audit/recovery inspection without exposing them as live
@@ -1750,7 +1896,7 @@ class AccountLedger:
                 if expected_mode != mode_clean:
                     raise ValueError("ACCOUNT_MODE_MISMATCH")
                 exit_request = bool(reduce_only or side_clean == "CLOSE")
-                remote_only = account_type == "GATE_TESTNET" and mode_clean == "TESTNET" and venue_clean == "gate"
+                remote_only = account_type in {"GATE_TESTNET", "GATE_LIVE"} and mode_clean in {"TESTNET", "LIVE"} and venue_clean == "gate"
                 if qty_dec <= 0 or price_dec <= 0 or contract_dec <= 0 or leverage_dec <= 0:
                     raise ValueError("INVALID_FILL_PARAMETERS")
 

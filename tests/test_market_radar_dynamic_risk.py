@@ -39,6 +39,20 @@ def test_market_radar_projects_only_persisted_gate_and_webhook_events(tmp_path):
     assert all(item["value"] is None for item in result["cross_market"]["items"])
 
 
+def test_market_radar_connects_public_cross_market_references(tmp_path, monkeypatch):
+    store = SQLiteStore(tmp_path / "radar-cross-market.sqlite3")
+    store.initialize()
+    monkeypatch.setattr(radar_module, "_binance_derivatives", lambda *_args, **_kwargs: ([], {}))
+    monkeypatch.setattr(radar_module, "fetch_cross_market", lambda **_kwargs: {
+        "status": "PARTIAL", "source": "Yahoo Finance + CoinGecko Global",
+        "items": [{"symbol": "DXY", "value": 101.2, "status": "DELAYED", "as_of": "2026-09-25T07:00:00+00:00"}],
+        "synthetic": False,
+    })
+    result = build_market_radar(store, symbols=["BTCUSDT"], include_external=True)
+    assert result["cross_market"]["items"][0]["value"] == 101.2
+    assert result["cross_market"]["status"] == "PARTIAL"
+
+
 def _gate_bar(start, *, minutes=15, close=100.0, volume=10.0, source="gate_native_rest:last", **overrides):
     end = start + timedelta(minutes=minutes)
     values = {

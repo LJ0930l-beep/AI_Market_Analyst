@@ -62,8 +62,10 @@ interface SessionRecord {
 
 interface SessionStatusResponse {
   session?: SessionRecord | null;
-  ai_session?: { state?: string; session_state?: string; enabled?: boolean; worker_alive?: boolean; last_reason?: string; last_error?: string; max_symbols?: number; schedule?: { interval_minutes?: number; strategy_id?: string; strategy_name?: string; strategy_revision?: number; alignment?: string; next_scan_at?: string; last_started_at?: string; last_completed_at?: string }; dynamic_risk?: { status?: string; entry_allowed?: boolean; reasons?: string[]; blocked_until?: string | null; atr_adaptive_sizing?: { enabled?: boolean; status?: string } } };
-  protection_summary?: { active_positions?: number | null };
+  runtime_account_id?: string | null;
+  runtime_state?: string | null;
+  ai_session?: { state?: string; session_state?: string; enabled?: boolean; worker_alive?: boolean; account_id?: string; last_reason?: string; last_error?: string; max_symbols?: number; schedule?: { interval_minutes?: number; strategy_id?: string; strategy_name?: string; strategy_revision?: number; alignment?: string; next_scan_at?: string; last_started_at?: string; last_completed_at?: string }; dynamic_risk?: { status?: string; entry_allowed?: boolean; reasons?: string[]; blocked_until?: string | null; atr_adaptive_sizing?: { enabled?: boolean; status?: string } } };
+  protection_summary?: { active_positions?: number | null; protected_positions?: number | null };
 }
 
 interface GateRemoteAccount {
@@ -168,14 +170,17 @@ function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
-function decisionMetric(cycle: AIDecisionCycle | null, key: 'confidence' | 'trigger_completion_pct'): number | null {
+function decisionMetric(cycle: AIDecisionCycle | null, key: 'confidence' | 'trigger_completion_pct' | 'market_readiness'): number | null {
   const payload = record(cycle?.payload);
   const modelOutput = record(payload.model_output);
   const extra = record(modelOutput.extra_fields);
   const strategyAnalysis = record(extra.strategy_analysis || payload.strategy_analysis);
   const raw = key === 'confidence'
     ? (extra.confidence ?? payload.confidence)
-    : (strategyAnalysis.trigger_completion_pct ?? strategyAnalysis.market_readiness ?? payload.market_readiness);
+    : key === 'market_readiness'
+      ? (strategyAnalysis.market_readiness ?? extra.market_readiness ?? payload.market_readiness)
+      : strategyAnalysis.trigger_completion_pct;
+  if (raw == null) return null;
   const numeric = Number(raw);
   return Number.isFinite(numeric) ? Math.max(0, Math.min(100, numeric)) : null;
 }
@@ -237,6 +242,8 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
   const [modelHealthChecked, setModelHealthChecked] = useState(false);
   const [, setModelHealthFreshnessTick] = useState(0);
   const [accountError, setAccountError] = useState('');
+  const [boundAccount, setBoundAccount] = useState('');
+  const [boundSessionState, setBoundSessionState] = useState('');
   const pollBusy = useRef(false);
 
   const [collapsed, setCollapsed] = useState(false);
@@ -329,6 +336,7 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
     const accountId = selectedAccount.trim();
     if (!accountId) {
       setSessionState('UNSCOPED');
+      setBoundAccount('');
       setGeneration(0);
       setProtectionCount(null);
       setTradePlans([]);
@@ -341,12 +349,33 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
     await Promise.allSettled([
       apiClient.v2<SessionStatusResponse>(`/ai-session/status?account_id=${encodeURIComponent(accountId)}`).then(status => {
         if (!valid()) return;
+        setBoundAccount('');
+        setBoundSessionState('');
         const isPaused = status.session?.state === 'PAUSED' || status.ai_session?.state === 'PAUSED' || status.ai_session?.session_state === 'PAUSED';
         setSessionState(isPaused ? 'PAUSED' : (status.ai_session ? (status.ai_session.enabled && status.ai_session.worker_alive ? 'RUNNING' : status.ai_session.state || 'STOPPED') : status.session?.state || 'NOT_REPORTED'));
         setRuntimeDetail(status.ai_session);
         setGeneration(Number(status.session?.generation) || 0);
-        setProtectionCount(status.protection_summary?.active_positions ?? null);
-      }).catch(error => { if (valid()) { setSessionState('UNAVAILABLE'); setDiagMessage(errorMessage(error, '状态读取失败')); } }),
+        setProtectionCount(status.protection_summary?.protected_positions ?? status.protection_summary?.active_positions ?? null);
+      }).catch(async error => {
+        if (!valid()) return;
+        if (error instanceof ApiError && error.status === 409) {
+          try {
+            const active = await apiClient.v2<SessionStatusResponse>('/ai-session/status');
+            if (!valid()) return;
+            const owner = String(active.runtime_account_id || active.ai_session?.account_id || '');
+            if (owner && owner !== accountId) {
+              setBoundAccount(owner);
+              setBoundSessionState(String(active.runtime_state || active.ai_session?.state || active.session?.state || 'UNKNOWN').toUpperCase());
+              setSessionState('ACCOUNT_MISMATCH');
+              setDiagMessage(null);
+              setRuntimeDetail(undefined);
+              setGeneration(0);
+              return;
+            }
+          } catch { /* Keep the original scoped error visible below. */ }
+        }
+        if (valid()) { setSessionState('UNAVAILABLE'); setDiagMessage(errorMessage(error, '状态读取失败')); }
+      }),
       apiClient.v2<{ plans?: TradePlanRecord[] }>(`/trade-plans?account_id=${encodeURIComponent(accountId)}&limit=20`).then(data => {
         if (valid()) { setTradePlans(data.plans || []); setTradePlansState(data.plans?.length ? 'DURABLE' : 'NO_DURABLE_PLANS'); }
       }).catch(() => { if (valid()) { setTradePlans([]); setTradePlansState('UNAVAILABLE'); } }),
@@ -364,6 +393,7 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
     let timer: ReturnType<typeof setTimeout>;
     requestSequence.current += 1;
     setLatestCycle(null); setCycles([]); setGateRemoteAccount(null); setAccountError(''); setRuntimeDetail(undefined);
+    setBoundAccount(''); setBoundSessionState('');
     setSessionState('NOT_CHECKED');
     const poll = async () => {
       // Private reads can take longer than five seconds. Never overlap polls.
@@ -435,7 +465,10 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
   const remoteIsAvailable = remoteStatus === 'AVAILABLE';
   const latestAction = String(latestCycle?.action || (sessionState === 'RUNNING' ? 'SCANNING' : 'IDLE')).toUpperCase();
   const isBlocked = latestCycle?.status === 'BLOCKED' || latestAction.includes('BLOCK');
-  const opportunityScore = isBlocked ? null : decisionMetric(latestCycle, 'trigger_completion_pct');
+  const isWaitingDecision = latestAction === 'WAIT' || latestAction === 'HOLD';
+  // A WAIT may carry a market-wide context score, but it is not a confirmed
+  // symbol-specific entry trigger. Historical cycles also mixed these fields.
+  const opportunityScore = isBlocked ? null : decisionMetric(latestCycle, isWaitingDecision ? 'market_readiness' : 'trigger_completion_pct');
   const modelConfidence = decisionMetric(latestCycle, 'confidence');
   const actionTone = latestAction.includes('LONG')
     ? 'long'
@@ -479,7 +512,7 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
           <span className="ai-cockpit__eyebrow">AI AUTONOMOUS TRADING / RUNTIME HEALTH</span>
           <h2>AI 交易指挥舱</h2>
           <div className="ai-cockpit__chips">
-            <span data-tone={displayMode === 'LIVE' ? 'short' : 'active'}>{displayMode === 'LIVE' ? 'LIVE · LOCKED' : displayMode}</span>
+            <span data-tone={displayMode === 'LIVE' ? 'short' : 'active'}>{displayMode === 'LIVE' ? 'LIVE · 实盘' : displayMode}</span>
             <span>账户 {selectedAccount ? maskAccount(selectedAccount) : '未选择'}</span>
             <span data-tone={sessionState === 'RUNNING' ? 'active' : 'muted'}>{sessionState} · GEN {generation}</span>
             <span data-tone={verifiedBonsai ? 'active' : 'warning'} aria-label="Bonsai model identity status">{modelIdentityLabel}</span>
@@ -535,11 +568,13 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
               onClick={() => handleSessionAction('start')}
               disabled={sessionActionLoading || accountsLoading || !selectedAccount || ['NOT_CHECKED', 'UNAVAILABLE', 'NOT_REPORTED'].includes(sessionState)}
             >
-              {chinese ? '🚀 启动 AI 自动做单' : '🚀 Start AI trading'}
+              {sessionState === 'ACCOUNT_MISMATCH'
+                ? (chinese ? '🚀 核对并切换账户启动 AI' : '🚀 Verify and switch AI account')
+                : (chinese ? '🚀 启动 AI 自动做单' : '🚀 Start AI trading')}
             </button>
           )}
 
-          {sessionState !== 'TERMINATED' && sessionState !== 'IDLE' && (
+          {['RUNNING', 'PAUSED'].includes(sessionState) && (
             <button
               className="ai-cockpit__button ai-cockpit__button--stop"
               data-no-translate
@@ -581,6 +616,20 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
       {runtimeDetail?.dynamic_risk && runtimeDetail.dynamic_risk.entry_allowed === false && (
         <RiskLockCountdown blockedUntil={runtimeDetail.dynamic_risk.blocked_until} reasons={runtimeDetail.dynamic_risk.reasons} />
       )}
+      {sessionState === 'ACCOUNT_MISMATCH' && boundAccount && (
+        <div className="ai-cockpit__notice" role="alert" data-testid="runtime-account-mismatch">
+          后台目前绑定 {boundAccount}（{boundSessionState}）。当前选中 {selectedAccount}。点击“核对并切换账户启动 AI”会先核验原账户的远端持仓和挂单；若仍有未结责任，系统会拒绝切换并说明原因。
+          {accounts.some((account) => account.account_id === boundAccount) && (
+            <button className="ai-cockpit__icon-button" type="button" onClick={() => {
+              const account = accounts.find((item) => item.account_id === boundAccount);
+              setSelectedAccount(boundAccount);
+              setSelectedMode(String(account?.mode || '').toUpperCase());
+              rememberTradingAccount(boundAccount);
+              onAccountChange?.(boundAccount);
+            }}>切换到 {boundAccount}</button>
+          )}
+        </div>
+      )}
 
       {!collapsed && (
         <>
@@ -588,16 +637,16 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
         <div className="ai-decision-core" data-tone={actionTone} data-testid="market-readiness" style={{ '--score': `${opportunityScore ?? 0}` } as React.CSSProperties}>
           <div className="ai-decision-core__orbit"><span /><span /><span /></div>
           <div className="ai-decision-core__center">
-            <small>策略触发完成度</small>
+            <small>{isWaitingDecision ? '市场环境就绪度' : '策略触发完成度'}</small>
             <strong>{opportunityScore == null ? '—' : Math.round(opportunityScore)}</strong>
             <span>
               {isBlocked
                 ? (latestCycle?.block_reason ? `系统阻断 (${latestCycle.block_reason})` : '系统阻断中 · 暂无评分')
                 : opportunityScore == null
-                ? '暂无可信触发度'
-                : latestAction === '观望' || latestAction === 'WAIT'
-                ? '/ 100 · 环境就绪(等待点位)'
-                : '/ 100 · 满足进场阈值'}
+                ? (isWaitingDecision ? '暂无可信环境评分' : '暂无可信触发度')
+                : isWaitingDecision
+                ? '/ 100 · 仅供观察，不代表入场触发'
+                : '/ 100 · 入场触发证据'}
             </span>
             {latestCycle?.timestamp && (
               <span style={{ fontSize: '10px', opacity: 0.65, marginTop: '2px' }}>
@@ -622,10 +671,10 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
         </div>
       </section>
 
-      <section className="v2-ai-remote-card" data-testid="ai-remote-account-card" aria-label="Gate TestNet remote account truth">
+      <section className="v2-ai-remote-card" data-testid="ai-remote-account-card" aria-label={`Gate ${selectedMode === 'LIVE' ? 'Live' : 'TestNet'} remote account truth`}>
         <div className="v2-ai-section-header">
           <div>
-            <h3>Gate TestNet 账户事实</h3>
+            <h3>Gate {selectedMode === 'LIVE' ? 'Live' : 'TestNet'} 账户事实</h3>
             <p>权益、保证金、持仓和待成交只显示 Gate 远端回执；本地仅保留远端快照审计缓存，不作为账户事实。</p>
           </div>
           <span className={`v2-badge ${remoteIsAvailable ? 'v2-badge--bull' : remoteStatus.includes('NOT_CONFIGURED') ? 'v2-badge--warning' : 'v2-badge--neutral'}`}>
@@ -650,8 +699,8 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
         <div className="v2-ai-section-header">
           <div>
             <h3>新闻与技术面 AI 决策</h3>
-            <p>按 {scanIntervalLabel} 扫描：K 线与新闻 → AI 自拟策略 → JSON 决策 → 固定风控 → 开仓或等待。启动后等待下一个策略时间点；每轮最多一个动作，可向当前账户自动提交订单。</p>
-            <p>单笔风险上限 0.25% · 组合风险上限 1% · 日亏损熔断 1.5% · 金额与杠杆按生效策略执行 · 扣费后盈亏比至少 2。AI 置信分数不代表胜率。</p>
+            <p>按 {scanIntervalLabel} 扫描：K 线与新闻 → AI 自拟策略 → JSON 决策 → 保证金与合约核验 → 开仓或等待。启动后等待下一个策略时间点；每轮最多一个动作，可向当前账户自动提交订单。</p>
+            <p>AI 选择开仓金额、杠杆和限价或市价。Gate 接受限价委托后显示“已提交待成交”，只有交易所回报实际成交才形成持仓。保证金占用受生效策略上限约束。</p>
           </div>
           <span className={`v2-badge ${sessionState === 'RUNNING' ? 'v2-badge--bull' : 'v2-badge--neutral'}`}>
             {sessionState}

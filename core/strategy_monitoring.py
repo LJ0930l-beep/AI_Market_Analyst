@@ -46,60 +46,73 @@ class StrategyMonitoringService(MonitoringService):
             else "REJECTED_UNTRUSTED_PROVIDER"
         )
 
-    def refresh_ai_inputs(self, symbols, *, scan_interval_minutes=15, context_timeframes=()):
+    def refresh_ai_inputs(self, symbols, *, scan_interval_minutes=15, context_timeframes=(), testnet=None):
         """Public evidence refresh owned by the AI cycle; no legacy decisions."""
         from .news_refresh import refresh_public_news
+        # The monitoring service is app-scoped, while the AI account is
+        # selected per session. Keep the venue provider local to this refresh
+        # so a TestNet cycle cannot consume a LIVE_PUBLIC quote or book.
+        gate = GatePublicProvider(testnet=bool(testnet)) if testnet is not None else self.gate
         result = self.run(
             symbols=symbols,
             analysis_only=True,
             ai_interval=scan_interval_minutes,
             ai_context_timeframes=context_timeframes,
+            gate_provider=gate,
         )
-        self.refresh_derivatives(symbols, max_age_seconds=max(60, int(scan_interval_minutes) * 60))
+        self.refresh_derivatives(symbols, max_age_seconds=max(60, int(scan_interval_minutes) * 60), gate_provider=gate)
         refresh_public_news(self.store, symbols=symbols)
-        self.refresh_execution_quotes(symbols)
+        self.refresh_execution_quotes(symbols, gate_provider=gate)
         return result
 
-    def refresh_derivatives(self, symbols, *, max_age_seconds=300):
+    def refresh_derivatives(self, symbols, *, max_age_seconds=300, gate_provider=None):
         """Persist bounded Gate OI/funding evidence for AI and radar surfaces."""
+        gate = gate_provider or self.gate
         observed = datetime.now(timezone.utc)
         for symbol in tuple(dict.fromkeys(str(item).strip().upper() for item in symbols if str(item).strip()))[: self.max_symbols]:
-            cached_at = self._derivatives_refresh_cache.get(symbol)
+            cache_key = (gate.environment, symbol)
+            cached_at = self._derivatives_refresh_cache.get(cache_key)
             if isinstance(cached_at, datetime) and (observed - cached_at).total_seconds() < max_age_seconds:
                 continue
             try:
-                funding = self.gate.funding_context(symbol)
-                native = str(funding.get("native_symbol") or self.gate.market(symbol).get("id") or symbol).upper()
-                self.store.save_gate_funding(symbol, native, funding, provider="gate", environment=self.gate.environment, now=observed)
-                self.store.save_gate_open_interest(symbol, native, funding.get("open_interest_history") or [], provider="gate", environment=self.gate.environment, now=observed)
-                self._derivatives_refresh_cache[symbol] = observed
+                funding = gate.funding_context(symbol)
+                native = str(funding.get("native_symbol") or gate.market(symbol).get("id") or symbol).upper()
+                self.store.save_gate_funding(symbol, native, funding, provider="gate", environment=gate.environment, now=observed)
+                self.store.save_gate_open_interest(symbol, native, funding.get("open_interest_history") or [], provider="gate", environment=gate.environment, now=observed)
+                self._derivatives_refresh_cache[cache_key] = observed
             except Exception:
                 # Derivative evidence is optional market context.  The radar
                 # keeps the venue explicitly unavailable and the trading
                 # engine still requires its independent price/risk evidence.
                 continue
 
-    def refresh_execution_quotes(self, symbols):
+    def refresh_execution_quotes(self, symbols, *, gate_provider=None):
         # News/bootstrap may take time. Refresh executable quote and observed
         # depth last instead of aging the initial ticker during those reads.
         from .trading.autonomous_strategy import book_cost_evidence
+        gate = gate_provider or self.gate
         for symbol in symbols:
             try:
-                quote = self.gate.get_quote(self.store.resolve_instrument(symbol))
-                book = self.gate.order_book(symbol, limit=20)
+                quote = gate.get_quote(self.store.resolve_instrument(symbol))
+                book = gate.order_book(symbol, limit=20)
                 snapshot = dict(self.store.get_realtime_state(symbol) or {})
                 snapshot.update(book_cost_evidence(book, quote.price))
-                snapshot.update(price=quote.price, data_as_of=quote.timestamp.isoformat(), freshness_status="fresh")
+                snapshot.update(price=quote.price, data_as_of=quote.timestamp.isoformat(), freshness_status="fresh",
+                                environment=gate.environment, market_data_environment=gate.environment,
+                                cost_evidence_error=None)
                 self.store.save_realtime_state(snapshot, now=datetime.now(timezone.utc))
-            except Exception:
+            except Exception as exc:
                 # No cost defaults for a remote account. Missing depth is a
                 # visible entry blocker, while Guardian remains independent.
                 snapshot = dict(self.store.get_realtime_state(symbol) or {})
-                snapshot.update(slippage=None, liquidity_ok=False, cost_evidence_status="UNAVAILABLE")
+                snapshot.update(slippage=None, liquidity_ok=False, cost_evidence_status="UNAVAILABLE",
+                                environment=gate.environment, market_data_environment=gate.environment,
+                                cost_evidence_error=str(getattr(exc, "code", None) or type(exc).__name__))
                 if snapshot.get("symbol"):
                     self.store.save_realtime_state(snapshot, now=datetime.now(timezone.utc))
 
-    def run(self, *, symbols=None, now=None, analysis_only=False, ai_interval=15, ai_context_timeframes=()):
+    def run(self, *, symbols=None, now=None, analysis_only=False, ai_interval=15, ai_context_timeframes=(), gate_provider=None):
+        gate = gate_provider or self.gate
         now = now or datetime.now(timezone.utc)
         subscriptions = self.store.list_strategy_subscriptions(True)
         symbols = set(symbols or [s["symbol"] for s in subscriptions])
@@ -114,7 +127,7 @@ class StrategyMonitoringService(MonitoringService):
                 active = [s for s in subscriptions if s["symbol"] == symbol]
                 if not active and not analysis_only:
                     continue
-                market = self.gate.market(symbol)
+                market = gate.market(symbol)
                 try:
                     instrument = self.store.resolve_instrument(symbol)
                 except ValueError:
@@ -125,7 +138,7 @@ class StrategyMonitoringService(MonitoringService):
                         step_size=float(market['precision']['amount']))
                     self.store.save_instrument(instrument, registry_source='gate_contract_discovery',
                         metadata_status='VERIFIED', validation_provider='gate')
-                quote = self.gate.get_quote(instrument)
+                quote = gate.get_quote(instrument)
                 fetched = datetime.now(timezone.utc)
                 native_symbol = str(market.get("id") or instrument.symbol).strip().upper()
                 market_type = (
@@ -158,7 +171,7 @@ class StrategyMonitoringService(MonitoringService):
                 bars_by_timeframe = {}
 
                 native_bootstrap = None
-                if getattr(self.gate, "uses_native_rest", False) and not analysis_only:
+                if getattr(gate, "uses_native_rest", False) and not analysis_only:
                     cached = self._native_bootstrap_cache.get(symbol)
                     cached_at = cached.get("fetched_at") if isinstance(cached, dict) else None
                     if isinstance(cached_at, datetime) and (fetched - cached_at).total_seconds() < 900:
@@ -168,7 +181,7 @@ class StrategyMonitoringService(MonitoringService):
                         # source for the institutional strategy path.  If it
                         # fails, mark data blocked instead of falling back to
                         # a short/synthetic CCXT history.
-                        native_bootstrap = self.gate.bootstrap_symbol(
+                        native_bootstrap = gate.bootstrap_symbol(
                             symbol,
                             instrument=instrument,
                             timeframes=("5m", "15m", "1h", "1d"),
@@ -182,13 +195,13 @@ class StrategyMonitoringService(MonitoringService):
 
                 def load_bars(timeframe: str, limit: int):
                     if timeframe not in bars_by_timeframe:
-                        loaded = self.gate.get_bars(instrument, timeframe, limit)
+                        loaded = gate.get_bars(instrument, timeframe, limit)
                         bars_by_timeframe[timeframe] = loaded
                         self.store.upsert_market_bars(
                             symbol,
                             timeframe,
                             loaded,
-                            provider=self.gate.provider_name,
+                            provider=gate.provider_name,
                             data_as_of=quote.timestamp,
                             now=fetched,
                             **identity,
@@ -230,15 +243,15 @@ class StrategyMonitoringService(MonitoringService):
                 self.store.save_realtime_state(
                     {
                         "symbol": symbol,
-                        "provider": self.gate.provider_name,
+                        "provider": gate.provider_name,
                         # Keep injected deterministic providers useful for
                         # isolated acceptance tests while production Gate
                         # always exposes its explicit LIVE_PUBLIC/TESTNET
                         # environment.  Do not infer a live environment from
                         # a fixture that has no routing metadata.
-                        "environment": getattr(self.gate, "environment", "INJECTED_FIXTURE"),
+                        "environment": getattr(gate, "environment", "INJECTED_FIXTURE"),
                         "market_data_environment": getattr(
-                            self.gate, "environment", "INJECTED_FIXTURE"
+                            gate, "environment", "INJECTED_FIXTURE"
                         ),
                         "price": quote.price,
                         "change_pct": quote.change_pct,
@@ -265,7 +278,7 @@ class StrategyMonitoringService(MonitoringService):
                         },
                         "data_quality": {
                             "status": str((native_bootstrap or {}).get("quality", {}).get("status") or "AVAILABLE") if isinstance(native_bootstrap, dict) else "AVAILABLE",
-                            "source": str((native_bootstrap or {}).get("quality", {}).get("source") or "gate_native_rest") if isinstance(native_bootstrap, dict) else ('gate_native_rest' if getattr(self.gate, 'uses_native_rest', False) else "gate_ccxt_injected"),
+                            "source": str((native_bootstrap or {}).get("quality", {}).get("source") or "gate_native_rest") if isinstance(native_bootstrap, dict) else ('gate_native_rest' if getattr(gate, 'uses_native_rest', False) else "gate_ccxt_injected"),
                             "closed_15m_bars": (native_bootstrap or {}).get("quality", {}).get("closed_15m_bars") if isinstance(native_bootstrap, dict) else None,
                             "mark_index_aligned": (native_bootstrap or {}).get("quality", {}).get("mark_index_aligned") if isinstance(native_bootstrap, dict) else None,
                             "synthetic": False,
@@ -281,7 +294,7 @@ class StrategyMonitoringService(MonitoringService):
                 funding_context = {}
                 if any(s["strategy_id"] == "funding_extreme" for s in active):
                     try:
-                        funding = (native_bootstrap or {}).get("funding") if isinstance(native_bootstrap, dict) else self.gate.funding_context(symbol)
+                        funding = (native_bootstrap or {}).get("funding") if isinstance(native_bootstrap, dict) else gate.funding_context(symbol)
                         if not isinstance(funding, dict):
                             raise ValueError("GATE_FUNDING_CONTEXT_UNAVAILABLE")
                         funding_context = {
@@ -330,14 +343,14 @@ class StrategyMonitoringService(MonitoringService):
                         "status": strategy.last_status or "NO_TRIGGER",
                         "reason": strategy.last_reason,
                         "as_of": fetched.isoformat(),
-                        "source": self.gate.provider_name,
+                        "source": gate.provider_name,
                         "timeframe": signal_timeframe,
                         "bars": len(signal_bars),
                     }
                     if proposal and not analysis_only and not getattr(self, "ai_only", False):
                         facts = {
                             "freshness": "fresh" if fresh else "stale",
-                            "source": self.gate.provider_name,
+                            "source": gate.provider_name,
                             "as_of": quote.timestamp.isoformat(),
                             "price": quote.price,
                             "hourly_closes": [

@@ -96,9 +96,9 @@ def humanize_reason(reason: Any, *, stage: str | None = None) -> str:
     messages = {
         "AI_STRATEGY_PLAN_REQUIRED": "AI 未给出完整自拟策略，本轮不新增仓位。",
         "TECHNICAL_EVIDENCE_UNAVAILABLE": "已收盘 K 线不足或过期，等待有效技术面证据。",
-        "NEWS_EVIDENCE_UNAVAILABLE": "缺少新鲜的标的新闻或全市场风险背景，本轮不新增仓位。",
+        "NEWS_EVIDENCE_UNAVAILABLE": "模型引用的新闻无效，或未引用适用于该标的的已核验新闻；本轮未创建订单。",
         "AI_ENTRY_CONDITION_NOT_MET": "当前价格不在 AI 入场区间内，等待下一轮重新评估。",
-        "AI_NET_REWARD_RISK_TOO_LOW": "计入手续费和滑点后，盈亏比不足 2，本轮不新增仓位。",
+        "AI_NET_REWARD_RISK_TOO_LOW": "计入手续费和滑点后，盈亏比未达到当前策略门槛，本轮不新增仓位。",
         "AI_CONFIDENCE_BELOW_POLICY": "AI 置信分数未达到固定门槛，本轮不新增仓位。",
         "AI_ORDER_EXCEEDS_OBSERVED_DEPTH": "下单量超过已观测盘口深度，本轮不新增仓位。",
         "STRATEGY_DIRECTION_OR_SYMBOL_BLOCKED": "本轮标的或方向不在账户策略允许范围内。",
@@ -158,6 +158,7 @@ def build_stage_trace(
     completed_at: datetime | None = None,
     execution_result: dict[str, Any] | None = None,
     order_intent: Any | None = None,
+    block_stage_override: str | None = None,
 ) -> list[dict[str, Any]]:
     """Build all ten stages for the immutable cycle snapshot."""
 
@@ -165,11 +166,12 @@ def build_stage_trace(
     finished = completed_at or started
     block_stage = infer_block_stage(
         result_reason,
-        (getattr(context, "stage_block", None) or ""),
+        block_stage_override or getattr(context, "stage_block", None),
     )
     origin = str(decision_origin or "SYSTEM").upper()
     status = str(result_status or "UNKNOWN").upper()
     system_block = origin != "MODEL" or not model_called
+    model_entry_gate_failed = origin == "MODEL" and status in {"BLOCKED", "REJECTED"} and block_stage == "RISK"
     snapshots = getattr(context, "market_snapshots", {}) or {}
     candidates = getattr(context, "candidates", []) or []
     truth = getattr(context, "account_truth", {}) or {}
@@ -188,7 +190,7 @@ def build_stage_trace(
         if stage == "AI_MODEL":
             return "PASS" if model_called else "BLOCKED"
         if stage == "RISK":
-            if status in {"REJECTED", "BLOCKED"} and block_stage == "RISK":
+            if status in {"REJECTED", "BLOCKED"} and (block_stage == "RISK" or model_entry_gate_failed):
                 return "FAILED"
             model_action = str(model_result or "").upper()
             if model_action in {"", "WAIT", "HOLD", "NOT_RUN"}:
@@ -203,7 +205,7 @@ def build_stage_trace(
         if stage == "EXECUTION":
             if status in {"EXECUTED", "SUBMITTED"}:
                 return "PASS"
-            if block_stage == "EXECUTION" or (status == "REJECTED" and result_reason):
+            if block_stage == "EXECUTION" or (status == "REJECTED" and result_reason and not model_entry_gate_failed):
                 return "FAILED"
             return "SKIPPED"
         if stage == "RECONCILIATION":
@@ -271,7 +273,7 @@ def build_stage_trace(
                     "decision_origin": origin,
                     "model_called": bool(model_called),
                     "model_result": model_result,
-                    "block_stage": block_stage if system_block else None,
+                    "block_stage": block_stage if system_block or model_entry_gate_failed else None,
                 },
             }
         )

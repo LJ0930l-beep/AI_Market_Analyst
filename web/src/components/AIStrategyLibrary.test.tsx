@@ -6,6 +6,42 @@ import { AIStrategyLibrary } from './AIStrategyLibrary';
 
 afterEach(() => vi.restoreAllMocks());
 
+it('shows the actual Gate AI margin route instead of legacy risk gates', async () => {
+  const execution = { symbols: [], universe_mode: 'ALL', scan_interval_minutes: 5, direction: 'BOTH', sizing_mode: 'RISK_BASED', fixed_notional_usdt: 1000, equity_notional_pct: 5, max_notional_usdt: 2500, risk_per_trade_pct: .25, leverage: 3, max_positions: 3, max_margin_pct: 18, min_confidence: 70, min_net_rr: 2, cooldown_minutes: 30, order_preference: 'AUTO' };
+  const active = { account_id: 'gate_testnet', revision: 65, name: '闪电动量', digest: 'active', sections: { role: '角色', frequency: '频率', entry_standards: '入场', decision_process: '退出' }, execution };
+  vi.spyOn(apiClient, 'v2').mockImplementation(async path => {
+    if (path.startsWith('/gate/account')) return { data_status: 'AVAILABLE', equity: 10000, available_margin: 10000, used_margin: 0 } as never;
+    if (path.startsWith('/gate/markets')) return { markets: [] } as never;
+    if (path.startsWith('/ai-session/memory')) return { items: [] } as never;
+    return { active, templates: [], fixed_policy: { execution_route: 'AI_AUTHORED_GATE_TESTNET' } } as never;
+  });
+  render(<MemoryRouter><AIStrategyLibrary accountId="gate_testnet" /></MemoryRouter>);
+  expect(await screen.findByText(/AI 自定仓位与订单方式/)).toBeInTheDocument();
+  expect(screen.getByLabelText(/总保证金占用上限/)).toHaveValue(18);
+  expect(screen.queryByText('组合风险硬上限')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/每笔止损风险/)).not.toBeInTheDocument();
+});
+
+it('saves a fixed USDT total margin cap for the Gate AI route', async () => {
+  const execution = { symbols: [], universe_mode: 'ALL', scan_interval_minutes: 5, direction: 'BOTH', sizing_mode: 'RISK_BASED', fixed_notional_usdt: 1000, equity_notional_pct: 5, max_notional_usdt: 2500, risk_per_trade_pct: .25, leverage: 100, max_positions: 3, max_margin_pct: 18, margin_cap_mode: 'PERCENT', max_margin_usdt: 1000, min_confidence: 70, min_net_rr: 2, cooldown_minutes: 30, order_preference: 'AUTO' };
+  const active = { account_id: 'gate_testnet', revision: 65, name: '闪电动量', digest: 'active', sections: { role: '角色', frequency: '频率', entry_standards: '入场', decision_process: '退出' }, execution };
+  const call = vi.spyOn(apiClient, 'v2').mockImplementation(async (path, method, body) => {
+    if (path.startsWith('/gate/account')) return { data_status: 'AVAILABLE', equity: 10000, available_margin: 10000, used_margin: 0 } as never;
+    if (path.startsWith('/gate/markets')) return { markets: [] } as never;
+    if (path.startsWith('/ai-session/memory')) return { items: [] } as never;
+    if (method === 'PUT') return { active: { ...active, ...(body as object), revision: 66 } } as never;
+    return { active, templates: [], fixed_policy: { execution_route: 'AI_AUTHORED_GATE_TESTNET' } } as never;
+  });
+  render(<MemoryRouter><AIStrategyLibrary accountId="gate_testnet" /></MemoryRouter>);
+  fireEvent.change(await screen.findByLabelText('保证金上限方式'), { target: { value: 'FIXED_USDT' } });
+  fireEvent.change(screen.getByLabelText('总保证金上限（USDT）'), { target: { value: '750' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存并启用' }));
+  await waitFor(() => expect(call).toHaveBeenCalledWith(
+    '/ai-strategy?account_id=gate_testnet', 'PUT',
+    expect.objectContaining({ expected_revision: 65, execution: expect.objectContaining({ margin_cap_mode: 'FIXED_USDT', max_margin_usdt: 750, leverage: 100 }) }),
+  ));
+});
+
 it('persists notional, leverage and prompt configuration in the selected account revision', async () => {
   const active = { account_id: 'gate_testnet', revision: 2, name: '事件策略', digest: 'saved', sections: { role: '交易角色', frequency: '纪律', entry_standards: '标准', decision_process: '流程', custom_prompt: '自定义' }, execution: { symbols: ['BTCUSDT'], direction: 'BOTH', sizing_mode: 'RISK_BASED', fixed_notional_usdt: 1000, equity_notional_pct: 5, max_notional_usdt: 5000, risk_per_trade_pct: .25, leverage: 3, max_positions: 3, max_margin_pct: 20, min_confidence: 70, min_net_rr: 2, cooldown_minutes: 30, order_preference: 'AUTO' } };
   const call = vi.spyOn(apiClient, 'v2').mockImplementation(async (path, method, body) => {

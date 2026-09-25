@@ -69,7 +69,8 @@ type Radar = {
     status?: string;
     message?: string;
     as_of?: string | null;
-    items?: Array<{ symbol: string; value?: number | null; change_pct?: number | null; status: string }>;
+    source?: string | null;
+    items?: Array<{ symbol: string; value?: number | null; change_pct?: number | null; status: string; source?: string | null; as_of?: string | null }>;
     synthetic?: boolean;
   };
 };
@@ -88,6 +89,10 @@ const CROWDING_NAMES: Record<string, string> = {
 function statusText(status?: string): string {
   switch ((status || "LOADING").toUpperCase()) {
     case "AVAILABLE": return "有真实样本";
+    case "PARTIAL": return "部分数据可用";
+    case "DELAYED": return "延迟行情";
+    case "LAST_CLOSE": return "最近收盘";
+    case "STALE": return "数据已过期";
     case "NO_DATA": return "暂无样本";
     case "UNAVAILABLE": return "数据源不可用";
     case "CONFIG_REQUIRED":
@@ -313,11 +318,12 @@ function CrossMarketPanel({ data, compact = false }: { data: Radar | null; compa
     {CROSS_MARKET_SYMBOLS.map(symbol => {
       const item = items.get(symbol);
       const status = isSynthetic ? "SYNTHETIC" : item?.status || "SOURCE_REQUIRED";
-      const available = !isSynthetic && status.toUpperCase() === "AVAILABLE" && item?.value != null;
+      const available = !isSynthetic && ["AVAILABLE", "DELAYED", "LAST_CLOSE"].includes(status.toUpperCase()) && item?.value != null;
       return <article key={symbol} data-status={status.toUpperCase()}>
         <div><b>{symbol}</b><SourceBadge status={status} /></div>
         <strong>{available ? formatNumber(item.value, symbol === "US10Y" ? 3 : 2) : "—"}{available && (symbol === "BTC.D" || symbol === "US10Y") ? "%" : ""}</strong>
         <span>{available && item.change_pct != null ? formatSignedPct(item.change_pct) : statusText(status)}</span>
+        {item?.source && <small title={item.source}>{item.source} · {formatTime(item.as_of)}</small>}
       </article>;
     })}
   </div>;
@@ -464,7 +470,7 @@ export function MarketRadar({ mode = "analysis", preferredSymbol }: { mode?: Rad
       <header className="market-radar__section-head"><div><small>GLOBAL LIQUIDITY CORRIDOR</small><h2 id="market-radar-corridor-title">全球宏观与跨市场走廊</h2></div><SourceBadge status={data?.cross_market?.status} /></header>
       <CrossMarketPanel data={data} />
       <p className="market-radar__basis">{data?.cross_market?.message || "跨市场指标仅在已连接的授权行情源返回数据后展示。"}</p>
-      <SourceMeta source={data?.cross_market?.items?.some(item => item.value != null) ? "API 返回的跨市场行情" : "尚未配置授权数据源"} asOf={data?.cross_market?.as_of} />
+      <SourceMeta source={data?.cross_market?.source || "尚未连接跨市场数据源"} asOf={data?.cross_market?.as_of} />
     </section>
   </div>;
 

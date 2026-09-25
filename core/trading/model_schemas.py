@@ -106,6 +106,8 @@ AI_ACTION_SCHEMA: dict[str, object] = {
                 "matched_conditions": {"type": "array", "items": {"type": "string", "maxLength": 300}, "maxItems": 32},
                 "missing_conditions": {"type": "array", "items": {"type": "string", "maxLength": 300}, "maxItems": 32},
                 "trigger_completion_pct": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+        "next_trigger_price": {"type": ["number", "null"], "exclusiveMinimum": 0},
+        "entry_condition": {"type": ["string", "null"], "maxLength": 500},
             },
         },
         "news_context": {
@@ -181,4 +183,199 @@ def require_confidence_for_open(decoded: object) -> None:
         raise ValueError("INVALID_ACTION_SCHEMA: OPEN_LONG/OPEN_SHORT requires a numeric confidence in [0,100]")
 
 
-__all__ = ["AI_ACTION_SCHEMA", "CALIBRATION_PROFILE_SCHEMA", "SIGNAL_SCHEMA", "require_confidence_for_open"]
+
+
+# The misplaced-plan normalizer promotes these two keys to the top level, and
+# AIActionOutput carries them, so the contract must accept them there. Without
+# these properties every hoisted response failed validate_schema with
+# "output:fields extra=[...]" even though the model authored the values.
+AI_ACTION_SCHEMA["properties"]["next_trigger_price"] = {"type": ["number", "null"], "exclusiveMinimum": 0}
+AI_ACTION_SCHEMA["properties"]["new_take_profit"] = {"type": ["number", "null"], "exclusiveMinimum": 0}
+
+
+def normalize_news_impact(decoded: object) -> dict[str, object] | None:
+    """Project a bounded model-authored sentiment score onto the enum.
+
+    Local JSON-mode responses sometimes use a signed score in [-1, 1] where
+    the schema requires a label. This only categorizes the model's own news
+    opinion, never market facts or entry parameters. The raw response remains
+    in the audit record; out-of-range and nonnumeric values still fail schema.
+    """
+    if not isinstance(decoded, dict):
+        return None
+    news = decoded.get("news_context")
+    if not isinstance(news, dict):
+        return None
+    impact = news.get("impact")
+    if type(impact) not in (int, float) or not math.isfinite(impact):
+        return None
+    if not -1 <= impact <= 1:
+        return None
+    label = "NEGATIVE" if impact <= -0.2 else "POSITIVE" if impact >= 0.2 else "NEUTRAL"
+    news["impact"] = label
+    return {"field": "news_context.impact", "raw": impact, "normalized": label}
+
+
+def normalize_limit_ttl_alias(decoded: object) -> dict[str, object] | None:
+    """Accept one unambiguous spelling of the limit-order TTL.
+
+    The strategy profile calls this value ``limit_ttl_seconds`` while the
+    action contract calls it ``ttl_seconds``.  Preserve all other schema
+    errors, including conflicting fields and out-of-range values.  The raw
+    model response is retained separately by the coordinator.
+    """
+    if not isinstance(decoded, dict) or "limit_ttl_seconds" not in decoded or "ttl_seconds" in decoded:
+        return None
+    value = decoded["limit_ttl_seconds"]
+    if type(value) is not int or not 60 <= value <= 1800:
+        return None
+    decoded["ttl_seconds"] = decoded.pop("limit_ttl_seconds")
+    return {"field": "limit_ttl_seconds", "raw": value, "normalized_field": "ttl_seconds"}
+
+
+def normalize_misplaced_strategy_plan(decoded: object) -> dict[str, object] | None:
+    """Move an exact strategy-plan shape accidentally nested in strategy_analysis.
+
+    Some model responses place the optional plan object under
+    ``strategy_analysis``. Accept only the complete, recognized alias shape;
+    conflicting top-level values and unrelated extra fields remain for strict
+    schema validation to reject. The original raw model response is retained
+    separately by the coordinator.
+    """
+    if not isinstance(decoded, dict):
+        return None
+    analysis = decoded.get("strategy_analysis")
+    if not isinstance(analysis, dict):
+        return None
+
+    plan_fields = ("name", "thesis", "entry_conditions", "exit_conditions")
+    present_plan_fields = set(plan_fields).intersection(analysis)
+    has_trigger_price = "next_trigger_price" in analysis
+    if not present_plan_fields and not has_trigger_price:
+        return None
+
+    plan: dict[str, object] | None = None
+    if present_plan_fields:
+        # Do not guess or fabricate an incomplete plan. Leave it malformed so
+        # the bounded repair and strict validator can handle it explicitly.
+        if not all(field in analysis for field in plan_fields):
+            return None
+        plan = {field: analysis[field] for field in plan_fields}
+        existing_plan = decoded.get("strategy_plan")
+        if existing_plan is not None and existing_plan != plan:
+            return None
+
+    if has_trigger_price and (
+        "next_trigger_price" in decoded
+        and decoded["next_trigger_price"] != analysis["next_trigger_price"]
+    ):
+        return None
+
+    moved_fields: list[str] = []
+    keys_to_remove: set[str] = set()
+    if plan is not None:
+        decoded["strategy_plan"] = plan
+        keys_to_remove.update(plan_fields)
+        moved_fields.append("strategy_plan")
+    if has_trigger_price:
+        decoded["next_trigger_price"] = analysis["next_trigger_price"]
+        keys_to_remove.add("next_trigger_price")
+        moved_fields.append("next_trigger_price")
+
+    decoded["strategy_analysis"] = {
+        key: value for key, value in analysis.items() if key not in keys_to_remove
+    }
+    return {
+        "field": "strategy_analysis",
+        "normalized_fields": moved_fields,
+        "source": "EXACT_KNOWN_MODEL_ALIAS",
+    }
+
+
+def normalize_wait_conditions(decoded: object) -> dict[str, object] | None:
+    """Keep model-authored WAIT evidence when it uses a flat list.
+
+    This is explanatory text only; it cannot change an entry, size or price.
+    Invalid or conflicting structures still fail the strict schema check.
+    """
+    if not isinstance(decoded, dict) or decoded.get("action") not in {"WAIT", "HOLD"}:
+        return None
+    conditions = decoded.get("missing_conditions")
+    if not isinstance(conditions, list) or len(conditions) > 32 or any(
+        not isinstance(item, str) or len(item) > 300 for item in conditions
+    ):
+        return None
+    analysis = decoded.get("strategy_analysis")
+    if analysis is not None and (not isinstance(analysis, dict) or "missing_conditions" in analysis):
+        return None
+    decoded["strategy_analysis"] = {**(analysis or {}), "missing_conditions": conditions}
+    decoded.pop("missing_conditions")
+    return {"field": "missing_conditions", "normalized_field": "strategy_analysis.missing_conditions"}
+
+
+def normalize_wait_symbol_alias(decoded: object, allowed_instruments: object) -> dict[str, object] | None:
+    """Accept an authorized symbol alias only for non-executing decisions.
+
+    The model's raw response remains in the audit record. OPEN and position
+    management actions continue to require the exact instrument_id contract.
+    """
+    if not isinstance(decoded, dict) or decoded.get("action") not in {"WAIT", "HOLD"}:
+        return None
+    if "instrument_id" in decoded or "symbol" not in decoded:
+        return None
+    symbol = decoded.get("symbol")
+    if not isinstance(symbol, str) or not symbol or symbol != symbol.strip().upper():
+        return None
+    if not isinstance(allowed_instruments, (list, tuple, set, frozenset)) or symbol not in allowed_instruments:
+        return None
+    decoded["instrument_id"] = decoded.pop("symbol")
+    return {"field": "symbol", "normalized_field": "instrument_id", "value": symbol}
+
+
+def require_entry_analysis_for_open(decoded: object) -> None:
+    """Require executable prices and risk, not a prescribed explanation shape."""
+    if not isinstance(decoded, dict) or decoded.get("action") not in ("OPEN_LONG", "OPEN_SHORT"):
+        return
+    missing: list[str] = []
+    for field in ("entry_price", "stop_price", "take_profit", "requested_risk_fraction"):
+        if isinstance(decoded.get(field), bool) or not isinstance(decoded.get(field), (int, float)):
+            missing.append(field)
+    if not isinstance(decoded.get("evidence_refs"), list) or not decoded["evidence_refs"]:
+        missing.append("evidence_refs")
+    if missing:
+        raise ValueError("INVALID_ACTION_SCHEMA:OPEN_CONTEXT_REQUIRED:" + ",".join(missing))
+
+
+def require_nofx_gate_open_contract(proposal: object) -> None:
+    """The NOFX-style Gate route lets the model size its own order.
+
+    Position size, leverage and order preference must therefore be
+    model-authored on every OPEN. A missing one is a contract violation to be
+    reported by name, never a default to be filled in silently.
+    """
+    if not isinstance(proposal, dict) or proposal.get("action") not in ("OPEN_LONG", "OPEN_SHORT"):
+        return
+    missing = [
+        field
+        for field in ("position_size_usdt", "requested_leverage", "order_preference")
+        if proposal.get(field) in (None, "")
+    ]
+    if missing:
+        raise ValueError("NOFX_GATE_OPEN_CONTRACT_MISSING:" + ",".join(missing))
+
+
+__all__ = [
+    "AI_ACTION_SCHEMA",
+    "CALIBRATION_PROFILE_SCHEMA",
+    "SIGNAL_SCHEMA",
+    "normalize_limit_ttl_alias",
+    "normalize_misplaced_strategy_plan",
+    "normalize_news_impact",
+    "normalize_wait_conditions",
+    "normalize_wait_symbol_alias",
+    "require_confidence_for_open",
+    "require_entry_analysis_for_open",
+    "require_nofx_gate_open_contract",
+    "validate_schema",
+]
+

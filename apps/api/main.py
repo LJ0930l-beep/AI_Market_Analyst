@@ -2671,11 +2671,19 @@ def create_app(
                     resume_account_id = str(stored_account or "").strip() or None
                 except Exception:
                     resume_account_id = None
-            if not runtime.wait_for_stale_lease_release():
-                # Only a genuinely live second instance keeps renewing, so this
-                # is the real dual-runtime signal rather than a restart artifact.
-                print("[startup_monitoring] auto-resume deferred: lease held by a live instance")
-            else:
+            def resume_when_lease_available(wait_seconds: float) -> bool:
+                # A user may pause the AI while a delayed retry waits for the
+                # previous process lease.  Never revive an explicitly stopped
+                # session from an earlier startup snapshot.
+                try:
+                    if runtime.store.get_app_setting("monitoring.resume").get("value") is not True:
+                        return True
+                    if resume_ai and runtime.store.get_app_setting("ai.autonomous_resume").get("value") is not True:
+                        return True
+                except Exception:
+                    return True
+                if not runtime.wait_for_stale_lease_release(max_seconds=wait_seconds):
+                    return False
                 try:
                     # ``enable_ai`` is the whole point: on its own the resume path
                     # only revives the fixed-strategy worker, so the AI coordinator
@@ -2688,8 +2696,21 @@ def create_app(
                         account_id=resume_account_id,
                         enable_ai=resume_ai,
                     )
+                    return True
                 except Exception as exc:
                     print(f"[startup_monitoring] auto-resume deferred: {exc}")
+                    return False
+
+            if not resume_when_lease_available(15.0):
+                # The old PyInstaller child may keep the lease alive slightly
+                # longer than the first startup window.  Retry in a daemon so
+                # the API still becomes available; a live peer keeps renewing
+                # and the runtime never acquires its fence.
+                def retry_resume() -> None:
+                    if not resume_when_lease_available(30.0):
+                        print("[startup_monitoring] auto-resume deferred: lease held by a live instance")
+
+                threading.Thread(target=retry_resume, name="aima-auto-resume-retry", daemon=True).start()
 
     app.router.on_startup.append(startup_monitoring)
 

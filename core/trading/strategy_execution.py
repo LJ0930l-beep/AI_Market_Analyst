@@ -10,6 +10,7 @@ DEFAULT_EXECUTION = {
     "fixed_notional_usdt": 1000.0, "equity_notional_pct": 5.0,
     "max_notional_usdt": 5000.0, "risk_per_trade_pct": 0.25,
     "leverage": 3, "max_positions": 3, "max_margin_pct": 20.0,
+    "margin_cap_mode": "PERCENT", "max_margin_usdt": 1000.0,
     "min_confidence": 70, "min_net_rr": 2.0, "cooldown_minutes": 30,
     "order_preference": "AUTO",
     "universe_mode": "ALL", "scan_interval_minutes": 15,
@@ -21,6 +22,7 @@ LIMITS = {
     "fixed_notional_usdt": (10, 1000000), "equity_notional_pct": (0.1, 100),
     "max_notional_usdt": (10, 1000000), "risk_per_trade_pct": (0.01, 0.25),
     "leverage": (1, 100), "max_positions": (1, 5), "max_margin_pct": (1, 80),
+    "max_margin_usdt": (1, 100000000),
     "min_confidence": (60, 100), "min_net_rr": (1.5, 10), "cooldown_minutes": (0, 1440),
     "scan_interval_minutes": (5, 15),
 }
@@ -130,6 +132,8 @@ def normalize_execution(value=None):
             raise ValueError(f"STRATEGY_EXECUTION_INTEGER_REQUIRED_{name.upper()}")
     if config['direction'] not in {'BOTH', 'LONG_ONLY', 'SHORT_ONLY'} or config['sizing_mode'] not in {'RISK_BASED', 'FIXED_NOTIONAL', 'EQUITY_PERCENT'} or config['order_preference'] not in {'AUTO', 'MARKET', 'LIMIT'}:
         raise ValueError('STRATEGY_EXECUTION_MODE_INVALID')
+    if config['margin_cap_mode'] not in {'PERCENT', 'FIXED_USDT'}:
+        raise ValueError('STRATEGY_MARGIN_CAP_MODE_INVALID')
     symbols = config['symbols']
     if not isinstance(symbols, list) or len(symbols) > 5000 or any(not isinstance(s, str) or not re.fullmatch(r'[A-Z0-9]{1,30}USDT', s) for s in symbols) or len(set(symbols)) != len(symbols):
         raise ValueError('STRATEGY_SYMBOLS_INVALID')

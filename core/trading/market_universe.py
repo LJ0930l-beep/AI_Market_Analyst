@@ -28,6 +28,7 @@ class MarketUniverse:
         provider = self.provider_factory(testnet)
         contracts = provider.list_active_usdt_contracts(None)
         active = {row['symbol'] for row in contracts}
+        contract_by_symbol = {row['symbol']: row for row in contracts}
         tickers = provider.list_contract_tickers()
         selected_scope = active if config['universe_mode'] == 'ALL' else active.intersection(config['symbols'])
         runtime = nofx_runtime if isinstance(nofx_runtime, dict) else {}
@@ -49,12 +50,22 @@ class MarketUniverse:
                 high = _positive(row.get('high_24h'))
                 low = _positive(row.get('low_24h'))
                 change = _finite(row.get('change_percentage'))
+                contract = contract_by_symbol[symbol]
+                fee = contract.get('taker_fee_rate')
+                try:
+                    fee = float(fee) if fee is not None else None
+                except (TypeError, ValueError):
+                    fee = None
+                if fee is not None and (not math.isfinite(fee) or fee < 0):
+                    fee = None
                 eligible.append({
                     'symbol': symbol,
                     'last': price,
                     'volume_24h_quote': volume,
                     'change_24h_pct': change,
                     'range_24h_pct': ((high - low) / price * 100.0) if high >= low > 0 else 0.0,
+                    'taker_fee_rate': fee,
+                    'contract_source': contract.get('source'),
                 })
         # Gate occasionally emits a duplicate ticker while contracts roll.
         # Keep the most liquid observation and rank several distinct market
@@ -78,11 +89,16 @@ class MarketUniverse:
             anchor = ranked[0]['symbol']
             if anchor not in chosen:
                 chosen.append(anchor)
+        # Large percentage moves on thin contracts often have no usable closed
+        # bars or executable depth. Keep the factor slot within the liquid
+        # leaders; the rotating discovery slot still visits every active Gate
+        # contract, and CUSTOM scope remains unrestricted.
+        liquid_factor_pool = ranked[:max(3, min(24, len(ranked)))]
         factor_leaders = []
         for item in (
-            sorted(ranked, key=lambda row: (-row['change_24h_pct'], -row['volume_24h_quote']))[:1]
-            + sorted(ranked, key=lambda row: (row['change_24h_pct'], -row['volume_24h_quote']))[:1]
-            + sorted(ranked, key=lambda row: (-row['range_24h_pct'], -row['volume_24h_quote']))[:1]
+            sorted(liquid_factor_pool, key=lambda row: (-row['change_24h_pct'], -row['volume_24h_quote']))[:1]
+            + sorted(liquid_factor_pool, key=lambda row: (row['change_24h_pct'], -row['volume_24h_quote']))[:1]
+            + sorted(liquid_factor_pool, key=lambda row: (-row['range_24h_pct'], -row['volume_24h_quote']))[:1]
         ):
             if item['symbol'] not in {row['symbol'] for row in factor_leaders}:
                 factor_leaders.append(item)

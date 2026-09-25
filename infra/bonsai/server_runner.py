@@ -8,6 +8,8 @@ import time
 import json
 import signal
 import subprocess
+import socket
+import urllib.request
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -15,6 +17,39 @@ CONFIG_FILE = PROJECT_ROOT / "infra" / "bonsai" / "config.env"
 LOGS_DIR = PROJECT_ROOT / "logs"
 PID_FILE = LOGS_DIR / "bonsai_server.pid"
 LOG_FILE = LOGS_DIR / "bonsai_server.log"
+EXPECTED_MODEL_BASENAME = "Ternary-Bonsai-2-27B-PTQ1_0.gguf"
+
+
+def probe_server(cfg):
+    """Identify the server on our loopback port before starting another one."""
+    base = f"http://{cfg['BONSAI_HOST']}:{cfg['BONSAI_PORT']}"
+    try:
+        with socket.create_connection((cfg["BONSAI_HOST"], int(cfg["BONSAI_PORT"])), timeout=2):
+            pass
+    except OSError:
+        return "UNREACHABLE"
+    try:
+        with urllib.request.urlopen(f"{base}/health", timeout=2) as response:
+            if response.status != 200:
+                return "UNVERIFIED"
+        with urllib.request.urlopen(f"{base}/v1/models", timeout=2) as response:
+            payload = json.load(response)
+        models = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(models, list):
+            return "MISMATCH"
+        expected_path = str(cfg.get("BONSAI_MODEL_PATH") or "").replace("\\", "/").casefold()
+        for row in models:
+            if not isinstance(row, dict):
+                continue
+            full_id = str(row.get("id") or "").replace("\\", "/")
+            model_id = full_id.rsplit("/", 1)[-1]
+            if model_id.casefold() == EXPECTED_MODEL_BASENAME.casefold() and (
+                not expected_path or full_id.casefold() == expected_path
+            ):
+                return "READY"
+        return "MISMATCH"
+    except (OSError, ValueError, json.JSONDecodeError):
+        return "UNVERIFIED"
 
 def load_env_config():
     config = {
@@ -23,6 +58,7 @@ def load_env_config():
         "BONSAI_HOST": "127.0.0.1",
         "BONSAI_PORT": "8080",
         "BONSAI_CTX": "8192",
+        "BONSAI_PARALLEL": "1",
         "BONSAI_NGL": "99",
         "BONSAI_KV4": "1",
     }
@@ -90,12 +126,37 @@ def stop_server():
 
 def start_server():
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    cfg = load_env_config()
+    observed = probe_server(cfg)
+    if observed == "READY":
+        print(f"[OK] Bonsai 2 27B is already healthy on {cfg['BONSAI_HOST']}:{cfg['BONSAI_PORT']}.")
+        return True
+    if observed == "MISMATCH":
+        print("[ERR] The configured model port is occupied by a different model.", file=sys.stderr)
+        return False
+    if observed == "UNVERIFIED":
+        for _ in range(40):
+            time.sleep(2)
+            observed = probe_server(cfg)
+            if observed == "READY":
+                print(f"[OK] Bonsai 2 27B is healthy on {cfg['BONSAI_HOST']}:{cfg['BONSAI_PORT']}.")
+                return True
+            if observed == "MISMATCH":
+                break
+        print("[ERR] The model port is occupied but no verified Bonsai model became healthy.", file=sys.stderr)
+        return False
     existing_pid = get_running_pid()
     if existing_pid:
-        print(f"[OK] Bonsai 2 27B is already running with PID {existing_pid}.")
-        return True
+        # A process can still exist while weights load or after its HTTP
+        # listener failed. Never start a second 27B copy beside it.
+        for _ in range(40):
+            if probe_server(cfg) == "READY":
+                print(f"[OK] Bonsai 2 27B is healthy with PID {existing_pid}.")
+                return True
+            time.sleep(2)
+        print(f"[ERR] Bonsai PID {existing_pid} exists but did not become healthy.", file=sys.stderr)
+        return False
 
-    cfg = load_env_config()
     bin_dir = Path(cfg["BONSAI_BIN_DIR"])
     server_exe = bin_dir / "llama-server.exe"
     model_path = Path(cfg["BONSAI_MODEL_PATH"])
@@ -117,6 +178,7 @@ def start_server():
         "--host", cfg["BONSAI_HOST"],
         "--port", cfg["BONSAI_PORT"],
         "-c", str(cfg["BONSAI_CTX"]),
+        "-np", str(cfg["BONSAI_PARALLEL"]),
         "-ngl", str(cfg["BONSAI_NGL"]),
         "--flash-attn", "on",
     ]
@@ -129,6 +191,7 @@ def start_server():
     print(f" Model:    {model_path}")
     print(f" Host:     {cfg['BONSAI_HOST']}:{cfg['BONSAI_PORT']}")
     print(f" Context:  {cfg['BONSAI_CTX']}")
+    print(f" Slots:    {cfg['BONSAI_PARALLEL']}")
     print(f" GPU NGL:  {cfg['BONSAI_NGL']}")
     print(f" KV4:      {cfg.get('BONSAI_KV4', '1')}")
     print(f" Log File: {LOG_FILE}")
@@ -154,8 +217,6 @@ def start_server():
     print(f"[INFO] Server spawned with PID {proc.pid}. Verifying health...")
 
     # Health check probe loop
-    import urllib.request
-    health_url = f"http://{cfg['BONSAI_HOST']}:{cfg['BONSAI_PORT']}/health"
     healthy = False
     for i in range(40):
         time.sleep(2)
@@ -163,16 +224,9 @@ def start_server():
         if proc.poll() is not None:
             print(f"[ERR] Server terminated early with returncode {proc.returncode}!", file=sys.stderr)
             return False
-        try:
-            req = urllib.request.Request(health_url)
-            with urllib.request.urlopen(req, timeout=2) as resp:
-                if resp.status == 200:
-                    data = resp.read().decode("utf-8")
-                    if "ok" in data.lower():
-                        healthy = True
-                        break
-        except Exception:
-            pass
+        if probe_server(cfg) == "READY":
+            healthy = True
+            break
         print(f"  ... waiting for CUDA model initialization ({i*2}s)")
 
     if healthy:

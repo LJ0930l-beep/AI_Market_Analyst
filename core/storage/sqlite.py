@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 from ..instruments import Instrument, canonical_instrument_key, instrument_for, instrument_from_payload
-from ..news_engine import NewsFetchResult
+from ..news_engine import NewsFetchResult, headline_mentions_symbol
 from ..outcomes.engine import Outcome
 from ..providers.news import NewsEvent
 from ..providers.runtime import ProviderSnapshot
@@ -135,6 +135,11 @@ APP_SETTING_DEFINITIONS: dict[str, dict[str, object]] = {
         "default": "",
         "value_type": "string",
         "description": "Registered account explicitly bound to the autonomous AI session for restart recovery.",
+    },
+    "gate.live.manual_order_unlocked": {
+        "default": False,
+        "value_type": "boolean",
+        "description": "Persisted operator confirmation for manual Gate Live entry orders. AI execution has its own account-scoped lifecycle.",
     },
 
     "market_hydration.enabled": {
@@ -1804,17 +1809,17 @@ class SQLiteStore(V2Store):
         normalized_symbol = symbol.strip().upper() if symbol else None
         symbol_pattern = f'%"{normalized_symbol}"%' if normalized_symbol else None
         with self._connect() as db:
-            # Symbol scoping happens in Python below, because an event may be
-            # tagged with a concrete symbol yet still be market-wide context
-            # (scope == "MARKET_WIDE") that every symbol must see.  A hard SQL
-            # LIKE filter would drop those rows before scope is inspected.
+            # Keep directly tagged events and explicitly market-wide events.
+            # An unrelated symbol's article must never become macro evidence
+            # just because it is the newest cached headline.
             rows = db.execute(
                 """SELECT payload_json FROM phase6_events
                 WHERE (? IS NULL OR julianday(published_at) >= julianday(?))
                   AND (? IS NULL OR julianday(published_at) <= julianday(?))
+                  AND (? IS NULL OR affected_symbols_json LIKE ? OR json_extract(payload_json, '$.scope') = 'MARKET_WIDE')
                 ORDER BY CASE WHEN ? IS NULL THEN event_at ELSE published_at END DESC, event_id ASC LIMIT ?""",
                 (published_since, published_since, published_since, as_of,
-                 published_since, max(bounded_limit * 5, bounded_limit)),
+                 normalized_symbol, symbol_pattern, published_since, max(bounded_limit * 5, bounded_limit)),
             ).fetchall()
         cutoff = _parse_utc_timestamp(as_of) if as_of is not None else None
         if as_of is not None and cutoff is None:
@@ -1833,11 +1838,16 @@ class SQLiteStore(V2Store):
                 in_scope = normalized_symbol in {str(value).upper() for value in symbols if isinstance(value, str)}
                 if in_scope:
                     payload = {**payload, "scope": declared_scope or "SYMBOL"}
+                    if (
+                        str(payload.get("provider") or "") == "google_news_rss"
+                        and declared_scope != "MARKET_WIDE"
+                        and not headline_mentions_symbol(str(payload.get("title") or ""), normalized_symbol)
+                    ):
+                        continue
+                elif declared_scope == "MARKET_WIDE":
+                    payload = {**payload, "scope": "MARKET_WIDE"}
                 else:
-                    # The event is tagged with other symbols but is the only
-                    # risk context available: surface it as market-wide
-                    # background instead of hiding it from this symbol.
-                    payload = {**payload, "scope": "MARKET_WIDE", "affected_symbols": symbols}
+                    continue
             known_at = _parse_utc_timestamp(payload.get("known_at"))
             published_at = _parse_utc_timestamp(payload.get("published_at"))
             revision_at = _parse_utc_timestamp(payload.get("revision_known_at"))

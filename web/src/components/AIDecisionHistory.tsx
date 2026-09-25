@@ -9,6 +9,8 @@ interface Cycle {
   operational_state?: string;
   status?: string;
   block_reason?: string;
+  block_stage?: string | null;
+  intent_id?: string | null;
   timestamp?: string;
   reason?: string;
   human_message?: string;
@@ -67,6 +69,20 @@ function cycleFallbackMessage(cycle: Cycle): string {
   return '系统检查';
 }
 
+function executionLabel(cycle: Cycle | undefined): string {
+  if (!cycle) return '执行状态未知';
+  const action = String(cycle.action || '').toUpperCase();
+  const opening = action === 'OPEN_LONG' || action === 'OPEN_SHORT';
+  if (!opening) return '本轮未开仓';
+  const intent = cycle.intent_id || asRecord(cycle.payload?.order_intent).intent_id;
+  if (cycle.block_stage && !intent) {
+    return `${cycle.block_stage} 拦截 · 未下单${cycle.reason ? `：${cycle.reason}` : ''}`;
+  }
+  if (cycle.block_stage) return `${cycle.block_stage} 阻断 · 请核对 Gate 订单`;
+  if (intent) return '已创建订单意图 · 以 Gate 远端回执为准';
+  return '仅 AI 提案 · 未生成订单';
+}
+
 export function AIDecisionHistory({
   cycles,
   runtime,
@@ -76,7 +92,12 @@ export function AIDecisionHistory({
 }) {
   const [expandedCycleId, setExpandedCycleId] = useState<string | null>(null);
 
+  const latestCycle = cycles[0];
   const recorded = cycles.find(
+    (cycle) => cycle.decision_origin === 'MODEL'
+      && ['OPEN_LONG', 'OPEN_SHORT'].includes(String(cycle.action || '').toUpperCase())
+      && cycle.payload?.model_output
+  ) || cycles.find(
     (cycle) => cycle.decision_origin === 'MODEL' && cycle.payload?.strategy_plan
   );
   const plan = recorded?.payload?.strategy_plan as
@@ -128,7 +149,6 @@ export function AIDecisionHistory({
         runtime.schedule.last_started_at > runtime.schedule.last_completed_at)
   );
 
-  const latestCycle = cycles[0];
   const currentAction = latestCycle?.action || recorded?.action || 'WAIT';
   const latestSource = decisionSource(latestCycle);
   const isBuy = currentAction.includes('BUY') || currentAction.includes('LONG');
@@ -151,7 +171,7 @@ export function AIDecisionHistory({
     if (match && match[1] && !isNaN(Number(match[1]))) {
       return Number(match[1]).toFixed(2);
     }
-    return '结构防线+推损';
+    return '未指定';
   };
 
   return (
@@ -214,7 +234,7 @@ export function AIDecisionHistory({
               {currentAction}
             </span>
             <span className="ai-factor-strategy-name">
-              {plan?.name || (recorded?.payload?.strategy_name as string) || 'EMA_Trend_Reversal'}
+              {plan?.name || (recorded?.payload?.strategy_name as string) || 'AI 自主判断'}
             </span>
           </div>
           <small className="ai-factor-sub">
@@ -224,15 +244,15 @@ export function AIDecisionHistory({
 
         {/* Factor 3: Risk & Position Constraints */}
         <div className="ai-factor-card">
-          <span className="ai-factor-label">开仓杠杆 · 名义上限</span>
+          <span className="ai-factor-label">策略目标杠杆 / AI 提议名义金额</span>
           <strong className="ai-factor-val">
-            {sizing?.leverage ?? output?.requested_leverage ?? config?.leverage ?? '10'}x
+            {config?.leverage ?? '—'}x
             <span className="ai-factor-val-note">
-              / {sizing?.notional_usdt ?? config?.max_notional_usdt ?? '500'} U
+              / {output?.extra_fields?.position_size_usdt ?? sizing?.notional_usdt ?? '—'} U
             </span>
           </strong>
           <small className="ai-factor-sub">
-            {sizing?.binding_limit || '严格执行单笔风控上限'}
+            {sizing?.binding_limit || '实际倍数以 Gate 合约上限与持仓回执为准'}
           </small>
         </div>
       </div>
@@ -244,23 +264,27 @@ export function AIDecisionHistory({
       )}
 
       {/* Plan Card (if available) */}
-      {plan && (
+      {recorded && (plan || isOpeningAction) && (
         <div className="ai-active-plan-card">
           <div className="ai-active-plan-head">
             <div className="ai-active-plan-title">
-              <span className="v2-badge v2-badge--gold">AI 执行方案</span>
-              <strong>{plan.name}</strong>
-              <span className="ai-plan-action-tag">目标: {recorded?.action}</span>
+              <span className="v2-badge v2-badge--gold">AI 决策提案</span>
+              <strong>{plan?.name || String(recordedInstructions.name || '自主交易判断')}</strong>
+              <span className="ai-plan-action-tag">模型提议: {recorded?.action}</span>
               <span className="ai-plan-order-tag">
                 {isOpeningAction
-                  ? `执行：${orderPreferenceLabel(effectivePreference)}`
+                  ? `拟用：${orderPreferenceLabel(effectivePreference)}`
                   : `本轮无订单 · 策略偏好：${orderPreferenceLabel(effectivePreference)}`}
               </span>
             </div>
             <time className="v2-news-time">{formatTradingTime(recorded?.timestamp)}</time>
           </div>
 
-          {plan.thesis && <p className="ai-plan-thesis">{plan.thesis}</p>}
+          <p className="ai-plan-thesis" role="status">
+            {recorded === latestCycle ? '最新提案' : '历史提案'} · {executionLabel(recorded)}
+          </p>
+
+          {plan?.thesis && <p className="ai-plan-thesis">{plan.thesis}</p>}
 
           <div className="ai-plan-price-grid">
             <div className="ai-plan-price-col">
@@ -274,38 +298,33 @@ export function AIDecisionHistory({
               </strong>
             </div>
             <div className="ai-plan-price-col">
-              <span className="ai-price-label">安全止损</span>
+              <span className="ai-price-label">模型拟定止损</span>
               <strong className="ai-price-val ai-price-val--stop">
-                {resolveStopPrice(output?.stop_price, plan)}
+                {resolveStopPrice(output?.stop_price, asRecord(plan))}
               </strong>
             </div>
             <div className="ai-plan-price-col">
-              <span className="ai-price-label">目标止盈</span>
+              <span className="ai-price-label">模型拟定止盈</span>
               <strong className="ai-price-val ai-price-val--tp">
-                {output?.take_profit ? Number(output.take_profit).toFixed(2) : '动态跟踪'}
+                {output?.take_profit ? Number(output.take_profit).toFixed(2) : '未指定'}
               </strong>
             </div>
             <div className="ai-plan-price-col">
               <span className="ai-price-label">预估保证金</span>
               <strong className="ai-price-val">
-                {sizing?.estimated_margin_usdt ? `${sizing.estimated_margin_usdt.toFixed(2)} U` : '待成交计算'}
+                {sizing?.estimated_margin_usdt ? `${sizing.estimated_margin_usdt.toFixed(2)} U` : '未生成订单'}
               </strong>
             </div>
           </div>
 
-          <div className="ai-plan-cond-row" style={{ color: '#34d399' }}>
-            <span className="ai-cond-tag" style={{ color: '#34d399' }}>🛡️ 移动止损:</span>
-            <span>已启用机构级追踪（浮盈 +1.0% 自动激活 · 回撤 1.2% 锁利出场 · 严防回吐）</span>
-          </div>
-
-          {plan.entry_conditions && plan.entry_conditions.length > 0 && (
+          {plan?.entry_conditions && plan.entry_conditions.length > 0 && (
             <div className="ai-plan-cond-row">
               <span className="ai-cond-tag">入场判定:</span>
               <span>{plan.entry_conditions.join('； ')}</span>
             </div>
           )}
 
-          {plan.exit_conditions && plan.exit_conditions.length > 0 && (
+          {plan?.exit_conditions && plan.exit_conditions.length > 0 && (
             <div className="ai-plan-cond-row">
               <span className="ai-cond-tag">退出/失效:</span>
               <span>{plan.exit_conditions.join('； ')}</span>
@@ -322,7 +341,7 @@ export function AIDecisionHistory({
               const isExpanded = expandedCycleId === (cycle.cycle_id || String(idx));
               const source = decisionSource(cycle);
               const action = cycle.action || 'CHECK';
-              const cycleStatus = String(cycle.status || '').toUpperCase();
+              const isOpenProposal = ['OPEN_LONG', 'OPEN_SHORT'].includes(String(action).toUpperCase());
               const time = formatTradingTime(cycle.completed_at || cycle.scheduled_at || cycle.timestamp);
 
               return (
@@ -340,9 +359,9 @@ export function AIDecisionHistory({
                       {source.tone === 'model' ? '🧠 AI模型' : source.tone === 'risk' ? (cycle.decision_origin === 'RISK' ? '🛡️ 风控' : '🛑 系统阻断') : '⚙️ 系统检查'}
                     </span>
                     <strong className="ai-timeline-action">{action}</strong>
-                    {cycleStatus && (
-                      <span className={`v2-badge ${cycleStatus === 'EXECUTED' ? 'v2-badge--bull' : cycleStatus === 'SUBMITTED' ? 'v2-badge--gold' : 'v2-badge--neutral'}`}>
-                        {cycleStatus === 'EXECUTED' ? '已成交' : cycleStatus === 'SUBMITTED' ? '已提交待成交' : cycleStatus}
+                    {isOpenProposal && (
+                      <span className={`v2-badge ${cycle.block_stage ? 'v2-badge--warning' : 'v2-badge--neutral'}`}>
+                        {executionLabel(cycle)}
                       </span>
                     )}
                     <span className="ai-timeline-msg">

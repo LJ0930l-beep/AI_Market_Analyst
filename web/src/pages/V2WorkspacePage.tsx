@@ -59,6 +59,8 @@ interface DecisionRecord extends Ledger {
 
 interface PositionRecord extends Ledger {
   side?: string;
+  margin_mode?: string | null;
+  leverage?: number | null;
   entry?: number;
   stop?: number;
   targets?: number[];
@@ -797,6 +799,7 @@ export function V2WorkspacePage({
 
   // Live Trade Safety Hard-Lock state
   const [liveTradeUnlocked, setLiveTradeUnlocked] = useState(false);
+  const [liveLockLoading, setLiveLockLoading] = useState(true);
   const [liveOrderSymbol, setLiveOrderSymbol] = useState("BTCUSDT");
   const [liveOrderSide, setLiveOrderSide] = useState<"BUY" | "SELL">("BUY");
   const [liveOrderType, setLiveOrderType] = useState<"LIMIT" | "MARKET">("MARKET");
@@ -807,6 +810,17 @@ export function V2WorkspacePage({
   const [liveOrderTakeProfit, setLiveOrderTakeProfit] = useState("");
   const [liveOrderFeedback, setLiveOrderFeedback] = useState<string | null>(null);
   const [liveOrderBusy, setLiveOrderBusy] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    apiClient.v2<{ unlocked: boolean }>("/gate/manual-live-lock")
+      .then((result) => { if (active) setLiveTradeUnlocked(result.unlocked === true); })
+      .catch((error) => {
+        if (active) setLiveOrderFeedback(errorMessage(error, "实盘手动下单锁状态读取失败"));
+      })
+      .finally(() => { if (active) setLiveLockLoading(false); });
+    return () => { active = false; };
+  }, []);
 
   const handleSmartAutoSlTp = (side: "BUY" | "SELL", isLive: boolean = false) => {
     let basePrice = isLive
@@ -872,7 +886,7 @@ export function V2WorkspacePage({
   const handlePlaceRealLiveOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     setLiveOrderFeedback(null);
-    if (!liveTradeUnlocked) {
+    if (liveLockLoading || !liveTradeUnlocked) {
       setLiveOrderFeedback(zh ? "🚨 实盘交易处于安全锁定状态，请先在上方解锁确认！" : "Live trading is locked. Please unlock it above first!");
       return;
     }
@@ -2513,6 +2527,11 @@ export function V2WorkspacePage({
                         <span className={`v2-badge ${isLong ? "v2-badge--bull" : "v2-badge--bear"}`}>
                           {p.side ?? "POSITION"}
                         </span>
+                        {p.margin_mode && p.leverage != null && (
+                          <span className="v2-badge v2-badge--neutral">
+                            {p.margin_mode === "cross" ? "全仓" : p.margin_mode === "isolated" ? "逐仓" : p.margin_mode} {p.leverage}x
+                          </span>
+                        )}
                         <span className={`v2-badge ${isClosed ? "v2-badge--neutral" : "v2-badge--gold"}`}>
                           {text(p.status)}
                         </span>
@@ -3327,7 +3346,7 @@ export function V2WorkspacePage({
                   color: liveTradeUnlocked ? "#4ade80" : "#ef4444",
                 }}
               >
-                {liveTradeUnlocked ? (zh ? "已解锁" : "UNLOCKED") : (zh ? "🔒 安全加锁" : "🔒 LOCKED")}
+                {liveTradeUnlocked ? (zh ? "手动已解锁" : "MANUAL UNLOCKED") : (zh ? "🔒 手动已锁" : "🔒 MANUAL LOCKED")}
               </span>
             </button>
           </nav>
@@ -4205,32 +4224,41 @@ export function V2WorkspacePage({
                 <div className="v2-live-lock-content">
                   <h3>
                     {liveTradeUnlocked
-                      ? (zh ? "实盘交易已解锁 · 真实资金操作已开放" : "Live Trading Unlocked · Real Capital Active")
-                      : (zh ? "实盘交易安全硬锁 · 当前已上锁保护" : "Live Trading Safety Hard-Lock · Protected")}
+                      ? (zh ? "实盘手动下单已解锁" : "Manual Live Orders Unlocked")
+                      : (zh ? "实盘手动下单已上锁" : "Manual Live Orders Locked")}
                   </h3>
                   <p>
                     {liveTradeUnlocked
-                      ? (zh ? "⚠️ 警告：当前提交的任何订单将发送至 Gate 实盘撮合引擎并直接动用真实资金。请务必设置合理的止损价格与低杠杆。" : "Warning: Real funds are at risk. Always enforce mandatory stop-losses.")
-                      : (zh ? "为了杜绝误触与非预期资金划扣，实盘交易需显式解锁并完成安全确认。若只需演练，请切换至【模拟盘 API】。" : "Safety hard-lock active to prevent unintended fills. Use Paper API for testing.")}
+                      ? (zh ? "手动实盘开仓会直接动用真实资金。此确认状态重启后保留；AI 自动做单由指挥舱单独控制。" : "Manual Live entries use real funds. This setting persists across restarts; AI trading is controlled separately.")
+                      : (zh ? "手动实盘开仓已由后端拦截。解锁后重启仍保持选择；AI 自动做单由指挥舱单独控制。" : "The backend blocks manual Live entries. Your choice persists across restarts; AI trading is controlled separately.")}
                   </p>
                 </div>
                 <button
                   type="button"
                   className={liveTradeUnlocked ? "v2-btn-danger" : "v2-btn-primary"}
-                  onClick={() => {
+                  disabled={liveLockLoading}
+                  onClick={async () => {
                     if (!liveTradeUnlocked) {
                       const confirmed = window.confirm(
                         zh
-                          ? "【实盘风险警示】\n您即将解锁 Gate 实盘真实交易！\n任何后续提交的操作将直接消耗真实资金账户保证金。\n您确认已了解所有市场风险并自愿解锁吗？"
-                          : "Unlock Live Trading? Real capital will be used!"
+                          ? "【实盘风险警示】\n您即将解锁 Gate 实盘手动开仓，状态将在重启后保留。\n您确认已了解真实资金风险吗？"
+                          : "Unlock manual Live entries across restarts? Real capital will be used!"
                       );
-                      if (confirmed) setLiveTradeUnlocked(true);
-                    } else {
-                      setLiveTradeUnlocked(false);
+                      if (!confirmed) return;
+                    }
+                    setLiveLockLoading(true);
+                    try {
+                      const result = await apiClient.v2<{ unlocked: boolean }>("/gate/manual-live-lock", "PUT", { unlocked: !liveTradeUnlocked });
+                      setLiveTradeUnlocked(result.unlocked === true);
+                      setLiveOrderFeedback(null);
+                    } catch (error) {
+                      setLiveOrderFeedback(errorMessage(error, "实盘手动下单锁更新失败"));
+                    } finally {
+                      setLiveLockLoading(false);
                     }
                   }}
                 >
-                  {liveTradeUnlocked ? (zh ? "🔒 立即重新上锁" : "Re-Lock Safety") : (zh ? "🔓 确认并解锁实盘" : "Unlock Live Trading")}
+                  {liveLockLoading ? (zh ? "正在核对状态…" : "Checking lock…") : liveTradeUnlocked ? (zh ? "🔒 重新锁定手动下单" : "Lock Manual Orders") : (zh ? "🔓 解锁手动实盘下单" : "Unlock Manual Live Orders")}
                 </button>
               </div>
 
@@ -4323,7 +4351,7 @@ export function V2WorkspacePage({
                   <header className="v2-panel-header">
                     <h2>⚡ {zh ? "实盘量化交易发单台" : "Live Execution Desk"}</h2>
                     <span className="v2-badge v2-badge--bear">
-                      {liveTradeUnlocked ? (zh ? "🔥 链路已打通" : "LIVE ACTIVE") : (zh ? "🔒 需先解锁" : "LOCKED")}
+                      {liveTradeUnlocked ? (zh ? "🔥 手动可下单" : "MANUAL READY") : (zh ? "🔒 手动已锁" : "MANUAL LOCKED")}
                     </span>
                   </header>
                   <p className="v2-field-sub">
