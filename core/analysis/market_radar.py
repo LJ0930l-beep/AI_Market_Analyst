@@ -19,6 +19,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from core.trading.institutional_schema import ensure_institutional_trader_schema
+from core.providers.gateio_provider import GatePublicProvider
 from .cross_market import fetch_cross_market
 
 
@@ -27,6 +28,65 @@ _BINANCE_CACHE_LOCK = threading.RLock()
 _GATE_VOLUME_TIMEFRAME = "15m"
 _GATE_VOLUME_FRESHNESS = timedelta(minutes=45)
 _GATE_VOLUME_LOOKBACK = timedelta(hours=12)
+_GATE_VOLUME_REFRESH_LOCK = threading.RLock()
+_GATE_VOLUME_REFRESHED: dict[tuple[str, str], datetime] = {}
+
+
+def refresh_gate_volume_samples(
+    store: Any,
+    symbols: Iterable[str] | None = None,
+    *,
+    now: datetime | None = None,
+    provider: Any | None = None,
+) -> dict[str, Any]:
+    """Backfill the radar from Gate's public, closed 15m futures candles.
+
+    Requests are bounded to three symbols and cached for five minutes. Only
+    candles newer than the latest persisted close are written, so polling the
+    dashboard does not keep inserting the same candle with a new fetch time.
+    The read projection remains independent of network availability.
+    """
+    observed = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    with store._connect() as db:
+        ensure_institutional_trader_schema(db)
+        selected = _infer_symbols(db, symbols)[:3]
+    result: dict[str, Any] = {"attempted": [], "inserted": 0, "errors": {}}
+    if not selected:
+        return result
+    source = provider or GatePublicProvider(timeout=4, retries=0)
+    with _GATE_VOLUME_REFRESH_LOCK:
+        for symbol in selected:
+            key = (str(getattr(store, "path", id(store))), symbol)
+            previous = _GATE_VOLUME_REFRESHED.get(key)
+            if previous is not None and timedelta(0) <= observed - previous < timedelta(minutes=5):
+                continue
+            result["attempted"].append(symbol)
+            try:
+                candles = source._native_bars(symbol, "15m", 64, price_type="last")
+                with store._connect() as db:
+                    row = db.execute(
+                        """SELECT MAX(bar_end) FROM gate_derivative_bars
+                           WHERE provider='gate' AND symbol=? AND timeframe='15m'
+                             AND price_type='last' AND is_closed=1 AND quality_status='VALID'""",
+                        (symbol,),
+                    ).fetchone()
+                latest = _utc(row[0]) if row and row[0] else None
+                closed = [bar for bar in candles if bar.is_closed and bar.bar_end <= observed
+                          and (latest is None or bar.bar_end > latest)]
+                if closed:
+                    # The provider stamps available_at when its HTTP response
+                    # arrives, after the request-start timestamp above.
+                    persisted_at = datetime.now(timezone.utc) if now is None else observed
+                    result["inserted"] += store.save_gate_public_volume_bars(
+                        symbol, closed, environment=str(source.environment), now=persisted_at,
+                    )
+                _GATE_VOLUME_REFRESHED[key] = observed
+            except Exception as exc:
+                result["errors"][symbol] = f"{type(exc).__name__}: {exc}"
+                # A broken public feed must not block the API or trigger a
+                # retry on every 30-second UI poll.
+                _GATE_VOLUME_REFRESHED[key] = observed - timedelta(minutes=4)
+    return result
 
 
 def _utc(value: Any) -> datetime | None:

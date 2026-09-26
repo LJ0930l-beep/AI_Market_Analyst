@@ -1,10 +1,11 @@
 from datetime import datetime, timedelta, timezone
 import json
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 from apps.api.main import create_app
 import core.analysis.market_radar as radar_module
-from core.analysis.market_radar import build_market_radar, store_onchain_webhook
+from core.analysis.market_radar import build_market_radar, refresh_gate_volume_samples, store_onchain_webhook
 from core.storage import SQLiteStore
 from core.trading.dynamic_risk_policy import evaluate_dynamic_risk
 from core.trading.institutional_schema import ensure_institutional_trader_schema
@@ -71,6 +72,34 @@ def _gate_bar(start, *, minutes=15, close=100.0, volume=10.0, source="gate_nativ
     }
     values.update(overrides)
     return values
+
+
+def test_public_gate_volume_refresh_persists_only_new_closed_candles(tmp_path):
+    store = SQLiteStore(tmp_path / "radar-volume-refresh.sqlite3")
+    store.initialize()
+    now = datetime(2026, 9, 21, 2, 30, tzinfo=timezone.utc)
+    calls = []
+
+    class Provider:
+        environment = "LIVE_PUBLIC"
+
+        def _native_bars(self, symbol, timeframe, limit, *, price_type):
+            calls.append((symbol, timeframe, limit, price_type))
+            return [SimpleNamespace(**_gate_bar(now - timedelta(minutes=45), volume=12)),
+                    SimpleNamespace(**_gate_bar(now - timedelta(minutes=30), volume=14)),
+                    SimpleNamespace(**_gate_bar(now - timedelta(minutes=15), is_closed=False, volume=999))]
+
+    provider = Provider()
+    first = refresh_gate_volume_samples(store, ["BTCUSDT"], now=now, provider=provider)
+    assert first["inserted"] == 2
+    assert calls == [("BTCUSDT", "15m", 64, "last")]
+    volume = build_market_radar(store, symbols=["BTCUSDT"], now=now)["volume"]
+    assert volume["status"] == "AVAILABLE"
+    assert [point["volume"] for point in volume["series"]] == [12, 14]
+    assert all(point["source"] == "gate_native_rest:last" for point in volume["series"])
+    refresh_gate_volume_samples(store, ["BTCUSDT"], now=now + timedelta(minutes=6), provider=provider)
+    with store._connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM gate_derivative_bars").fetchone()[0] == 2
 
 
 def test_market_radar_projects_persisted_gate_last_15m_volume_and_deduplicates_environments(tmp_path):
@@ -233,6 +262,38 @@ def test_market_radar_api_and_authenticated_onchain_webhook(tmp_path, monkeypatc
     payload = radar.json()
     assert payload["symbols"] == ["BTCUSDT"]
     assert payload["onchain"]["events"][0]["event_id"].startswith("onchain_arkham_")
+
+
+def test_market_radar_ui_route_warms_real_closed_volume_before_projection(tmp_path, monkeypatch):
+    store = SQLiteStore(tmp_path / "radar-ui-volume.sqlite3")
+    store.initialize()
+    now = datetime.now(timezone.utc)
+    rounded = now.replace(minute=(now.minute // 15) * 15, second=0, microsecond=0)
+
+    class Provider:
+        environment = "LIVE_PUBLIC"
+
+        def __init__(self, **_kwargs):
+            pass
+
+        def _native_bars(self, symbol, timeframe, limit, *, price_type):
+            assert (symbol, timeframe, price_type) == ("BTCUSDT", "15m", "last")
+            return [SimpleNamespace(**_gate_bar(rounded - timedelta(minutes=30), available_at=now)),
+                    SimpleNamespace(**_gate_bar(rounded - timedelta(minutes=15), available_at=now))]
+
+    monkeypatch.setattr(radar_module, "GatePublicProvider", Provider)
+    monkeypatch.setattr(radar_module, "_binance_derivatives", lambda *_args, **_kwargs: ([], {}))
+    monkeypatch.setattr(radar_module, "fetch_cross_market", lambda **_kwargs: {"status": "NO_DATA", "items": []})
+    client = TestClient(
+        create_app(store=store, llm_provider=None, market_hydration_enabled=False),
+        headers={"Host": "localhost:8000", "Origin": "http://localhost:5173"},
+    )
+    response = client.get("/v2/market-radar?symbols=BTCUSDT")
+    assert response.status_code == 200
+    volume = response.json()["volume"]
+    assert volume["status"] == "AVAILABLE"
+    assert [point["volume"] for point in volume["series"]] == [10, 10]
+    assert all(point["source"] == "gate_native_rest:last" for point in volume["series"])
 
 
 def test_two_authoritative_losses_trigger_two_hour_entry_lock(tmp_path):

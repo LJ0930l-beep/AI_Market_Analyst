@@ -64,6 +64,10 @@ def main():
             assert analysis["execution_records"][0]["economic_role"] == "ENTRY"
             assert analysis["style_dna"]["discipline_score"] is None
             assert analysis["execution_scope"]["account_id"] == "smoke"
+            brief = query("/daily-brief")
+            assert brief["schedule"]["timezone"] == "Asia/Shanghai"
+            assert brief["schedule"]["time"] == "09:00"
+            assert brief["schedule"]["status"] != "DISABLED"
             refresh = query("/v2/macro-calendar/refresh", "POST")
             workspace = query("/v2/workspace?account_id=smoke")
             assert workspace["macro_calendar"]["actual_supported"] is False
@@ -71,6 +75,7 @@ def main():
             print(json.dumps({"packaged_backend":"PASS", "isolated_data":True,
                 "entry_projection":"PASS", "read_does_not_duplicate_fill":"PASS",
                 "no_fabricated_score":"PASS", "calendar_api":"PASS",
+                "daily_brief_schedule":"PASS",
                 "calendar_fetch_status":refresh["status"], "calendar_events":len(workspace["macro_events"]),
                 "tested_at":datetime.now(timezone.utc).isoformat()}, ensure_ascii=False))
         finally:

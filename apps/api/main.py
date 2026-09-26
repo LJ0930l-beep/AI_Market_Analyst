@@ -41,6 +41,7 @@ from core.consult import (
     ndjson_line,
     parse_consult_request,
 )
+from core.daily_brief import DailyBriefSchedule, generate_daily_brief_document
 from core.events import NewsEventProviderAdapter, event_capabilities
 from core.instruments import (
     CandidateParseError,
@@ -52,7 +53,7 @@ from core.instruments import (
     read_trading_bars,
 )
 from core.memory import MarketMemoryService, memory_capabilities
-from core.market_intelligence import MARKET_INTELLIGENCE_VERSION, brief_source_evidence, build_market_intelligence
+from core.market_intelligence import MARKET_INTELLIGENCE_VERSION, build_market_intelligence
 from core.market_hydration import HYDRATION_CONTRACT_VERSION, MarketHydrationRuntime
 from core.model_client import model_client
 from core.model_routing import DEFAULT_FAST_MODEL, DEFAULT_SMART_MODEL, ModelRoutingConfig, is_bonsai_model_identity
@@ -974,17 +975,20 @@ if FastAPI is not None:
 
     @router.get("/daily-brief")
     def daily_brief(
+        request: Request,
         language: str | None = None,
         store: SQLiteStore = Depends(get_store),
     ) -> dict[str, object]:
         if language is not None and language not in {"en", "zh-CN"}:
             raise APIError(400, "INVALID_BRIEF_LANGUAGE", "daily brief language must be en or zh-CN")
         brief = store.latest_daily_brief(language=language)
+        schedule = getattr(request.app.state, "daily_brief_schedule", None)
         return {
             "contract_version": "daily_brief_v1",
             "status": "available" if brief else "unavailable",
             "brief": brief,
-            "generation": "explicit_post_only",
+            "generation": "scheduled_09_asia_shanghai_and_manual",
+            "schedule": schedule.status() if isinstance(schedule, DailyBriefSchedule) else {"status": "DISABLED", "timezone": "Asia/Shanghai", "time": "09:00"},
             "read_only": True,
         }
 
@@ -1000,68 +1004,16 @@ if FastAPI is not None:
         preference = body.get("model_preference", "auto")
         if language not in {"en", "zh-CN"}:
             raise APIError(400, "INVALID_BRIEF_LANGUAGE", "daily brief language must be en or zh-CN")
-        view = build_market_intelligence(store)
-        source_hash, sources, missing = brief_source_evidence(view)
-        evidence = json.dumps(
-            {key: view[key] for key in ("as_of", "pulse", "calendar", "watchlist", "heatmap", "news")},
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        instruction = (
-            "请仅依据以下本地已保存证据生成简洁的每日市场简报，分为隔夜变化、今日事件、热门领域、关注资产和风险；缺失项要明确说明。"
-            if language == "zh-CN"
-            else "Using only the following locally saved evidence, write a concise daily market brief covering overnight changes, today's events, hot areas, focus assets, and risks. State missing evidence explicitly."
-        )
-        evidence_budget = max(512, service.config.max_message_chars - len(instruction) - 96)
-        evidence = evidence[:evidence_budget]
         try:
-            request = parse_consult_request(
-                {
-                    "language": language,
-                    "model_preference": preference,
-                    "task": "daily_brief",
-                    "messages": [{"role": "user", "content": f"{instruction}\nBEGIN_SAVED_EVIDENCE\n{evidence}\nEND_SAVED_EVIDENCE"}],
-                },
-                service.config,
+            payload = await generate_daily_brief_document(
+                store, service, language=language, model_preference=preference,
             )
-            session = await service.open(request, store=store)
         except ConsultValidationError as exc:
             raise APIError(exc.status_code, exc.code, exc.message) from exc
         except ConsultServiceError as exc:
             raise APIError(exc.status_code, exc.code, exc.message) from exc
-        content: list[str] = []
-        metadata: dict[str, object] = {}
-        stream_error: dict[str, object] | None = None
-        async for event in session.events():
-            if event.get("type") == "meta":
-                metadata = event
-            elif event.get("type") == "delta" and isinstance(event.get("content"), str):
-                content.append(str(event["content"]))
-            elif event.get("type") == "error":
-                stream_error = event.get("error") if isinstance(event.get("error"), dict) else {"code": "QWEN_STREAM_FAILED"}
-        if stream_error is not None:
-            raise APIError(503, str(stream_error.get("code", "QWEN_STREAM_FAILED")), str(stream_error.get("message", "Daily brief generation failed.")))
-        rendered = "".join(content).strip()
-        route = metadata.get("model_route") if isinstance(metadata.get("model_route"), dict) else {}
-        if not rendered:
-            raise APIError(503, "QWEN_EMPTY_RESPONSE", "Daily brief generation returned no content")
-        now = datetime.now(timezone.utc).isoformat()
-        payload = {
-            "brief_id": str(uuid4()),
-            "generated_at": now,
-            "as_of": view["as_of"],
-            "language": language,
-            "model_id": metadata.get("model_id", "unknown"),
-            "model_tier": metadata.get("model_tier", "unknown"),
-            "route_reason": route.get("reason", "unknown"),
-            "source_hash": source_hash,
-            "sources": sources,
-            "missing": missing,
-            "content": rendered,
-            "capability": {"provider": metadata.get("provider"), "contract_version": "daily_brief_v1", "explicit_generation": True},
-        }
-        store.save_daily_brief(payload)
+        except RuntimeError as exc:
+            raise APIError(503, "DAILY_BRIEF_MODEL_FAILED", str(exc)) from exc
         return {"contract_version": "daily_brief_v1", "status": "available", "brief": payload}
 
     async def _consult_payload(request: Request, service: QwenConsultService) -> object:
@@ -2422,6 +2374,8 @@ def create_app(
     market_hydration_runtime: MarketHydrationRuntime | None = None,
     market_hydration_enabled: bool | None = None,
     market_hydration_interval_seconds: float = 300.0,
+    daily_brief_schedule_enabled: bool | None = None,
+    daily_brief_clock: Callable[[], datetime] | None = None,
 ):
     """Create an API app with optional service injections for isolated tests."""
 
@@ -2450,6 +2404,7 @@ def create_app(
     app.state.market_hydration_enabled = market_hydration_enabled
     app.state.market_hydration_interval_seconds = max(30.0, min(float(market_hydration_interval_seconds), 3600.0))
     app.state.consult_service = _consult_service() if consult_service is _UNSET else consult_service
+    app.state.daily_brief_schedule = None
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
@@ -2587,6 +2542,9 @@ def create_app(
     app.state.scheduler_runtime = scheduler_runtime
 
     async def shutdown_scheduler() -> None:
+        brief_schedule = getattr(app.state, "daily_brief_schedule", None)
+        if isinstance(brief_schedule, DailyBriefSchedule):
+            await brief_schedule.stop()
         hydration = getattr(app.state, "public_hydration_runtime", None)
         if isinstance(hydration, MarketHydrationRuntime):
             try:
@@ -2713,6 +2671,17 @@ def create_app(
                 threading.Thread(target=retry_resume, name="aima-auto-resume-retry", daemon=True).start()
 
     app.router.on_startup.append(startup_monitoring)
+
+    async def startup_daily_brief() -> None:
+        enabled = (os.environ.get("AIMA_PACKAGED_SIDECAR", "0") == "1") if daily_brief_schedule_enabled is None else bool(daily_brief_schedule_enabled)
+        service = app.state.consult_service
+        if enabled and isinstance(service, QwenConsultService):
+            selected_store = store if store is not None else _store()
+            schedule = DailyBriefSchedule(selected_store, service, clock=daily_brief_clock)
+            app.state.daily_brief_schedule = schedule
+            schedule.start()
+
+    app.router.on_startup.append(startup_daily_brief)
 
     def startup_retention() -> None:
         # The bar store keeps one revision per *fetch* rather than one per

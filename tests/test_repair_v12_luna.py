@@ -309,13 +309,20 @@ def test_unknown_reconciliation_records_concrete_fill_once(repair_store):
 
     result = gateway.reconcile_in_flight_orders("testnet_account", TradingMode.TESTNET)
     assert result[0]["reconciled"] is True
-    assert result[0]["reconciled_status"] == "FILLED"
-    assert ledger.get_open_positions("testnet_account")[0]["protection_status"] == ProtectionStatus.ACTIVE.value
+    assert result[0]["reconciled_status"] == "UNKNOWN"
+    # The adapter supplied only a boolean claim, with no Gate conditional
+    # order IDs or native readback.  Record the concrete fill but keep its
+    # protection and margin reservation pending until Gate can prove both.
+    assert ledger.get_open_positions("testnet_account")[0]["protection_status"] == ProtectionStatus.PENDING.value
     with repair_store._connect() as db:
-        assert db.execute("SELECT status FROM risk_reservations").fetchone()[0] == "COMMITTED"
+        assert db.execute("SELECT status FROM risk_reservations").fetchone()[0] == "PENDING"
         assert db.execute("SELECT COUNT(*) FROM trade_fills WHERE account_id='testnet_account'").fetchone()[0] == 1
-    # Reconciliation is idempotent after the order leaves the in-flight set.
-    assert gateway.reconcile_in_flight_orders("testnet_account", TradingMode.TESTNET) == []
+    # The intent remains eligible for a protection readback on the next
+    # cycle, while the concrete fill must not be recorded a second time.
+    retry = gateway.reconcile_in_flight_orders("testnet_account", TradingMode.TESTNET)
+    assert retry[0]["reconciled_status"] == "UNKNOWN"
+    with repair_store._connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM trade_fills WHERE account_id='testnet_account'").fetchone()[0] == 1
     assert adapter.fetch_calls
 
 

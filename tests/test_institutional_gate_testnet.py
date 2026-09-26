@@ -259,6 +259,37 @@ def test_gate_rejects_isolated_or_wrong_cross_leverage_readback_before_order():
     assert exchange.created == []
 
 
+def test_gate_existing_cross_leverage_is_verified_without_redundant_update():
+    class Exchange:
+        def __init__(self):
+            self.set_calls = 0
+
+        def load_markets(self):
+            return {"ETH/USDT:USDT": {
+                "symbol": "ETH/USDT:USDT", "id": "ETH_USDT", "base": "ETH", "quote": "USDT",
+                "settle": "USDT", "swap": True, "linear": True, "contractSize": 0.01,
+                "precision": {"amount": 1, "price": 0.01},
+                "limits": {"amount": {"min": 1, "max": 100000}, "leverage": {"max": 200}},
+            }}
+
+        def fetch_positions(self, _symbols):
+            return [{"symbol": "ETH/USDT:USDT", "contracts": 0,
+                     "info": {"contract": "ETH_USDT", "size": 0, "leverage": "0",
+                              "cross_leverage_limit": "100", "pos_margin_mode": "cross"}} for _ in range(2)]
+
+        def set_leverage(self, *_args, **_kwargs):
+            self.set_calls += 1
+            raise AssertionError("already at target leverage")
+
+    exchange = Exchange()
+    trader = GateLiveTrader("testnet-key", "testnet-secret", testnet=True,
+                            exchange=exchange, live_trading_enabled=True)
+    result = trader.set_leverage("ETHUSDT", 100)
+    assert result["acknowledged"] is True
+    assert result["margin_mode_source"] == "GATE_EXISTING_POSITION_READBACK"
+    assert exchange.set_calls == 0
+
+
 def test_gate_cross_position_reports_actual_cross_limit_instead_of_native_zero():
     class Exchange:
         def load_markets(self):

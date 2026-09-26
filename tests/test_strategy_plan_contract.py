@@ -1,7 +1,7 @@
 import pytest
 
 from core.trading.ai_session_coordinator import derive_strategy_plan_from_text
-from core.trading.model_schemas import AI_ACTION_SCHEMA, normalize_limit_ttl_alias, normalize_news_impact, normalize_wait_conditions, normalize_wait_symbol_alias, validate_schema
+from core.trading.model_schemas import AI_ACTION_SCHEMA, normalize_limit_ttl_alias, normalize_misplaced_strategy_plan, normalize_news_impact, normalize_wait_conditions, normalize_wait_symbol_alias, validate_schema
 
 
 def test_wait_missing_conditions_are_preserved_in_supported_schema_field() -> None:
@@ -15,6 +15,49 @@ def test_wait_missing_conditions_are_preserved_in_supported_schema_field() -> No
     }
     validate_schema(decoded, AI_ACTION_SCHEMA)
     assert decoded["strategy_analysis"]["missing_conditions"] == ["5m 收盘突破 149.08"]
+
+
+def test_misplaced_strategy_plan_is_recovered_without_changing_wait_decision() -> None:
+    decoded = {
+        "action": "WAIT", "instrument_id": "BTCUSDT", "reason": "等待收盘确认", "confidence": 42,
+        "strategy_analysis": {
+            "name": "突破观察", "thesis": "量能不足", "entry_conditions": ["5m 放量突破"],
+            "exit_conditions": ["结构失效"], "missing_conditions": ["等待放量"],
+            "next_trigger_price": 85000.0,
+        },
+    }
+    with pytest.raises(ValueError, match=r"output\.strategy_analysis:fields"):
+        validate_schema(decoded, AI_ACTION_SCHEMA)
+
+    assert normalize_misplaced_strategy_plan(decoded) == {
+        "field": "strategy_analysis",
+        "normalized_fields": ["strategy_plan", "next_trigger_price"],
+        "source": "EXACT_KNOWN_MODEL_ALIAS",
+    }
+    validate_schema(decoded, AI_ACTION_SCHEMA)
+    assert decoded["action"] == "WAIT"
+    assert decoded["next_trigger_price"] == 85000.0
+    assert decoded["strategy_analysis"] == {"missing_conditions": ["等待放量"]}
+    assert decoded["strategy_plan"]["name"] == "突破观察"
+
+
+def test_misplaced_strategy_plan_conflict_remains_invalid() -> None:
+    decoded = {
+        "action": "WAIT", "instrument_id": "BTCUSDT", "reason": "等待", "confidence": 42,
+        "strategy_plan": {"name": "已有计划", "thesis": "不同论点", "entry_conditions": ["A"], "exit_conditions": ["B"]},
+        "strategy_analysis": {
+            "name": "另一个计划", "thesis": "相反论点", "entry_conditions": ["C"],
+            "exit_conditions": ["D"], "next_trigger_price": 85000.0,
+        },
+        "next_trigger_price": 84000.0,
+    }
+    original = {"plan": decoded["strategy_plan"], "analysis": dict(decoded["strategy_analysis"]), "trigger": decoded["next_trigger_price"]}
+    assert normalize_misplaced_strategy_plan(decoded) is None
+    assert decoded["strategy_plan"] is original["plan"]
+    assert decoded["strategy_analysis"] == original["analysis"]
+    assert decoded["next_trigger_price"] == original["trigger"]
+    with pytest.raises(ValueError, match=r"output\.strategy_analysis:fields"):
+        validate_schema(decoded, AI_ACTION_SCHEMA)
 
 
 def test_authorized_wait_symbol_alias_is_auditable_and_non_executing_only() -> None:

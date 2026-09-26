@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import asyncio
 import os
 import tempfile
 import unittest
@@ -13,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from apps.api.main import create_app
 from core.consult import ConsultConfig, QwenConsultService
+from core.daily_brief import DailyBriefSchedule
 from core.instruments import instrument_for
 from core.market_intelligence import build_market_intelligence
 from core.model_routing import DEFAULT_MODEL, DEFAULT_SMART_MODEL, ModelRoutingConfig, route_model
@@ -141,6 +143,32 @@ class V11MarketIntelligenceTests(unittest.TestCase):
         self.assertEqual(after["daily_briefs"], before["daily_briefs"] + 1)
         for table in ("predictions", "paper_trades", "outcomes", "calibration_results"):
             self.assertEqual(after[table], before[table])
+
+    def test_nine_am_shanghai_brief_runs_once_and_survives_restart(self) -> None:
+        service = QwenConsultService(config(), transport=FakeBriefTransport())
+        instant = [datetime(2026, 9, 26, 0, 59, tzinfo=timezone.utc)]
+        schedule = DailyBriefSchedule(self.store, service, clock=lambda: instant[0])
+        self.assertFalse(asyncio.run(schedule.run_due_once()))
+        self.assertIsNone(self.store.latest_daily_brief(language="zh-CN"))
+        instant[0] = datetime(2026, 9, 26, 1, 0, tzinfo=timezone.utc)
+        self.assertTrue(asyncio.run(schedule.run_due_once()))
+        brief = self.store.latest_daily_brief(language="zh-CN")
+        self.assertEqual(brief["capability"]["scheduled_local_date"], "2026-09-26")
+        reopened = DailyBriefSchedule(SQLiteStore(self.path), service, clock=lambda: instant[0])
+        self.assertFalse(asyncio.run(reopened.run_due_once()))
+        self.assertEqual(reopened.status()["status"], "SUCCEEDED")
+        self.assertEqual(self.store.counts()["daily_briefs"], 1)
+
+    def test_api_reports_enabled_daily_schedule_without_running_before_nine(self) -> None:
+        service = QwenConsultService(config(), transport=FakeBriefTransport())
+        before_nine = datetime(2026, 9, 26, 0, 59, tzinfo=timezone.utc)
+        with TestClient(create_app(store=self.store, consult_service=service,
+                                   daily_brief_schedule_enabled=True,
+                                   daily_brief_clock=lambda: before_nine)) as client:
+            response = client.get("/daily-brief?language=zh-CN")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["schedule"]["status"], "PENDING")
+            self.assertEqual(response.json()["schedule"]["time"], "09:00")
 
 
 if __name__ == "__main__":

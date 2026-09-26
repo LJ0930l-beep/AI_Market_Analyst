@@ -69,7 +69,7 @@ from ..analysis.ai_trade_analytics import build_performance_context
 logger = logging.getLogger("core.trading.ai_session_coordinator")
 
 AI_COORDINATOR_CONTRACT_VERSION = "ai_session_coordinator_v1"
-AI_PROMPT_VERSION = "ai_news_technical_strategy_v8_nofx_gate"
+AI_PROMPT_VERSION = "ai_news_technical_strategy_v9_capital_aware"
 TRADE_JSON_GUIDE = (
     "JSON字段规则：只输出单个JSON对象。必需action、instrument_id、reason、confidence；action只能WAIT/HOLD/OPEN_LONG/OPEN_SHORT/REDUCE_POSITION/CLOSE_POSITION/TIGHTEN_STOP/UPDATE_PROTECTION/CANCEL_ORDER，"
     "reason用简体中文且不超过120字，只写结论和可审计依据；不输出思维链或逐步推理。confidence为0-100数字或null。开仓填写entry_price、stop_price、take_profit、requested_risk_fraction、requested_leverage、"
@@ -79,7 +79,10 @@ TRADE_JSON_GUIDE = (
     "若填写news_context.impact，只能为POSITIVE/NEGATIVE/NEUTRAL/UNKNOWN字符串。"
     "按market_snapshots中的slippage与fee_rate估算净盈亏比；成本过高时优先审视被动限价，不能据实满足策略门槛就WAIT。"
     "requested_risk_fraction用小数，例如0.0025表示0.25%；不允许超过策略单笔风险上限。"
-    "只用固定字段及其规定类型，不加额外键；WAIT/HOLD不填开仓字段。等待的缺失条件写在strategy_analysis.missing_conditions数组，下一触发价写next_trigger_price。"
+    "只用固定字段及其规定类型，不加额外键；WAIT/HOLD不填开仓字段。"
+    "strategy_analysis只用strategy_id、matched_conditions、missing_conditions、trigger_completion_pct；"
+    "strategy_plan只用name、thesis、entry_conditions、exit_conditions。"
+    "等待的缺失条件写在strategy_analysis.missing_conditions数组，next_trigger_price只放顶层。"
 )
 MIN_CYCLE_INTERVAL_SECONDS = 60.0
 DEFAULT_CYCLE_INTERVAL_SECONDS = 900.0
@@ -307,7 +310,10 @@ def _fit_prompt_payload(
     calibration = projected.get("calibration")
     if isinstance(calibration, dict) and isinstance(calibration.get("profile"), dict):
         profile = calibration["profile"]
-        profile_fields = ("entry_style", "max_concurrent_positions", "order_preference", "risk_regime")
+        # Calibration is historical evidence, not a second strategy.  Do
+        # not reintroduce an old conservative entry style or order preference
+        # into a newer aggressive strategy when compacting the prompt.
+        profile_fields = ()
         compact_profile = {key: profile[key] for key in profile_fields if key in profile}
         replay = profile.get("replay")
         if isinstance(replay, dict):
@@ -328,6 +334,7 @@ def _fit_prompt_payload(
         snapshot_fields = (
             "symbol", "price", "bid", "ask", "mark", "index", "fundingRate", "openInterest",
             "data_as_of", "source", "freshness_status", "fresh", "slippage", "fee_rate",
+            "contract_rules",
         )
         changed = False
         for symbol, item in list(snapshots.items()):
@@ -849,9 +856,26 @@ def _compact_market_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
         "symbol", "price", "last", "bid", "ask", "mark", "index", "open", "high", "low",
         "change", "percentage", "baseVolume", "quoteVolume", "volume", "fundingRate",
         "openInterest", "data_as_of", "received_at", "source", "freshness_status", "fresh",
-        "environment", "market_data_environment",
+        "environment", "market_data_environment", "slippage", "fee_rate", "taker_fee",
     )
-    return {key: snapshot[key] for key in fields if key in snapshot and snapshot[key] is not None}
+    compact = {key: snapshot[key] for key in fields if key in snapshot and snapshot[key] is not None}
+    market = snapshot.get("market") if isinstance(snapshot.get("market"), dict) else {}
+    if "fee_rate" not in compact and market.get("taker") is not None:
+        compact["fee_rate"] = market["taker"]
+    rules = {key: market[key] for key in ("leverage_max", "contractSize") if market.get(key) is not None}
+    limits = market.get("limits") if isinstance(market.get("limits"), dict) else {}
+    amount = limits.get("amount") if isinstance(limits.get("amount"), dict) else {}
+    precision = market.get("precision") if isinstance(market.get("precision"), dict) else {}
+    for label, value in (
+        ("min_contracts", amount.get("min")),
+        ("contract_step", precision.get("amount")),
+        ("price_tick", precision.get("price")),
+    ):
+        if value is not None:
+            rules[label] = value
+    if rules:
+        compact["contract_rules"] = rules
+    return compact
 
 
 def _radar_group(source: dict[str, Any], *, fields: tuple[str, ...] = ()) -> dict[str, Any]:
@@ -1148,9 +1172,60 @@ def _compact_position(position: dict[str, Any]) -> dict[str, Any]:
         "position_id", "instrument_id", "symbol", "side", "direction", "quantity", "size",
         "contracts", "entry_price", "mark_price", "current_price", "unrealized_pnl",
         "realized_pnl", "leverage", "liquidation_price", "stop_price", "stop_loss",
-        "take_profit", "notional", "margin", "opened_at", "status",
+        "take_profit", "notional", "margin", "opened_at", "status", "system_owned",
     )
     return {key: position[key] for key in fields if key in position and position[key] is not None}
+
+
+def _calibration_prompt_evidence(calibration: dict[str, Any]) -> dict[str, Any]:
+    """Expose replay statistics without turning an old profile into instructions."""
+    profile = calibration.get("profile") if isinstance(calibration.get("profile"), dict) else {}
+    replay = profile.get("replay") if isinstance(profile.get("replay"), dict) else {}
+    return {
+        **{key: calibration[key] for key in
+           ("status", "profile_id", "sample_size", "expires_at", "error_code")
+           if key in calibration},
+        "profile": {"replay": {
+            key: replay[key] for key in
+            ("mean_return", "positive_fraction", "return_observations", "sample_size", "symbol_count")
+            if replay.get(key) is not None
+        }},
+        "role": "HISTORICAL_EVIDENCE_ONLY_ACTIVE_STRATEGY_CONTROLS_TRADING",
+    }
+
+
+def _owned_gate_order_ids(store: Any, account_id: str, mode: TradingMode) -> set[str] | None:
+    """Identify managed Gate orders by immutable remote ID, never by symbol."""
+    try:
+        with store._connect() as db:
+            rows = db.execute(
+                """SELECT execution_result_json FROM order_intents
+                   WHERE account_id=? AND mode=? AND venue='gate' AND intent_id LIKE 'intent_ai_%'
+                   ORDER BY created_at DESC LIMIT 500""",
+                (account_id, mode.value),
+            ).fetchall()
+        ids: set[str] = set()
+        for row in rows:
+            try:
+                receipt = json.loads(row["execution_result_json"] or "{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+            candidates = [receipt.get("order_id")]
+            candidates.extend(
+                item.get("order_id") for item in receipt.get("protection_orders") or []
+                if isinstance(item, dict)
+            )
+            candidates.extend(
+                replacement.get(key)
+                for replacement in (receipt.get("protection_replacements") or {}).values()
+                if isinstance(replacement, dict)
+                for key in ("old_id", "new_id")
+            )
+            ids.update(str(value) for value in candidates if str(value or "").isdigit())
+        return ids
+    except Exception:
+        logger.warning("Could not verify Gate order ownership for AI prompt", exc_info=True)
+        return None
 
 
 def _compact_news_revision(revision: dict[str, Any]) -> dict[str, Any]:
@@ -1172,11 +1247,16 @@ def _select_prompt_news(revisions: list[Any], symbols: tuple[str, ...], *, limit
     rows = [item for item in revisions if isinstance(item, dict) and item.get("revision_id")]
     selected: list[dict[str, Any]] = []
     seen: set[str] = set()
+    seen_events: set[str] = set()
 
     def add(row: dict[str, Any]) -> None:
         identity = str(row.get("revision_id") or "")
-        if identity and identity not in seen and len(selected) < limit:
+        # A syndicated article can have several revision IDs.  Do not spend
+        # the scarce model context repeating the same headline as fresh news.
+        event_key = " ".join(str(row.get("title") or "").casefold().split())
+        if identity and identity not in seen and event_key and event_key not in seen_events and len(selected) < limit:
             seen.add(identity)
+            seen_events.add(event_key)
             selected.append(row)
 
     # Preserve at least one direct event per scanned symbol before filling the
@@ -2438,6 +2518,7 @@ class AISessionCoordinator:
             execution_fields = (
                 "direction", "universe_mode", "symbols", "scan_interval_minutes",
                 "max_notional_usdt", "max_positions", "max_margin_pct",
+                "margin_cap_mode", "max_margin_usdt", "leverage",
             )
         strategy_summary = {
             key: context.strategy_instructions[key]
@@ -2557,8 +2638,16 @@ class AISessionCoordinator:
         pending_orders = context.account_truth.get("pending_orders")
         if isinstance(pending_orders, list):
             order_fields = ("order_id", "client_order_id", "symbol", "instrument_id", "side", "type", "price", "stop_price", "amount", "remaining", "status", "reduce_only")
+            owned_ids = _owned_gate_order_ids(self.store, context.account_id, context.mode) if context.mode in {TradingMode.TESTNET, TradingMode.LIVE} else None
             account_truth["pending_orders"] = [
-                {key: item[key] for key in order_fields if key in item and item[key] is not None}
+                {
+                    **{key: item[key] for key in order_fields if key in item and item[key] is not None},
+                    "ownership": (
+                        "UNKNOWN" if owned_ids is None else
+                        "SYSTEM_ORDER_ID_MATCH" if str(item.get("order_id") or "") in owned_ids else
+                        "EXTERNAL_OR_UNVERIFIED"
+                    ),
+                }
                 for item in pending_orders[:4] if isinstance(item, dict)
             ]
 
@@ -2628,11 +2717,7 @@ class AISessionCoordinator:
                 for item in prompt_news
                 if isinstance(item, dict)
             ],
-            "calibration": {
-                key: context.calibration[key]
-                for key in ("status", "profile_id", "sample_size", "expires_at", "error_code", "profile")
-                if key in context.calibration
-            },
+            "calibration": _calibration_prompt_evidence(context.calibration),
             "market_data_environment": context.market_data_environment,
             "data_quality": context.data_quality,
             # Readiness is an operational gate, but registered candidate
@@ -3173,7 +3258,8 @@ class AISessionCoordinator:
                 + ("OPEN 必须填写入场价、止损、止盈、名义金额、杠杆、LIMIT/MARKET 和真实 evidence_refs；"
                    if nofx_gate else "OPEN 必须填写入场价、止损、止盈、单笔风险和真实 evidence_refs；")
                 + "策略计划、新闻摘要、逐周期说明与入场区间可选。"
-                "若填写 strategy_plan，必须是对象 {name, thesis, entry_conditions, exit_conditions}。"
+                "strategy_analysis 只能含 strategy_id、matched_conditions、missing_conditions、trigger_completion_pct；next_trigger_price 只能放顶层。"
+                "若填写 strategy_plan，必须是对象 {name, thesis, entry_conditions, exit_conditions}，不得嵌入 strategy_analysis。"
                 "如果只缺 news_evidence_ref，可在原 evidence_refs 后追加一条 inputs 中适用于该标的的 news_revision 引用；"
                 "不得删除或改写原引用，也不得改变动作、标的、入场、止损、止盈或金额。"
             )
@@ -4169,12 +4255,24 @@ class AISessionCoordinator:
         symbol_limit = _deep_scan_symbol_limit(wait_streak)
         with self._lock:
             self._current_symbol_limit = symbol_limit
+        universe_positions = [dict(item) for item in remote_positions if isinstance(item, dict)]
+        if mode in {TradingMode.TESTNET, TradingMode.LIVE}:
+            # External Gate positions affect available margin and remain in
+            # account_truth, but must not consume the model's tiny discovery
+            # budget or be represented as system-managed positions.
+            try:
+                universe_positions = [dict(item) for item in self.ledger.get_open_positions(
+                    account_id, venue="gate", mode=mode.value,
+                ) if isinstance(item, dict)]
+            except Exception:
+                logger.warning("Managed position universe unavailable; scanning new candidates only", exc_info=True)
+                universe_positions = []
         try:
             universe_snapshot = self._select_market_universe(
                 strategy,
                 mode=mode,
                 scheduled_at=scheduled_point,
-                positions=[*[dict(item) for item in remote_positions if isinstance(item, dict)], *owned_pending],
+                positions=[*universe_positions, *owned_pending],
                 account_id=account_id,
                 symbol_limit=symbol_limit,
             )

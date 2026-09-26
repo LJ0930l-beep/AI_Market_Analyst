@@ -15,7 +15,7 @@ from ..trading.gate_account_truth import (
     CAPITAL_BASIS_SOURCE as REMOTE_CAPITAL_SOURCE,
     resolve_remote_capital_basis,
 )
-from ..trading.gate_accounts import GATE_TESTNET_ACCOUNT_TYPE
+from ..trading.gate_accounts import GATE_TESTNET_ACCOUNT_TYPE, GATE_LIVE_ACCOUNT_TYPE
 
 
 INITIAL_SIMULATED_CAPITAL = 1000.0
@@ -996,8 +996,8 @@ def analyze_ai_trading_ledger(
     # starting capital or equity.  Only observed remote facts may be shown, so
     # an unsynchronised account reports no capital instead of a fake 10000.
     managed_gate = (
-        str(account_config.get("account_type") or "").upper() == GATE_TESTNET_ACCOUNT_TYPE
-        or expected_mode == "TESTNET"
+        str(account_config.get("account_type") or "").upper() in {GATE_TESTNET_ACCOUNT_TYPE, GATE_LIVE_ACCOUNT_TYPE}
+        or expected_mode in {"TESTNET", "LIVE"}
     )
     capital_basis = resolve_remote_capital_basis(store, account_id or "") if managed_gate and account_id else {}
     remote_capital_ready = managed_gate and str(capital_basis.get("status") or "").upper() == "AVAILABLE"
@@ -1356,8 +1356,8 @@ def analyze_ai_trading_ledger(
                     "max_drawdown_pct": _projection_number(remote_basis.get("max_drawdown_pct")),
                     "margin_used_usdt": _projection_number(remote_basis.get("used_margin")),
                     "margin_available_usdt": _projection_number(remote_basis.get("available_margin")),
-                    "equity_basis": "GATE_TESTNET_REMOTE_ACCOUNT_TRUTH",
-                    "capital_source": REMOTE_CAPITAL_SOURCE,
+                    "equity_basis": "GATE_LIVE_REMOTE_ACCOUNT_TRUTH" if expected_mode == "LIVE" else "GATE_TESTNET_REMOTE_ACCOUNT_TRUTH",
+                    "capital_source": remote_basis.get("source") or REMOTE_CAPITAL_SOURCE,
                     "provider_source": remote_basis.get("provider_source"),
                     "capital_observed_at": remote_basis.get("observed_at"),
                     "capital_age_seconds": remote_basis.get("age_seconds"),

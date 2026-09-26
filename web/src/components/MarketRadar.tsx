@@ -187,7 +187,7 @@ function VolumeChart({ points }: { points: MetricPoint[] }) {
     .filter(point => typeof point.volume === "number" && Number.isFinite(point.volume) && point.volume >= 0 && Number.isFinite(Date.parse(point.time)))
     .sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
   const values = rows.map(point => Number(point.volume));
-  if (values.length < 2) return <div className="market-radar__empty" role="status">样本不足，至少需要两个有效时间点</div>;
+  if (values.length < 2) return <div className="market-radar__empty" role="status">{values.length === 0 ? "Gate 15m 已收盘合约 K 线暂无有效样本" : "样本不足，至少需要两个有效时间点"}</div>;
   const max = Math.max(...values) || 1;
   const barDuration = 15 * 60_000;
   const startTime = Date.parse(rows[0].time) - barDuration;
@@ -437,6 +437,7 @@ export function MarketRadar({ mode = "analysis", preferredSymbol }: { mode?: Rad
   }, [data, symbol]);
   const activePoints = metric === "volume" ? volumePoints : metric === "open_interest" ? oiPoints : cvdPoints;
   const activeFeed = metric === "volume" ? data?.volume : metric === "open_interest" ? data?.open_interest : data?.cvd;
+  const activeStatus = activePoints.length < 2 && activeFeed?.status === "AVAILABLE" ? "NO_DATA" : activeFeed?.status;
   const lastUpdated = data?.generated_at;
   const stale = !!error && !!data;
   const sectionStatus = data?.status || (loading ? "LOADING" : "UNAVAILABLE");
@@ -447,7 +448,7 @@ export function MarketRadar({ mode = "analysis", preferredSymbol }: { mode?: Rad
   </header>;
 
   if (mode === "dashboard") return <section role="region" aria-label="盘口与全球市场" className="terminal-panel market-radar market-radar--compact">
-    {header("MARKET MICROSTRUCTURE", "盘口与全球市场", data?.status || (loading ? "LOADING" : "UNAVAILABLE"))}
+    {header("MARKET MICROSTRUCTURE", "盘口与全球市场", activeStatus || (loading ? "LOADING" : "UNAVAILABLE"))}
     {stale && <p className="market-radar__error" role="status">刷新失败：{error} · 仍显示 {formatTime(lastUpdated)} 的数据</p>}
     <div className="market-radar__toolbar">
       <div className="market-radar__tabs" role="group" aria-label="副图指标">

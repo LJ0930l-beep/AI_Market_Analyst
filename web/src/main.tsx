@@ -6,6 +6,7 @@ import { ApplicationShell } from "./App";
 import "./styles.css";
 import "./v2.css";
 import "./workbenchTheme.css";
+import "./paperTerminal.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

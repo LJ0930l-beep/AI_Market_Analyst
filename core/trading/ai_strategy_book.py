@@ -21,7 +21,7 @@ DEFAULT_SECTIONS = {
 # use these values to choose a setup, while the execution gateway continues to
 # enforce the account's hard limits.  Keeping the profile versioned makes a
 # later replay explain which rules were active for a decision.
-STRATEGY_PROFILE_VERSION = "ai_strategy_pack_2026_09_v7_nofx_gate"
+STRATEGY_PROFILE_VERSION = "ai_strategy_pack_2026_09_v8_nofx_prompts"
 
 
 def _profile(**values):
@@ -75,20 +75,56 @@ TEMPLATES = [
 # older percentage-score, compulsory ATR/RR and market-entry prose conflicted
 # with the model-led Gate route.  Keep the cadence and equity/margin settings
 # while replacing only that obsolete instruction text.
-_NOFX_STYLE_BRIEFS = {
+_PREVIOUS_NOFX_STYLE_BRIEFS = {
     "aggressive_impulse": "5m 动量与扫荡反转：寻找已收盘突破、放量延续或假突破回收。15m/1h 只作背景；有一类清晰结构即可提出交易。",
     "aggressive_breakout": "15m 波动扩张：关注突破、首次回测及结构延续，并结合 1h 背景判断是否追价。",
     "conservative_pullback": "15m 顺势回踩：先确定 1h 方向，再观察关键位、均线或 VWAP 回踩是否有合理入场空间。",
     "conservative_defense": "15m 防守反转：比较价格、VWAP、资金费率及 OI；缺失的衍生品数据保持未知，不能当确认信号。",
 }
+# Recognize the prior built-in prompts for an in-place upgrade; user-written
+# strategy text remains untouched.
+_V7_NOFX_STYLE_BRIEFS = {
+    "aggressive_impulse": "5m 快速动量：比较已收盘 K 线的突破延续、扫流动性后回收、短周期趋势重新加速。15m/1h 是环境信息，不要求逐项同向。选当轮证据最充分的一类形态；关键位附近优先预挂不穿越的限价单，错过入场区而动量仍在可用市价。先复核本系统挂单和持仓，失效挂单输出 CANCEL_ORDER；无机会时写清缺少哪根收盘 K 线或哪个可核验价位。",
+    "aggressive_breakout": "15m 趋势扩张：比较区间突破、首次回踩和放量延续的质量，用 1h 结构判断是否仍有价格空间。突破后的回测位优先挂限价；收盘已确认且盘口支持即时成交时可市价。避免把旧的已失效突破当机会；若等待，给出突破/回测触发价与失效条件。",
+    "conservative_pullback": "15m 顺势回踩：以已观察到的 1h 趋势为背景，选择结构支撑阻力、均线或 VWAP 附近的回踩与反弹。只在可解释的失效价和退出目标之间有足够扣费后空间时挂限价；趋势破坏则等待或管理已有仓位。新闻仅在确有相关性时改变判断，不因资讯空白一律等待。",
+    "conservative_defense": "15m 防守交易：比较区间边缘、VWAP 偏离、资金费率与 OI 的真实证据，选择拥挤交易的失效或价格吸收后的反转。衍生品数据缺失时只能用真实价格结构，不可声称共振。优先关键位被动限价，空间不足则等待并标出下一触发价。已有持仓优先更新保护价；本系统旧委托失效时先撤单核验。",
+}
+# NoFX docs/prompt-guide.zh-CN.md supplies the aggressive/conservative prompt
+# rules.  Its Claw402/Hyperliquid direction board has no Gate equivalent here.
+_NOFX_STYLE_BRIEFS = {
+    "aggressive_impulse": (
+        "NoFX 激进模板 · 5m 短线动量变体：优先比较趋势启动、关键位突破、异常放量和短时超买超卖后的反转，"
+        "而不是只等待 EMA20 回踩。先检查本系统持仓和委托，再用已收盘 5m 价格结构、量能及 15m/1h 背景判断多空；"
+        "一组清晰的价格与成交证据即可提出机会，背景矛盾要解释，不机械否决。短线机会优先在关键价位预挂被动限价；"
+        "已确认启动且盘口支持即时成交时可市价。AI 根据失效位、费用和可用保证金自主决定金额、止盈止损和持仓时间。"
+    ),
+    "aggressive_breakout": (
+        "NoFX 激进模板 · 15m 趋势突破变体：主动寻找支撑阻力突破、快速涨跌启动与成交量扩张；"
+        "用 1h 趋势和 BTC 市场状态判断行情空间，但不把 BTC 同向当作绝对门槛。比较突破延续与首次回踩，"
+        "优先在突破位或回踩位挂限价；只有已收盘确认且盘口流动性、费用和价格位置仍合适时才选市价。"
+        "每轮复核已有仓位、过期委托、失效价和实际收益，避免反复追单或无依据地提前平仓。"
+    ),
+    "conservative_pullback": (
+        "NoFX 保守模板 · 15m 顺势回踩变体：以稳定的扣费后收益和可控回撤为目标。先判断 1h 趋势，"
+        "再看 15m 是否回到结构支撑阻力、EMA 或 VWAP 附近，并核对量能、K 线收盘与相关消息是否相互支持。"
+        "只在失效价清晰、目标空间合理时预挂限价；若趋势已破坏或证据冲突，管理已有仓位并等待。"
+        "持仓期间尊重原退出计划，有新证据才调整保护价，避免因短时噪声频繁进出。"
+    ),
+    "conservative_defense": (
+        "NoFX 保守模板 · 15m 防守反转变体：优先保护已有持仓，寻找区间边缘、VWAP 偏离后回归或拥挤仓位失效的机会。"
+        "同时核对真实价格、量能、OI、资金费率与新闻；缺失的数据标未知，不能假称多指标共振。"
+        "只有方向、失效价和扣费后目标可解释时在关键位挂被动限价；否则列出缺口与下一触发价。"
+        "减少横盘中反复试单，对本系统失效委托先撤单核验，再考虑新方案。"
+    ),
+}
 for _template_item in TEMPLATES:
     _brief = _NOFX_STYLE_BRIEFS[_template_item["id"]]
     _template_item["sections"] = {
-        "role": "你是 Gate TestNet 的自主合约交易员；从真实行情、已有持仓与新闻中选一笔最有依据的机会。",
+        "role": "你是 Gate 合约账户的自主交易员；从真实行情、已有持仓、委托与新闻中选一笔最有依据的机会。",
         "frequency": f"每 {_template_item['scan_interval_minutes']} 分钟扫描一次；先管理已有持仓，再比较允许标的。",
         "entry_standards": _brief,
-        "decision_process": "自主给出 LONG、SHORT 或 WAIT。开仓时明确限价或市价、USDT 名义金额、杠杆、入场、结构止损和目标；限价优先，已确认且需即时入场时可用市价。账户持仓、交易所精度和策略保证金上限由程序复核。",
-        "custom_prompt": "不要把某个固定指标或置信分数当作唯一开仓门槛。以可核验的 K 线和资金流证据做决定，新闻缺失不自动否决技术机会；证据不足则说明具体缺口。",
+        "decision_process": "按 NoFX 的决策顺序：先看近期已平仓表现（有记录才用），再检查本系统持仓和挂单，最后比较新机会并只选一项动作。自主决定继续持有、调整保护、撤销失效挂单、开多、开空或等待。开仓填写限价/市价、USDT 名义金额、杠杆、入场、止损与止盈；限价优先，成交紧迫时可市价。以扣费后净收益及回撤质量为目标，不为了增加单数强行成交。程序只复核账户事实、交易所合约规则与保证金上限；等待需列出可验证缺口及下一触发价。",
+        "custom_prompt": "不要把某个固定指标或置信分数当作唯一开仓门槛。仅引用本轮可核验的已收盘 K 线、盘口、持仓和新闻；数据缺失保持未知。只管理本系统能核对订单 ID 的挂单。",
     }
 
 
@@ -240,6 +276,21 @@ class AIStrategyBook:
         template text when the persisted frequency is an unambiguous conflict.
         """
         normalized = dict(sections or {})
+        template_id = str(template.get("id"))
+        if str(normalized.get("entry_standards") or "") in {
+            _PREVIOUS_NOFX_STYLE_BRIEFS.get(template_id),
+            _V7_NOFX_STYLE_BRIEFS.get(template_id),
+        }:
+            # Upgrade only the unmodified built-in brief.  User-authored
+            # strategy prose remains authoritative and never gets replaced
+            # merely because the application version changed.
+            canonical = deepcopy(template["sections"])
+            if normalized.get("custom_prompt") and normalized["custom_prompt"] not in {
+                "不要把某个固定指标或置信分数当作唯一开仓门槛。以可核验的 K 线和资金流证据做决定，新闻缺失不自动否决技术机会；证据不足则说明具体缺口。",
+                "不要把某个固定指标或置信分数当作唯一开仓门槛。仅引用本轮可核验的已收盘 K 线、盘口、持仓和新闻；数据缺失保持未知。只管理本系统能核对订单 ID 的挂单。",
+            }:
+                canonical["custom_prompt"] = normalized["custom_prompt"]
+            return canonical
         expected = int(template.get("scan_interval_minutes") or 15)
         frequency = str(normalized.get("frequency") or "")
         legacy_phrase = "每 5 分钟" if expected == 15 else "每 15 分钟"
@@ -280,7 +331,7 @@ class AIStrategyBook:
             )
             result.update(
                 revision=row["revision"],
-                name=template["name"] if migrate_builtin_execution else row["name"],
+                name=row["name"],
                 template_id=(row["template_id"] or template["id"]),
                 style=(row["style"] or template["style"]),
                 # Built-in profiles are versioned machine contracts.  Re-read
@@ -288,10 +339,9 @@ class AIStrategyBook:
                 # cannot keep an obsolete allow_market_entry/order policy.
                 profile=deepcopy(template["profile"]) if is_builtin_template else stored_profile,
                 sections=(
-                    deepcopy(template["sections"])
-                    if migrate_builtin_execution
-                    else self._sections_for_template(template, self._json_object(row["sections_json"], template["sections"]))
-                ) if is_builtin_template else self._json_object(row["sections_json"], template["sections"]),
+                    self._sections_for_template(template, self._json_object(row["sections_json"], template["sections"]))
+                    if is_builtin_template else self._json_object(row["sections_json"], template["sections"])
+                ),
                 updated_at=row["updated_at"],
             )
             stored_nofx_runtime = self._json_object(
@@ -328,11 +378,9 @@ class AIStrategyBook:
             if profile_preference in {"MARKET", "LIMIT"}:
                 raw_execution["order_preference"] = profile_preference
             if migrate_builtin_execution:
-                # A profile-version change is a strategy migration.  Apply the
-                 # new risk/execution defaults once so fixed symbol lists and
-                 # short TTL values do not survive. Leverage is a user ceiling;
-                 # actual leverage comes from Gate metadata and stop-distance risk.
-                raw_execution = {**raw_execution, **deepcopy(template.get("execution_defaults") or {})}
+                # The NoFX prompt update must not reset the operator's saved
+                # leverage, symbol universe, or margin ceiling on Gate Live.
+                raw_execution = {**deepcopy(template.get("execution_defaults") or {}), **raw_execution}
         profile_interval = self._profile_signal_interval(result.get("profile"))
         if profile_interval is not None:
             # The selected template owns cadence.  Keep the persisted
@@ -426,7 +474,13 @@ class AIStrategyBook:
     def view(self, account_id: str) -> dict:
         active = self.active(account_id)
         policy = (
-            {**NOFX_GATE_POLICY, "max_margin_pct": active["execution"]["max_margin_pct"]}
-            if str(account_id).lower() == "gate_testnet" else dict(POLICY)
+            {
+                **NOFX_GATE_POLICY,
+                **{key: active["execution"][key] for key in (
+                    "leverage", "margin_cap_mode", "max_margin_pct",
+                    "max_margin_usdt", "max_notional_usdt",
+                )},
+            }
+            if str(account_id).lower() in {"gate_testnet", "gate_live"} else dict(POLICY)
         )
         return {"active": active, "templates": TEMPLATES, "fixed_policy": policy}

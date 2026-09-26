@@ -291,6 +291,15 @@ export interface DailyBriefResponse extends JsonRecord {
   contract_version: string;
   status: string;
   brief: DailyBrief | null;
+  schedule?: {
+    timezone: string;
+    time: string;
+    local_date?: string;
+    status: "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED" | "DISABLED";
+    claimed_at?: string | null;
+    completed_at?: string | null;
+    error_code?: string | null;
+  };
 }
 
 export type AppSettingValue = boolean | number | string;

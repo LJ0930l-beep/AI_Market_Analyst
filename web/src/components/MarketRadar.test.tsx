@@ -139,6 +139,18 @@ describe("MarketRadar", () => {
     expect(vi.mocked(apiClient.v2).mock.calls.some(([path]) => path === "/market-radar")).toBe(true);
   });
 
+  it("reports the selected feed state instead of claiming all metrics have samples", async () => {
+    vi.mocked(apiClient.v2).mockResolvedValue({
+      ...availableRadar,
+      volume: unavailableRadar.volume,
+    } as never);
+    render(<MarketRadar mode="dashboard" preferredSymbol="BTCUSDT" />);
+    await screen.findByRole("heading", { name: "盘口与全球市场" });
+    fireEvent.click(screen.getByRole("button", { name: "成交量" }));
+    expect(screen.getByText("Gate 15m 已收盘合约 K 线暂无有效样本")).toBeInTheDocument();
+    expect(screen.getAllByText("暂无样本").length).toBeGreaterThan(0);
+  });
+
   it("requests and follows the dashboard's preferred chart symbol", async () => {
     vi.mocked(apiClient.v2).mockImplementation(async (path: string) => {
       if (path.includes("symbols=SOLUSDT")) return { ...availableRadar, symbols: ["SOLUSDT"] } as never;

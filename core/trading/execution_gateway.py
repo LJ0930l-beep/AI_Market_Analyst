@@ -972,7 +972,7 @@ class ExecutionGateway:
                     raise GatewayError("PRICE_STEP_INVALID", "Explicit limit price is not aligned to the fresh market price step.", 422)
 
     @staticmethod
-    def _validate_remote_market_economics(market_snapshot: Dict[str, Any]) -> None:
+    def _validate_remote_market_economics(market_snapshot: Dict[str, Any], *, order_type: str, strict_slippage: bool = False) -> None:
         """Require venue-supplied sizing/cost facts before remote risk sizing.
 
         ``RiskEngine`` retains compatibility defaults for old PAPER callers,
@@ -1002,7 +1002,17 @@ class ExecutionGateway:
             fee_rate = market_snapshot.get("fee_rate", market_snapshot.get("taker_fee"))
         slippage = market_snapshot.get("slippage")
         if slippage is None:
-            slippage = 0.001
+            if order_type.lower() == "limit":
+                # A limit's quoted price is its worst permitted execution
+                # price.  Missing order-book cost does not turn it into a
+                # market order or require an invented slippage estimate.
+                slippage = 0
+            elif strict_slippage:
+                raise GatewayError("MARKET_SLIPPAGE_UNAVAILABLE", "Market opening requires observed order-book slippage.", 422)
+            else:
+                # Existing non-AI remote adapters retain their compatibility
+                # assumption until those routes are migrated separately.
+                slippage = 0.001
         if not (
             finite(contract_size)
             and finite(amount_step)
@@ -1282,7 +1292,8 @@ class ExecutionGateway:
         with self._lock, self.store._connect() as db:
             rows = db.execute(
                 """SELECT intent_id,instrument_id,execution_result_json FROM order_intents
-                   WHERE account_id=? AND mode=? AND venue='gate' AND status='FILLED'
+                   WHERE account_id=? AND mode=? AND venue='gate'
+                     AND status IN ('FILLED','PARTIALLY_FILLED','UNKNOWN')
                      AND reduce_only=0 AND intent_id LIKE 'intent_ai_%'
                    ORDER BY created_at DESC LIMIT 30""",
                 (account_id, profile_mode),
@@ -1292,16 +1303,26 @@ class ExecutionGateway:
                 if self._gate_symbol_key(symbol) in held:
                     continue
                 receipt = json.loads(row["execution_result_json"] or "{}")
-                legs = receipt.get("protection_orders")
-                if not isinstance(legs, list):
-                    continue
+                legs = receipt.get("protection_orders") if isinstance(receipt.get("protection_orders"), list) else []
+                uncertain = receipt.get("protection_unverified_orders") if isinstance(receipt.get("protection_unverified_orders"), list) else []
+                replacements = receipt.get("protection_replacements") if isinstance(receipt.get("protection_replacements"), dict) else {}
+                managed_legs = [*legs, *uncertain]
+                for replacement in replacements.values():
+                    if isinstance(replacement, dict):
+                        managed_legs.append({"leg": replacement.get("leg", {}).get("leg") if isinstance(replacement.get("leg"), dict) else None,
+                                             "order_id": replacement.get("new_id"), "status": "open"})
+                        if replacement.get("old_id"):
+                            managed_legs.append({"leg": "superseded", "order_id": replacement["old_id"], "status": "open"})
                 changed = False
-                for leg in legs:
+                processed_ids: set[str] = set()
+                for leg in managed_legs:
                     if not isinstance(leg, dict):
                         continue
                     order_id = str(leg.get("order_id") or "")
-                    if not order_id.isdigit() or str(leg.get("status") or "open").lower() not in {"open", "active"}:
+                    if (not order_id.isdigit() or order_id in processed_ids
+                            or str(leg.get("status") or "open").lower() not in {"open", "active"}):
                         continue
+                    processed_ids.add(order_id)
                     try:
                         observed = trader.fetch_protection_order(order_id, symbol)
                         if observed.get("reduce_only") is not True:
@@ -1324,8 +1345,10 @@ class ExecutionGateway:
                     changed = True
                 if changed:
                     receipt.setdefault("protection_cleanup", []).extend(item for item in cleaned if item["intent_id"] == row["intent_id"])
-                    if all(str(leg.get("status") or "").lower() not in {"open", "active"} for leg in legs if isinstance(leg, dict)):
+                    if all(str(leg.get("status") or "").lower() not in {"open", "active"} for leg in managed_legs if isinstance(leg, dict)):
                         receipt["protection_status"] = "CLOSED_POSITION_RECONCILED"
+                        receipt["protection_replacements"] = {}
+                        receipt["protection_unverified_orders"] = []
                     db.execute(
                         "UPDATE order_intents SET execution_result_json=?,updated_at=? WHERE intent_id=?",
                         (json.dumps(receipt, allow_nan=False), datetime.now(timezone.utc).isoformat(), row["intent_id"]),
@@ -1433,8 +1456,22 @@ class ExecutionGateway:
             contract_size = Decimal(str(market.get("contractSize", market.get("contract_size", market_snapshot.get("contractSize")))))
             quote = Decimal(str(market_snapshot.get("price")))
             entry = Decimal(str(intent.price)) if intent.order_type.lower() == "limit" else quote
-            fee = Decimal(str(market.get("taker", market_snapshot.get("fee_rate", market_snapshot.get("taker_fee")))))
-            slippage = Decimal(str(market_snapshot.get("slippage", "0.001")))
+            # Gate's contract metadata may explicitly contain ``taker: None``
+            # while the same observed contract-universe snapshot supplies a
+            # verified top-level fee_rate.  dict.get(default) does not handle
+            # that case; use the same precedence as remote preflight.
+            observed_fee = market.get("taker")
+            if observed_fee is None:
+                observed_fee = market_snapshot.get("fee_rate")
+            if observed_fee is None:
+                observed_fee = market_snapshot.get("taker_fee")
+            fee = Decimal(str(observed_fee))
+            raw_slippage = market_snapshot.get("slippage")
+            if raw_slippage is None:
+                if intent.order_type.lower() != "limit":
+                    raise GatewayError("MARKET_SLIPPAGE_UNAVAILABLE", "Market opening requires observed order-book slippage.", 422)
+                raw_slippage = 0
+            slippage = Decimal(str(raw_slippage))
         except (TypeError, ValueError, InvalidOperation) as exc:
             raise GatewayError("MARKET_RULES_UNAVAILABLE", "Gate order economics are incomplete.", 422) from exc
         if (
@@ -1746,7 +1783,10 @@ class ExecutionGateway:
             # opening and reduce-only intents alike.
             try:
                 if intent_mode_value(intent.mode) in {TradingMode.TESTNET.value, TradingMode.LIVE.value} and not intent.reduce_only:
-                    self._validate_remote_market_economics(fresh_market)
+                    self._validate_remote_market_economics(
+                        fresh_market, order_type=intent.order_type,
+                        strict_slippage=margin_only_ai,
+                    )
                 self._validate_intent_market_rules(intent, fresh_market)
             except GatewayError as exc:
                 # For a remote venue, an adapter may be connected while its
@@ -2535,6 +2575,16 @@ class ExecutionGateway:
                     res["status"] = OrderStatus.UNKNOWN.value
                     res["reconciled"] = False
                     res["fill_reconciliation"] = "CONCRETE_FILL_REQUIRED"
+                elif (res["status"] == OrderStatus.FILLED.value and not intent.reduce_only
+                      and intent.protection_plan is not None
+                      and str(intent.venue or "").lower() == "gate"
+                      and reconciliation.get("protection_status") != ProtectionStatus.ACTIVE.value):
+                    # The fill is real, but this intent must stay in the
+                    # reconciliation queue until both native triggers have
+                    # been proved by Gate order ID.
+                    res["status"] = OrderStatus.UNKNOWN.value
+                    res["reconciled"] = False
+                    res["fill_reconciliation"] = "PROTECTION_READBACK_REQUIRED"
             return res
         except Exception as exc:
             err_msg = str(exc).lower()
@@ -2714,6 +2764,131 @@ class ExecutionGateway:
             except ValueError:
                 pass
         return False, ""
+
+    def _reconcile_gate_entry_protection(
+        self, intent: OrderIntent, adapter: Any, filled_quantity: Decimal,
+        previous_receipt: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Cover the *cumulative* Gate fill with native, ID-verified triggers.
+
+        A replacement is saved before the old trigger is canceled.  If a
+        process stops between those steps, the next reconciliation resumes
+        from the saved Gate IDs instead of creating another trigger.
+        """
+        plan = intent.protection_plan
+        if plan is None or filled_quantity <= 0:
+            return {"protection_orders": previous_receipt.get("protection_orders") or [],
+                    "protection_status": "PROTECTION_FAILED", "protection_verified": False}
+        prices = {"stop_loss": plan.stop_price, "take_profit": plan.take_profit}
+        receipt = dict(previous_receipt)
+        legs = {str(item.get("leg")): dict(item) for item in receipt.get("protection_orders") or []
+                if isinstance(item, dict) and item.get("leg") in prices and str(item.get("order_id") or "").isdigit()}
+        pending = dict(receipt.get("protection_replacements") or {})
+        unverified = [dict(item) for item in receipt.get("protection_unverified_orders") or []
+                      if isinstance(item, dict) and str(item.get("order_id") or "").isdigit()]
+
+        def save_progress() -> None:
+            receipt["protection_orders"] = list(legs.values())
+            receipt["protection_replacements"] = pending
+            receipt["protection_unverified_orders"] = unverified
+            receipt["protection_status"] = "PENDING_VERIFICATION"
+            with self.store._connect() as db:
+                db.execute(
+                    "UPDATE order_intents SET execution_result_json=?, updated_at=? WHERE intent_id=?",
+                    (json.dumps(receipt, allow_nan=False), datetime.now(timezone.utc).isoformat(), intent.intent_id),
+                )
+
+        def readback(order_id: str, price: float) -> Dict[str, Any]:
+            observed = adapter.fetch_protection_order(order_id, intent.instrument_id)
+            if not isinstance(observed, dict) or str(observed.get("order_id")) != order_id:
+                raise ValueError("GATE_PROTECTION_ORDER_ID_MISMATCH")
+            amount = Decimal(str(observed.get("amount")))
+            trigger = Decimal(str(observed.get("trigger_price")))
+            if (observed.get("status") != "OPEN" or not observed.get("reduce_only")
+                    or not amount.is_finite() or amount < filled_quantity
+                    or not trigger.is_finite() or trigger != Decimal(str(price))):
+                raise ValueError("GATE_PROTECTION_COVERAGE_UNVERIFIED")
+            return observed
+
+        try:
+            if not callable(getattr(adapter, "fetch_protection_order", None)):
+                raise ValueError("GATE_PROTECTION_QUERY_UNSUPPORTED")
+            if not callable(getattr(adapter, "place_protection_orders", None)):
+                raise ValueError("GATE_PROTECTION_PLACEMENT_UNSUPPORTED")
+            for name, price in prices.items():
+                if price is None:
+                    raise ValueError("GATE_PROTECTION_PLAN_INCOMPLETE")
+                target = (adapter.normalize_protection_price(intent.instrument_id, float(price))
+                          if callable(getattr(adapter, "normalize_protection_price", None))
+                          else float(price))
+                old = legs.get(name)
+                replacement = pending.get(name)
+                uncertain = next((item for item in unverified if item.get("leg") == name), None)
+                if uncertain and not replacement:
+                    # A prior create returned an ID but its readback failed.
+                    # Resolve that exact Gate order before risking a duplicate.
+                    readback(str(uncertain["order_id"]), target)
+                    pending[name] = {
+                        "new_id": str(uncertain["order_id"]),
+                        "old_id": str(old["order_id"]) if old else None,
+                        "leg": dict(uncertain),
+                    }
+                    unverified.remove(uncertain)
+                    save_progress()
+                    replacement = pending[name]
+                if replacement:
+                    new_id = str(replacement.get("new_id") or "")
+                    if not new_id.isdigit():
+                        raise ValueError("GATE_PROTECTION_REPLACEMENT_ID_INVALID")
+                    readback(new_id, target)
+                else:
+                    if old:
+                        try:
+                            readback(str(old["order_id"]), target)
+                            continue
+                        except ValueError:
+                            # A smaller partial-fill trigger cannot protect a
+                            # larger cumulative fill. Arm full coverage first.
+                            pass
+                    placed = adapter.place_protection_orders(
+                        symbol=intent.instrument_id, side=intent.side,
+                        amount=float(filled_quantity),
+                        stop_loss=target if name == "stop_loss" else None,
+                        take_profit=target if name == "take_profit" else None,
+                        client_order_id=intent.intent_id,
+                    )
+                    if not isinstance(placed, list) or len(placed) != 1:
+                        raise ValueError("GATE_PROTECTION_PLACEMENT_UNVERIFIED")
+                    new_id = str(placed[0].get("order_id") or "")
+                    if placed[0].get("leg") != name or not new_id.isdigit():
+                        raise ValueError("GATE_PROTECTION_PLACEMENT_ID_INVALID")
+                    readback(new_id, target)
+                    pending[name] = {"new_id": new_id, "old_id": str(old["order_id"]) if old else None,
+                                     "leg": dict(placed[0])}
+                    save_progress()
+                old_id = pending[name].get("old_id")
+                if old_id and old_id != new_id:
+                    canceled = adapter.cancel_protection_order(str(old_id), intent.instrument_id)
+                    if not isinstance(canceled, dict) or canceled.get("status") != "CANCELED":
+                        raise ValueError("GATE_PROTECTION_OLD_ORDER_NOT_CANCELED")
+                legs[name] = dict(pending[name]["leg"])
+                pending.pop(name, None)
+                save_progress()
+            return {"protection_orders": list(legs.values()),
+                    "protection_status": "PROTECTED", "protection_verified": True,
+                    "protection_replacements": pending}
+        except Exception as exc:
+            for item in getattr(exc, "unverified_legs", []):
+                if (isinstance(item, dict) and str(item.get("order_id") or "").isdigit()
+                        and item not in unverified):
+                    unverified.append(dict(item))
+            logger.error("Gate protection coverage failed for %s: %s", intent.intent_id, type(exc).__name__)
+            save_progress()
+            return {"protection_orders": list(legs.values()),
+                    "protection_status": "PROTECTION_FAILED", "protection_verified": False,
+                    "protection_replacements": pending,
+                    "protection_unverified_orders": unverified,
+                    "protection_error_code": str(exc)[:96] if isinstance(exc, ValueError) else type(exc).__name__}
 
     def reconcile_in_flight_orders(self, account_id: str, mode: TradingMode, *, remote_truth: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
         """Reconcile in-flight orders without blind resubmission.
@@ -2897,24 +3072,17 @@ class ExecutionGateway:
                         strategy_version=row.get("strategy_version"),
                         signal_at=row.get("signal_at"),
                     )
-                    if intent.protection_plan and not intent.reduce_only and hasattr(adapter, "place_protection_orders"):
-                        prev_prot_orders = previous_receipt.get("protection_orders") or []
-                        if not prev_prot_orders and (intent.protection_plan.stop_price is not None or intent.protection_plan.take_profit is not None):
-                            try:
-                                prot_legs = adapter.place_protection_orders(
-                                    symbol=intent.instrument_id,
-                                    side=intent.side,
-                                    amount=float(filled_quantity),
-                                    stop_loss=float(intent.protection_plan.stop_price) if intent.protection_plan.stop_price is not None else None,
-                                    take_profit=float(intent.protection_plan.take_profit) if intent.protection_plan.take_profit is not None else None,
-                                    client_order_id=intent.intent_id,
-                                )
-                                remote["protection_orders"] = prot_legs
-                                remote["protection_status"] = "PROTECTED"
-                                remote["protection_verified"] = True
-                            except Exception as prot_err:
-                                logger.error("Failed to place protection orders during reconciliation for %s: %s", iid, prot_err)
-                                remote["protection_status"] = "PROTECTION_FAILED"
+                    if intent.protection_plan and not intent.reduce_only:
+                        protection_result = self._reconcile_gate_entry_protection(
+                            intent, adapter, filled_quantity, previous_receipt
+                        )
+                        remote["protection_orders"] = protection_result["protection_orders"]
+                        remote["protection_status"] = protection_result["protection_status"]
+                        remote["protection_verified"] = protection_result["protection_verified"]
+                        remote["protection_replacements"] = protection_result.get("protection_replacements") or {}
+                        remote["protection_unverified_orders"] = protection_result.get("protection_unverified_orders") or []
+                        if protection_result.get("protection_error_code"):
+                            remote["protection_error_code"] = protection_result["protection_error_code"]
 
                     reconciliation = self._record_exchange_fill_report(intent, remote, None)
                     local_quantity = Decimal("0")
@@ -2937,6 +3105,10 @@ class ExecutionGateway:
                         amount = Decimal("0")
                     if remote_status in {"closed", "filled"} or (amount > 0 and filled_quantity >= amount):
                         final_status = OrderStatus.FILLED.value
+                    if (final_status == OrderStatus.FILLED.value and not intent.reduce_only
+                            and intent.protection_plan is not None
+                            and reconciliation.get("protection_status") != ProtectionStatus.ACTIVE.value):
+                        final_status = OrderStatus.UNKNOWN.value
                     receipt = dict(remote)
                     receipt.update({"intent_id": iid, "reconciled": True, "execution_evidence": {"source": "execution_adapter_reconciliation", "observed_at": now_iso, "remote_order_id": remote.get("order_id") or remote.get("id") or remote_order_id}})
                     if reconciliation.get("ledger_record"):

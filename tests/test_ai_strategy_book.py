@@ -1,7 +1,78 @@
 from copy import deepcopy
+import json
 import pytest
 from core.storage import SQLiteStore
-from core.trading.ai_strategy_book import AIStrategyBook, DEFAULT_SECTIONS, TEMPLATES, STRATEGY_PROFILE_VERSION
+from core.trading.ai_strategy_book import AIStrategyBook, DEFAULT_SECTIONS, TEMPLATES, STRATEGY_PROFILE_VERSION, _PREVIOUS_NOFX_STYLE_BRIEFS, _V7_NOFX_STYLE_BRIEFS
+
+
+def test_saved_builtin_brief_upgrades_without_resetting_live_margin_or_leverage(tmp_path):
+    store = SQLiteStore(tmp_path / 'strategy-upgrade.sqlite3')
+    store.initialize()
+    book = AIStrategyBook(store)
+    template = TEMPLATES[0]
+    execution = {**book.active('gate_live')['execution'], 'leverage': 37,
+                 'max_notional_usdt': 500, 'fixed_notional_usdt': 500, 'max_margin_pct': 18}
+    saved = book.save('gate_live', name=template['name'], sections=deepcopy(template['sections']),
+                      expected_revision=0, template_id=template['id'], execution=execution)
+    old_sections = dict(saved['sections'])
+    old_sections['entry_standards'] = _PREVIOUS_NOFX_STYLE_BRIEFS[template['id']]
+    with store._connect() as db:
+        db.execute('UPDATE ai_strategy_instructions SET sections_json=? WHERE account_id=?',
+                   (json.dumps(old_sections, ensure_ascii=False), 'gate_live'))
+    upgraded = book.active('gate_live')
+    assert upgraded['sections']['entry_standards'] == template['sections']['entry_standards']
+    assert upgraded['execution']['leverage'] == 37
+    assert upgraded['execution']['max_notional_usdt'] == 500
+    assert upgraded['revision'] == saved['revision']
+
+
+def test_v7_nofx_prompts_upgrade_all_four_styles_without_resetting_live_envelope(tmp_path):
+    store = SQLiteStore(tmp_path / 'nofx-prompt-upgrade.sqlite3')
+    store.initialize()
+    book = AIStrategyBook(store)
+    for index, template in enumerate(TEMPLATES):
+        account_id = f'gate_live_{index}'
+        execution = {**book.active(account_id)['execution'],
+                     'leverage': 37, 'fixed_notional_usdt': 500,
+                     'max_notional_usdt': 500, 'max_margin_pct': 17}
+        saved = book.save(
+            account_id, name=template['name'], sections=deepcopy(template['sections']),
+            expected_revision=0, template_id=template['id'], execution=execution,
+        )
+        old_sections = dict(saved['sections'])
+        old_sections['entry_standards'] = _V7_NOFX_STYLE_BRIEFS[template['id']]
+        old_profile = dict(saved['profile'])
+        old_profile['version'] = 'ai_strategy_pack_2026_09_v7_nofx_gate'
+        with store._connect() as db:
+            db.execute(
+                'UPDATE ai_strategy_instructions SET sections_json=?, profile_json=? WHERE account_id=?',
+                (json.dumps(old_sections, ensure_ascii=False),
+                 json.dumps(old_profile, ensure_ascii=False), account_id),
+            )
+        upgraded = book.active(account_id)
+        assert upgraded['sections']['entry_standards'] == template['sections']['entry_standards']
+        assert upgraded['sections']['entry_standards'].startswith('NoFX ')
+        assert upgraded['execution']['leverage'] == 37
+        assert upgraded['execution']['max_notional_usdt'] == 500
+        assert upgraded['execution']['max_margin_pct'] == 17
+        assert upgraded['revision'] == saved['revision']
+    assert [item['scan_interval_minutes'] for item in TEMPLATES] == [5, 15, 15, 15]
+    assert [item['style'] for item in TEMPLATES] == ['AGGRESSIVE', 'AGGRESSIVE', 'CONSERVATIVE', 'CONSERVATIVE']
+
+
+def test_nofx_prompt_upgrade_keeps_operator_authored_entry_rules(tmp_path):
+    store = SQLiteStore(tmp_path / 'nofx-custom-prompt.sqlite3')
+    store.initialize()
+    book = AIStrategyBook(store)
+    template = TEMPLATES[0]
+    sections = {**template['sections'], 'entry_standards': '只按我确认的事件窗口判断。'}
+    saved = book.save('gate_live', name=template['name'], sections=sections,
+                      expected_revision=0, template_id=template['id'])
+    old_profile = {**saved['profile'], 'version': 'ai_strategy_pack_2026_09_v7_nofx_gate'}
+    with store._connect() as db:
+        db.execute('UPDATE ai_strategy_instructions SET profile_json=? WHERE account_id=?',
+                   (json.dumps(old_profile, ensure_ascii=False), 'gate_live'))
+    assert book.active('gate_live')['sections']['entry_standards'] == sections['entry_standards']
 
 
 def test_account_instructions_are_versioned_and_conflicting_edits_fail(tmp_path):
@@ -153,4 +224,4 @@ def test_invalid_instruction_sections_cannot_override_policy(tmp_path, bad):
     book = AIStrategyBook(store)
     with pytest.raises(ValueError, match='SECTIONS_INVALID'):
         book.save('gate_testnet', name='无效', sections=bad, expected_revision=0)
-    assert book.view('gate_testnet')['fixed_policy']['leverage_source'] == 'ACTIVE_STRATEGY_WITH_GATE_CONTRACT_CEILING'
+    assert book.view('gate_testnet')['fixed_policy']['leverage_source'] == 'MODEL_CHOICE_WITH_STRATEGY_AND_GATE_CEILINGS'

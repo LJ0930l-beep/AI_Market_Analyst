@@ -402,9 +402,10 @@ def resolve_remote_capital_basis(
 
     net_pnl = current_equity - baseline_equity
     roi = (net_pnl / baseline_equity * 100.0) if baseline_equity > 0 else None
+    live_account = canonical == "gate_live"
     return {
         "status": "AVAILABLE",
-        "source": CAPITAL_BASIS_SOURCE,
+        "source": "gate_live_remote_account_truth" if live_account else CAPITAL_BASIS_SOURCE,
         "provider_source": current_row.get("source"),
         "observed_at": observed_at,
         "age_seconds": age,
@@ -416,7 +417,7 @@ def resolve_remote_capital_basis(
         "realized_pnl": _finite(current_row.get("realized_pnl")),
         "baseline_equity": baseline_equity,
         "baseline_observed_at": _iso(baseline_row.get("observed_at")),
-        "baseline_basis": CAPITAL_BASIS_BASELINE,
+        "baseline_basis": "GATE_LIVE_FIRST_AVAILABLE_REMOTE_SNAPSHOT" if live_account else CAPITAL_BASIS_BASELINE,
         "net_pnl": net_pnl,
         "roi_pct": roi,
         "cumulative_fees": cumulative_fees,

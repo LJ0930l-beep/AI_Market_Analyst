@@ -75,24 +75,24 @@ export function OhlcvChart({ symbol, timeframe, bars, annotations = [] }: OhlcvC
         autoSize: true,
         height: 360,
         layout: {
-          background: { type: ColorType.Solid, color: "#12151E" },
-          textColor: "#a9beb9",
+          background: { type: ColorType.Solid, color: "#f5f1e8" },
+          textColor: "#615d53",
           fontFamily: "IBM Plex Mono, ui-monospace, monospace",
           attributionLogo: false,
         },
         grid: {
-          vertLines: { color: "rgba(169, 190, 185, 0.12)" },
-          horzLines: { color: "rgba(169, 190, 185, 0.12)" },
+          vertLines: { color: "rgba(58, 54, 45, 0.10)" },
+          horzLines: { color: "rgba(58, 54, 45, 0.10)" },
         },
-        rightPriceScale: { borderColor: "rgba(169, 190, 185, 0.3)" },
-        timeScale: { borderColor: "rgba(169, 190, 185, 0.3)", timeVisible: true, secondsVisible: false },
+        rightPriceScale: { borderColor: "rgba(58, 54, 45, 0.28)" },
+        timeScale: { borderColor: "rgba(58, 54, 45, 0.28)", timeVisible: true, secondsVisible: false },
       });
       const candles = chart.addSeries(CandlestickSeries, {
-        upColor: "#64d6a1",
-        downColor: "#ff7c91",
+        upColor: "#2f8756",
+        downColor: "#c74843",
         borderVisible: false,
-        wickUpColor: "#64d6a1",
-        wickDownColor: "#ff7c91",
+        wickUpColor: "#2f8756",
+        wickDownColor: "#c74843",
       });
       candles.setData(ordered.map((bar) => ({
         time: bar.time,
@@ -102,7 +102,7 @@ export function OhlcvChart({ symbol, timeframe, bars, annotations = [] }: OhlcvC
         close: bar.close,
       })));
       const volume = chart.addSeries(HistogramSeries, {
-        color: "rgba(95, 175, 198, 0.55)",
+        color: "rgba(66, 120, 142, 0.55)",
         priceFormat: { type: "volume" },
         priceScaleId: "volume",
       });
@@ -110,22 +110,22 @@ export function OhlcvChart({ symbol, timeframe, bars, annotations = [] }: OhlcvC
       volume.setData(ordered.map((bar) => ({
         time: bar.time,
         value: bar.volume,
-        color: bar.close >= bar.open ? "rgba(100, 214, 161, 0.55)" : "rgba(255, 124, 145, 0.55)",
+        color: bar.close >= bar.open ? "rgba(47, 135, 86, 0.55)" : "rgba(199, 72, 67, 0.55)",
       })));
 
       for (const annotation of annotations) {
         if (!finite(annotation.price)) continue;
         const color = annotation.annotation_type === "trigger"
-          ? "#f2c66d"
+          ? "#b37a25"
           : annotation.annotation_type === "stop"
-            ? "#ff7c91"
+            ? "#c74843"
             : annotation.annotation_type === "target"
-              ? "#64d6a1"
+              ? "#2f8756"
               : annotation.annotation_type === "support"
-                ? "#76c7dc"
+                ? "#42788e"
                 : annotation.annotation_type === "resistance"
-                  ? "#c7a7ff"
-                  : "#a9beb9";
+                  ? "#756694"
+                  : "#615d53";
         candles.createPriceLine({
           price: annotation.price,
           color,
@@ -147,7 +147,7 @@ export function OhlcvChart({ symbol, timeframe, bars, annotations = [] }: OhlcvC
           time,
           position: finite(annotation.price) ? "atPriceMiddle" : (isShort ? "aboveBar" : "belowBar"),
           shape: annotation.annotation_type === "outcome" ? "circle" : isShort ? "arrowDown" : "arrowUp",
-          color: annotation.annotation_type === "outcome" ? "#f2c66d" : isShort ? "#ff7c91" : "#64d6a1",
+          color: annotation.annotation_type === "outcome" ? "#b37a25" : isShort ? "#c74843" : "#2f8756",
           text: (annotation.label ?? annotation.annotation_type).slice(0, 12),
           ...(finite(annotation.price) ? { price: annotation.price } : {}),
         } as SeriesMarker<Time>;

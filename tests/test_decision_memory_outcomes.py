@@ -26,21 +26,21 @@ def _store(tmp_path, name):
 
 
 def _fill(store, *, fill_id, cycle_id, position_id, side, quantity, price, fee=0.0,
-          contract_size=1.0):
+          contract_size=1.0, fee_source="REMOTE_ADAPTER"):
     with store._connect() as db:
         db.execute(
             """INSERT INTO trade_fills
                (fill_id, account_id, venue, mode, order_id, trade_id, position_id, symbol,
                 side, quantity, price, fee, fee_amount, fee_currency, contract_size,
-                status, payload_json, created_at, event_at, cycle_id)
+                status, payload_json, created_at, event_at, cycle_id, fee_source)
                VALUES (?, ?, 'gate', 'TESTNET', ?, ?, ?, 'BTCUSDT', ?, ?, ?, ?, ?, 'USDT', ?,
-                       'RECORDED', '{}', ?, ?, ?)""",
+                       'RECORDED', '{}', ?, ?, ?, ?)""",
             (
                 fill_id, ACCOUNT, f"order_{fill_id}", f"trade_{fill_id}", position_id,
                 side, str(quantity), str(price), str(fee), str(fee), str(contract_size),
                 datetime.now(timezone.utc).isoformat(),
                 datetime.now(timezone.utc).isoformat(),
-                cycle_id,
+                cycle_id, fee_source,
             ),
         )
 
@@ -67,6 +67,29 @@ def _outcomes(store):
     return {item["memory_id"]: item for item in list_decision_memory(store, ACCOUNT)}
 
 
+def test_long_term_memory_keeps_older_entries_and_settled_outcome_on_upsert(tmp_path):
+    store = _store(tmp_path, "durable.sqlite3")
+    oldest = _entry_memory(store, cycle_id="cycle_oldest")
+    for index in range(24):
+        _entry_memory(store, cycle_id=f"cycle_new_{index}")
+    with store._connect() as db:
+        count = db.execute("SELECT COUNT(*) FROM ai_decision_memory WHERE account_id=?", (ACCOUNT,)).fetchone()[0]
+        preserved = db.execute("SELECT memory_id FROM ai_decision_memory WHERE cycle_id='cycle_oldest'").fetchone()
+    assert count == 25 and preserved[0] == oldest["memory_id"]
+    assert len(list_decision_memory(store, ACCOUNT)) == 20
+    _fill(store, fill_id="old_entry", cycle_id="cycle_oldest", position_id="pos_oldest",
+          side="BUY", quantity=1, price=100)
+    _fill(store, fill_id="old_exit", cycle_id="cycle_oldest", position_id="pos_oldest",
+          side="SELL", quantity=1, price=105)
+    result = reconcile_decision_outcomes(store, ACCOUNT)
+    assert any(item["memory_id"] == oldest["memory_id"] for item in result["resolved"])
+    _entry_memory(store, cycle_id="cycle_oldest")
+    with store._connect() as db:
+        row = db.execute("SELECT outcome_status, outcome_pnl FROM ai_decision_memory WHERE memory_id=?",
+                         (oldest["memory_id"],)).fetchone()
+    assert row["outcome_status"] == "WIN" and row["outcome_pnl"] == pytest.approx(5)
+
+
 def test_closed_long_win_is_recorded_with_net_pnl(tmp_path):
     store = _store(tmp_path, "win.sqlite3")
     memory = _entry_memory(store, cycle_id="cycle_win")
@@ -87,6 +110,20 @@ def test_closed_long_win_is_recorded_with_net_pnl(tmp_path):
     assert evidence["position_id"] == "pos_win"
     assert evidence["gross_realized"] == pytest.approx(10.0)
     assert evidence["fees"] == pytest.approx(2.0)
+
+
+def test_missing_exchange_fee_does_not_become_a_false_net_result(tmp_path):
+    store = _store(tmp_path, "unknown-fee.sqlite3")
+    memory = _entry_memory(store, cycle_id="cycle_fee_unknown")
+    _fill(store, fill_id="unknown_entry", cycle_id="cycle_fee_unknown", position_id="pos_fee_unknown",
+          side="BUY", quantity=1, price=100, fee_source="REMOTE_ADAPTER_FEE_UNKNOWN")
+    _fill(store, fill_id="known_exit", cycle_id="cycle_fee_unknown", position_id="pos_fee_unknown",
+          side="SELL", quantity=1, price=110)
+
+    result = reconcile_decision_outcomes(store, ACCOUNT)
+
+    assert result["resolved"] == []
+    assert _outcomes(store)[memory["memory_id"]]["outcome_status"] is None
 
 
 def test_closed_long_loss_is_recorded(tmp_path):

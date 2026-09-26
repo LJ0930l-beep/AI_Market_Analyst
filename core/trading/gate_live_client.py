@@ -10,6 +10,7 @@ Supports:
 from datetime import datetime, timezone
 import logging
 import math
+import re
 import time
 from typing import Optional, Dict, Any, List
 
@@ -17,6 +18,16 @@ logger = logging.getLogger("gate_live_client")
 
 GATE_TESTNET_API_BASE_URL = "https://api-testnet.gateapi.io/api/v4"
 GATE_LIVE_API_BASE_URL = "https://api.gateio.ws/api/v4"
+
+
+class GateProtectionPlacementError(RuntimeError):
+    """A protection leg failed after earlier legs may have reached Gate."""
+
+    def __init__(self, code: str, confirmed_legs: list[dict[str, Any]],
+                 unverified_legs: list[dict[str, Any]] | None = None):
+        super().__init__(code)
+        self.confirmed_legs = list(confirmed_legs)
+        self.unverified_legs = list(unverified_legs or [])
 
 
 def _error_text(exc: BaseException) -> str:
@@ -34,6 +45,16 @@ def _map_gate_error(exc: BaseException) -> Dict[str, str]:
     """
     name = type(exc).__name__.lower()
     message = _error_text(exc).lower()
+    # Gate puts its stable rejection label in the CCXT exception text. Keep
+    # only that identifier: the raw body can contain account details.
+    label_match = re.search(r'["\']label["\']\s*:\s*["\']([A-Za-z0-9_]{1,64})["\']', str(exc or ""))
+    gate_label = label_match.group(1).upper() if label_match else None
+    if gate_label is None:
+        plain_label = re.search(
+            r"\b(MARGIN_DEFICIT|LEVERAGE_TOO_HIGH|RISK_LIMIT_EXCEEDED|INVALID_PARAM_VALUE|CONTRACT_NOT_FOUND)\b",
+            str(exc or ""), re.IGNORECASE,
+        )
+        gate_label = plain_label.group(1).upper() if plain_label else None
     if "nonce" in name or "timestamp" in message or "clock" in message or "recvwindow" in message:
         return {"code": "GATE_TIME_SYNC_REQUIRED", "message_zh": "Gate 时间偏差或时间戳校验失败，请校准系统时间后重试。"}
     if "auth" in name or "permission" in name or "invalid key" in message or "api key" in message or "signature" in message or "key" in message and "invalid" in message:
@@ -50,6 +71,11 @@ def _map_gate_error(exc: BaseException) -> Dict[str, str]:
     # TestNet credential look unusable.
     if "environment" in message or "sandbox" in message or ("testnet" in message and "live" in message):
         return {"code": "GATE_ENVIRONMENT_MISMATCH", "message_zh": "Gate 凭证与请求环境不匹配；TestNet 与 Live Key 不能互用。"}
+    if gate_label:
+        return {
+            "code": f"GATE_{gate_label}",
+            "message_zh": f"Gate 拒绝了请求（{gate_label}）；请检查该合约的账户风险档位、保证金模式与杠杆设置。",
+        }
     if "badrequest" in name or "invalid_param" in message or "invalid parameter" in message:
         return {"code": "GATE_REMOTE_BAD_REQUEST", "message_zh": "Gate 拒绝了请求参数，请按远端合约规则修正后重试。"}
     return {"code": "GATE_REMOTE_ERROR", "message_zh": "Gate 返回了未识别的错误，请查看环境、权限和接口类型后重试。"}
@@ -369,6 +395,15 @@ class GateLiveTrader:
             and math.isclose(cross_limit, float(target), rel_tol=0, abs_tol=1e-9)
             and observed_mode in {None, "cross"}
         )
+
+    @classmethod
+    def _remote_cross_leverage_matches(cls, exchange: Any, symbol: str, target: int) -> bool:
+        """Read-only proof that *both* Gate hedge legs already use target cross leverage."""
+        try:
+            positions = exchange.fetch_positions([symbol])
+        except Exception:
+            return False
+        return cls._cross_leverage_readback(positions, target, symbol)
 
     def validate_credentials(self) -> Dict[str, Any]:
         """Verify the current environment with a read-only futures balance call."""
@@ -1140,13 +1175,26 @@ class GateLiveTrader:
                     "symbol": symbol,
                     "leverage": leverage,
                 }
+            # Re-sending Gate's cross-leverage update can be rejected even
+            # when both position legs are already configured correctly.  A
+            # signed readback is stronger evidence than a redundant mutation.
+            if margin_mode == "cross" and self._remote_cross_leverage_matches(ex, exchange_symbol, leverage):
+                return {
+                    "acknowledged": True, "dry_run": False, "symbol": symbol,
+                    "leverage": leverage, "margin_mode": "cross",
+                    "margin_mode_source": "GATE_EXISTING_POSITION_READBACK",
+                    "verified_native_leverage": 0,
+                    "verified_cross_leverage_limit": leverage,
+                    "result": {"source": "GATE_POSITION_READBACK"},
+                }
             # The active Gate strategy requires cross margin.  Never silently
             # preserve an isolated setting: Gate may reject a switch while an
             # isolated position is open, in which case the entry is not sent.
             margin_mode_source = "ACTIVE_STRATEGY_CROSS_REQUIRED"
             margin_mode = "cross"
             res = ex.set_leverage(leverage, exchange_symbol, {"marginMode": margin_mode})
-            if not self._cross_leverage_readback(res, leverage, exchange_symbol):
+            if not (self._cross_leverage_readback(res, leverage, exchange_symbol)
+                    or self._remote_cross_leverage_matches(ex, exchange_symbol, leverage)):
                 return {
                     "acknowledged": False,
                     "error_code": "GATE_CROSS_LEVERAGE_UNVERIFIED",
@@ -1168,7 +1216,24 @@ class GateLiveTrader:
             }
         except Exception as exc:
             mapped = _map_gate_error(exc)
-            return {"acknowledged": False, "error_code": mapped["code"], "message_zh": mapped["message_zh"], "symbol": symbol, "leverage": leverage}
+            try:
+                ex = self._get_exchange()
+                exchange_symbol = self._exchange_symbol(ex, symbol)
+                if self._remote_cross_leverage_matches(ex, exchange_symbol, leverage):
+                    return {
+                        "acknowledged": True, "dry_run": False, "symbol": symbol,
+                        "leverage": leverage, "margin_mode": "cross",
+                        "margin_mode_source": "GATE_POSITION_READBACK_AFTER_REJECT",
+                        "verified_native_leverage": 0,
+                        "verified_cross_leverage_limit": leverage,
+                        "result": {"source": "GATE_POSITION_READBACK_AFTER_REJECT"},
+                    }
+            except Exception:
+                pass
+            logger.warning("Gate %s cross-leverage update failed for %s at %sx: %s (%s)",
+                           self.api_environment, symbol, leverage, mapped["code"], type(exc).__name__)
+            return {"acknowledged": False, "error_code": mapped["code"], "message_zh": mapped["message_zh"],
+                    "error_type": type(exc).__name__, "symbol": symbol, "leverage": leverage}
 
     def place_order(
         self,
@@ -1235,7 +1300,8 @@ class GateLiveTrader:
             if leverage:
                 lev_res = self.set_leverage(exchange_symbol, leverage)
                 if not lev_res.get("acknowledged", True):
-                    logger.error("Failed to set leverage %sx for %s: %s", leverage, symbol, lev_res.get("error"))
+                    logger.error("Failed to set leverage %sx for %s: %s", leverage, symbol,
+                                 lev_res.get("error_code") or lev_res.get("error"))
                     return {
                         "status": "EXECUTION_FAILED",
                         "dry_run": False,
@@ -1278,10 +1344,10 @@ class GateLiveTrader:
             raw_status = str(order.get("status") or "").lower()
             filled = _optional_float(order.get("filled")) or 0.0
             order_amount = _optional_float(order.get("amount")) or float(amount)
+            if not str(order.get("id") or "").strip():
+                raise ValueError("GATE_ENTRY_ORDER_ID_UNVERIFIED")
 
-            if filled == 0 or raw_status == "open":
-                computed_status = "ACKNOWLEDGED"
-            elif filled >= order_amount:
+            if filled >= order_amount:
                 computed_status = "FILLED"
             elif filled > 0:
                 computed_status = "PARTIALLY_FILLED"
@@ -1354,14 +1420,26 @@ class GateLiveTrader:
                         response["protection_verified"] = True
                     except Exception as protection_exc:
                         mapped_protection = _map_gate_error(protection_exc)
+                        confirmed_legs = (
+                            protection_exc.confirmed_legs
+                            if isinstance(protection_exc, GateProtectionPlacementError) else []
+                        )
                         response.update(
                             {
                                 "status": "PROTECTION_FAILED",
                                 "protection_status": "PROTECTION_FAILED",
                                 "error_code": "GATE_PROTECTION_FAILED",
                                 "message_zh": "入场已成交但原生止损/止盈未确认，已阻断后续风险动作。",
-                                "protection_error_code": mapped_protection["code"],
-                                "protection_orders": [],
+                                "protection_error_code": (
+                                    str(protection_exc)
+                                    if isinstance(protection_exc, GateProtectionPlacementError)
+                                    else mapped_protection["code"]
+                                ),
+                                "protection_orders": confirmed_legs,
+                                "protection_unverified_orders": (
+                                    protection_exc.unverified_legs
+                                    if isinstance(protection_exc, GateProtectionPlacementError) else []
+                                ),
                             }
                         )
             return response
@@ -1394,8 +1472,8 @@ class GateLiveTrader:
                 "created_at": now_iso,
             }
 
-    @staticmethod
     def _place_protection_orders(
+        self,
         exchange: Any,
         exchange_symbol: str,
         *,
@@ -1422,11 +1500,9 @@ class GateLiveTrader:
             if trigger_price is None:
                 continue
             try:
-                trigger = float(trigger_price)
-            except (TypeError, ValueError):
-                raise ValueError(f"GATE_{name.upper()}_INVALID")
-            if not math.isfinite(trigger) or trigger <= 0:
-                raise ValueError(f"GATE_{name.upper()}_INVALID")
+                trigger = self.normalize_protection_price(exchange_symbol, trigger_price)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"GATE_{name.upper()}_INVALID") from exc
             params: dict[str, Any] = {
                 unified_key: trigger,
                 "reduceOnly": True,
@@ -1436,36 +1512,74 @@ class GateLiveTrader:
             if client_order_id:
                 suffix = "sl" if name == "stop_loss" else "tp"
                 params["text"] = f"{client_order_id}-{suffix}"[:28]
-            order = exchange.create_order(
-                symbol=exchange_symbol,
-                type="market",
-                side=protective_side,
-                amount=amount,
-                price=None,
-                params=params,
-            )
-            if not isinstance(order, dict):
-                raise ValueError("GATE_PROTECTION_RESPONSE_SCHEMA_INVALID")
-            order_id = order.get("id")
-            info = order.get("info") if isinstance(order.get("info"), dict) else {}
-            status = str(order.get("status") or info.get("status") or "").lower()
-            if not order_id or status not in {"open", "active", "new", "accepted", "pending", "closed"}:
-                raise ValueError("GATE_PROTECTION_NOT_CONFIRMED")
-            results.append(
-                {
-                    "leg": name,
-                    "order_id": str(order_id),
-                    "status": status,
-                    "side": protective_side.upper(),
-                    "amount": amount,
-                    "trigger_price": trigger,
-                    "reduce_only": True,
-                    "price_type": "MARK_PRICE",
-                }
-            )
+            pending_order_id: str | None = None
+            try:
+                order = exchange.create_order(
+                    symbol=exchange_symbol,
+                    type="market",
+                    side=protective_side,
+                    amount=amount,
+                    price=None,
+                    params=params,
+                )
+                if not isinstance(order, dict):
+                    raise ValueError("GATE_PROTECTION_RESPONSE_SCHEMA_INVALID")
+                order_id = order.get("id")
+                pending_order_id = str(order_id) if str(order_id or "").isdigit() else None
+                info = order.get("info") if isinstance(order.get("info"), dict) else {}
+                status = str(info.get("status") or order.get("status") or "").lower()
+                if (
+                    not str(order_id or "").isdigit()
+                    or status not in {"open", "active", "new", "accepted", "pending"}
+                    or info.get("finish_as")
+                ):
+                    raise ValueError("GATE_PROTECTION_NOT_CONFIRMED")
+                observed = self.fetch_protection_order(str(order_id), exchange_symbol)
+                observed_price = observed.get("trigger_price")
+                observed_amount = _optional_float(observed.get("amount"))
+                if (
+                    observed.get("order_id") != str(order_id)
+                    or observed.get("status") != "OPEN"
+                    or observed_price is None
+                    or observed_amount is None
+                    or observed_amount < amount
+                    or not observed.get("reduce_only")
+                    or not math.isclose(float(observed_price), trigger, rel_tol=1e-9, abs_tol=1e-12)
+                ):
+                    raise ValueError("GATE_PROTECTION_READBACK_MISMATCH")
+                results.append(
+                    {
+                        "leg": name,
+                        "order_id": str(order_id),
+                        "status": "open",
+                        "side": protective_side.upper(),
+                        "amount": amount,
+                        "trigger_price": float(observed_price),
+                        "reduce_only": True,
+                        "price_type": "MARK_PRICE",
+                    }
+                )
+            except Exception as exc:
+                raise GateProtectionPlacementError(
+                    f"GATE_{name.upper()}_PLACEMENT_UNVERIFIED", results,
+                    ([{"leg": name, "order_id": pending_order_id, "trigger_price": trigger,
+                       "amount": amount, "reduce_only": True}] if pending_order_id else []),
+                ) from exc
         if not results:
             raise ValueError("GATE_PROTECTION_PLAN_EMPTY")
         return results
+
+    def normalize_protection_price(self, symbol: str, price: float) -> float:
+        """Use Gate's contract tick before creating or checking a trigger."""
+        value = _optional_float(price)
+        if value is None or value <= 0:
+            raise ValueError("GATE_PROTECTION_PRICE_INVALID")
+        exchange = self._get_exchange()
+        exchange_symbol = self._exchange_symbol(exchange, symbol)
+        normalized = _optional_float(exchange.price_to_precision(exchange_symbol, value))
+        if normalized is None or normalized <= 0:
+            raise ValueError("GATE_PROTECTION_PRICE_PRECISION_INVALID")
+        return normalized
 
     def place_protection_orders(
         self,
@@ -1515,6 +1629,7 @@ class GateLiveTrader:
             "order_id": str(order_id), "symbol": _symbol_compact(symbol),
             "status": str(raw.get("status") or "UNKNOWN").upper(),
             "finish_as": str(raw.get("finish_as") or "").lower() or None,
+            "amount": abs(_optional_float(initial.get("size"))) if _optional_float(initial.get("size")) is not None else None,
             "trigger_price": _optional_float(trigger.get("price")),
             "price_type": trigger.get("price_type"),
             "reduce_only": True,

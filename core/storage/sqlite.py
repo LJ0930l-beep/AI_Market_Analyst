@@ -3956,6 +3956,24 @@ class SQLiteStore(V2Store):
                 self.save_gate_liquidation(symbol, native, event, provider=provider, environment=environment, now=now)
         return {"bootstrap_id": bootstrap_id, "source_hash": source_hash, "status": str(quality.get("status") or "READY"), "bars_written": bars_written, "provider": provider, "environment": environment, "symbol": symbol, "native_symbol": native, "synthetic": False}
 
+    def save_gate_public_volume_bars(
+        self,
+        symbol: str,
+        bars: list[object],
+        *,
+        environment: str = "LIVE_PUBLIC",
+        now: datetime | None = None,
+    ) -> int:
+        """Persist verified, closed Gate last-price 15m candles for the radar."""
+        normalized = str(symbol or "").strip().upper()
+        if not normalized.endswith("USDT") or len(normalized) <= 4:
+            raise ValueError("Gate USDT perpetual symbol is required")
+        native = f"{normalized[:-4]}_USDT"
+        return self._save_gate_derivative_bars(
+            normalized, native, "last", bars, "gate", environment,
+            timeframe="15m", now=now,
+        )
+
     def _save_gate_derivative_bars(
         self,
         symbol: str,

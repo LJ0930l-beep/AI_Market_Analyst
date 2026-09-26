@@ -4,11 +4,13 @@ import { apiClient } from "../api/client";
 import type {
   MarketBar,
   MarketIntelligenceResponse,
+  DailyBriefResponse,
   MonitoringRuntimeStatus,
 } from "../api/types";
 import { OhlcvChart } from "../components/OhlcvChart";
 import { V2News } from "../components/V2News";
 import { AITraderPanel } from "../components/AITraderPanel";
+import { DecisionFlow } from "../components/DecisionFlow";
 import { AIStrategyLibrary } from "../components/AIStrategyLibrary";
 import { MarketRadar } from "../components/MarketRadar";
 import { DecisionExperiencePanel } from "../components/DecisionExperiencePanel";
@@ -712,6 +714,7 @@ export function V2WorkspacePage({
 
   const [workspace, setWorkspace] = useState<Workspace>();
   const [market, setMarket] = useState<MarketIntelligenceResponse>();
+  const [briefStatus, setBriefStatus] = useState<DailyBriefResponse>();
   const [bars, setBars] = useState<MarketBar[]>([]);
   const [selected, setSelected] = useState("BTCUSDT");
   const [timeframe, setTimeframeValue] = useState<"15m" | "1h">("15m");
@@ -1496,7 +1499,7 @@ export function V2WorkspacePage({
   const refresh = useCallback(
     async (signal?: AbortSignal) => {
       try {
-        const [state, data, chart, accountResponse] = await Promise.all([
+        const [state, data, chart, accountResponse, dailyBriefResponse] = await Promise.all([
           apiClient.v2<Workspace>(
             selectedTradingAccount
               ? `/workspace?account_id=${encodeURIComponent(selectedTradingAccount)}`
@@ -1508,6 +1511,7 @@ export function V2WorkspacePage({
           apiClient.marketIntelligence(signal),
           apiClient.chartBars(selected, timeframe, 240, signal),
           apiClient.v2<{ accounts: TradingAccountSummary[] }>("/accounts", "GET", undefined, signal).catch(() => ({ accounts: [] })),
+          apiClient.dailyBrief("zh-CN", signal).catch(() => undefined),
         ]);
         if (signal?.aborted) return;
         const nextAccounts = Array.isArray(accountResponse?.accounts)
@@ -1519,6 +1523,7 @@ export function V2WorkspacePage({
         }
         setWorkspace(state);
         setMarket(data);
+        setBriefStatus(dailyBriefResponse);
         setBars(chart.bars);
         setError("");
       } catch (e) {
@@ -1847,14 +1852,14 @@ export function V2WorkspacePage({
   );
 
   const newsFeed = (
-    <section className="terminal-panel">
+    <section className="terminal-panel v2-news-panel">
       <header className="v2-panel-header">
         <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
           <h2>📰 {copy.news}</h2>
           {zh && (
             <button
               className="v2-btn-inline"
-              style={{ background: "#1e293b", border: "1px solid #3b82f6", color: "#60a5fa", cursor: "pointer" }}
+              style={{ background: "#f0eadf", border: "1px solid #b9ad99", color: "#315e65", cursor: "pointer" }}
               disabled={translatingAll}
               onClick={async () => {
                 setTranslatingAll(true);
@@ -1903,19 +1908,22 @@ export function V2WorkspacePage({
             {copy.filterMacro}
           </button>
         </div>
+        {surface === "dashboard" && <Link to="/intel" className="v2-news-panel__more">{zh ? "完整资讯监控室 ↗" : "Open all intelligence ↗"}</Link>}
       </header>
 
-      {filteredNews.length ? (
-        filteredNews.map((n, i) => (
-          <V2News
-            key={String(n.event_id ?? i)}
-            event={n}
-            onRefresh={() => void refresh()}
-          />
-        ))
-      ) : (
-        <p className="v2-note">{copy.noNews}</p>
-      )}
+      <div className="v2-news-list" tabIndex={0} aria-label={zh ? "最近48小时资讯列表" : "News from the last 48 hours"}>
+        {filteredNews.length ? (
+          (surface === "dashboard" ? filteredNews.slice(0, 6) : filteredNews).map((n, i) => (
+            <V2News
+              key={String(n.event_id ?? i)}
+              event={n}
+              onRefresh={() => void refresh()}
+            />
+          ))
+        ) : (
+          <p className="v2-note">{copy.noNews}</p>
+        )}
+      </div>
     </section>
   );
 
@@ -2219,11 +2227,27 @@ export function V2WorkspacePage({
               {decisions}
             </div>
             <aside className="v2-grid-col-right" aria-label={copy.intel}>
-              {macroCalendarCard}
               {macroBarometer}
+              {macroCalendarCard}
               {newsFeed}
             </aside>
           </div>
+          <DecisionFlow running={workspace?.runtime?.state === "running"} />
+          <section className="terminal-panel desk-daily-brief" aria-labelledby="desk-daily-brief-title">
+            <div className="desk-daily-brief__heading">
+              <div><span>09:00 · ASIA/SHANGHAI · SAVED EVIDENCE</span><h2 id="desk-daily-brief-title">{zh ? "每日加密货币市场简报" : "Daily crypto market brief"}</h2></div>
+              <Link to="/intel">{zh ? "进入资讯监控室 ↗" : "Open intelligence desk ↗"}</Link>
+            </div>
+            {briefStatus?.brief?.content ? <>
+              <p className="desk-daily-brief__content">{briefStatus.brief.content}</p>
+              <small>{zh ? "生成时间" : "Generated"}: {briefStatus.brief.generated_at} · {briefStatus.brief.model_id}</small>
+              {briefStatus.brief.missing.length > 0 && <small>{zh ? "证据缺口" : "Missing evidence"}: {briefStatus.brief.missing.join(" · ")}</small>}
+            </> : <p className="desk-daily-brief__empty">{zh ? "尚无可用简报。" : "No brief is available."}</p>}
+            {briefStatus?.schedule?.status === "FAILED" && <p className="desk-daily-brief__error" role="status">{zh ? "今日定时生成失败，后台稍后重试" : "Scheduled generation failed; the service will retry"} · {briefStatus.schedule.error_code || "UNKNOWN"}</p>}
+            {briefStatus?.schedule?.status === "RUNNING" && <p className="desk-daily-brief__empty">{zh ? "正在生成今日简报…" : "Generating today's brief…"}</p>}
+            {briefStatus?.schedule?.status === "PENDING" && <p className="desk-daily-brief__empty">{zh ? "本地后台计划于上海时间 09:00 自动生成。" : "Scheduled for 09:00 Shanghai time."}</p>}
+            {(!briefStatus?.schedule || briefStatus.schedule.status === "DISABLED") && <p className="desk-daily-brief__empty">{zh ? "当前后台未启用或未报告 09:00 定时任务；需要更新本地客户端。" : "The current backend has not enabled or reported the 09:00 schedule."}</p>}
+          </section>
         </>
       )}
 

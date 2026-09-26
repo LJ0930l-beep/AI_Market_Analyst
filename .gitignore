@@ -55,3 +55,6 @@ infra/bonsai/bin/
 
 # SFT/LoRA training data (contains full decision prompts incl. account_truth).
 data/fin_tuning/
+
+# Local trading audit reports may include exchange order IDs and account data.
+reports/

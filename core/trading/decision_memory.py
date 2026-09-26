@@ -63,21 +63,47 @@ def _position_id_for_cycle(db: Any, account_id: str, cycle_id: str) -> str | Non
     are checked because a rejected placement writes neither, and a LIMIT entry
     can fill in a later cycle than the one that decided it.
     """
-    for table in ("order_intents", "trade_fills"):
-        exists = db.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
-        ).fetchone()
-        if exists is None:
+    exists = db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='order_intents'"
+    ).fetchone()
+    intents = db.execute(
+        """SELECT position_id, execution_result_json FROM order_intents
+           WHERE account_id=? AND cycle_id=? ORDER BY created_at ASC""",
+        (account_id, cycle_id),
+    ).fetchall() if exists is not None else []
+    for row in intents:
+        if row["position_id"]:
+            return str(row["position_id"])
+        try:
+            receipt = json.loads(row["execution_result_json"] or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
             continue
-        row = db.execute(
-            f"""SELECT position_id FROM {table}
-                WHERE account_id=? AND cycle_id=?
-                  AND position_id IS NOT NULL AND position_id<>''
-                LIMIT 1""",
+        ledger_record = receipt.get("ledger_record") if isinstance(receipt, dict) else None
+        if isinstance(ledger_record, dict) and ledger_record.get("position_id"):
+            return str(ledger_record["position_id"])
+        order_id = str(receipt.get("order_id") or "") if isinstance(receipt, dict) else ""
+        if order_id and db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='trade_fills'"
+        ).fetchone():
+            fill = db.execute(
+                """SELECT position_id FROM trade_fills WHERE account_id=? AND order_id=?
+                   AND position_id IS NOT NULL AND position_id<>'' LIMIT 1""",
+                (account_id, order_id),
+            ).fetchone()
+            if fill is not None:
+                return str(fill["position_id"])
+    # The current ledger migration adds cycle_id to trade_fills.  Direct
+    # cycle attribution remains the strongest fallback when an execution
+    # receipt was lost or never carried a position_id.
+    columns = {str(item[1]) for item in db.execute("PRAGMA table_info(trade_fills)").fetchall()}
+    if "cycle_id" in columns:
+        fill = db.execute(
+            """SELECT position_id FROM trade_fills WHERE account_id=? AND cycle_id=?
+               AND position_id IS NOT NULL AND position_id<>'' LIMIT 1""",
             (account_id, cycle_id),
         ).fetchone()
-        if row is not None and row["position_id"]:
-            return str(row["position_id"])
+        if fill is not None:
+            return str(fill["position_id"])
     return None
 
 
@@ -95,7 +121,7 @@ def _position_settlement(db: Any, account_id: str, position_id: str) -> dict[str
     if exists is None:
         return None
     rows = db.execute(
-        """SELECT side, quantity, price, contract_size, fee_amount FROM trade_fills
+        """SELECT side, quantity, price, contract_size, fee_amount, fee_source FROM trade_fills
            WHERE account_id=? AND position_id=?""",
         (account_id, position_id),
     ).fetchall()
@@ -105,6 +131,12 @@ def _position_settlement(db: Any, account_id: str, position_id: str) -> dict[str
     buy_notional = sell_notional = 0.0
     fees = 0.0
     for row in rows:
+        fee_source = str(row["fee_source"] or "").upper()
+        if not fee_source or "UNKNOWN" in fee_source:
+            # A compatibility fee of zero is not an observed trading cost.
+            # Wait for an exchange fee readback before teaching the model a
+            # potentially false net outcome.
+            return None
         quantity = _number(row["quantity"]) or 0.0
         price = _number(row["price"]) or 0.0
         contract = _number(row["contract_size"]) or 1.0
@@ -155,10 +187,12 @@ def reconcile_decision_outcomes(store: Any, account_id: str, *, limit: int = 20)
                FROM ai_decision_memory
                WHERE account_id=? AND outcome_status IS NULL
                  AND action IN (?, ?)
-               ORDER BY decision_at ASC, memory_id ASC LIMIT ?""",
-            (account_id, ENTRY_ACTIONS[0], ENTRY_ACTIONS[1], max(1, min(int(limit), 20))),
+               ORDER BY decision_at ASC, memory_id ASC""",
+            (account_id, ENTRY_ACTIONS[0], ENTRY_ACTIONS[1]),
         ).fetchall()
         for row in rows:
+            if len(settlements) >= max(1, int(limit)):
+                break
             considered += 1
             position_id = _position_id_for_cycle(db, account_id, str(row["cycle_id"]))
             if not position_id:
@@ -264,8 +298,10 @@ def record_decision_memory(
                 session_id=excluded.session_id, candidate_id=excluded.candidate_id,
                 symbol=excluded.symbol, action=excluded.action,
                 cycle_status=excluded.cycle_status, decision_at=excluded.decision_at,
-                summary_zh=excluded.summary_zh, lesson_zh=excluded.lesson_zh,
-                outcome_status=excluded.outcome_status, outcome_pnl=excluded.outcome_pnl,
+                summary_zh=excluded.summary_zh,
+                lesson_zh=COALESCE(excluded.lesson_zh, ai_decision_memory.lesson_zh),
+                outcome_status=COALESCE(excluded.outcome_status, ai_decision_memory.outcome_status),
+                outcome_pnl=COALESCE(excluded.outcome_pnl, ai_decision_memory.outcome_pnl),
                 payload_json=excluded.payload_json, updated_at=excluded.updated_at""",
             (
                 memory_id, account_id, str(provider or "unknown"), str(environment or "unknown").lower(),
@@ -274,27 +310,9 @@ def record_decision_memory(
                 outcome_status, outcome_pnl, json.dumps(safe_payload, ensure_ascii=False, allow_nan=False), now, now, "MODEL",
             ),
         )
-        count = int(db.execute("SELECT COUNT(*) FROM ai_decision_memory WHERE account_id=?", (account_id,)).fetchone()[0])
-        if count == 21:
-            db.execute(
-                """DELETE FROM ai_decision_memory
-                   WHERE account_id=? AND memory_id IN (
-                       SELECT memory_id FROM ai_decision_memory
-                       WHERE account_id=? ORDER BY decision_at ASC, memory_id ASC LIMIT 10
-                   )""",
-                (account_id, account_id),
-            )
-        elif count > 21:
-            # Repair an overfull legacy account without deleting authoritative
-            # execution rows.  Keep the same newest-20 invariant.
-            db.execute(
-                """DELETE FROM ai_decision_memory
-                   WHERE account_id=? AND memory_id NOT IN (
-                       SELECT memory_id FROM ai_decision_memory
-                       WHERE account_id=? ORDER BY decision_at DESC, memory_id DESC LIMIT 20
-                   )""",
-                (account_id, account_id),
-            )
+        # Prompt retrieval is capped in list_decision_memory, but the durable
+        # outcome ledger must retain older decisions: a trade may settle many
+        # cycles later, and deleting its entry destroys the profit/lesson link.
         row = db.execute("SELECT * FROM ai_decision_memory WHERE memory_id=?", (memory_id,)).fetchone()
     return dict(row) if row is not None else {"memory_id": memory_id, "account_id": account_id, "cycle_id": cycle_id}
 

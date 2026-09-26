@@ -18,7 +18,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, HttpUrl
 
 from core.analysis.ai_trade_analytics import analyze_ai_trading_ledger
 from core.analysis.institutional_dashboard import build_institutional_dashboard
-from core.analysis.market_radar import build_market_radar, store_onchain_webhook
+from core.analysis.market_radar import build_market_radar, refresh_gate_volume_samples, store_onchain_webhook
 from core.analysis.strategy_evaluator import (
     evaluate_strategy_effectiveness,
     run_counterfactual_comparison,
@@ -539,7 +539,13 @@ def router_for(get_store, get_runtime, get_translation):
         store=Depends(get_store),
     ):
         requested = [item.strip().upper() for item in (symbols or "").split(",") if item.strip()][:8]
-        return build_market_radar(store, symbols=requested or None, include_external=include_external)
+        # The UI's external-data route warms real Gate closed candles before
+        # projecting the chart. Internal/AI read-only projections stay offline.
+        refresh = refresh_gate_volume_samples(store, requested or None) if include_external else None
+        result = build_market_radar(store, symbols=requested or None, include_external=include_external)
+        if refresh and refresh["errors"] and result["volume"]["status"] != "AVAILABLE":
+            result["volume"]["refresh_error"] = refresh["errors"]
+        return result
 
     @router.post("/onchain/webhooks/{provider}")
     def onchain_webhook(

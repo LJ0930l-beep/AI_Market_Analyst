@@ -235,6 +235,7 @@ Copy-Item -LiteralPath $SidecarSource -Destination (Join-Path $InstallDir $Backe
 # never search PATH or launch a different local model on a health failure.
 $runnerPath = Join-Path $ProjectRoot "infra\bonsai\server_runner.py"
 if (-not (Test-Path -LiteralPath $runnerPath -PathType Leaf)) { throw "Bonsai runner missing: $runnerPath" }
+if (-not $buildPython) { $buildPython = Resolve-BuildPython }
 @{ python = $buildPython; runner = $runnerPath } |
     ConvertTo-Json -Compress |
     Set-Content -LiteralPath (Join-Path $InstallDir "bonsai-recovery.json") -Encoding UTF8

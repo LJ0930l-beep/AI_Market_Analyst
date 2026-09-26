@@ -817,7 +817,7 @@ class AILedDecisionEngine:
                     try:
                         notional = Decimal(str(output.position_size_usdt))
                         configured_leverage = int(strategy_exec.get("leverage") or 1)
-                        model_leverage = int(output.requested_leverage) if output.requested_leverage is not None else None
+                        model_leverage = output.requested_leverage if type(output.requested_leverage) is int else None
                         stop = Decimal(str(output.stop_price))
                         target = Decimal(str(output.take_profit))
                         market_snap = market_for(output.instrument_id)
@@ -834,13 +834,20 @@ class AILedDecisionEngine:
                         venue_max_leverage = venue_leverage_limit(market_info)
                         if venue_max_leverage is None:
                             return finish(output, "BLOCKED", "VENUE_LEVERAGE_LIMIT_UNAVAILABLE")
-                        leverage = min(configured_leverage, venue_max_leverage)
+                        if model_leverage is None or model_leverage < 1:
+                            return finish(output, "REJECTED", "AI_LEVERAGE_REQUIRED")
+                        leverage = min(model_leverage, configured_leverage, venue_max_leverage)
                         output.extra_fields["leverage_selection"] = {
-                            "source": "ACTIVE_STRATEGY_WITH_GATE_CONTRACT_CEILING",
-                            "configured": configured_leverage,
-                            "model_suggestion": model_leverage,
+                            "source": "MODEL_CHOICE_WITH_STRATEGY_AND_GATE_CEILINGS",
+                            "strategy_user_ceiling": configured_leverage,
+                            "model_requested": model_leverage,
                             "gate_contract_ceiling": venue_max_leverage,
                             "submitted": leverage,
+                            "binding_limit": (
+                                "AI_REQUEST" if leverage == model_leverage else
+                                "STRATEGY_USER_CEILING" if leverage == configured_leverage else
+                                "GATE_CONTRACT_CEILING"
+                            ),
                         }
                         truth = context.account_truth or {}
                         if str(truth.get("status") or "").upper() != "AVAILABLE":
@@ -848,13 +855,48 @@ class AILedDecisionEngine:
                         available = Decimal(str(truth.get("available_margin")))
                         if not available.is_finite() or available <= 0:
                             return finish(output, "BLOCKED", "GATE_AVAILABLE_MARGIN_UNAVAILABLE")
-                        # As in NoFx, reduce an unaffordable proposal before
-                        # rounding to venue contracts.  The gateway's atomic
-                        # reservation rechecks the exact active margin cap.
-                        affordable = available * Decimal("0.98") * Decimal(leverage)
-                        if notional > affordable:
-                            output.extra_fields["notional_adjustment"] = {"requested": str(notional), "capped_to": str(affordable), "reason": "AVAILABLE_MARGIN"}
-                            notional = affordable
+                        # Size against observed capital before rounding. The
+                        # gateway still reserves fresh equity and pending
+                        # orders atomically; this estimate never authorizes
+                        # an order by itself.
+                        margin_budgets = {"AVAILABLE_MARGIN": available}
+                        equity_raw, used_raw = truth.get("equity"), truth.get("used_margin")
+                        if equity_raw is not None and used_raw is not None:
+                            equity = Decimal(str(equity_raw))
+                            used = Decimal(str(used_raw))
+                            cap_mode = str(strategy_exec.get("margin_cap_mode") or "PERCENT").upper()
+                            if not equity.is_finite() or not used.is_finite() or equity <= 0 or used < 0:
+                                return finish(output, "BLOCKED", "REMOTE_ACCOUNT_EQUITY_INVALID")
+                            cap = (
+                                Decimal(str(strategy_exec.get("max_margin_usdt")))
+                                if cap_mode == "FIXED_USDT" else
+                                equity * Decimal(str(strategy_exec.get("max_margin_pct"))) / Decimal("100")
+                            )
+                            if not cap.is_finite() or cap <= 0:
+                                return finish(output, "BLOCKED", "ACTIVE_STRATEGY_MARGIN_CAP_INVALID")
+                            margin_budgets["STRATEGY_MARGIN_CAP"] = max(Decimal("0"), cap - used)
+                        limiting_budget = min(margin_budgets, key=margin_budgets.get)
+                        if margin_budgets[limiting_budget] <= 0:
+                            return finish(output, "BLOCKED", "MARGIN_CAP_OR_AVAILABLE_BALANCE_EXHAUSTED")
+                        fee_raw = market_info.get("taker")
+                        if fee_raw is None:
+                            fee_raw = market_snap.get("fee_rate")
+                        if fee_raw is None:
+                            fee_raw = market_snap.get("taker_fee")
+                        fee = Decimal(str(fee_raw)) if fee_raw is not None else Decimal("0")
+                        if not fee.is_finite() or fee < 0:
+                            return finish(output, "BLOCKED", "GATE_FEE_INVALID")
+                        affordable = margin_budgets[limiting_budget] * Decimal("0.98") / (Decimal("1") / Decimal(leverage) + fee * Decimal("2"))
+                        single_cap = Decimal(str(strategy_exec.get("max_notional_usdt")))
+                        if not single_cap.is_finite() or single_cap <= 0:
+                            return finish(output, "BLOCKED", "ACTIVE_STRATEGY_NOTIONAL_CAP_INVALID")
+                        effective_cap = min(affordable, single_cap)
+                        if notional > effective_cap:
+                            output.extra_fields["notional_adjustment"] = {
+                                "requested": str(notional), "capped_to": str(effective_cap),
+                                "reason": "STRATEGY_NOTIONAL_CAP" if single_cap <= affordable else limiting_budget,
+                            }
+                            notional = effective_cap
                         if any(str(position.get("side") or "").upper() == side for position in existing_positions):
                             return finish(output, "BLOCKED", "NOFX_SAME_SIDE_POSITION_EXISTS")
                         preference = str(output.order_preference or "").upper()
@@ -904,7 +946,7 @@ class AILedDecisionEngine:
                         selection_evidence={"requested_notional_usdt": output.position_size_usdt, "submitted_notional_usdt": str(quantity * entry * contract_size), "model_evidence_refs": list(output.evidence_refs)},
                         limit_price=float(entry) if preference == "LIMIT" else None,
                         ttl_seconds=output.ttl_seconds or DEFAULT_LIMIT_TTL_SECONDS,
-                        selection_policy_version="nofx_gate_v1",
+                        selection_policy_version="nofx_gate_v2_model_leverage",
                     )
                     try:
                         execution = self.gateway.submit_intent(intent, market_snapshot=market_snap)
