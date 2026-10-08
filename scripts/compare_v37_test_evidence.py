@@ -33,7 +33,10 @@ def _phase_counts(pairs: set[tuple[str, str]]) -> dict[str, int]:
     return dict(sorted(Counter(phase for _, phase in pairs).items()))
 
 
-def compare(baseline: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
+def compare(
+    baseline: dict[str, Any], current: dict[str, Any], *,
+    baseline_commit: str = "23ca359082193033d9c40ee282c41a074eee53a2",
+) -> dict[str, Any]:
     before = _failed_phase_pairs(baseline)
     after = _failed_phase_pairs(current)
     new = sorted(after - before)
@@ -83,7 +86,7 @@ def compare(baseline: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]
         "same_environment": same_environment,
         "environment_sha256": _environment_sha(current.get("environment")),
         "baseline": {
-            "commit": "23ca359082193033d9c40ee282c41a074eee53a2",
+            "commit": baseline_commit,
             "collected_nodeid_count": len(before_nodes),
             "failed_node_phase_count": len(before),
             "failed_node_count": len({node for node, _ in before}),
@@ -138,9 +141,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("current", type=Path)
     parser.add_argument("--output", type=Path, required=True,
                         help="New local JSON report path; existing files are never overwritten")
+    parser.add_argument("--baseline-commit", default="23ca359082193033d9c40ee282c41a074eee53a2",
+                        help="Commit represented by the baseline evidence")
     args = parser.parse_args(argv)
     try:
-        result = compare(_load(args.baseline), _load(args.current))
+        result = compare(
+            _load(args.baseline), _load(args.current), baseline_commit=args.baseline_commit,
+        )
         args.output.parent.mkdir(parents=True, exist_ok=True)
         with args.output.open("x", encoding="utf-8", newline="\n") as stream:
             json.dump(result, stream, ensure_ascii=False, indent=2)

@@ -6,10 +6,11 @@ import json
 import math
 from collections.abc import Callable
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from core.replay.pa_decision_quality_v37.a3_policy import load_a3_signal_policy
 from core.trading.trade_feasibility import diagnose_trade_proposal
 
 from .context import CausalContext, build_context
@@ -35,6 +36,12 @@ class StudyError(ValueError):
     def __init__(self, code: str):
         self.code = code
         super().__init__(code)
+
+
+_A3_SIGNAL_POLICY, A3_SIGNAL_POLICY_SHA256 = load_a3_signal_policy()
+A3_SIGNAL_RULE_ID = _A3_SIGNAL_POLICY["rule_id"]
+A3_MAX_SIGNAL_AGE_SECONDS = _A3_SIGNAL_POLICY["signal"]["maximum_age_seconds"]
+A3_MAX_QUOTE_AGE_SECONDS = _A3_SIGNAL_POLICY["execution"]["maximum_quote_age_seconds"]
 
 
 def _sha(value: Any) -> str:
@@ -146,7 +153,40 @@ def diagnose_open_proposal(proposal: dict[str, Any], risk_inputs: dict[str, Any]
             "economics": diagnostics}
 
 
-def _failed_breakout_candidate(context: CausalContext) -> dict[str, Any]:
+def _a3_timestamp(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        point = value
+    elif isinstance(value, str):
+        try:
+            point = datetime.fromisoformat(value.strip())
+        except ValueError:
+            return None
+    else:
+        return None
+    if point.tzinfo is None or point.utcoffset() is None:
+        return None
+    return point.astimezone(UTC)
+
+
+def _a3_stamp(value: datetime) -> str:
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _a3_no_candidate(reason_code: str, **details: Any) -> dict[str, Any]:
+    return {
+        "status": "NO_CANDIDATE",
+        "action": "WAIT",
+        "rule_id": A3_SIGNAL_RULE_ID,
+        "signal_policy_sha256": A3_SIGNAL_POLICY_SHA256,
+        "reason_code": reason_code,
+        "production_authority": False,
+        **details,
+    }
+
+
+def _failed_breakout_candidate(
+    context: CausalContext, execution_quote: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     signal_bars = context.bars.get("15m", ())
     entry_bars = context.bars.get("5m", ())
     events: list[dict[str, Any]] = []
@@ -162,13 +202,14 @@ def _failed_breakout_candidate(context: CausalContext) -> dict[str, Any]:
         upper, lower = max(bar.high for bar in frozen_range), min(bar.low for bar in frozen_range)
         if outside.close > upper and reentry.close <= upper and lower < reentry.close:
             events.append({"direction": "SHORT", "outside": outside, "reentry": reentry,
-                           "level": upper, "target": lower, "frozen": frozen_range})
+                           "level": upper, "target": lower, "frozen": frozen_range,
+                           "reentry_index": index})
         elif outside.close < lower and reentry.close >= lower and reentry.close < upper:
             events.append({"direction": "LONG", "outside": outside, "reentry": reentry,
-                           "level": lower, "target": upper, "frozen": frozen_range})
+                           "level": lower, "target": upper, "frozen": frozen_range,
+                           "reentry_index": index})
     if not events:
-        return {"status": "NO_CANDIDATE", "action": "WAIT", "rule_id": "FAILED_BREAKOUT_20X15M_5M_REENTRY_V1",
-                "reason_code": "NO_CONFIRMED_FAILED_BREAKOUT", "production_authority": False}
+        return _a3_no_candidate("NO_CONFIRMED_FAILED_BREAKOUT")
     event = max(events, key=lambda item: item["reentry"].end)
     outside, reentry = event["outside"], event["reentry"]
     if event["direction"] == "SHORT":
@@ -181,18 +222,125 @@ def _failed_breakout_candidate(context: CausalContext) -> dict[str, Any]:
         side = "LONG"
     if not ((side == "SHORT" and event["target"] < reentry.close < stop)
             or (side == "LONG" and stop < reentry.close < event["target"])):
-        return {"status": "NO_CANDIDATE", "action": "WAIT", "rule_id": "FAILED_BREAKOUT_20X15M_5M_REENTRY_V1",
-                "reason_code": "FAILED_BREAKOUT_GEOMETRY_INVALID", "production_authority": False}
+        return _a3_no_candidate("FAILED_BREAKOUT_GEOMETRY_INVALID")
+
+    signal_available_at = reentry.available_at
+    expires_at = signal_available_at + timedelta(seconds=A3_MAX_SIGNAL_AGE_SECONDS)
+    signal_detail = {
+        "policy_version": A3_SIGNAL_RULE_ID,
+        "policy_sha256": A3_SIGNAL_POLICY_SHA256,
+        "confirmed_at": _a3_stamp(reentry.end),
+        "available_at": _a3_stamp(signal_available_at),
+        "expires_at": _a3_stamp(expires_at),
+        "maximum_age_seconds": A3_MAX_SIGNAL_AGE_SECONDS,
+    }
+    if signal_available_at < reentry.end:
+        return _a3_no_candidate(
+            "FAILED_BREAKOUT_SIGNAL_AVAILABILITY_PRECEDES_CONFIRMATION",
+            signal=signal_detail,
+        )
+    if context.decision_time >= expires_at:
+        return _a3_no_candidate(
+            "FAILED_BREAKOUT_SIGNAL_EXPIRED",
+            signal=signal_detail,
+        )
+
+    post_confirmation_bars = entry_bars[event["reentry_index"] + 1:]
+    invalidating_bar = None
+    for bar in post_confirmation_bars:
+        if side == "SHORT":
+            invalid = bar.close > event["level"] or bar.high >= stop or bar.low <= event["target"]
+        else:
+            invalid = bar.close < event["level"] or bar.low <= stop or bar.high >= event["target"]
+        if invalid:
+            invalidating_bar = bar
+            break
+    if invalidating_bar is not None:
+        return _a3_no_candidate(
+            "FAILED_BREAKOUT_SIGNAL_INVALIDATED",
+            signal=signal_detail,
+            invalidated_at=_a3_stamp(invalidating_bar.end),
+        )
+
+    decision_time = context.decision_time.astimezone(UTC)
+    quote_status = "CURRENT_QUOTE_REQUIRED"
+    quote_reason = "A3_CURRENT_EXECUTION_QUOTE_REQUIRED"
+    quote_price: float | None = None
+    quote_observed_at: datetime | None = None
+    quote_source: str | None = None
+    quote_side = "best_bid" if side == "SHORT" else "best_ask"
+    if isinstance(execution_quote, dict):
+        quote_observed_at = _a3_timestamp(execution_quote.get("observed_at"))
+        quote_source_value = execution_quote.get("source")
+        quote_source = quote_source_value.strip() if isinstance(quote_source_value, str) else None
+        try:
+            bid = Decimal(str(execution_quote.get("best_bid")))
+            ask = Decimal(str(execution_quote.get("best_ask")))
+            if not bid.is_finite() or not ask.is_finite() or bid <= 0 or ask <= 0 or bid > ask:
+                raise InvalidOperation
+            quote_price = float(bid if side == "SHORT" else ask)
+        except (InvalidOperation, TypeError, ValueError, OverflowError):
+            quote_price = None
+
+        quote_time_valid = (
+            quote_observed_at is not None
+            and signal_available_at <= quote_observed_at < decision_time
+            and (decision_time - quote_observed_at).total_seconds() <= A3_MAX_QUOTE_AGE_SECONDS
+        )
+        if not quote_source or quote_price is None or not quote_time_valid:
+            quote_status = "QUOTE_REJECTED"
+            quote_reason = "A3_EXECUTION_QUOTE_INVALID_STALE_OR_NONCAUSAL"
+        else:
+            quote_in_range = (
+                event["target"] < quote_price < event["level"]
+                if side == "SHORT"
+                else event["level"] < quote_price < event["target"]
+            )
+            quote_before_protection = (
+                quote_price < stop if side == "SHORT" else quote_price > stop
+            )
+            if not quote_in_range or not quote_before_protection:
+                return _a3_no_candidate(
+                    "FAILED_BREAKOUT_TRIGGER_NOT_ACTIVE_AT_CURRENT_QUOTE",
+                    signal=signal_detail,
+                    quote_observed_at=_a3_stamp(quote_observed_at),
+                )
+            quote_status = "POINT_IN_TIME_QUOTE_VALIDATED"
+            quote_reason = ""
+
     range_refs = [item.ref for item in event["frozen"]]
     return {
         "status": "RESEARCH_CANDIDATE", "action": action, "side": side,
-        "rule_id": "FAILED_BREAKOUT_20X15M_5M_REENTRY_V1", "production_authority": False,
+        "rule_id": A3_SIGNAL_RULE_ID, "signal_policy_sha256": A3_SIGNAL_POLICY_SHA256,
+        "production_authority": False,
+        "signal": {
+            **signal_detail,
+            "remaining_seconds_at_decision": int((expires_at - decision_time).total_seconds()),
+            "valid_at_decision": True,
+        },
         "trigger": {"condition": "5m close returned inside the frozen 20-bar 15m range",
                     "breakout_bar_at": outside.record()["bar_end"],
                     "confirmation_bar_at": reentry.record()["bar_end"],
+                    "signal_available_at": _a3_stamp(signal_available_at),
                     "entry_after_confirmation": True},
-        "proposal": {"entry_price": reentry.close, "stop_price": stop, "target_price": event["target"],
-                     "target_structure": "opposite edge of the range frozen before the breakout"},
+        "execution": {
+            "status": quote_status,
+            "reason_code": quote_reason or None,
+            "earliest_executable_at": _a3_stamp(signal_available_at),
+            "quote_observed_at": _a3_stamp(quote_observed_at) if quote_observed_at else None,
+            "quote_source": quote_source,
+            "entry_quote_side": quote_side,
+            "maximum_quote_age_seconds": A3_MAX_QUOTE_AGE_SECONDS,
+            "entry_trigger": _A3_SIGNAL_POLICY["execution"]["entry_trigger"],
+            "actual_fill_observed": False,
+        },
+        "proposal": {
+            "entry_price": quote_price if quote_status == "POINT_IN_TIME_QUOTE_VALIDATED" else None,
+            "entry_price_basis": f"POINT_IN_TIME_{quote_side.upper()}" if quote_price is not None and quote_status == "POINT_IN_TIME_QUOTE_VALIDATED" else "UNAVAILABLE",
+            "historical_confirmation_close": reentry.close,
+            "stop_price": stop,
+            "target_price": event["target"],
+            "target_structure": "opposite edge of the range frozen before the breakout"},
         "evidence_refs": [outside.ref, reentry.ref, *range_refs],
     }
 
@@ -376,12 +524,25 @@ def run_study(decision_points: list[dict[str, Any]], *, cache_rows: list[dict[st
         for experiment_id in ("A0", "A1", "A2", "A3"):
             spec = EXPERIMENTS[experiment_id]
             if experiment_id == "A3":
-                candidate = _failed_breakout_candidate(context)
+                execution_quote = point.get("execution_quote")
+                candidate = _failed_breakout_candidate(
+                    context,
+                    execution_quote if isinstance(execution_quote, dict) else None,
+                )
                 risk_result = None
                 if candidate.get("status") == "RESEARCH_CANDIDATE":
                     policy = point.get("risk_inputs")
                     proposed_notional = point.get("proposed_notional_usdt")
-                    if isinstance(policy, dict) and proposed_notional is not None:
+                    if candidate.get("execution", {}).get("status") != "POINT_IN_TIME_QUOTE_VALIDATED":
+                        risk_result = {
+                            "status": "BLOCKED",
+                            "reason_codes": [candidate.get("execution", {}).get("reason_code")
+                                             or "A3_CURRENT_EXECUTION_QUOTE_REQUIRED"],
+                            "proposal_unchanged": True,
+                            "lifecycle": {"proposal": "OBSERVED", "gateway_acceptance": "NOT_OBSERVED",
+                                          "venue_fill": "NOT_OBSERVED", "complete_close": "NOT_OBSERVED"},
+                        }
+                    elif isinstance(policy, dict) and proposed_notional is not None:
                         proposal = {**candidate["proposal"],
                                     "side": candidate["side"],
                                     "order_type": point.get("order_type", "market"),

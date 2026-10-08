@@ -13,13 +13,19 @@ from typing import Any
 # Allow both ``python scripts/...py`` and ``python -m scripts....`` invocation.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from core.replay.gemini_research import research_plan
 from core.replay.pa_decision_quality_v36.review import summarize
 from core.replay.pa_decision_quality_v36.runner import run_study
+from core.replay.pa_decision_quality_v37.a3_policy import load_a3_signal_policy
 from core.replay.pa_decision_quality_v37.evidence_builder import (
     build_reconstructed_point,
     canonical_sha256,
 )
 from core.replay.pa_decision_quality_v37.inventory import build_source_inventory
+from core.replay.pa_decision_quality_v37.partitioning import (
+    validate_anchor_partitions,
+    validate_research_plan,
+)
 from core.replay.pa_decision_quality_v37.recovery import (
     economic_coverage_from_v25,
     recover_v25_summary,
@@ -27,9 +33,15 @@ from core.replay.pa_decision_quality_v37.recovery import (
 from core.replay.pa_decision_quality_v37.schema import load_frozen_a0_schema
 
 CALENDAR_ANCHORS = (
-    ("v37-benchmark-btc-20251015-1200z", "2025-10-15T12:00:00Z", "research"),
-    ("v37-benchmark-btc-20251214-1200z", "2025-12-14T12:00:00Z", "validation"),
-    ("v37-benchmark-btc-20260212-1200z", "2026-02-12T12:00:00Z", "untouched_test"),
+    ("v37-1-benchmark-btc-20251015-1200z", "2025-10-15T12:00:00Z", "optimization"),
+    ("v37-1-benchmark-btc-20251214-1200z", "2025-12-14T12:00:00Z", "optimization"),
+    ("v37-1-benchmark-btc-20260212-1200z", "2026-02-12T12:00:00Z", "optimization"),
+    ("v37-1-benchmark-btc-20260415-1200z", "2026-04-15T12:00:00Z", "validation"),
+    ("v37-1-benchmark-btc-20260515-1200z", "2026-05-15T12:00:00Z", "validation"),
+    ("v37-1-benchmark-btc-20260614-1200z", "2026-06-14T12:00:00Z", "validation"),
+    ("v37-1-benchmark-btc-20260715-1200z", "2026-07-15T12:00:00Z", "untouched_test"),
+    ("v37-1-benchmark-btc-20260814-1200z", "2026-08-14T12:00:00Z", "untouched_test"),
+    ("v37-1-benchmark-btc-20260913-1200z", "2026-09-13T12:00:00Z", "untouched_test"),
 )
 
 
@@ -88,6 +100,7 @@ def build_reports(project_root: Path, local_data_root: Path, output_dir: Path) -
         "economic-evidence-coverage.json", "market-reconstruction-manifest.json",
         "decision-points.json", "offline-replay-reference.json",
         "offline-replay.json", "offline-review.json", "replay-readiness.json",
+        "research-partition-manifest.json", "a3-signal-policy.json",
     )
     if any((output_dir / name).exists() for name in expected_outputs):
         raise ValueError("V37_OUTPUT_FILE_EXISTS_REFUSE_OVERWRITE")
@@ -95,6 +108,12 @@ def build_reports(project_root: Path, local_data_root: Path, output_dir: Path) -
     archive_directory = local_data_root / "reports/btc-eth-year-proxy-20261004"
 
     schema, schema_version, schema_record = load_frozen_a0_schema()
+    original_plan = research_plan(archive_directory, optimization_window_hours=12)
+    partition_policy, partition_policy_sha256 = validate_research_plan(original_plan)
+    anchor_assignments = validate_anchor_partitions(
+        CALENDAR_ANCHORS, partition_policy["partitions"],
+    )
+    a3_policy, a3_policy_sha256 = load_a3_signal_policy()
     inventory = build_source_inventory(project_root, local_data_root)
     a0_coverage = recover_v25_summary(sample_path)
     economic_coverage = economic_coverage_from_v25(sample_path)
@@ -109,16 +128,50 @@ def build_reports(project_root: Path, local_data_root: Path, output_dir: Path) -
         )
         for decision_id, point_time, partition in CALENDAR_ANCHORS
     ]
+    partition_counts = Counter(point["partition"] for point in points)
+    partition_manifest = {
+        "schema_version": "pa-decision-quality-v37.1/research-partitions-1",
+        "source": {
+            "commit": partition_policy["source"]["commit"],
+            "path": partition_policy["source"]["path"],
+            "symbol": partition_policy["source"]["symbol"],
+            "source_file_sha256": original_plan["source_sha256"][partition_policy["source"]["path"]],
+        },
+        "frozen_policy_sha256": partition_policy_sha256,
+        "archive_dataset_sha256": original_plan["dataset_sha256"],
+        "archive_window": partition_policy["archive_window"],
+        "boundary_semantics": partition_policy["boundary_semantics"],
+        "partitions": partition_policy["partitions"],
+        "pilot_windows": partition_policy["pilot_windows"],
+        "heldout_protocol": partition_policy["heldout_protocol"],
+        "selection_rule": {
+            "optimization": "Preserve the three V37 calendar dates and assign all within the original six-month optimization range.",
+            "validation": "Take fixed 12:00 UTC points at the original heldout offsets 14, 44, and 74 days from the validation start.",
+            "untouched_test": "Take fixed 12:00 UTC points at the original heldout offsets 14, 44, and 74 days from the untouched-test start.",
+            "outcome_based_selection": False,
+            "v25_decision_link": False,
+        },
+        "anchor_assignments": anchor_assignments,
+        "point_count_by_partition": dict(sorted(partition_counts.items())),
+        "research_plan_execution": {
+            "model_calls": 0,
+            "exchange_calls": 0,
+            "production_writes": 0,
+        },
+    }
+    partition_manifest["manifest_sha256"] = canonical_sha256(partition_manifest)
     decision_document = {
-        "schema_version": "pa-decision-quality-v37/decision-points-1",
+        "schema_version": "pa-decision-quality-v37.1/decision-points-1",
         "dataset_kind": "RECONSTRUCTED_MARKET_BENCHMARK",
         "forensic_dataset_included": False,
         "source_v25_sample_sha256": inventory["tracked_v25_sample"].get("sha256"),
+        "research_partition_manifest_sha256": partition_manifest["manifest_sha256"],
+        "a3_signal_policy_sha256": a3_policy_sha256,
         "sample_selection": {
-            "rule": "Fixed 12:00 UTC calendar anchors within the three existing V25 recovery-pilot windows; assigned to partitions by chronological pilot window before any V37 review.",
+            "rule": "Nine fixed 12:00 UTC calendar anchors validated against the original research_plan half-open time partitions.",
             "outcome_based_selection": False,
             "v25_decision_id_link": False,
-            "purpose": "Causal-input and offline replay engineering only; not a profitability sample.",
+            "purpose": "Causal-input and offline controlled-research preparation only; no profitability inference.",
         },
         "cache_rows": [],
         "decision_points": [
@@ -136,7 +189,7 @@ def build_reports(project_root: Path, local_data_root: Path, output_dir: Path) -
     input_hash = _write_new_json(input_path, decision_document)
 
     market_manifest = {
-        "schema_version": "pa-decision-quality-v37/market-reconstruction-manifest-1",
+        "schema_version": "pa-decision-quality-v37.1/market-reconstruction-manifest-1",
         "dataset_kind": "RECONSTRUCTED_MARKET_BENCHMARK",
         "source_manifest_sha256": points[0]["source_manifest_sha256"],
         "source_database_sha256": points[0]["source_database_sha256"],
@@ -146,6 +199,8 @@ def build_reports(project_root: Path, local_data_root: Path, output_dir: Path) -
         "availability_delay_seconds": 60,
         "not_gate_data": True,
         "not_v25_original_decisions": True,
+        "research_partition_manifest_sha256": partition_manifest["manifest_sha256"],
+        "a3_signal_policy_sha256": a3_policy_sha256,
         "strict_causality_checks": {
             "bar_end_strictly_before_decision": True,
             "available_at_strictly_before_decision": True,
@@ -242,7 +297,7 @@ def build_reports(project_root: Path, local_data_root: Path, output_dir: Path) -
         raise RuntimeError("V37_OFFLINE_BOUNDARY_VIOLATION")
 
     readiness = {
-        "schema_version": "pa-decision-quality-v37/replay-readiness-1",
+        "schema_version": "pa-decision-quality-v37.1/replay-readiness-1",
         "historical_forensic_dataset": {
             "status": "BLOCKED_EXACT_A0_UNRECOVERABLE",
             "exact_a0_recovered": a0_coverage["exact_a0_recovered"],
@@ -251,11 +306,25 @@ def build_reports(project_root: Path, local_data_root: Path, output_dir: Path) -
         "reconstructed_market_benchmark": {
             "status": "READY_FOR_OFFLINE_ENGINEERING_REPLAY",
             "decision_point_count": len(points),
+            "decision_point_count_by_partition": dict(sorted(partition_counts.items())),
+            "v38_controlled_gemini_market_context_sample_count": len(points),
+            "v38_immediately_runnable_gemini_sample_count": 0,
+            "gemini_call_readiness_blockers": [
+                "A1/A2 require point-in-time state and execution-constraint snapshots; none are present in these market-only benchmark points.",
+                "V37.1 prepares data only; Gemini calls require a separately approved V38 run with an explicit model ID and call budget.",
+            ],
+            "exact_v25_a0_sample_count": a0_coverage["exact_a0_recovered"],
+            "gate_executable_trade_sample_count": 0,
             "dataset_sha256": input_hash,
             "market_manifest_sha256": market_manifest["manifest_sha256"],
+            "research_partition_manifest_sha256": partition_manifest["manifest_sha256"],
+            "a3_signal_policy_sha256": a3_policy_sha256,
             "price_source": "BINANCE_UM_OFFICIAL_MONTHLY_ARCHIVES",
+            "price_evidence_grade": "VERIFIED_ARCHIVE_RECONSTRUCTION",
             "gate_market_input": False,
+            "availability_evidence_grade": "ASSUMED_PROXY",
             "availability_is_assumption": True,
+            "not_sufficient_for_heldout_performance_acceptance": True,
         },
         "offline_replay": {
             "mode": cli_result["run_manifest"]["mode"],
@@ -285,6 +354,8 @@ def build_reports(project_root: Path, local_data_root: Path, output_dir: Path) -
         ],
     }
     market_hash = _write_new_json(output_dir / "market-reconstruction-manifest.json", market_manifest)
+    partition_hash = _write_new_json(output_dir / "research-partition-manifest.json", partition_manifest)
+    a3_policy_hash = _write_new_json(output_dir / "a3-signal-policy.json", a3_policy)
     inventory_hash = _write_new_json(output_dir / "source-inventory.json", inventory)
     a0_hash = _write_new_json(output_dir / "a0-recovery-coverage.json", a0_coverage)
     economics_hash = _write_new_json(output_dir / "economic-evidence-coverage.json", economic_coverage)
@@ -296,14 +367,25 @@ def build_reports(project_root: Path, local_data_root: Path, output_dir: Path) -
         "schema_key_count": len(schema),
     }
     return {
-        "status": "V37_OFFLINE_RECONSTRUCTION_COMPLETE",
+        "status": "V37_1_OFFLINE_RECONSTRUCTION_COMPLETE",
         "output_dir": str(output_dir),
         "schema": schema_summary,
+        "partitions": {
+            "policy_sha256": partition_policy_sha256,
+            "manifest_sha256": partition_manifest["manifest_sha256"],
+            "point_count_by_partition": dict(sorted(partition_counts.items())),
+        },
+        "a3_signal_policy": {
+            "rule_id": a3_policy["rule_id"],
+            "sha256": a3_policy_sha256,
+        },
         "report_sha256": {
             "source-inventory.json": inventory_hash,
             "a0-recovery-coverage.json": a0_hash,
             "economic-evidence-coverage.json": economics_hash,
             "market-reconstruction-manifest.json": market_hash,
+            "research-partition-manifest.json": partition_hash,
+            "a3-signal-policy.json": a3_policy_hash,
             "decision-points.json": input_hash,
             "offline-replay.json": cli_hash,
             "offline-review.json": hashlib.sha256(review_bytes).hexdigest(),
@@ -318,18 +400,18 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", type=Path,
                         default=Path(__file__).resolve().parents[1],
-                        help="V37 checkout containing code and the tracked sanitized V25 sample")
+                        help="V37.1 checkout containing code and the tracked sanitized V25 sample")
     parser.add_argument("--local-data-root", type=Path, required=True,
                         help="Existing local checkout with reports/ and data/; sources are opened read-only")
     parser.add_argument("--output-dir", type=Path,
-                        help="New local report directory; defaults to <local-data-root>/reports/v37")
+                        help="New local report directory; defaults to <local-data-root>/reports/v37.1")
     args = parser.parse_args(argv)
-    output_dir = args.output_dir or (args.local_data_root / "reports/v37")
+    output_dir = args.output_dir or (args.local_data_root / "reports/v37.1")
     try:
         result = build_reports(args.project_root, args.local_data_root, output_dir)
     except (OSError, UnicodeError, ValueError, TypeError, RuntimeError, KeyError) as exc:
         print(json.dumps({
-            "status": "V37_RECONSTRUCTION_FAILED",
+            "status": "V37_1_RECONSTRUCTION_FAILED",
             "error_code": getattr(exc, "code", type(exc).__name__),
             "error_type": type(exc).__name__,
         }, ensure_ascii=False))
