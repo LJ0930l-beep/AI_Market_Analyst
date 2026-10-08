@@ -247,7 +247,7 @@ class QwenConsultApiTests(unittest.TestCase):
             json={"language": "en", "messages": [{"role": "user", "content": "hello"}]},
         )
         self.assertEqual(response.status_code, 503)
-        self.assertEqual(response.json(), {"error": {"code": "QWEN_NOT_CONFIGURED", "message": "Local Bonsai consultation is not configured."}})
+        self.assertEqual(response.json(), {"error": {"code": "QWEN_NOT_CONFIGURED", "message": "Gemini consultation is not configured."}})
         model_health = client.get("/health/model").json()
         self.assertFalse(model_health["consult"]["available"])
         self.assertNotIn("base_url", json.dumps(model_health))
@@ -305,12 +305,12 @@ class QwenConsultApiTests(unittest.TestCase):
         self.assertEqual(events[-1]["error"]["code"], "QWEN_OUTPUT_LIMIT")  # type: ignore[index]
 
     def test_consult_endpoint_configuration_is_loopback_only(self) -> None:
-        self.assertEqual(_validate_loopback_url("http://localhost:8080/v1/"), "http://localhost:8080/v1")
-        self.assertEqual(_validate_loopback_url("http://127.0.0.1:8080/v1"), "http://127.0.0.1:8080/v1")
+        self.assertEqual(_validate_loopback_url("http://localhost:8045/v1/"), "http://localhost:8045/v1")
+        self.assertEqual(_validate_loopback_url("http://127.0.0.1:8045/v1"), "http://127.0.0.1:8045/v1")
         for unsafe in (
-            "https://127.0.0.1:8080/v1",
-            "http://192.168.1.8:8080/v1",
-            "http://user:secret@127.0.0.1:8080/v1",
+            "https://127.0.0.1:8045/v1",
+            "http://192.168.1.8:8045/v1",
+            "http://user:secret@127.0.0.1:8045/v1",
             "http://127.0.0.1:11434/v1",
             "http://127.0.0.1:8081/v1",
             "http://127.0.0.1:8080/",
@@ -323,7 +323,7 @@ class QwenConsultApiTests(unittest.TestCase):
 
     def test_modelclient_transport_verifies_manifest_and_stream_receipt(self) -> None:
         class FakeModelClient:
-            base_url = "http://127.0.0.1:8080/v1"
+            base_url = consult_config().base_url
             last_response_model = None
 
             def _configuration_error(self, _model):
@@ -333,12 +333,12 @@ class QwenConsultApiTests(unittest.TestCase):
                 return True
 
             def list_models(self, **_kwargs):
-                return [{"id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"}]
+                return [{"id": DEFAULT_MODEL}]
 
             def chat_completion_stream(self, _messages, **kwargs):
                 self.call = kwargs
-                self.last_response_model = None
-                yield {"choices": [{"delta": {"content": "Bonsai "}}]}
+                self.last_response_model = DEFAULT_MODEL
+                yield {"choices": [{"delta": {"content": "Gemini "}}]}
                 yield {"choices": [{"delta": {"content": "answer"}}]}
 
         fake_client = FakeModelClient()
@@ -348,16 +348,51 @@ class QwenConsultApiTests(unittest.TestCase):
         async def collect() -> list[str]:
             return [chunk async for chunk in transport.stream(({"role": "user", "content": "hello"},))]
 
-        self.assertEqual(asyncio.run(collect()), ["Bonsai ", "answer"])
+        self.assertEqual(asyncio.run(collect()), ["Gemini ", "answer"])
         self.assertEqual(fake_client.call["model_name"], DEFAULT_MODEL)
         self.assertEqual(fake_client.call["timeout_sec"], consult_config().total_timeout_seconds)
         self.assertEqual(fake_client.call["max_tokens"], consult_config().max_output_tokens)
-        self.assertEqual(transport.model_receipt["actual_model_id"], r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf")  # type: ignore[index]
-        self.assertEqual(transport.model_receipt["model_identity_source"], "request_bound_to_verified_manifest")  # type: ignore[index]
+        self.assertEqual(transport.model_receipt["actual_model_id"], DEFAULT_MODEL)  # type: ignore[index]
+        self.assertEqual(transport.model_receipt["model_identity_source"], "completion_response")  # type: ignore[index]
+
+    def test_modelclient_transport_marks_missing_completion_identity_unverified(self) -> None:
+        class FakeModelClient:
+            base_url = consult_config().base_url
+            last_response_model = None
+
+            def _configuration_error(self, _model):
+                return None
+
+            def is_healthy(self, **_kwargs):
+                return True
+
+            def list_models(self, **_kwargs):
+                return [{"id": DEFAULT_MODEL}]
+
+            def chat_completion_stream(self, _messages, **_kwargs):
+                yield {"choices": [{"delta": {"content": "unverified output"}}]}
+
+        fake_client = FakeModelClient()
+        transport = OllamaConsultTransport(consult_config())
+        transport.model_client = fake_client  # type: ignore[assignment]
+        observed: list[str] = []
+
+        async def collect() -> list[str]:
+            async for chunk in transport.stream(({"role": "user", "content": "hello"},)):
+                observed.append(chunk)
+            return observed
+
+        with self.assertRaises(ConsultTransportError) as caught:
+            asyncio.run(collect())
+        self.assertEqual(caught.exception.code, "QWEN_MODEL_IDENTITY_MISMATCH")
+        self.assertEqual(observed, [])
+        self.assertIsNotNone(transport.model_receipt)
+        self.assertIsNone(transport.model_receipt["actual_model_id"])  # type: ignore[index]
+        self.assertEqual(transport.model_receipt["model_identity_source"], "unverified")  # type: ignore[index]
 
     def test_modelclient_transport_fails_closed_when_manifest_is_not_bonsai(self) -> None:
         class FakeModelClient:
-            base_url = "http://127.0.0.1:8080/v1"
+            base_url = consult_config().base_url
             streamed = False
 
             def _configuration_error(self, _model):
@@ -367,7 +402,7 @@ class QwenConsultApiTests(unittest.TestCase):
                 return True
 
             def list_models(self, **_kwargs):
-                return [{"id": "Other-Bonsai-2-27B.gguf"}]
+                return [{"id": "qwen3.5:9b"}]
 
             def chat_completion_stream(self, *_args, **_kwargs):
                 self.streamed = True
@@ -393,7 +428,7 @@ class QwenConsultApiTests(unittest.TestCase):
                 self.closed = True
 
         class FakeModelClient:
-            base_url = "http://127.0.0.1:8080/v1"
+            base_url = consult_config().base_url
             last_response_model = None
 
             def __init__(self):
@@ -407,7 +442,7 @@ class QwenConsultApiTests(unittest.TestCase):
                 return True
 
             def list_models(self, **_kwargs):
-                return [{"id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"}]
+                return [{"id": DEFAULT_MODEL}]
 
             def chat_completion_stream(self, _messages, **kwargs):
                 kwargs["on_response_open"](self.response)

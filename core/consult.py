@@ -30,6 +30,7 @@ from .model_routing import (
     ModelRoutingConfig,
     ModelTask,
     configured_manifest_entry_matches,
+    is_configured_model_identity,
     is_verified_model_receipt,
     route_model,
 )
@@ -584,6 +585,7 @@ class OllamaConsultTransport:
 
         def infer() -> None:
             try:
+                verified_response_model: str | None = None
                 stream = self.model_client.chat_completion_stream(
                     list(messages),
                     mode="ANALYSIS",
@@ -609,13 +611,47 @@ class OllamaConsultTransport:
                     if content is not None and not isinstance(content, str):
                         push(("error", ConsultTransportError("QWEN_STREAM_INVALID", "The Gemini stream returned invalid data.")))
                         return
-                    if content and not push(("content", content)):
-                        return
+                    response_model = self.model_client.last_response_model
+                    if response_model is not None:
+                        if (
+                            not is_configured_model_identity(response_model)
+                            or (
+                                verified_response_model is not None
+                                and response_model != verified_response_model
+                            )
+                        ):
+                            self.model_receipt = {
+                                **receipt,
+                                "actual_model_id": response_model,
+                                "model_identity_source": "unverified",
+                            }
+                            push(("error", ConsultTransportError("QWEN_MODEL_IDENTITY_MISMATCH", "The configured model response identity could not be verified.")))
+                            return
+                        verified_response_model = response_model
+                    if content:
+                        if verified_response_model is None:
+                            self.model_receipt = {
+                                **receipt,
+                                "actual_model_id": None,
+                                "model_identity_source": "unverified",
+                            }
+                            push(("error", ConsultTransportError("QWEN_MODEL_IDENTITY_MISMATCH", "The configured model response identity could not be verified.")))
+                            return
+                        if not push(("content", content)):
+                            return
                 response_model = self.model_client.last_response_model
+                if response_model is None or verified_response_model is None:
+                    self.model_receipt = {
+                        **receipt,
+                        "actual_model_id": None,
+                        "model_identity_source": "unverified",
+                    }
+                    push(("error", ConsultTransportError("QWEN_MODEL_IDENTITY_MISMATCH", "The configured model response identity could not be verified.")))
+                    return
                 self.model_receipt = {
                     **receipt,
-                    "actual_model_id": response_model or receipt["verified_manifest_model_id"],
-                    "model_identity_source": "completion_response" if response_model else "request_bound_to_verified_manifest",
+                    "actual_model_id": response_model,
+                    "model_identity_source": "completion_response",
                 }
                 if not is_verified_model_receipt(self.model_receipt):
                     push(("error", ConsultTransportError("QWEN_MODEL_IDENTITY_MISMATCH", "The configured model response identity could not be verified.")))
