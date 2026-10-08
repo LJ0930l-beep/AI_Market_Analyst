@@ -1,27 +1,17 @@
 """Version-bound research analysis validation for live and cached decisions."""
 from __future__ import annotations
 
-import hashlib
-import json
-from copy import deepcopy
 from typing import Any
 
+from core.replay.pa_decision_quality_v37.schema import load_frozen_a0_schema
 from core.trading.model_schemas import (
-    AI_ACTION_SCHEMA,
     require_entry_analysis_for_open,
     validate_schema,
 )
 
 from .schema import SCHEMA_VERSION, validate_analysis
 
-_V35_ACTION_SCHEMA = deepcopy(AI_ACTION_SCHEMA)
-_V35_SCHEMA_BYTES = json.dumps(
-    _V35_ACTION_SCHEMA, ensure_ascii=False, sort_keys=True,
-    separators=(",", ":"), allow_nan=False,
-).encode("utf-8")
-V35_ACTION_SCHEMA_VERSION = (
-    "v35-ai-action-schema/sha256:" + hashlib.sha256(_V35_SCHEMA_BYTES).hexdigest()
-)
+_V35_ACTION_SCHEMA, V35_ACTION_SCHEMA_VERSION, _V35_SCHEMA_RECORD = load_frozen_a0_schema()
 
 
 def schema_version_for_experiment(experiment_id: str) -> str | None:
