@@ -434,6 +434,10 @@ class _ReplayGateway:
                              "limit_price": intent.limit_price, "ttl_seconds": intent.ttl_seconds,
                              "stop_price": intent.protection_plan.stop_price,
                              "take_profit": intent.protection_plan.take_profit})
+            # Gate rejects an order when the unchanged proposal cannot reserve
+            # its full margin. Keep the historical sink from silently reducing
+            # this already-audited quantity to fit the replay account.
+            decision["_require_exact_quantity"] = True
         event = self._apply(decision, market_snapshot)
         if not intent.reduce_only and isinstance(event, dict):
             event["entry_economics"] = economics.audit_dict()
