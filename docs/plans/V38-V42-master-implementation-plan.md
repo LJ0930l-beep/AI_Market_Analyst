@@ -10,7 +10,7 @@ This file records execution against the plan without replacing the user's source
 - No LIVE or TestNet session, private exchange request, order, Gemini request, or large archive download was made.
 - `reports/` is ignored. Research datasets and test-census evidence remain local and are not part of the PR.
 - V25 A0 remains unrecovered: `0/100` exact decisions. New archive contexts are not backfilled into V25.
-- No test was deleted or weakened. The 100 inherited failures remain explicitly classified.
+- No test was deleted or weakened. The frozen baseline had 100 inherited failures; the current V41 comparison resolves 45 nodes and still records 55 inherited failures in the node register.
 - The product-contract supplement is recorded separately in `AI-Market-Analyst-Product-Contract-V1.md` and `Multi-Asset-Trader-Terminal-Roadmap.md`. These are future architecture/design deliverables; they do not alter the current V38–V42 order, scope, or production behavior.
 - Multi-asset metadata, broader trader adapters, memory governance, and terminal consolidation remain sequenced after the active research and verification work. No early UI or execution expansion was made.
 
@@ -23,7 +23,7 @@ This file records execution against the plan without replacing the user's source
 | V38.2 — frozen sample plan and archive reconstruction | `DONE` | Data-preparation scope only: 180 contexts selected; 120 optimization/validation payloads and 60 hash-only untouched-test rows. No outcomes or labels. Availability remains an assumed proxy. |
 | V39 — transport reliability | `PARTIAL` | 91 focused tests pass. Loopback and deterministic fixtures cover parsing, bounded streams, deadlines, and timeout provenance. No real provider call or remote exactly-once guarantee. |
 | V40 — simulation economics | `PARTIAL` | 95 focused tests pass; one known inherited template-runner assertion fails identically to the frozen baseline. No production economics code changed. |
-| V41 — legacy full-suite census | `DONE` | Exact baseline 64a5c42 and post-V38 runs compared node-by-node and phase-by-phase: 100 inherited failures in both, no new failures or phase changes, 23 new V38 tests all passed. The old V37.1 report omitted one A3 test and was not used as the exact anchor. |
+| V41 — legacy full-suite census | `PARTIAL` | Exact baseline 64a5c42 and current runs compare node-by-node and phase-by-phase: 45 baseline failures now pass, 55 remain, with no new failure nodes or phase changes and all 23 V38 tests passing. The node-level audit is in `docs/audits/V41-node-remediation-register.json`; its addendum supersedes the V38-era `DONE` status without rewriting the historical census. |
 | V42 — unattended model/research operation | `NOT_STARTED` | Gated on V38–V41 review, a separate explicit model/budget authorization, provider retry/idempotency policy, and approved operational stop conditions. No unattended call path is enabled. |
 
 ## V38 data capacity
@@ -37,7 +37,7 @@ This file records execution against the plan without replacing the user's source
 
 ## V41 acceptance result
 
-The exact full-suite baseline was rerun at `64a5c4206a5073e0c44e9d5cc4178705ffa24664` in the same environment as the post-V38 run. The comparator reports `PASS_NO_NEW_FAILURES`: no missing baseline tests, no new failure nodes, no phase changes, and all 23 new V38 tests passed. The 100 inherited failures remain separate and prevent a claim that the repository is fully green.
+The exact full-suite baseline was rerun at `64a5c4206a5073e0c44e9d5cc4178705ffa24664` in the same environment as the latest V41 run. The comparator reports `PASS_NO_NEW_FAILURES`: no missing baseline tests, no new failure nodes, no phase changes, and all 23 new V38 tests passed. The current run is 2,291 passed, 55 failed, and 1 skipped; 45 of the 100 baseline failures no longer fail. Gate 5 remains partial because unresolved provider identity, runtime cancellation, and simulated authorization tests leave safety behavior unverified. See `docs/audits/V41-gate5-node-audit-addendum.md` and the 100-node register.
 
 ## V42 entry conditions
 
