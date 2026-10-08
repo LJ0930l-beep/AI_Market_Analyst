@@ -4,6 +4,8 @@
 
 **Overall: PARTIAL.** V38 market-only schemas, offline runner, sample preregistration, and local data preparation are implemented. V39 transport and V40 simulation tests have been run. The latest V41 exact full-suite comparison resolves all 100 frozen baseline failures with no new failure nodes or phase changes; the local Gate 5 census is complete. V42 is not started and remains gated; no unattended model activity is enabled.
 
+The current one-page status panel is `docs/audits/V38-V42-gate-decision-panel.md`.
+
 ## Verified results so far
 
 - V38 tests: **23 passed**; added-code Ruff and compile checks passed. Malformed enum payloads fail closed.
