@@ -100,7 +100,7 @@ def test_structured_client_never_returns_tradable_json_from_incomplete_stream(mo
     assert len(calls) == 1 and client.last_response_model is None
     assert failure.value.transport_trace["failed_phase"] == "READING_RESPONSE_BODY"
     assert failure.value.transport_trace["phase"] == "FAILED"
-    assert "stream_done" not in failure.value.transport_trace
+    assert failure.value.transport_trace["stream_done"] is False
 
 
 def test_invalid_final_json_does_not_trigger_hidden_repair_when_disabled(monkeypatch):

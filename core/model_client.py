@@ -17,6 +17,7 @@ import logging
 import math
 import threading
 import time
+import uuid
 from typing import Any, Callable, Dict, Generator, List, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen as _stdlib_urlopen
@@ -193,11 +194,13 @@ class ModelClient:
             raise ModelClientError("MODEL_RETRIES_INVALID")
         if request_retries != 0:
             raise ModelClientError("MODEL_RETRY_UNSAFE_WITHOUT_IDEMPOTENCY")
-        
+
+        request_id = uuid.uuid4().hex
         last_exception = None
         for attempt in range(request_retries + 1):
             start_t = time.time()
-            trace = CompletionTransportTrace(messages, attempt + 1, request_timeout)
+            trace = CompletionTransportTrace(messages, attempt + 1, request_timeout,
+                                             request_id=request_id)
             trace.data["transport_mode"] = "SSE" if stream else "JSON"
             self._response_state.transport_trace = trace
             try:
@@ -211,6 +214,8 @@ class ModelClient:
                         "Authorization": f"Bearer {config.api_key}",
                         "User-Agent": "AI-Market-Analyst-V2/Gemini",
                         "X-AI-Correlation-ID": trace.data["correlation_id"],
+                        "X-AI-Request-ID": trace.data["request_id"],
+                        "X-AI-Attempt-ID": trace.data["attempt_id"],
                     },
                     method="POST",
                 )
@@ -291,7 +296,9 @@ class ModelClient:
                 raise ModelSchemaError(f"Model returned invalid JSON: {exc}") from exc
             except Exception as exc:
                 trace.failed(exc)
-                raise ModelClientError(f"Unexpected error calling model: {exc}") from exc
+                failure = ModelClientError(f"Unexpected error calling model: {exc}")
+                failure.transport_trace = trace.snapshot()
+                raise failure from exc
 
         failure = ModelTimeoutError(
             f"Failed to communicate with model at {self._endpoint} after {request_retries + 1} attempts: {last_exception}"

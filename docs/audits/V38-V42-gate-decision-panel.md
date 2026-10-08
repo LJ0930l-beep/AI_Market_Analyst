@@ -35,3 +35,11 @@ The earlier table preserves its prior snapshot. The current additive follow-up i
 A1/A2 are blocked on separate model/budget authorization; A3 execution is blocked on point-in-time bid/ask. V39 remote retry/idempotency and duplicate-cost semantics remain blocked. One Codex `gpt-5.6-sol` capability probe was interrupted without a response or usage receipt; provider request and quota status are unverified. Gemini research calls remain zero.
 
 Final local V3 hardening verification: `tests/v38/` **68 passed**; full suite **2,399 passed, 1 skipped, 0 failed**; exact V37.1 baseline comparison `PASS_NO_NEW_FAILURES` (0 new failures, 76 added nodes passed). The V3 audit remains `PASS_WITH_EVIDENCE_CAVEATS`; outcomes and decision-quality metrics remain unmeasured. Detailed evidence paths and limits are in `V38-gate2-blind-evaluation-preregistration.md`.
+
+## Gate 3 addendum — 2026-10-09
+
+The V39 structured-completion path now has local loopback coverage for a forced TCP reset after HTTP 200 and partial data, truncated JSON, an exact repeated explicit-ID SSE frame, non-`stop` provider termination, a stalled body read, and a complete response. Failed streams are explicitly `stream_done=false`, retain bounded byte/timing/error metadata, and do not return partial completion content. Logical request IDs and physical attempt IDs are separate; automatic retries remain disabled and configured retries are refused before network access.
+
+Final local verification: focused Gate 3 suite **146 passed**; full suite **2,410 passed, 1 skipped, 0 failed**; frozen baseline comparison **`PASS_NO_NEW_FAILURES`**, with 0 new failures, 0 missing baseline nodes, 0 phase changes, and 87 total post-anchor nodes passing. The additional V39 audit is `V39-offline-fault-injection-followup.md`. This does not verify provider acceptance, remote replay/deduplication, cancellation, billing, or exactly-once behavior. V39 remains **PARTIAL / REMOTE BLOCKED_WITH_EVIDENCE**; V42 remains gated, and actual Gemini calls, private exchange requests, and orders remain **0**.
+
+The product contract and roadmap remain documentation-only. R0/V38–V42 verification still has priority; product implementation remains unstarted. Continue with safe offline gates and independent reviews. No Live, account, or production risk authorization is implied.
