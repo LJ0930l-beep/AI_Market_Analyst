@@ -2,7 +2,7 @@
 
 ## Current disposition
 
-**Overall: PARTIAL.** V38 market-only schemas, offline runner, sample preregistration, and local data preparation are implemented. V39 transport and V40 simulation tests have been run. V41 exact full-suite comparison reports no new failure nodes or phase changes, but Gate 5 remains partial because 55 inherited failures remain. V42 is not started and remains gated; no unattended model activity is enabled.
+**Overall: PARTIAL.** V38 market-only schemas, offline runner, sample preregistration, and local data preparation are implemented. V39 transport and V40 simulation tests have been run. V41 exact full-suite comparison reports no new failure nodes or phase changes, but Gate 5 remains partial because 53 inherited failures remain. V42 is not started and remains gated; no unattended model activity is enabled.
 
 ## Verified results so far
 
@@ -12,7 +12,7 @@
 - V39 transport tests: **91 passed**. No real Gemini call was made; exactly-once retry semantics remain unproven.
 - V40 economics/simulation tests: **95 passed, 1 inherited failure** (`test_production_prompt_manages_positions_across_scans`), matched to the pre-V38 baseline.
 - Historical V38 full-suite comparison: baseline at 64a5c42 was **2,223 passed, 100 failed, 1 skipped**; the V38 run was **2,246 passed, 100 failed, 1 skipped**. This historical evidence remains unchanged.
-- Current V41 Gate 5 comparison: **2,291 passed, 55 failed, 1 skipped** across 2,347 collected tests. Against the exact same-environment 64a5c42 baseline, **45 baseline failure nodes are resolved**, **55 remain**, with **0 new failed node/phase pairs**, **0 missing baseline nodes**, and **0 phase changes**. All 23 new V38 tests still pass. The current status is `PARTIAL`, not full-suite acceptance. See `V41-gate5-node-audit-addendum.md` and `V41-node-remediation-register.json`.
+- Current V41 Gate 5 comparison: **2,293 passed, 53 failed, 1 skipped** across 2,347 collected tests. Against the exact same-environment 64a5c42 baseline, **47 baseline failure nodes are resolved**, **53 remain**, with **0 new failed node/phase pairs**, **0 missing baseline nodes**, and **0 phase changes**. All 23 new V38 tests still pass. The V13 lease-loss and V2 simulation authorization/revocation nodes also pass with offline fixtures. The current status is `PARTIAL`, not full-suite acceptance. See `V41-gate5-node-audit-addendum.md` and `V41-node-remediation-register.json`.
 - Model calls: **0**. Private exchange calls: **0**. Orders: **0**. Production risk parameters changed: **no**.
 
 ## Changes
@@ -25,13 +25,13 @@ V38 additions are isolated under `core/replay/pa_decision_quality_v38/`, two ver
 2. The dataset has no account state, order book, contract snapshot, provider response, fill, or complete close. Gate-executable samples remain 0.
 3. 180 rows form 23 overlapping input clusters and must not be treated as independent trades.
 4. V25 A0 exact recovery remains 0/100.
-5. There are 55 inherited full-suite failures. The 100 baseline nodes are individually listed with current status, risk priority, contract relevance, failure evidence, bounded root-cause assessment, and owner/remediation state in `V41-node-remediation-register.json`.
+5. There are 53 inherited full-suite failures. The 100 baseline nodes are individually listed with current status, risk priority, contract relevance, failure evidence, bounded root-cause assessment, and owner/remediation state in `V41-node-remediation-register.json`.
 6. Provider retry/idempotency and real Gemini transport behavior are not verified.
 7. No user-authorized Gemini model/budget is available for this phase; zero scored model decisions are therefore expected.
 
 ## Acceptance boundary
 
-The offline V38 data-preparation stage is **accepted for research-input construction only**. V38 model-scored decision quality, Gate feasibility, profitability, V42 unattended operation, and any exchange execution are **not accepted**. V41's exact no-regression comparison passes, but Gate 5's full-suite audit/remediation is **partial**: 55 baseline failures remain, including unresolved provider, authorization, and runtime-lifecycle coverage.
+The offline V38 data-preparation stage is **accepted for research-input construction only**. V38 model-scored decision quality, Gate feasibility, profitability, V42 unattended operation, and any exchange execution are **not accepted**. V41's exact no-regression comparison passes, but Gate 5's full-suite audit/remediation is **partial**: 53 baseline failures remain, including unresolved provider identity, inference receipt, and monitoring coverage.
 
 ## Product-contract supplement
 
@@ -39,7 +39,7 @@ The requested long-term product contract is documented in `docs/plans/AI-Market-
 
 ## V42 prerequisites
 
-- Independently review the exact test-node/phase comparison and explicitly disposition the 55 remaining failure nodes, especially model identity, lease-loss cancellation, and simulated permission/revocation coverage. A no-new-failures result does not establish those behaviors.
+- Independently review the exact test-node/phase comparison and explicitly disposition the 53 remaining failure nodes, especially model identity, inference receipt, and monitoring coverage. Lease-loss cancellation and simulated permission/revocation now have passing focused coverage. A no-new-failures result does not establish the remaining behaviors.
 - Independently review V38 causal input hashes, schema/evidence validation, partition boundaries, and sealed test handling.
 - Define provider timeout/retry behavior including duplicate inference/cost after ambiguous disconnect, using a provider-supported idempotency mechanism or an explicit bounded policy.
 - Obtain separate explicit authorization for exact Gemini model, spend/token cap, sample set, prompt/schema versions, and stopping conditions.

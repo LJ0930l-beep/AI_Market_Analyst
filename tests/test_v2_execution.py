@@ -56,11 +56,10 @@ def store(tmp_path):
     return s
 
 
-def bonsai_provider(monkeypatch, payload):
-    """Exercise the real Bonsai adapter while stubbing only its network call."""
+def offline_gemini_provider(monkeypatch, payload):
+    """Exercise the pinned provider contract while stubbing its transport."""
     from core.ai.ollama import OllamaProvider, model_client
 
-    artifact = r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"
     provider = OllamaProvider(base_url=model_client.base_url, model_name=DEFAULT_MODEL)
     monkeypatch.setattr(
         provider,
@@ -69,11 +68,17 @@ def bonsai_provider(monkeypatch, payload):
             "available": True,
             "model_available": True,
             "model_id": DEFAULT_MODEL,
-            "actual_model_id": artifact,
-            "model_identity_source": "verified_manifest",
+            "actual_model_id": DEFAULT_MODEL,
+            "model_identity_source": "completion_probe",
+            "models": [DEFAULT_MODEL],
         },
     )
-    monkeypatch.setattr(model_client, "structured_analysis", lambda *_args, **_kwargs: payload)
+
+    def fake_structured_analysis(*_args, **_kwargs):
+        model_client._response_state.model = DEFAULT_MODEL
+        return payload
+
+    monkeypatch.setattr(model_client, "structured_analysis", fake_structured_analysis)
     model_client._response_state.model = None
     return provider
 
@@ -265,7 +270,7 @@ def test_simulation_approved_model_permission_and_revocation(store, monkeypatch)
         "summary": "Unit-test-only approval",
         "counterevidence": [],
     }
-    model = bonsai_provider(monkeypatch, answer)
+    model = offline_gemini_provider(monkeypatch, answer)
     store.upsert_app_setting("simulation.allow_unknown_macro", True)
     AccountLedger(store).create_account("default", mode="PAPER", initial_deposit=10000.0)
     service = AgentDecisionService(store, model)
@@ -283,6 +288,25 @@ def test_simulation_approved_model_permission_and_revocation(store, monkeypatch)
     assert result["status"] == "SIMULATED", result.get("reason")
     assert result["execution"]["protection"]["status"] == "ACTIVE"
     assert store.list_alerts(limit=10)[0]["symbol"] == "BTCUSDT"
+
+    revoked_proposal = {**approved_proposal, "strategy_version": "2.0.1-revoked"}
+    authorization_checks = 0
+
+    def revoke_after_model_response():
+        nonlocal authorization_checks
+        authorization_checks += 1
+        return authorization_checks == 1
+
+    revoked = service.decide(
+        revoked_proposal,
+        MARKET,
+        {"freshness": "fresh", "as_of": NOW.isoformat(), "price": 100.0},
+        now=NOW,
+        authorized=revoke_after_model_response,
+    )
+    assert revoked["status"] == "BLOCKED"
+    assert revoked["reason"] == "MONITORING_CANCELLED_OR_UNSUBSCRIBED"
+    assert len(store.v2_records("simulated_positions")) == 1
 
 
 def test_runtime_default_no_scan_and_subscription_membership(store):
