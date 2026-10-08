@@ -26,3 +26,12 @@ Evidence snapshot: latest local full-suite and exact baseline evidence is record
 - V38 overlap correction and companion dataset: `docs/audits/V38-nonoverlap-dataset-followup.md`.
 
 Overall V38–V42 status remains **PARTIAL**. V40 is complete for offline simulation/economics evidence and V41 is complete for the local full-suite census. V39 remote retry semantics and V42 controlled research remain gated. No entry in this panel authorizes paid model calls, exchange access, account changes, Live mode, or orders.
+
+
+## Gate 2 addendum — 2026-10-09
+
+The earlier table preserves its prior snapshot. The current additive follow-up is `V38-gate2-blind-evaluation-preregistration.md`: V3 is now the label-eligible primary dataset with a frozen seed, monthly temporal strata, 8-day partition-purged windows, 54 visible contexts and 18 sealed test hashes. V1 and V2 remain preserved as separate diagnostics and are not pooled. Blind-label and A1/A2/A3 protocol is frozen; labels and scored model decisions remain zero. Gate 2 passes for preparation only, while decision quality remains **UNKNOWN / NOT MEASURED**.
+
+A1/A2 are blocked on separate model/budget authorization; A3 execution is blocked on point-in-time bid/ask. V39 remote retry/idempotency and duplicate-cost semantics remain blocked. One Codex `gpt-5.6-sol` capability probe was interrupted without a response or usage receipt; provider request and quota status are unverified. Gemini research calls remain zero.
+
+Final local V3 hardening verification: `tests/v38/` **68 passed**; full suite **2,399 passed, 1 skipped, 0 failed**; exact V37.1 baseline comparison `PASS_NO_NEW_FAILURES` (0 new failures, 76 added nodes passed). The V3 audit remains `PASS_WITH_EVIDENCE_CAVEATS`; outcomes and decision-quality metrics remain unmeasured. Detailed evidence paths and limits are in `V38-gate2-blind-evaluation-preregistration.md`.
