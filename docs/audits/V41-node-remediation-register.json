@@ -99,7 +99,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current fixture/profile migration in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -120,7 +120,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current fixture/profile migration in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -141,7 +141,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current fixture/profile migration in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -162,7 +162,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current fixture/profile migration in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -183,7 +183,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current fixture/profile migration in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -204,7 +204,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current fixture/profile migration in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -225,7 +225,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current fixture/profile migration in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -246,7 +246,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current fixture/profile migration in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -267,7 +267,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current fixture/profile migration in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -288,7 +288,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current fixture/profile migration in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -309,7 +309,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current fixture/profile migration in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -330,7 +330,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current fixture/profile migration in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -351,7 +351,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current fixture/profile migration in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -372,7 +372,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current fixture/profile migration in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -393,7 +393,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current fixture/profile migration in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -414,7 +414,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current fixture/profile migration in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -435,7 +435,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current fixture/profile migration in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -456,7 +456,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current fixture/profile migration in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -477,7 +477,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Focused original failure trace identified MODEL_EXIT_RECEIPT_UNVERIFIED; updated explicit fail-closed assertion passed individually and in the exact full-suite run."
     },
     {
@@ -518,7 +518,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current provider/evidence fixture migration and prompt-compaction regression coverage in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -539,7 +539,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current provider/evidence fixture migration and prompt-compaction regression coverage in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -560,7 +560,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current provider/evidence fixture migration and prompt-compaction regression coverage in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -581,7 +581,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current provider/evidence fixture migration and prompt-compaction regression coverage in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -602,7 +602,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current provider/evidence fixture migration and prompt-compaction regression coverage in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -623,7 +623,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current provider/evidence fixture migration and prompt-compaction regression coverage in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -644,7 +644,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current provider/evidence fixture migration and prompt-compaction regression coverage in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -665,7 +665,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current provider/evidence fixture migration and prompt-compaction regression coverage in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -686,7 +686,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current provider/evidence fixture migration and prompt-compaction regression coverage in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -707,7 +707,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current provider/evidence fixture migration and prompt-compaction regression coverage in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -728,7 +728,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current provider/evidence fixture migration and prompt-compaction regression coverage in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -749,7 +749,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current provider/evidence fixture migration and prompt-compaction regression coverage in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -770,7 +770,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current provider/evidence fixture migration and prompt-compaction regression coverage in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -791,7 +791,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current provider/evidence fixture migration and prompt-compaction regression coverage in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -812,7 +812,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current provider/evidence fixture migration and prompt-compaction regression coverage in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -833,7 +833,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current provider/evidence fixture migration and prompt-compaction regression coverage in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -854,7 +854,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current provider/evidence fixture migration and prompt-compaction regression coverage in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -875,7 +875,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current provider/evidence fixture migration and prompt-compaction regression coverage in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -896,7 +896,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current provider/evidence fixture migration and prompt-compaction regression coverage in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -917,7 +917,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current provider/evidence fixture migration and prompt-compaction regression coverage in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -938,7 +938,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current provider/evidence fixture migration and prompt-compaction regression coverage in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -959,7 +959,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current provider/evidence fixture migration and prompt-compaction regression coverage in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -980,7 +980,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current provider/evidence fixture migration and prompt-compaction regression coverage in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -1001,7 +1001,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current provider/evidence fixture migration and prompt-compaction regression coverage in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -1022,7 +1022,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current provider/evidence fixture migration and prompt-compaction regression coverage in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -1043,7 +1043,7 @@
       "evidence_limit": "The exact baseline census preserves first-failure summaries; current pytest evidence preserves outcome, exception type and diagnostic digest. Current short traces are local/ignored. Low confidence explicitly means no causal conclusion.",
       "remediation": "Retain the passing node and exact baseline comparator as regression evidence; causal attribution is not claimed.",
       "owner": "V41 branch maintainer",
-      "target_pr": "Current V41 dependent PR; pending creation",
+      "target_pr": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
       "resolution_basis": "Current provider/evidence fixture migration and prompt-compaction regression coverage in this V41 diff plus exact current full-suite pass."
     },
     {
@@ -2086,5 +2086,6 @@
       "owner": "Project maintainer (unassigned)",
       "target_pr": null
     }
-  ]
+  ],
+  "pull_request_url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7"
 }
