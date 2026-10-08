@@ -2,7 +2,7 @@
 
 Status: **long-term roadmap** supplementary to V38–V42. Current V38–V42 research-quality, risk, model-reliability, sample-out-of-sample, and test-governance gates retain priority. This roadmap is design only; it does not authorize production execution or paid provider calls.
 
-Current placement: Product Contract V1 and this dependency/reuse/interface plan are documented. R0 remains active: the V40 offline simulation suite and V41 local full-suite census pass, while V39 remote retry/idempotency semantics remain `BLOCKED_WITH_EVIDENCE` pending a provider-backed idempotency/cost policy and separate call authorization. R1 implementation is not started; no instrument registry, account-fee migration, multi-asset order route, or terminal UI is introduced by this design supplement.
+Current placement: Product Contract V1 and this dependency/reuse/interface plan are documented. R0 remains active: the V40 offline simulation suite and V41 local full-suite census pass; V39 completion POST retries now fail closed locally, while remote idempotency and duplicate-cost semantics remain `BLOCKED_WITH_EVIDENCE` pending authoritative evidence and separate call authorization. R1 implementation is not started; no instrument registry, account-fee migration, multi-asset order route, or terminal UI is introduced by this design supplement.
 
 ## 1. Delivery order and dependencies
 

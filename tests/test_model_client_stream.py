@@ -6,7 +6,7 @@ from urllib.error import URLError
 import pytest
 
 from core import model_client as model_client_module
-from core.model_client import ModelClient, ModelClientError
+from core.model_client import ModelClient, ModelClientError, ModelTimeoutError
 from core.model_routing import DEFAULT_MODEL
 
 
@@ -87,7 +87,7 @@ def test_chat_completion_preserves_the_selected_high_reasoning_tier(monkeypatch:
 
 
 def test_structured_analysis_forwards_provider_timeout_and_retries(monkeypatch: pytest.MonkeyPatch) -> None:
-    client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL, retries=2)
+    client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL, retries=0)
     captured: dict[str, object] = {}
 
     def fake_chat_completion(*_args, **kwargs):
@@ -112,23 +112,47 @@ def test_chat_completion_honors_per_call_timeout_and_retry_count(monkeypatch: py
 
     def fake_urlopen(_request, *, timeout):
         timeouts.append(timeout)
-        if len(timeouts) < 3:
-            raise URLError("temporary failure")
-        return _JsonResponse({"choices": [{"message": {"content": "ok"}}]})
+        raise URLError("response may have been lost after request submission")
 
     monkeypatch.setattr(model_client_module, "urlopen", fake_urlopen)
     monkeypatch.setattr(model_client_module.time, "sleep", lambda _seconds: None)
-    client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL, retries=0)
+    client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL)
 
-    response = client.chat_completion(
-        [{"role": "user", "content": "decision"}],
-        model_name=DEFAULT_MODEL,
-        timeout_sec=37.5,
-        retries=2,
-    )
+    with pytest.raises(ModelTimeoutError):
+        client.chat_completion(
+            [{"role": "user", "content": "decision"}],
+            model_name=DEFAULT_MODEL,
+            timeout_sec=37.5,
+        )
 
-    assert response["content"] == "ok"
-    assert timeouts == [37.5, 37.5, 37.5]
+    assert timeouts == [37.5]
+    assert client.last_transport_trace["attempt"] == 1
+
+
+def test_retry_request_is_rejected_before_any_network_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[object] = []
+    monkeypatch.setattr(model_client_module, "urlopen", lambda *args, **kwargs: calls.append(args))
+    client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL)
+
+    with pytest.raises(ModelClientError, match="MODEL_RETRY_UNSAFE_WITHOUT_IDEMPOTENCY"):
+        client.chat_completion(
+            [{"role": "user", "content": "decision"}],
+            model_name=DEFAULT_MODEL,
+            retries=1,
+        )
+
+    assert calls == []
+
+
+def test_retry_client_configuration_is_rejected_before_any_network_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[object] = []
+    monkeypatch.setattr(model_client_module, "urlopen", lambda *args, **kwargs: calls.append(args))
+    client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL, retries=1)
+
+    with pytest.raises(ModelClientError, match="MODEL_RETRY_UNSAFE_WITHOUT_IDEMPOTENCY"):
+        client.chat_completion([{"role": "user", "content": "decision"}], model_name=DEFAULT_MODEL)
+
+    assert calls == []
 
 
 def test_chat_completion_rejects_unknown_reasoning_effort_before_network(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -142,6 +142,10 @@ class ConsultConfig:
     fast_model_name: str | None = None
     smart_model_name: str | None = None
 
+    def __post_init__(self) -> None:
+        if isinstance(self.retries, bool) or not isinstance(self.retries, int) or self.retries != 0:
+            raise ValueError("QWEN_CONSULT_RETRY_UNSAFE_WITHOUT_IDEMPOTENCY")
+
     @classmethod
     def from_env(cls) -> "ConsultConfig":
         provider = OllamaProvider()
@@ -165,7 +169,7 @@ class ConsultConfig:
             max_output_chars=_bounded_int("QWEN_CONSULT_MAX_OUTPUT_CHARS", 12_000, 512, 24_000),
             max_output_tokens=_bounded_int("QWEN_CONSULT_MAX_OUTPUT_TOKENS", int(provider.max_tokens), 64, 2_048),
             context_length=_bounded_int("OLLAMA_CONTEXT_LENGTH", int(provider.context_length), 2_048, 32_768),
-            retries=_bounded_int("QWEN_CONSULT_RETRIES", 0, 0, 1),
+            retries=_bounded_int("QWEN_CONSULT_RETRIES", 0, 0, 0),
             concurrency=_bounded_int("QWEN_CONSULT_CONCURRENCY", 1, 1, 1),
             freshness_seconds=_bounded_int("QWEN_CONSULT_FRESHNESS_SEC", 3_600, 60, 86_400),
             fast_model_name=routing.fast_model,
@@ -699,17 +703,8 @@ class OllamaConsultTransport:
                     pass
 
     async def stream(self, messages: tuple[dict[str, str], ...]) -> AsyncIterator[str]:
-        for attempt in range(self.config.retries + 1):
-            emitted = False
-            try:
-                async for content in self._stream_once(messages):
-                    emitted = True
-                    yield content
-                return
-            except ConsultTransportError as exc:
-                if emitted or not exc.retryable or attempt >= self.config.retries:
-                    raise
-                await asyncio.sleep(0.2 * (attempt + 1))
+        async for content in self._stream_once(messages):
+            yield content
 
 
 class ConsultSession:

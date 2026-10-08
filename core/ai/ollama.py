@@ -140,7 +140,7 @@ class OllamaProvider:
             raise ValueError("AI_APPLICATION_INPUT_BUDGET_INVALID")
         self.temperature = temperature if temperature is not None else float(os.environ.get("OLLAMA_TEMPERATURE", "0.2"))
         self.max_tokens = max_tokens or int(os.environ.get("OLLAMA_MAX_TOKENS", "700"))
-        self.retries = max(0, min(retries if retries is not None else int(os.environ.get("OLLAMA_RETRIES", "1")), 2))
+        self.retries = max(0, min(retries if retries is not None else int(os.environ.get("OLLAMA_RETRIES", "0")), 2))
         self.quantization = quantization or os.environ.get("OLLAMA_QUANTIZATION", "Q4_K_M")
         think_value = os.environ.get("OLLAMA_THINK", "false") if think is None else str(think).lower()
         self.think = think_value in {"1", "true", "yes", "on"}

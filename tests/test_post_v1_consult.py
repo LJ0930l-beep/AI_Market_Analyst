@@ -9,6 +9,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from apps.api.main import create_app
@@ -17,11 +18,11 @@ from core.consult import (
     ConsultConfig,
     ConsultServiceError,
     ConsultTransportError,
-    QwenConsultService,
     OllamaConsultTransport,
+    QwenConsultService,
+    _validate_loopback_url,
     build_consult_context,
     parse_consult_request,
-    _validate_loopback_url,
 )
 from core.instruments import instrument_for
 from core.model_routing import DEFAULT_MODEL
@@ -52,6 +53,20 @@ def consult_config(**changes: object) -> ConsultConfig:
         freshness_seconds=3_600,
     )
     return replace(base, **changes)
+
+
+def test_consult_config_rejects_automatic_retry_without_provider_idempotency():
+    with pytest.raises(ValueError, match="QWEN_CONSULT_RETRY_UNSAFE_WITHOUT_IDEMPOTENCY"):
+        consult_config(retries=1)
+
+
+def test_consult_environment_rejects_retry_configuration(monkeypatch):
+    monkeypatch.setenv("QWEN_CONSULT_RETRIES", "1")
+
+    with pytest.raises(ConsultServiceError) as error:
+        ConsultConfig.from_env()
+
+    assert error.value.code == "QWEN_CONFIG_INVALID"
 
 
 class FakeConsultTransport:
