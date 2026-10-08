@@ -1,11 +1,19 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 
 import pytest
 
-from core.replay.pa_decision_quality_v36.experiments import a0_cache_identity, safe_state_snapshot
+from core.replay.pa_decision_quality_v36.context import build_context
+from core.replay.pa_decision_quality_v36.experiments import (
+    EXPERIMENTS,
+    a0_cache_identity,
+    exact_cache_identity,
+    prompt_sha256,
+    safe_state_snapshot,
+)
 from core.replay.pa_decision_quality_v36.runner import (
     StudyError,
     diagnose_open_proposal,
@@ -13,6 +21,7 @@ from core.replay.pa_decision_quality_v36.runner import (
     validate_model_call_gate,
 )
 from core.replay.pa_decision_quality_v36.schema import validate_analysis
+from core.replay.pa_decision_quality_v36.validation import schema_version_for_experiment
 
 
 def _open_proposal(side="LONG", **overrides):
@@ -21,6 +30,43 @@ def _open_proposal(side="LONG", **overrides):
               "target_price": "104" if side == "LONG" else "96", "requested_leverage": "10"}
     values.update(overrides)
     return values
+
+
+def _valid_v36_wait(evidence_ref):
+    return {
+        "context": {"market_regime": "UNCERTAIN", "higher_timeframe_bias": "NEUTRAL"},
+        "location": {"trade_location": "UNKNOWN"},
+        "signal": {"setup": "NONE", "signal_quality": "NO_SIGNAL"},
+        "action": "WAIT", "decision_rationale": "No confirmed entry trigger.",
+        "counter_evidence": ["No structure has been confirmed."],
+        "evidence_refs": [evidence_ref], "future_hypotheses": [],
+    }
+
+
+def _v36_cache_row(point, experiment_id, analysis, *, actual_model_id="test-model",
+                   declared_schema_version=None):
+    context = build_context(point["bars_by_timeframe"], point["decision_time"])
+    state = safe_state_snapshot(point["state_snapshot"])
+    canonical_state = json.dumps(state, ensure_ascii=False, sort_keys=True,
+                                 separators=(",", ":"), allow_nan=False)
+    decision_time = point["decision_time"].replace("+00:00", "Z")
+    spec = EXPERIMENTS[experiment_id]
+    identity = exact_cache_identity(
+        experiment_id=experiment_id, model_id="test-model",
+        prompt_sha=prompt_sha256(
+            experiment_id, context, state, point.get("risk_inputs"),
+            str(point.get("risk_mode") or "FIXED_NOTIONAL"),
+        ),
+        data_sha=context.input_sha256, decision_time=decision_time,
+        state_sha=hashlib.sha256(canonical_state.encode("utf-8")).hexdigest(),
+        prompt_version=spec["prompt_version"],
+        analysis_schema_version=spec["analysis_schema_version"],
+    )
+    return {
+        "identity": identity, "status": "COMPLETED", "analysis": analysis,
+        "analysis_schema_version": declared_schema_version or spec["analysis_schema_version"],
+        "requested_model_id": "test-model", "actual_model_id": actual_model_id,
+    }
 
 
 @pytest.mark.parametrize("side", ["LONG", "SHORT"])
@@ -88,19 +134,29 @@ def test_model_call_requires_explicit_positive_budget():
 
 def test_default_study_is_offline_and_a0_requires_recomputed_exact_cache(research_fixture):
     point = research_fixture["point"]()
+    ref = "market_snapshot:ETH_USDT:observed"
     point["a0_original"] = {
-        "prompt": "V35 prompt", "model_input": {"candles": [1, 2]},
+        "prompt": "V35 prompt", "model_input": {"candles": [1, 2], "evidence_refs": [ref]},
         "state_snapshot": point["state_snapshot"], "model_id": "gemini-high",
         "prompt_version": "v35-frozen-1",
+        "analysis_schema_version": schema_version_for_experiment("A0"),
     }
     identity = a0_cache_identity(point)
-    cache = [{"identity": identity, "analysis": {"action": "WAIT"}, "raw_model_response": "cached"}]
+    analysis = {"action": "WAIT", "instrument_id": "ETH_USDT",
+                "reason": "Wait for a confirmed setup.", "confidence": None,
+                "evidence_refs": [ref]}
+    cache = [{"identity": identity, "analysis": analysis,
+              "analysis_schema_version": identity["analysis_schema_version"],
+              "actual_model_id": "gemini-high", "status": "COMPLETED",
+              "raw_model_response": "cached"}]
     calls = []
     result = run_study([point], cache_rows=cache, model_caller=lambda *args: calls.append(args))
     experiments = result["decision_records"][0]["experiments"]
     assert result["run_manifest"]["model_calls_used"] == 0
     assert calls == []
     assert experiments["A0"]["status"] == "CACHE_MATCH"
+    assert experiments["A0"]["analysis_validation"]["status"] == "VALID"
+    assert experiments["A0"]["model_identity_status"] == "MATCHED"
     assert "raw_model_response" not in json.dumps(experiments["A0"])
     assert experiments["A1"]["status"] == "NOT_RUN_MODEL_CALLS_DISABLED"
     assert experiments["A2"]["status"] == "NOT_RUN_MODEL_CALLS_DISABLED"
@@ -108,6 +164,33 @@ def test_default_study_is_offline_and_a0_requires_recomputed_exact_cache(researc
     changed["a0_original"]["prompt"] += " changed"
     result_changed = run_study([changed], cache_rows=cache)
     assert result_changed["decision_records"][0]["experiments"]["A0"]["status"] == "NOT_RUN_NO_EXACT_CACHE"
+
+
+def test_a0_cache_uses_v35_schema_version_and_original_evidence_allowlist(research_fixture):
+    point = research_fixture["point"]()
+    ref = "market_snapshot:ETH_USDT:observed"
+    point["a0_original"] = {
+        "prompt": "V35 prompt", "model_input": {"evidence_refs": [ref]},
+        "state_snapshot": point["state_snapshot"], "model_id": "gemini-high",
+        "prompt_version": "v35-frozen-1",
+        "analysis_schema_version": schema_version_for_experiment("A0"),
+    }
+    analysis = {"action": "WAIT", "instrument_id": "ETH_USDT",
+                "reason": "Wait for a confirmed setup.", "confidence": None,
+                "evidence_refs": ["market_snapshot:BTC_USDT:unknown"]}
+    identity = a0_cache_identity(point)
+    result = run_study([point], cache_rows=[{
+        "identity": identity, "analysis": analysis,
+        "analysis_schema_version": identity["analysis_schema_version"],
+        "actual_model_id": "gemini-high", "status": "COMPLETED",
+    }])
+    item = result["decision_records"][0]["experiments"]["A0"]
+
+    assert item["status"] == "CACHE_MATCH"
+    assert item["analysis_validation"]["status"] == "INVALID"
+    assert "V35_EVIDENCE_REFERENCE_INVALID" in item["analysis_validation"]["errors"]
+    assert item["model_identity_status"] == "MATCHED"
+    assert item["lifecycle"]["proposal"] == "NOT_OBSERVED"
 
 
 def test_outcomes_never_enter_model_prompt_and_model_calls_obey_total_budget(research_fixture):
@@ -138,7 +221,124 @@ def test_outcomes_never_enter_model_prompt_and_model_calls_obey_total_budget(res
     assert calls[0][1]["execution_constraints"]["status"] == "COMPLETE"
     assert calls[0][1]["execution_constraints"]["values"]["min_net_rr"] == "2.0"
     assert exp["A1"]["status"] == "COMPLETED"
+    assert exp["A1"]["model_identity_status"] == "MATCHED"
+    assert exp["A1"]["actual_model_id"] == "test-model"
     assert exp["A2"]["status"] == "NOT_RUN_BUDGET_EXHAUSTED"
+
+
+@pytest.mark.parametrize("actual_model_id,expected_status,expected_identity", [
+    ("test-model", "COMPLETED", "MATCHED"),
+    ("different-model", "MODEL_ID_MISMATCH", "MISMATCH"),
+    (None, "MODEL_ID_UNVERIFIED", "UNVERIFIED"),
+])
+def test_response_model_identity_requires_reported_actual_id(
+    research_fixture, actual_model_id, expected_status, expected_identity,
+):
+    point = research_fixture["point"]()
+
+    def caller(_experiment_id, payload):
+        evidence_ref = payload["causal_context"]["frames"]["15m"]["evidence_refs"][0]
+        return {"model_id": actual_model_id, "analysis": _valid_v36_wait(evidence_ref)}
+
+    result = run_study([point], run=True, max_decisions=1,
+                       model_id="test-model", model_caller=caller)
+    item = result["decision_records"][0]["experiments"]["A1"]
+    assert item["status"] == expected_status
+    assert item["requested_model_id"] == "test-model"
+    assert item["actual_model_id"] == actual_model_id
+    assert item["model_identity_status"] == expected_identity
+    assert item["analysis_validation"]["status"] == "VALID"
+    if actual_model_id is None:
+        assert item["model_id"] is None
+        assert "MODEL_ID_UNVERIFIED" in item["validation_errors"]
+    if expected_identity != "MATCHED":
+        assert "risk_preflight" not in item
+        assert item["lifecycle"]["gateway_acceptance"] == "NOT_OBSERVED"
+
+
+def test_non_object_model_response_is_unverified_and_never_promotes_request_id(research_fixture):
+    point = research_fixture["point"]()
+    result = run_study(
+        [point], run=True, max_decisions=1, model_id="requested-model",
+        model_caller=lambda *_args: ["not", "an", "object"],
+    )
+    item = result["decision_records"][0]["experiments"]["A1"]
+
+    assert item["status"] == "INVALID_MODEL_RESPONSE"
+    assert item["actual_model_id"] is None
+    assert item["model_id"] is None
+    assert item["requested_model_id"] == "requested-model"
+    assert item["model_identity_status"] == "UNVERIFIED"
+    assert "risk_preflight" not in item
+
+
+@pytest.mark.parametrize("corruption,expected_error", [
+    ("evidence", "EVIDENCE_REFERENCE_INVALID"),
+    ("schema", "ANALYSIS_SCHEMA_VERSION_MISMATCH"),
+])
+def test_exact_v36_cache_match_is_revalidated(corruption, expected_error, research_fixture):
+    point = research_fixture["point"]()
+    context = build_context(point["bars_by_timeframe"], point["decision_time"])
+    evidence_ref = min(context.evidence_refs)
+    analysis = _valid_v36_wait(evidence_ref)
+    declared_schema = None
+    if corruption == "evidence":
+        analysis["evidence_refs"] = ["bar:15m:not-in-this-context"]
+    else:
+        declared_schema = "pa-decision-quality-v36/older"
+    cache = _v36_cache_row(
+        point, "A1", analysis, declared_schema_version=declared_schema,
+    )
+    calls = []
+
+    result = run_study([point], cache_rows=[cache], model_id="test-model",
+                        model_caller=lambda *args: calls.append(args))
+    item = result["decision_records"][0]["experiments"]["A1"]
+
+    assert result["run_manifest"]["model_calls_used"] == 0
+    assert calls == []
+    assert item["status"] == "CACHE_MATCH"
+    assert item["analysis_validation"]["status"] == "INVALID"
+    assert expected_error in item["analysis_validation"]["errors"]
+    assert item["model_identity_status"] == "MATCHED"
+    assert "risk_preflight" not in item
+
+
+def test_exact_v36_cache_match_preserves_response_identity_and_revalidated_analysis(research_fixture):
+    point = research_fixture["point"]()
+    context = build_context(point["bars_by_timeframe"], point["decision_time"])
+    analysis = _valid_v36_wait(min(context.evidence_refs))
+    cache = _v36_cache_row(point, "A1", analysis)
+    result = run_study([point], cache_rows=[cache], model_id="test-model")
+    item = result["decision_records"][0]["experiments"]["A1"]
+    assert item["status"] == "CACHE_MATCH"
+    assert item["analysis_validation"]["status"] == "VALID"
+    assert item["model_identity_status"] == "MATCHED"
+    assert item["actual_model_id"] == "test-model"
+    assert result["run_manifest"]["model_calls_used"] == 0
+
+
+@pytest.mark.parametrize("actual_model_id,expected_identity", [
+    ("different-model", "MISMATCH"),
+    (None, "UNVERIFIED"),
+])
+def test_exact_cache_hit_does_not_promote_missing_or_mismatched_response_identity(
+    research_fixture, actual_model_id, expected_identity,
+):
+    point = research_fixture["point"]()
+    context = build_context(point["bars_by_timeframe"], point["decision_time"])
+    cache = _v36_cache_row(
+        point, "A1", _valid_v36_wait(min(context.evidence_refs)),
+        actual_model_id=actual_model_id,
+    )
+    result = run_study([point], cache_rows=[cache], model_id="test-model")
+    item = result["decision_records"][0]["experiments"]["A1"]
+
+    assert item["status"] == "CACHE_MATCH"
+    assert item["analysis_validation"]["status"] == "VALID"
+    assert item["model_identity_status"] == expected_identity
+    assert item["model_id"] == actual_model_id
+    assert "risk_preflight" not in item
 
 
 @pytest.mark.parametrize("side,prices", [
@@ -283,6 +483,9 @@ def test_timeout_is_classified_and_proposal_lifecycle_stays_separate(research_fi
     result = run_study([point], run=True, max_decisions=1, model_id="test", model_caller=timeout)
     experiment = result["decision_records"][0]["experiments"]["A1"]
     assert experiment["status"] == "MODEL_TIMEOUT"
+    assert experiment["model_id"] is None
+    assert experiment["requested_model_id"] == "test"
+    assert experiment["model_identity_status"] == "UNVERIFIED"
     assert experiment["error_code"] == "MODEL_TIMEOUT"
     assert experiment["lifecycle"]["gateway_acceptance"] == "NOT_OBSERVED"
 
