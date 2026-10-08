@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -507,6 +508,12 @@ def test_a3_is_non_production_failed_breakout_and_uses_same_risk_check(research_
     point["risk_inputs"] = research_fixture["risk_inputs"]()
     point["proposed_notional_usdt"] = "2000"
     point["requested_leverage"] = 10
+    point["execution_quote"] = {
+        "observed_at": (research_fixture["decision_time"] - timedelta(seconds=30)).isoformat(),
+        "source": "fixture:point-in-time-best-bid-ask",
+        "best_bid": "104",
+        "best_ask": "104.1",
+    }
     point["risk_inputs"] = research_fixture["risk_inputs"](
         equity="30000", available_margin="29000", quote="104",
     )
@@ -514,3 +521,193 @@ def test_a3_is_non_production_failed_breakout_and_uses_same_risk_check(research_
     preflight = result["decision_records"][0]["experiments"]["A3"]["risk_preflight"]
     assert preflight["status"] == "ELIGIBLE_PROPOSAL"
     assert preflight["economics"]["estimated_stop_risk_usdt"] <= "75.00"
+
+
+def test_a3_does_not_reuse_an_expired_failed_breakout(research_fixture):
+    frames = research_fixture["failed_breakout_frames"]()
+    decision_time = datetime(2025, 1, 5, 12, 25, tzinfo=research_fixture["decision_time"].tzinfo)
+    frames["5m"].extend(research_fixture["make_bars"](
+        "5m", count=6, last_end=decision_time - timedelta(minutes=5),
+    ))
+    frames["15m"].extend(research_fixture["make_bars"](
+        "15m", count=2, last_end=decision_time - timedelta(minutes=10),
+    ))
+    point = research_fixture["point"](
+        input_bars=frames,
+        decision_time=decision_time,
+    )
+
+    result = run_study([point])
+    a3 = result["decision_records"][0]["experiments"]["A3"]
+
+    assert a3["status"] == "NO_CANDIDATE"
+    assert a3["candidate"]["reason_code"] == "FAILED_BREAKOUT_SIGNAL_EXPIRED"
+
+
+def test_a3_does_not_treat_confirmation_close_as_executable_price(research_fixture):
+    point = research_fixture["point"](
+        input_bars=research_fixture["failed_breakout_frames"](),
+    )
+
+    result = run_study([point])
+    candidate = result["decision_records"][0]["experiments"]["A3"]["candidate"]
+
+    assert candidate["proposal"]["entry_price"] is None
+    assert candidate["proposal"]["historical_confirmation_close"] == 104.0
+    assert candidate["execution"]["status"] == "CURRENT_QUOTE_REQUIRED"
+
+
+@pytest.mark.parametrize("quote_time_kind", ["stale", "before_confirmation", "at_decision"])
+def test_a3_rejects_stale_or_noncausal_execution_quotes(research_fixture, quote_time_kind):
+    point = research_fixture["point"](
+        input_bars=research_fixture["failed_breakout_frames"](),
+    )
+    decision_time = datetime.fromisoformat(point["decision_time"])
+    signal_available_at = datetime.fromisoformat(
+        point["bars_by_timeframe"]["5m"][-1]["available_at"],
+    )
+    observed_at = {
+        "stale": decision_time - timedelta(seconds=61),
+        "before_confirmation": signal_available_at - timedelta(seconds=1),
+        "at_decision": decision_time,
+    }[quote_time_kind]
+    point["execution_quote"] = {
+        "observed_at": observed_at.isoformat(), "source": "fixture:quote",
+        "best_bid": "104", "best_ask": "104.1",
+    }
+
+    result = run_study([point])
+    a3 = result["decision_records"][0]["experiments"]["A3"]
+
+    assert a3["status"] == "RESEARCH_CANDIDATE"
+    assert a3["candidate"]["execution"]["status"] == "QUOTE_REJECTED"
+    assert a3["candidate"]["proposal"]["entry_price"] is None
+    assert a3["risk_preflight"]["status"] == "BLOCKED"
+
+
+@pytest.mark.parametrize("side,expected_price", [("SHORT", 104.0), ("LONG", 96.1)])
+def test_a3_uses_directional_side_of_current_point_in_time_quote(
+    research_fixture, side, expected_price,
+):
+    frames = research_fixture["failed_breakout_frames"]()
+    if side == "LONG":
+        frames["5m"][-2].update(open=96.0, high=97.0, low=93.0, close=94.0)
+        frames["5m"][-1].update(open=94.0, high=97.0, low=94.0, close=96.0)
+    point = research_fixture["point"](input_bars=frames)
+    decision_time = datetime.fromisoformat(point["decision_time"])
+    point["execution_quote"] = {
+        "observed_at": (decision_time - timedelta(seconds=30)).isoformat(),
+        "source": "fixture:point-in-time-best-bid-ask",
+        "best_bid": "95.9" if side == "LONG" else "104.0",
+        "best_ask": "96.1" if side == "LONG" else "104.8",
+    }
+
+    result = run_study([point])
+    candidate = result["decision_records"][0]["experiments"]["A3"]["candidate"]
+
+    assert candidate["side"] == side
+    assert candidate["execution"]["status"] == "POINT_IN_TIME_QUOTE_VALIDATED"
+    assert candidate["proposal"]["entry_price"] == expected_price
+    assert candidate["proposal"]["historical_confirmation_close"] == (96.0 if side == "LONG" else 104.0)
+
+
+def test_a3_accepts_a_quote_at_the_inclusive_maximum_quote_age(research_fixture):
+    point = research_fixture["point"](
+        input_bars=research_fixture["failed_breakout_frames"](),
+    )
+    decision_time = datetime.fromisoformat(point["decision_time"])
+    point["execution_quote"] = {
+        "observed_at": (decision_time - timedelta(seconds=60)).isoformat(),
+        "source": "fixture:point-in-time-best-bid-ask",
+        "best_bid": "104", "best_ask": "104.1",
+    }
+
+    result = run_study([point])
+    candidate = result["decision_records"][0]["experiments"]["A3"]["candidate"]
+
+    assert candidate["execution"]["status"] == "POINT_IN_TIME_QUOTE_VALIDATED"
+    assert candidate["execution"]["maximum_quote_age_seconds"] == 60
+    assert candidate["proposal"]["entry_price"] == 104.0
+
+
+def test_a3_rejects_quote_when_entry_trigger_is_not_active(research_fixture):
+    point = research_fixture["point"](
+        input_bars=research_fixture["failed_breakout_frames"](),
+    )
+    decision_time = datetime.fromisoformat(point["decision_time"])
+    point["execution_quote"] = {
+        "observed_at": (decision_time - timedelta(seconds=30)).isoformat(),
+        "source": "fixture:point-in-time-best-bid-ask",
+        "best_bid": "105", "best_ask": "105.1",
+    }
+
+    result = run_study([point])
+    a3 = result["decision_records"][0]["experiments"]["A3"]
+
+    assert a3["status"] == "NO_CANDIDATE"
+    assert a3["candidate"]["reason_code"] == "FAILED_BREAKOUT_TRIGGER_NOT_ACTIVE_AT_CURRENT_QUOTE"
+
+
+def test_a3_expiration_is_inclusive_at_the_frozen_ten_minute_boundary(research_fixture):
+    frames = research_fixture["failed_breakout_frames"]()
+    expires_at = datetime(2025, 1, 5, 12, 0, 1, tzinfo=research_fixture["decision_time"].tzinfo)
+    # Keep the point-in-time frame fresh without touching the target, stop, or breakout level.
+    frames["5m"].extend(research_fixture["make_bars"](
+        "5m", count=1, last_end=datetime(2025, 1, 5, 11, 55, tzinfo=expires_at.tzinfo),
+    ))
+    point = research_fixture["point"](input_bars=frames, decision_time=expires_at)
+
+    result = run_study([point])
+    a3 = result["decision_records"][0]["experiments"]["A3"]
+
+    assert a3["status"] == "NO_CANDIDATE"
+    assert a3["candidate"]["reason_code"] == "FAILED_BREAKOUT_SIGNAL_EXPIRED"
+    assert a3["candidate"]["signal"]["expires_at"] == expires_at.isoformat().replace("+00:00", "Z")
+
+
+@pytest.mark.parametrize("invalidation", ["rebreakout_close", "target_touch"])
+def test_a3_invalidates_signal_when_a_later_closed_bar_breaks_the_setup(
+    research_fixture, invalidation,
+):
+    frames = research_fixture["failed_breakout_frames"]()
+    later = research_fixture["make_bars"](
+        "5m", count=1, last_end=datetime(2025, 1, 5, 11, 55, tzinfo=research_fixture["decision_time"].tzinfo),
+    )[0]
+    if invalidation == "rebreakout_close":
+        later.update(open=104.0, high=107.0, low=103.0, close=106.0)
+    else:
+        later.update(open=104.0, high=106.0, low=95.0, close=100.0)
+    frames["5m"].append(later)
+    decision_time = datetime(2025, 1, 5, 11, 56, tzinfo=research_fixture["decision_time"].tzinfo)
+    point = research_fixture["point"](input_bars=frames, decision_time=decision_time)
+
+    result = run_study([point])
+    a3 = result["decision_records"][0]["experiments"]["A3"]
+
+    assert a3["status"] == "NO_CANDIDATE"
+    assert a3["candidate"]["reason_code"] == "FAILED_BREAKOUT_SIGNAL_INVALIDATED"
+
+
+def test_a3_future_bars_cannot_change_a_valid_point_in_time_quote_candidate(research_fixture):
+    point = research_fixture["point"](
+        input_bars=research_fixture["failed_breakout_frames"](),
+    )
+    decision_time = datetime.fromisoformat(point["decision_time"])
+    point["execution_quote"] = {
+        "observed_at": (decision_time - timedelta(seconds=30)).isoformat(),
+        "source": "fixture:point-in-time-best-bid-ask",
+        "best_bid": "104", "best_ask": "104.1",
+    }
+    baseline = run_study([point])["decision_records"][0]["experiments"]["A3"]["candidate"]
+    future_point = copy.deepcopy(point)
+    for timeframe in ("5m", "15m", "1h", "4h"):
+        step = {"5m": 5, "15m": 15, "1h": 60, "4h": 240}[timeframe]
+        future_point["bars_by_timeframe"][timeframe].extend(
+            research_fixture["make_bars"](
+                timeframe, count=1,
+                last_end=decision_time + timedelta(minutes=step),
+            ),
+        )
+    with_future = run_study([future_point])["decision_records"][0]["experiments"]["A3"]["candidate"]
+
+    assert with_future == baseline

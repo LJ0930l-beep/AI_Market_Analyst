@@ -228,11 +228,11 @@ def test_archive_builder_preserves_provenance_hashes_and_four_causal_frames(tmp_
     archive, decision = _make_archive_fixture(tmp_path)
     point_a = build_reconstructed_point(
         archive, symbol="BTCUSDT", decision_time=decision.isoformat(),
-        decision_id="fixture-point", partition="research",
+        decision_id="fixture-point", partition="optimization",
     )
     point_b = build_reconstructed_point(
         archive, symbol="BTCUSDT", decision_time=decision.isoformat(),
-        decision_id="fixture-point", partition="research",
+        decision_id="fixture-point", partition="optimization",
     )
     assert point_a["evidence_input_sha256"] == point_b["evidence_input_sha256"]
     assert point_a["context_input_sha256"] == point_b["context_input_sha256"]
@@ -247,6 +247,14 @@ def test_archive_builder_preserves_provenance_hashes_and_four_causal_frames(tmp_
             assert bar["available_at_basis"] == AVAILABILITY_BASIS
     assert point_a["availability_is_observed_fact"] is False
     assert point_a["context"]["status"] == "READY"
+
+
+def test_reconstructed_point_rejects_legacy_research_partition_label(tmp_path):
+    with pytest.raises(EvidenceBuildError, match="PARTITION_INVALID"):
+        build_reconstructed_point(
+            tmp_path / "archive", symbol="BTCUSDT", decision_time="2025-01-15T12:00:00Z",
+            decision_id="wrong-partition-label", partition="research",
+        )
 
 
 def test_exact_a0_recovery_requires_full_identity_schema_and_actual_model():

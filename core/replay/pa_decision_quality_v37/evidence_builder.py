@@ -287,7 +287,7 @@ def build_reconstructed_point(
         raise EvidenceBuildError("SYMBOL_INVALID")
     if not isinstance(decision_id, str) or not decision_id.strip():
         raise EvidenceBuildError("DECISION_ID_INVALID")
-    if partition not in {"research", "validation", "untouched_test"}:
+    if partition not in {"optimization", "validation", "untouched_test"}:
         raise EvidenceBuildError("PARTITION_INVALID")
 
     source_manifest, database_path, manifest_hash, archives = _manifest(archive_directory)
@@ -371,7 +371,7 @@ def build_reconstructed_point(
                 raise EvidenceBuildError("FUTURE_SWING_CONFIRMATION_INCLUDED")
 
     evidence_material = {
-        "schema_version": "pa-decision-quality-v37/reconstructed-market-input-1",
+        "schema_version": "pa-decision-quality-v37.1/reconstructed-market-input-1",
         "decision_id": decision_id,
         "decision_time": _stamp(point_time),
         "symbol": symbol,
@@ -387,7 +387,7 @@ def build_reconstructed_point(
     }
     evidence_hash = canonical_sha256(evidence_material)
     return {
-        "schema_version": "pa-decision-quality-v37/reconstructed-market-input-1",
+        "schema_version": "pa-decision-quality-v37.1/reconstructed-market-input-1",
         "dataset_kind": "RECONSTRUCTED_MARKET_BENCHMARK",
         "decision_id": decision_id,
         "decision_time": _stamp(point_time),
