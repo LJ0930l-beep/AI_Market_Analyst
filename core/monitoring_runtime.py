@@ -1327,7 +1327,7 @@ class MonitoringRuntime:
 
     def _run_cycle(self, symbols: tuple[str, ...]) -> MonitoringRunResult:
         if getattr(self.service, "ai_only", False):
-            # Coordinator refreshes public data and calls the Bonsai decision model once per cycle.
+            # Coordinator refreshes public data and calls the Gemini decision model once per cycle.
             # The monitoring loop continues stream/Guardian maintenance only.
             return MonitoringRunResult("AI_COORDINATOR_OWNS_DECISIONS", self.clock(), (), (), {"symbols": len(symbols)})
         return self.service.run(symbols=symbols, now=self.clock())

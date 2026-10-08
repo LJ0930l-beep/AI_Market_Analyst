@@ -1,4 +1,4 @@
-"""Import NOFX AI strategy settings into the Bonsai/Gate strategy contract.
+"""Import NOFX AI strategy settings into the Gemini/Gate strategy contract.
 
 This adapter translates NOFX's exported strategy instructions, candle cadence,
 timeframes, indicator switches, and safe Gate-universe filters into a bounded
@@ -24,7 +24,7 @@ _SECTION_MAP = {
     "decision_process": "decision_process",
 }
 _FALLBACK_TEMPLATE_BY_INTERVAL = {5: "aggressive_impulse", 15: "aggressive_breakout"}
-_SUPPORTED_CONTEXT_TIMEFRAMES = {"5m", "15m", "1h", "1d"}
+_SUPPORTED_CONTEXT_TIMEFRAMES = {"5m", "15m", "1h", "4h", "1d"}
 _INDICATOR_PERIOD_LIMITS = {
     "ema_periods": (2, 200),
     "rsi_periods": (2, 100),
@@ -224,7 +224,7 @@ def adapt_nofx_strategy_config(
     if not imported_fields:
         raise ValueError("NOFX_STRATEGY_PROMPT_EMPTY")
     for key, limit in STRATEGY_SECTION_CHAR_LIMITS.items():
-        # Preserve deterministic text sent to Bonsai. Lengths are measured in
+        # Preserve deterministic text sent to Gemini. Lengths are measured in
         # Python Unicode code points, matching the frontend counter.
         sections[key] = sections[key][:limit]
         if not sections[key]:

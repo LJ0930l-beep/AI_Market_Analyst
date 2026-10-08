@@ -328,6 +328,78 @@ body { font-family: "Segoe UI Variable Text", "Microsoft YaHei UI", sans-serif; 
   padding: 8px;
 }
 .v2-workspace .v2-news-list::-webkit-scrollbar-track { background: #eee7da; }
+
+/* Strategy Studio surfaces missed by the shared light-theme layer. */
+.ai-strategy-library .ai-sizing-preview {
+  color: var(--ink) !important;
+  background: var(--surface-strong) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-top: 2px solid var(--long) !important;
+  border-radius: 4px !important;
+  box-shadow: none !important;
+}
+.ai-strategy-library .ai-sizing-preview h3 { color: var(--ink) !important; }
+.ai-strategy-library .ai-sizing-preview :is(p, label, small) { color: var(--muted) !important; }
+.ai-strategy-library .ai-sizing-preview strong { color: var(--ink) !important; }
+.ai-strategy-library .ai-strategy-layout > form > footer {
+  color: var(--ink) !important;
+  background: var(--surface-strong) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 4px !important;
+  box-shadow: 0 4px 12px rgba(48, 42, 30, .06) !important;
+  backdrop-filter: none !important;
+}
+.ai-strategy-library .ai-strategy-layout > form > footer > span { color: var(--muted) !important; }
+
+/* Evidence summary cards inherit the same paper surfaces as the strategy
+   editor; their legacy dark backgrounds otherwise survive the theme. */
+.v2-workspace .v2-institutional-grid > div {
+  background: var(--surface-strong) !important;
+  border-color: var(--rule) !important;
+  color: var(--ink) !important;
+}
+
+/* Keep the imported-strategy provenance card legible on the paper surface. */
+.ai-strategy-library .ai-runtime-card,
+.ai-strategy-library .ai-runtime-card__summary > div,
+.ai-strategy-library .ai-runtime-card__detail-grid > section,
+.ai-strategy-library .ai-runtime-indicators li,
+.ai-strategy-library .ai-runtime-list-block li,
+.ai-strategy-library .ai-runtime-unsupported {
+  color: var(--ink) !important;
+  background: var(--surface) !important;
+  border-color: var(--border-subtle) !important;
+  box-shadow: none !important;
+}
+.ai-strategy-library .ai-runtime-card { border-top-color: var(--long) !important; }
+.ai-strategy-library .ai-runtime-card > header small,
+.ai-strategy-library .ai-runtime-card > header > span,
+.ai-strategy-library .ai-runtime-card__summary small,
+.ai-strategy-library .ai-runtime-list-block > small { color: var(--muted) !important; }
+.ai-strategy-library .ai-runtime-card > header h3,
+.ai-strategy-library .ai-runtime-card h4,
+.ai-strategy-library .ai-runtime-card__summary strong,
+.ai-strategy-library .ai-runtime-indicators strong { color: var(--ink) !important; }
+.ai-strategy-library .ai-runtime-card__explanation,
+.ai-strategy-library .ai-runtime-card__empty,
+.ai-strategy-library .ai-runtime-list-block p,
+.ai-strategy-library .ai-runtime-unsupported > p,
+.ai-strategy-library .ai-runtime-indicators li > span:not(.ai-runtime-indicator__mark),
+.ai-strategy-library .ai-runtime-indicators li > small { color: var(--muted) !important; }
+.ai-strategy-library .ai-runtime-card > header > span,
+.ai-strategy-library .ai-runtime-card[data-mode="local-profile"] > header > span {
+  background: var(--surface-hover) !important;
+  border-color: var(--border) !important;
+}
+.ai-strategy-library .ai-runtime-indicator__mark { background: var(--neutral) !important; box-shadow: none !important; }
+.ai-strategy-library .ai-runtime-indicators li[data-enabled="true"] .ai-runtime-indicator__mark { background: var(--long) !important; }
+.ai-strategy-library .ai-runtime-indicators li[data-enabled="false"] .ai-runtime-indicator__mark { background: var(--warning) !important; }
+.ai-strategy-library .ai-runtime-unsupported {
+  background: var(--surface-hover) !important;
+  border-left-color: var(--warning) !important;
+}
+.ai-strategy-library .ai-runtime-unsupported h4 { color: var(--warning) !important; }
+.ai-strategy-library .ai-runtime-unsupported > div > small { color: var(--muted) !important; }
 .v2-workspace .v2-news-list::-webkit-scrollbar-thumb {
   background: #b7aa96;
   border-color: #eee7da;

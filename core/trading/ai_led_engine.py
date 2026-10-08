@@ -21,6 +21,8 @@ import math
 import uuid
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+logger = logging.getLogger(__name__)
+
 from core.trading.execution_gateway import (
     ExecutionGateway,
     TradingMode,
@@ -47,9 +49,63 @@ from .ai_cycle_trace import (
     persist_stage_trace,
 )
 from core.model_routing import (
-    is_verified_bonsai_receipt as is_verified_bonsai_inference_receipt,
+    is_verified_model_receipt as is_verified_model_inference_receipt,
     DEFAULT_SMART_MODEL,
 )
+
+def _verified_price_action_exit(context: AICycleContext, output: AIActionOutput) -> bool:
+    """Bind risk reduction to this validated, complete model response.
+
+    This is not a classifier for prose such as 'structure invalidation'. The
+    model owns exit timing; the gateway still owns authorization and quantity.
+    """
+    if output.action not in {"CLOSE_POSITION", "REDUCE_POSITION"}:
+        return False
+    if not (context.model_call_attempted and context.model_call_completed
+            and context.model_call_prompt_version and context.input_hash):
+        return False
+    settings = context.model_inference_settings or {}
+    if not isinstance(settings, dict):
+        return False
+    receipt = {
+        "model_id": context.model_id, "model_version": context.model_version,
+        "actual_model_id": settings.get("actual_model_id"),
+        "model_identity_source": settings.get("model_identity_source"),
+        "verified_manifest_model_id": settings.get("verified_manifest_model_id"),
+        "prompt_version": context.model_call_prompt_version,
+        "input_hash": settings.get("request_hash"), "parse_status": "valid",
+    }
+    if not is_verified_model_inference_receipt(receipt,
+            expected_prompt_version=context.model_call_prompt_version,
+            expected_input_hash=context.input_hash):
+        return False
+    audit = settings.get("model_response_audit") or {}
+    attempts = audit.get("attempts") if isinstance(audit, dict) else None
+    if not isinstance(attempts, list) or not attempts or not isinstance(attempts[-1], dict):
+        return False
+    attempt = attempts[-1]
+    from core.ai.transport_diagnostics import safe_transport_trace
+    proof = safe_transport_trace(attempt.get("transport_trace"))
+    if (attempt.get("status") != "COMPLETED" or attempt.get("validation_error")
+            or attempt.get("raw_response_truncated") is not False
+            or attempt.get("request_hash") != context.input_hash
+            or attempt.get("prompt_version") != context.model_call_prompt_version
+            or not context.model_raw_response or attempt.get("raw_response") != context.model_raw_response
+            or attempt.get("raw_response_chars") != len(context.model_raw_response)
+            or not proof or proof.get("phase") != "COMPLETED" or proof.get("failed_phase")
+            or proof.get("http_status") != 200 or proof.get("transport_mode") != "SSE"
+            or proof.get("stream_done") is not True or proof.get("stream_finish_reason") != "stop"):
+        return False
+    try:
+        raw = json.loads(context.model_raw_response)
+    except (ValueError, TypeError):
+        return False
+    return (isinstance(raw, dict) and raw.get("action") == output.action
+            and raw.get("instrument_id") == output.instrument_id
+            and raw.get("position_id") == output.position_id
+            and raw.get("reason") == output.reason
+            and (output.action != "REDUCE_POSITION" or raw.get("reduce_fraction") == output.reduce_fraction))
+
 
 def _slim_technical_context(tech_context: Any, max_bars: int = 10) -> Any:
     """Slim the persisted technical context to avoid 40KB+ raw bar dumps.
@@ -160,6 +216,9 @@ class AICycleContext:
     universe_snapshot: Dict[str, Any] = field(default_factory=dict)
     dynamic_risk: Optional[Dict[str, Any]] = None
     performance_context: Dict[str, Any] = field(default_factory=dict)
+    # Historical research can inject an explicit point-in-time radar, including
+    # unavailable fields, so prompt generation never fetches today's markets.
+    market_radar_snapshot: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -248,7 +307,12 @@ class AILedDecisionEngine:
                     latency_ms REAL,
                     order_intent_id TEXT,
                     payload_json TEXT NOT NULL,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    model_call_attempted INTEGER,
+                    model_call_completed INTEGER,
+                    strategy_template_id TEXT,
+                    strategy_revision INTEGER,
+                    strategy_config_sha256 TEXT
                 )
                 """)
                 columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(ai_led_cycles)").fetchall()}
@@ -257,6 +321,11 @@ class AILedDecisionEngine:
                     ("generation", "INTEGER"),
                     ("authorization_id", "TEXT"),
                     ("market_snapshot_hash", "TEXT"),
+                    ("model_call_attempted", "INTEGER"),
+                    ("model_call_completed", "INTEGER"),
+                    ("strategy_template_id", "TEXT"),
+                    ("strategy_revision", "INTEGER"),
+                    ("strategy_config_sha256", "TEXT"),
                 ):
                     if column not in columns:
                         conn.execute(f"ALTER TABLE ai_led_cycles ADD COLUMN {column} {definition}")
@@ -275,7 +344,12 @@ class AILedDecisionEngine:
                         latency_ms REAL,
                         order_intent_id TEXT,
                         payload_json TEXT NOT NULL,
-                        created_at TEXT NOT NULL
+                        created_at TEXT NOT NULL,
+                        model_call_attempted INTEGER,
+                        model_call_completed INTEGER,
+                        strategy_template_id TEXT,
+                        strategy_revision INTEGER,
+                        strategy_config_sha256 TEXT
                     )
                     """)
                     columns = {str(row[1]) for row in db.execute("PRAGMA table_info(ai_led_cycles)").fetchall()}
@@ -284,6 +358,11 @@ class AILedDecisionEngine:
                         ("generation", "INTEGER"),
                         ("authorization_id", "TEXT"),
                         ("market_snapshot_hash", "TEXT"),
+                        ("model_call_attempted", "INTEGER"),
+                        ("model_call_completed", "INTEGER"),
+                        ("strategy_template_id", "TEXT"),
+                        ("strategy_revision", "INTEGER"),
+                        ("strategy_config_sha256", "TEXT"),
                     ):
                         if column not in columns:
                             db.execute(f"ALTER TABLE ai_led_cycles ADD COLUMN {column} {definition}")
@@ -335,6 +414,18 @@ class AILedDecisionEngine:
             block_stage = None
         human_message = str(extra.get("human_message") or humanize_reason(result.reason, stage=block_stage))
         persisted_action = output.action if origin == "MODEL" else "SYSTEM_BLOCKED"
+        strategy_snapshot = getattr(context, "strategy_instructions", None)
+        strategy_snapshot = strategy_snapshot if isinstance(strategy_snapshot, dict) else {}
+        strategy_template_id = str(strategy_snapshot.get("template_id") or "") or None
+        raw_revision = strategy_snapshot.get("revision")
+        try:
+            strategy_revision = int(raw_revision) if raw_revision is not None and not isinstance(raw_revision, bool) else None
+            if strategy_revision is not None and (strategy_revision < 0 or str(raw_revision).strip() != str(strategy_revision)):
+                strategy_revision = None
+        except (TypeError, ValueError, OverflowError):
+            strategy_revision = None
+        from .gate_exit_attribution import strategy_config_sha256
+        strategy_digest = strategy_config_sha256(strategy_snapshot)
         stage_trace = build_stage_trace(
             context,
             result_status=result.status,
@@ -358,7 +449,10 @@ class AILedDecisionEngine:
             "model_output": asdict(output),
             "analysis": dict(output.extra_fields) if is_model else None,
             "strategy_plan": output.extra_fields.get("strategy_plan") if is_model else None,
-            "strategy_instructions": getattr(context, "strategy_instructions", None),
+            "strategy_instructions": strategy_snapshot or None,
+            "strategy_template_id": strategy_template_id,
+            "strategy_revision": strategy_revision,
+            "strategy_config_sha256": strategy_digest,
             "performance_context": getattr(context, "performance_context", None),
             "account_id": context.account_id,
             "venue": context.venue,
@@ -431,6 +525,8 @@ class AILedDecisionEngine:
             "operational_state": result.operational_state,
             "is_model_decision": origin == "MODEL" and model_called,
             "model_called": model_called,
+            "model_call_attempted": bool(context.model_call_attempted),
+            "model_call_completed": bool(context.model_call_completed),
             "model_result": model_result,
             "block_stage": block_stage,
             "human_message": human_message,
@@ -454,9 +550,10 @@ class AILedDecisionEngine:
                        calibration_state=?, candidate_count=?, provider=?, environment=?,
                        operational_state=?, decision_origin=?, model_call_status=?,
                        model_called=?, model_result=?, block_stage=?, human_message=?,
-                       stage_trace_json=?
+                       stage_trace_json=?, model_call_attempted=?, model_call_completed=?,
+                       strategy_template_id=?, strategy_revision=?, strategy_config_sha256=?
                        WHERE cycle_id=?""",
-                    (context.started_at, context.scheduled_at, (context.calibration or {}).get("status"), len(context.candidates), context.provider or context.venue, context.execution_environment or context.environment, result.operational_state, origin, "MODEL_DECISION" if model_called else "NOT_CALLED", int(model_called), model_result, block_stage, human_message, json.dumps(stage_trace, ensure_ascii=False, allow_nan=False), result.cycle_id),
+                    (context.started_at, context.scheduled_at, (context.calibration or {}).get("status"), len(context.candidates), context.provider or context.venue, context.execution_environment or context.environment, result.operational_state, origin, "MODEL_DECISION" if model_called else "NOT_CALLED", int(model_called), model_result, block_stage, human_message, json.dumps(stage_trace, ensure_ascii=False, allow_nan=False), int(bool(context.model_call_attempted)), int(bool(context.model_call_completed)), strategy_template_id, strategy_revision, strategy_digest, result.cycle_id),
                 )
                 conn.commit()
                 persist_stage_trace(self.store, cycle_id=result.cycle_id, account_id=context.account_id, trace=stage_trace)
@@ -475,11 +572,14 @@ class AILedDecisionEngine:
                            calibration_state=?, candidate_count=?, provider=?, environment=?,
                            operational_state=?, decision_origin=?, model_call_status=?,
                            model_called=?, model_result=?, block_stage=?, human_message=?,
-                           stage_trace_json=?
+                           stage_trace_json=?, model_call_attempted=?, model_call_completed=?,
+                           strategy_template_id=?, strategy_revision=?, strategy_config_sha256=?
                            WHERE cycle_id=?""",
-                        (context.started_at, context.scheduled_at, (context.calibration or {}).get("status"), len(context.candidates), context.provider or context.venue, context.execution_environment or context.environment, result.operational_state, origin, "MODEL_DECISION" if model_called else "NOT_CALLED", int(model_called), model_result, block_stage, human_message, json.dumps(stage_trace, ensure_ascii=False, allow_nan=False), result.cycle_id),
+                        (context.started_at, context.scheduled_at, (context.calibration or {}).get("status"), len(context.candidates), context.provider or context.venue, context.execution_environment or context.environment, result.operational_state, origin, "MODEL_DECISION" if model_called else "NOT_CALLED", int(model_called), model_result, block_stage, human_message, json.dumps(stage_trace, ensure_ascii=False, allow_nan=False), int(bool(context.model_call_attempted)), int(bool(context.model_call_completed)), strategy_template_id, strategy_revision, strategy_digest, result.cycle_id),
                     )
-                    persist_stage_trace(self.store, cycle_id=result.cycle_id, account_id=context.account_id, trace=stage_trace)
+                # Trace persistence opens its own connection. Commit the cycle
+                # first, otherwise the nested writer waits on our SQLite lock.
+                persist_stage_trace(self.store, cycle_id=result.cycle_id, account_id=context.account_id, trace=stage_trace)
         except Exception as e:
             logger.warning("Failed to persist ai_led_cycle: %s", e)
 
@@ -762,12 +862,51 @@ class AILedDecisionEngine:
             and str(position.get("venue", context.venue)).lower() == str(context.venue).lower()
             and str(position.get("mode", mode_scope)).upper() == mode_scope.upper()
         ]
+        is_gate_remote = (
+            str(mode_scope).upper() in {TradingMode.TESTNET.value, TradingMode.LIVE.value}
+            and str(context.venue or "").lower() == "gate"
+        )
         if output.action in ("CLOSE_POSITION", "REDUCE_POSITION") and output.position_id is None and len(existing_positions) != 1:
+            if is_gate_remote:
+                output.extra_fields = dict(getattr(output, "extra_fields", None) or {})
+                output.extra_fields["system_position_ownership"] = {
+                    "status": "UNVERIFIED",
+                    "reason_code": "REMOTE_POSITION_NOT_UNIQUE",
+                }
+                return finish(output, "REJECTED", "GATE_SYSTEM_POSITION_OWNERSHIP_UNVERIFIED:REMOTE_POSITION_NOT_UNIQUE")
             return finish(output, "REJECTED", "POSITION_ID_REQUIRED: Multiple or zero scoped positions require an explicit position_id")
         existing_pos = next(
             (position for position in existing_positions if not output.position_id or str(position.get("position_id")) == str(output.position_id)),
             None,
         )
+        if is_gate_remote and output.action in ("CLOSE_POSITION", "REDUCE_POSITION"):
+            if not existing_pos:
+                output.extra_fields = dict(getattr(output, "extra_fields", None) or {})
+                output.extra_fields["system_position_ownership"] = {
+                    "status": "UNVERIFIED",
+                    "reason_code": "REMOTE_POSITION_NOT_FOUND",
+                }
+                return finish(output, "REJECTED", "GATE_SYSTEM_POSITION_OWNERSHIP_UNVERIFIED:REMOTE_POSITION_NOT_FOUND")
+            try:
+                ownership = self.gateway._gate_remote_position_ownership_evidence(
+                    account_id=context.account_id,
+                    mode=str(mode_scope).upper(),
+                    environment=str(context.execution_environment or context.environment or mode_scope).upper(),
+                    instrument_id=output.instrument_id,
+                    side=str(existing_pos.get("side") or "").upper(),
+                    position=existing_pos,
+                    truth=context.account_truth if isinstance(context.account_truth, dict) else {},
+                )
+            except GatewayError as exc:
+                output.extra_fields = dict(getattr(output, "extra_fields", None) or {})
+                reason_code = str(exc.message).split(":", 1)[-1]
+                output.extra_fields["system_position_ownership"] = {
+                    "status": "UNVERIFIED",
+                    "reason_code": reason_code,
+                }
+                return finish(output, "REJECTED", exc.message)
+            output.extra_fields = dict(getattr(output, "extra_fields", None) or {})
+            output.extra_fields["system_position_ownership"] = ownership
 
         if output.action == "CANCEL_ORDER":
             if not (mode_scope.upper() in {TradingMode.TESTNET.value, TradingMode.LIVE.value} and str(context.venue or "").lower() == "gate"):
@@ -801,10 +940,10 @@ class AILedDecisionEngine:
                 if (
                     not context.model_call_attempted
                     or not getattr(context, "model_call_completed", False)
-                    or not is_verified_bonsai_inference_receipt(receipt)
+                    or not is_verified_model_inference_receipt(receipt)
                 ):
-                    output = system_output("BONSAI_INFERENCE_RECEIPT_UNVERIFIED", block_stage="AI_MODEL")
-                    return finish(output, "BLOCKED", "BONSAI_INFERENCE_RECEIPT_UNVERIFIED")
+                    output = system_output("MODEL_INFERENCE_RECEIPT_UNVERIFIED", block_stage="AI_MODEL")
+                    return finish(output, "BLOCKED", "MODEL_INFERENCE_RECEIPT_UNVERIFIED")
                 if mode_scope.upper() in {TradingMode.TESTNET.value, TradingMode.LIVE.value} and str(context.venue or "").lower() == "gate":
                     # NoFx-style route: the model chooses the trade and its
                     # economics; the application checks positions, balance,
@@ -816,6 +955,9 @@ class AILedDecisionEngine:
                         strategy_exec = {}
                     try:
                         notional = Decimal(str(output.position_size_usdt))
+                        fixed_notional = str(strategy_exec.get("sizing_mode") or "").upper() == "FIXED_NOTIONAL"
+                        if fixed_notional:
+                            notional = Decimal(str(strategy_exec.get("fixed_notional_usdt")))
                         configured_leverage = int(strategy_exec.get("leverage") or 1)
                         model_leverage = output.requested_leverage if type(output.requested_leverage) is int else None
                         stop = Decimal(str(output.stop_price))
@@ -836,16 +978,17 @@ class AILedDecisionEngine:
                             return finish(output, "BLOCKED", "VENUE_LEVERAGE_LIMIT_UNAVAILABLE")
                         if model_leverage is None or model_leverage < 1:
                             return finish(output, "REJECTED", "AI_LEVERAGE_REQUIRED")
-                        leverage = min(model_leverage, configured_leverage, venue_max_leverage)
+                        venue_driven = strategy_exec.get("leverage_mode") == "VENUE_LIMIT"
+                        leverage = min(model_leverage, venue_max_leverage) if venue_driven else min(model_leverage, configured_leverage, venue_max_leverage)
                         output.extra_fields["leverage_selection"] = {
-                            "source": "MODEL_CHOICE_WITH_STRATEGY_AND_GATE_CEILINGS",
-                            "strategy_user_ceiling": configured_leverage,
+                            "source": "MODEL_CHOICE_WITH_GATE_CEILING" if venue_driven else "MODEL_CHOICE_WITH_STRATEGY_AND_GATE_CEILINGS",
+                            "strategy_user_ceiling": None if venue_driven else configured_leverage,
                             "model_requested": model_leverage,
                             "gate_contract_ceiling": venue_max_leverage,
                             "submitted": leverage,
                             "binding_limit": (
                                 "AI_REQUEST" if leverage == model_leverage else
-                                "STRATEGY_USER_CEILING" if leverage == configured_leverage else
+                                "STRATEGY_USER_CEILING" if not venue_driven and leverage == configured_leverage else
                                 "GATE_CONTRACT_CEILING"
                             ),
                         }
@@ -892,6 +1035,13 @@ class AILedDecisionEngine:
                             return finish(output, "BLOCKED", "ACTIVE_STRATEGY_NOTIONAL_CAP_INVALID")
                         effective_cap = min(affordable, single_cap)
                         if notional > effective_cap:
+                            if fixed_notional:
+                                output.extra_fields["fixed_notional_budget"] = {
+                                    "target_usdt": str(notional), "affordable_usdt": str(affordable),
+                                    "single_cap_usdt": str(single_cap), "selected_leverage": leverage,
+                                    "venue_max_leverage": venue_max_leverage, "limiting_budget": limiting_budget,
+                                }
+                                return finish(output, "BLOCKED", "FIXED_NOTIONAL_EXCEEDS_SINGLE_CAP" if notional > single_cap else "FIXED_NOTIONAL_MARGIN_INSUFFICIENT")
                             output.extra_fields["notional_adjustment"] = {
                                 "requested": str(notional), "capped_to": str(effective_cap),
                                 "reason": "STRATEGY_NOTIONAL_CAP" if single_cap <= affordable else limiting_budget,
@@ -943,7 +1093,7 @@ class AILedDecisionEngine:
                         closed_15m_bar=output.closed_15m_bar, order_preference=preference,
                         final_order_type=preference.lower(), selection_reason_code="AI_SELECTED",
                         selection_reason=f"NoFx-style AI-authored Gate {mode_scope.upper()} order",
-                        selection_evidence={"requested_notional_usdt": output.position_size_usdt, "submitted_notional_usdt": str(quantity * entry * contract_size), "model_evidence_refs": list(output.evidence_refs)},
+                        selection_evidence={"requested_notional_usdt": output.position_size_usdt, "target_notional_usdt": str(notional), "sizing_mode": "FIXED_NOTIONAL" if fixed_notional else "MODEL_NOTIONAL", "rounding_quantum_usdt": str(entry * contract_size * amount_step), "submitted_notional_usdt": str(quantity * entry * contract_size), "model_evidence_refs": list(output.evidence_refs)},
                         limit_price=float(entry) if preference == "LIMIT" else None,
                         ttl_seconds=output.ttl_seconds or DEFAULT_LIMIT_TTL_SECONDS,
                         selection_policy_version="nofx_gate_v2_model_leverage",
@@ -1324,8 +1474,21 @@ class AILedDecisionEngine:
             if current_price <= 0:
                 return finish(output, "REJECTED", "MARKET_DATA_UNAVAILABLE")
 
-            # NOFX Autopilot: Guard against premature noise close within min hold window
             strategy_instructions = getattr(context, "strategy_instructions", None) or {}
+            from .autonomous_strategy import CONTRACT
+            pa_model_exit = (is_gate_remote and context.decision_contract == CONTRACT
+                             and strategy_instructions.get("template_id") == "price_action_structure")
+            if pa_model_exit:
+                if not _verified_price_action_exit(context, output):
+                    return finish(output, "BLOCKED", "MODEL_EXIT_RECEIPT_UNVERIFIED")
+                output.extra_fields = dict(output.extra_fields or {})
+                output.extra_fields["exit_authority"] = {
+                    "policy": "VERIFIED_GATE_PRICE_ACTION_MODEL_REDUCE_ONLY_EXIT",
+                    "legacy_age_and_price_pnl_gate_applied": False,
+                    "gateway_ownership_and_authorization_still_required": True,
+                }
+            # A valid PA model exit must not be vetoed solely by position age
+            # or small price PnL. Keep the legacy throttle for other routes.
             throttle_config = strategy_instructions.get("trade_throttle") or strategy_instructions.get("throttle") or (strategy_instructions.get("execution") or {}).get("throttle")
             throttle_active = bool(
                 strategy_instructions.get("throttle_enabled")
@@ -1333,7 +1496,7 @@ class AILedDecisionEngine:
                 or (strategy_instructions.get("nofx_runtime") is not None)
                 or (strategy_instructions.get("profile") is not None)
             )
-            if throttle_active:
+            if throttle_active and not pa_model_exit:
                 from .order_selection import TradeThrottlePolicy
                 entry_p = float(existing_pos.get("entry_price") or current_price)
                 if entry_p > 0:
@@ -1355,7 +1518,7 @@ class AILedDecisionEngine:
                     output.instrument_id,
                     entry_time=entry_dt,
                     price_pnl_pct=price_pnl_pct,
-                    now=datetime.now(timezone.utc),
+                    now=now,
                 )
                 if not throttle_allowed:
                     return finish(output, "BLOCKED", f"{throttle_code}: {throttle_reason}")
@@ -1395,7 +1558,12 @@ class AILedDecisionEngine:
                 execution = self.gateway.submit_intent(intent, market_snapshot=market_snap)
             except GatewayError as exc:
                 return finish(output, "REJECTED", f"GATEWAY_REJECTED: {exc.message}", intent=intent)
-            return finish(output, "EXECUTED", f"Position {output.action} executed through the scoped gateway", intent=intent, execution_result=execution)
+            final_status = str(execution.get("status") or "")
+            if final_status == OrderStatus.ACKNOWLEDGED.value:
+                return finish(output, "SUBMITTED", f"Position {output.action} accepted; awaiting fill evidence", intent=intent, execution_result=execution)
+            if final_status in {OrderStatus.FILLED.value, OrderStatus.PARTIALLY_FILLED.value}:
+                return finish(output, "EXECUTED", f"Position {output.action} filled through the scoped gateway", intent=intent, execution_result=execution)
+            return finish(output, "REJECTED", f"GATEWAY_NOT_ACCEPTED: {final_status or 'UNKNOWN'}", intent=intent, execution_result=execution)
 
         if output.action == "UPDATE_PROTECTION":
             if not (mode_scope.upper() in {TradingMode.TESTNET.value, TradingMode.LIVE.value} and str(context.venue or "").lower() == "gate"):

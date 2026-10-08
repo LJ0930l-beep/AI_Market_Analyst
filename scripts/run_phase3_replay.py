@@ -19,11 +19,11 @@ from core.replay.runner import MOCK_MODEL_ID, ReplayConfig, run_replay
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Phase 3 Bonsai replay runner")
+    parser = argparse.ArgumentParser(description="Phase 3 Gemini replay runner")
     parser.add_argument("--symbols", nargs="+", required=True)
     parser.add_argument("--timeframes", nargs="+", required=True)
     parser.add_argument("--samples", type=int, default=300)
-    parser.add_argument("--model", help="real mode is pinned to Bonsai; mock mode is pinned to mock-llm")
+    parser.add_argument("--model", help="real mode is pinned to Gemini; mock mode is pinned to mock-llm")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--db", default="data/phase3-replay.sqlite3")

@@ -744,12 +744,13 @@ def test_ai_strategy_api_get_and_put(tmp_path):
     data = response.json()
     assert "active" in data
     assert "templates" in data
-    assert len(data["templates"]) == 4
+    assert len(data["templates"]) == 5
     template_ids = [t["id"] for t in data["templates"]]
     assert "aggressive_impulse" in template_ids
     assert "aggressive_breakout" in template_ids
     assert "conservative_pullback" in template_ids
     assert "conservative_defense" in template_ids
+    assert "price_action_structure" in template_ids
 
     # 2. PUT update strategy
     active = data["active"]

@@ -23,7 +23,7 @@ def test_replay_rejects_non_bonsai_model_before_creating_database(tmp_path) -> N
         manifest_path=str(tmp_path / "manifest.json"),
     )
 
-    with pytest.raises(ValueError, match="pinned to the manifest-verified Bonsai"):
+    with pytest.raises(ValueError, match="pinned to the manifest-verified Gemini"):
         run_replay(config)
     assert not database.exists()
 
@@ -90,7 +90,7 @@ def test_replay_rejects_exact_provider_without_verified_bonsai_receipt(tmp_path,
         db_path=str(database),
         manifest_path=str(tmp_path / "manifest.json"),
     )
-    with pytest.raises(ValueError, match="verified Bonsai manifest receipt"):
+    with pytest.raises(ValueError, match="verified Gemini manifest receipt"):
         run_replay(config, llm_provider=provider)
     assert not database.exists()
 

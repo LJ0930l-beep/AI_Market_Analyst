@@ -1,4 +1,14 @@
-# AI Market Analyst V2 — PrismML Ternary Bonsai 2 27B 架构
+# AI Market Analyst — Gemini 自主交易与研究工作台
+
+当前推理模型为 `gemini-3.8-flash-high`，通过本机 Antigravity Tools 的 `http://127.0.0.1:8045/v1` 接入。不加载 GGUF、不启动 llama-server、不依赖本机 GPU 空闲。
+
+启动和停止使用 `start_ai_market_analyst.ps1` / `stop_ai_market_analyst.ps1`，只管理已安装客户端和自有 sidecar。连接检查使用 `powershell -File scripts/prepare-ai-models.ps1`，包含真实 completion 探测；不会启动交易。
+
+一年研究入口为 `scripts/run_gemini_year_research.py`。默认只准备历史窗口；显式传入 `--run --max-decisions 5` 才进行有界真实 Gemini 决策。研究结果独立保存，不训练云端权重，不激活生产策略。具体流程见 [Gemini 历史研究说明](docs/gemini-year-research-2026-10-05.md)。
+
+## 以下是迁移前历史说明
+
+下面的 Bonsai 权重、8080 服务、显存参数和旧启动流程已停用，仅作为历史背景。不得按这些说明恢复旧模型；当前部署以以上说明和 Gemini 研究文档为准。
 
 > **中央推理引擎**：PrismML Ternary Bonsai 2 27B PTQ1_0 (~5.95GB)
 > **运行设备**：Windows 11 / NVIDIA GeForce RTX 4060 8GB (CUDA 13.4, 驱动 616.64)

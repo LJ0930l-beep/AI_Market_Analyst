@@ -187,6 +187,7 @@ def reconcile_decision_outcomes(store: Any, account_id: str, *, limit: int = 20)
                FROM ai_decision_memory
                WHERE account_id=? AND outcome_status IS NULL
                  AND action IN (?, ?)
+                 AND lower(environment) NOT IN ('live', 'testnet')
                ORDER BY decision_at ASC, memory_id ASC""",
             (account_id, ENTRY_ACTIONS[0], ENTRY_ACTIONS[1]),
         ).fetchall()
@@ -343,18 +344,161 @@ def list_decision_memory(store: Any, account_id: str, *, limit: int = 20) -> lis
 
 
 def memory_for_prompt(store: Any, account_id: str) -> list[dict[str, Any]]:
-    return [
-        {
+    recent_rows = list_decision_memory(store, account_id, limit=20)
+    verified_rows: list[dict[str, Any]] = []
+    try:
+        with store._connect() as db:
+            required_tables = {
+                "gate_episode_memory_links",
+                "gate_accounting_episodes",
+                "gate_episode_settlements",
+                "ai_decision_memory",
+            }
+            existing_tables = {
+                str(row[0]) for row in db.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name IN (?,?,?,?)",
+                    tuple(sorted(required_tables)),
+                ).fetchall()
+            }
+            if existing_tables == required_tables:
+                rows = db.execute(
+                    """SELECT m.*,e.environment AS episode_environment,e.contract,e.entry_order_id,
+                              e.entry_intent_id,e.side,e.strategy_id AS episode_strategy_id,
+                              e.strategy_version AS episode_strategy_version,
+                              s.settlement_json,s.settled_at,l.basis AS link_basis,l.evidence_json AS link_evidence_json
+                       FROM gate_episode_memory_links l
+                       JOIN gate_accounting_episodes e ON e.episode_id=l.episode_id
+                       JOIN gate_episode_settlements s ON s.episode_id=e.episode_id
+                       JOIN ai_decision_memory m ON m.memory_id=l.memory_id AND m.account_id=l.account_id
+                       WHERE l.account_id=? AND s.status='SETTLED_FULL_COST'
+                       ORDER BY s.settled_at DESC,e.episode_id LIMIT 50""",
+                    (str(account_id),),
+                ).fetchall()
+                for raw in rows:
+                    item = dict(raw)
+                    try:
+                        payload = json.loads(item.get("payload_json") or "{}")
+                        link_evidence = json.loads(item.get("link_evidence_json") or "{}")
+                        settlement = json.loads(item.get("settlement_json") or "{}")
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        continue
+                    if not isinstance(payload, dict) or not isinstance(link_evidence, dict) or not isinstance(settlement, dict):
+                        continue
+                    environment = str(item.get("episode_environment") or "").upper()
+                    episode_id = str(link_evidence.get("accounting_episode_id") or "")
+                    order_id = str(item.get("entry_order_id") or "")
+                    intent_id = str(item.get("entry_intent_id") or "")
+                    try:
+                        evidence_pnl = float(settlement.get("total_pnl"))
+                        memory_pnl = float(item.get("outcome_pnl"))
+                    except (TypeError, ValueError):
+                        continue
+                    payload_evidence = payload.get("outcome_evidence") if isinstance(payload.get("outcome_evidence"), dict) else {}
+                    if (
+                        str(item.get("link_basis") or "") != "GATE_NATIVE_SETTLEMENT"
+                        or link_evidence.get("basis") != "GATE_NATIVE_TRADE_AND_POSITION_CLOSE_LIFECYCLE"
+                        or not episode_id
+                        or str(settlement.get("accounting_episode_id") or "") != episode_id
+                        or str(settlement.get("account_id") or "") != str(account_id)
+                        or str(settlement.get("environment") or "").upper() != environment
+                        or str(settlement.get("entry_order_id") or "") != order_id
+                        or str(settlement.get("entry_intent_id") or "") != intent_id
+                        or str(item.get("environment") or "").lower() != environment.lower()
+                        or str(payload_evidence.get("accounting_episode_id") or "") != episode_id
+                        or str(item.get("outcome_status") or "").upper() not in {"WIN", "LOSS", "FLAT"}
+                        or abs(evidence_pnl - memory_pnl) > 1e-10
+                    ):
+                        continue
+                    selected_evidence = {
+                        "basis": "GATE_NATIVE_TRADE_AND_POSITION_CLOSE_LIFECYCLE",
+                        "accounting_episode_id": episode_id,
+                        "entry_intent_id": intent_id,
+                        "entry_order_id": order_id,
+                        "environment": environment,
+                        "contract": str(item.get("contract") or ""),
+                        "side": str(item.get("side") or "").upper(),
+                        "total_pnl": settlement.get("total_pnl"),
+                        "settlement_currency": settlement.get("settlement_currency"),
+                        "fee_status": settlement.get("fee_status"),
+                        "fee_effect": settlement.get("fee_effect"),
+                        "funding_status": settlement.get("funding_status"),
+                        "funding_effect": settlement.get("funding_effect"),
+                        "exit_trade_ids": settlement.get("exit_trade_ids") if isinstance(settlement.get("exit_trade_ids"), list) else [],
+                        "position_close_evidence_id": settlement.get("position_close_evidence_id"),
+                        "closed_at_ms": settlement.get("closed_at_ms"),
+                        "pnl_source": settlement.get("pnl_source"),
+                    }
+                    verified_rows.append({
+                        "memory_id": str(item.get("memory_id") or ""),
+                        "cycle_id": item.get("cycle_id"),
+                        "decision_at": item.get("decision_at"),
+                        "action": item.get("action"),
+                        "status": item.get("cycle_status"),
+                        "symbol": item.get("symbol"),
+                        "summary_zh": item.get("summary_zh"),
+                        "lesson_zh": item.get("lesson_zh"),
+                        "outcome_status": item.get("outcome_status"),
+                        "outcome_pnl": item.get("outcome_pnl"),
+                        "environment": item.get("environment"),
+                        "strategy_template_id": payload.get("strategy_template_id"),
+                        "strategy_id": item.get("episode_strategy_id") or payload.get("strategy_id"),
+                        "strategy_version": item.get("episode_strategy_version") or payload.get("strategy_version"),
+                        "memory_role": "VERIFIED_SETTLED_LESSON",
+                        "outcome_evidence": selected_evidence,
+                        "_closed_at_ms": settlement.get("closed_at_ms"),
+                        "_settled_at": item.get("settled_at"),
+                    })
+    except Exception:
+        # Recent decisions remain usable if the optional settlement ledger is
+        # unavailable; verified historical lessons are simply not claimed.
+        verified_rows = []
+
+    def project(item: dict[str, Any]) -> dict[str, Any]:
+        payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
+        row = {
             "decision_at": item.get("decision_at"),
             "action": item.get("action"),
-            "status": item.get("cycle_status"),
+            "status": item.get("cycle_status") or item.get("status"),
             "symbol": item.get("symbol"),
             "summary_zh": item.get("summary_zh"),
+            "lesson_zh": item.get("lesson_zh"),
             "outcome_status": item.get("outcome_status"),
             "outcome_pnl": item.get("outcome_pnl"),
+            "strategy_template_id": payload.get("strategy_template_id"),
         }
-        for item in list_decision_memory(store, account_id, limit=20)
-    ]
+        evidence = payload.get("outcome_evidence")
+        if isinstance(evidence, dict):
+            row["outcome_evidence"] = evidence
+        return {key: value for key, value in row.items() if value is not None}
+
+    output_by_identity: dict[str, dict[str, Any]] = {}
+    recent_identities: list[str] = []
+    for item in recent_rows:
+        projected = project(item)
+        identity = str(item.get("memory_id") or item.get("cycle_id") or "")
+        if identity:
+            output_by_identity[identity] = projected
+            recent_identities.append(identity)
+    for item in sorted(
+        verified_rows,
+        key=lambda row: (
+            int(row.get("_closed_at_ms") or 0),
+            str(row.get("_settled_at") or ""),
+        ),
+        reverse=True,
+    )[:5]:
+        projected = {key: value for key, value in item.items() if not key.startswith("_")}
+        identity = str(projected.get("memory_id") or projected.get("cycle_id") or "")
+        if identity:
+            projected["memory_role"] = "VERIFIED_SETTLED_LESSON"
+            output_by_identity[identity] = projected
+
+    output = [output_by_identity[key] for key in recent_identities if key in output_by_identity]
+    output.extend(
+        item for key, item in output_by_identity.items()
+        if key not in set(recent_identities)
+    )
+    return output
 
 
 def update_memory_outcome(

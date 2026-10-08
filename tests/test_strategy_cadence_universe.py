@@ -9,7 +9,17 @@ from core.trading.strategy_execution import normalize_execution
 from core.trading.strategy_schedule import StrategySchedule, aligned_at
 from core.trading.market_universe import MarketUniverse
 from core.trading.autonomous_strategy import strategy_frames
-from core.trading.ai_session_coordinator import AISessionCoordinator, _deep_scan_symbol_limit
+from core.trading.ai_session_coordinator import (
+    AISessionCoordinator,
+    MAX_CANDIDATE_REFILL_ATTEMPTS,
+    _candidate_has_recent_closed_volume,
+    _candidate_has_required_technical_history,
+    _candidate_refresh_plan,
+    _candidate_snapshot_is_executable,
+    _compact_decision_experience,
+    _deep_scan_symbol_limit,
+    _select_bounded_scan_symbols,
+)
 from core.trading.candidate_scanner import CandidateScanner
 from core.trading.institutional_schema import ensure_institutional_trader_schema
 from core.trading.execution_gateway import TradingMode
@@ -19,16 +29,38 @@ def test_deep_scan_breadth_stays_bounded_after_repeated_waits():
     assert [_deep_scan_symbol_limit(count) for count in (0, 5, 6, 11, 12, 50)] == [2, 2, 3, 3, 3, 3]
 
 
-def test_four_templates_have_two_aggressive_two_defensive_and_one_five_minute():
-    assert len(TEMPLATES) == 4
-    assert [t['style'] for t in TEMPLATES].count('AGGRESSIVE') == 2
-    assert [t['style'] for t in TEMPLATES].count('CONSERVATIVE') == 2
-    assert sorted(t['scan_interval_minutes'] for t in TEMPLATES) == [5, 15, 15, 15]
-    decision_text = " ".join(t['sections']['decision_process'] for t in TEMPLATES)
+def test_candidate_refresh_plan_keeps_normal_scan_small_and_refills_with_a_budget():
+    managed, initial, refill, target = _candidate_refresh_plan(
+        ["OWNEDUSDT", "BADUSDT", "SECONDUSDT"],
+        ["OWNEDUSDT", "BADUSDT", "SECONDUSDT", *[f"ALT{i}USDT" for i in range(10)]],
+        ["OWNEDUSDT"], limit=3,
+    )
+
+    assert managed == ["OWNEDUSDT"]
+    assert initial == ["BADUSDT", "SECONDUSDT"]
+    assert len(initial) == target - len(managed) == 2
+    assert len(refill) == MAX_CANDIDATE_REFILL_ATTEMPTS == 4
+    assert refill == ["ALT0USDT", "ALT1USDT", "ALT2USDT", "ALT3USDT"]
+
+
+def test_original_four_templates_keep_cadence_and_price_action_is_an_additive_profile():
+    original_ids = {'aggressive_impulse', 'aggressive_breakout', 'conservative_pullback', 'conservative_defense'}
+    original_templates = [item for item in TEMPLATES if item['id'] in original_ids]
+    assert len(original_templates) == 4
+    assert {item['id'] for item in original_templates} == original_ids
+    assert [t['style'] for t in original_templates].count('AGGRESSIVE') == 2
+    assert [t['style'] for t in original_templates].count('CONSERVATIVE') == 2
+    assert sorted(t['scan_interval_minutes'] for t in original_templates) == [5, 15, 15, 15]
+    decision_text = " ".join(t['sections']['decision_process'] for t in original_templates)
     assert '75~85' not in decision_text
     assert '75~82' not in decision_text
-    assert all('名义金额' in t['sections']['decision_process'] for t in TEMPLATES)
-    assert all('限价' in t['sections']['decision_process'] for t in TEMPLATES)
+    assert all('名义金额' in t['sections']['decision_process'] for t in original_templates)
+    assert all('限价' in t['sections']['decision_process'] for t in original_templates)
+    price_action = next(item for item in TEMPLATES if item['id'] == 'price_action_structure')
+    assert price_action['style'] == 'PRICE_ACTION'
+    assert price_action['scan_interval_minutes'] == 15
+    assert price_action['profile']['signal_timeframe'] == '15m'
+    assert price_action['profile']['context_timeframes'] == ['1h']
     assert strategy_frames(5) == (('5m',5),('15m',15),('1h',60))
 
 
@@ -518,6 +550,9 @@ def test_dynamic_universe_rotates_without_fixed_symbol_allowlist():
         assert len(snapshot['selected_symbols']) == 3
         assert snapshot['contract_count'] == len(symbols)
         assert len(snapshot['candidate_metrics']) == 3
+        assert len(snapshot['candidate_pool_symbols']) <= 12
+        assert set(snapshot['selected_symbols']).issubset(snapshot['candidate_pool_symbols'])
+        assert len(snapshot['candidate_pool_metrics']) >= len(snapshot['candidate_metrics'])
         assert snapshot['selection'] == 'positions_then_liquidity_up_momentum_down_momentum_range_and_rotation'
     assert seen == set(symbols)
     custom={**config,'universe_mode':'CUSTOM','symbols':['NEW12USDT']}
@@ -675,6 +710,261 @@ def test_thin_extreme_mover_cannot_occupy_the_factor_slot_each_cycle():
                   for i in range(30)]
     assert all(row['selected_symbols'][1] != 'THINUSDT' for row in selections)
     assert any('THINUSDT' in row['selected_symbols'] for row in selections)
+
+
+def test_zero_volume_and_unexecutable_candidates_are_replaced_but_managed_symbol_stays_first():
+    now = datetime(2026, 10, 1, 16, 5, tzinfo=timezone.utc)
+    end = now.replace(minute=0)
+
+    def bar(volume, minutes_ago=0):
+        closed = end - timedelta(minutes=minutes_ago)
+        return {
+            "bar_start": (closed - timedelta(minutes=15)).isoformat(),
+            "bar_end": closed.isoformat(), "available_at": closed.isoformat(),
+            "open": 100, "high": 102, "low": 99, "close": 101,
+            "volume": volume, "is_closed": True, "quality_status": "VALID",
+        }
+
+    rows = {
+        "ZEROUSDT": [bar(10, 15), bar(0)],
+        "NOQUOTEUSDT": [bar(10)],
+        "GOODUSDT": [bar(10)],
+        "NEXTUSDT": [bar(8)],
+    }
+
+    class Store:
+        def latest_bars(self, symbol, timeframe, *, limit, **filters):
+            assert timeframe == "15m" and limit == 64
+            return rows.get(symbol, [])
+
+    market = {
+        "contractSize": 0.01,
+        "precision": {"amount": 1, "price": 0.1},
+        "limits": {"amount": {"min": 1, "max": 100000}},
+        "leverage_max": 50,
+        "taker": 0.0005,
+    }
+
+    def executable_snapshot(*, include_rules=True):
+        return {
+            "price": 100, "fresh": True, "market": market if include_rules else {},
+            "fee_rate": 0.0005, "slippage": 0.001,
+            "liquidity_ok": True, "cost_evidence_status": "OBSERVED_DEPTH_ENVELOPE",
+        }
+
+    store = Store()
+    bar_ready = {
+        symbol: _candidate_has_recent_closed_volume(store, symbol, "15m", now)
+        for symbol in rows
+    }
+    snapshot_ready = {
+        "ZEROUSDT": _candidate_snapshot_is_executable(executable_snapshot(), remote=True),
+        "NOQUOTEUSDT": _candidate_snapshot_is_executable(executable_snapshot(include_rules=False), remote=True),
+        "GOODUSDT": _candidate_snapshot_is_executable(executable_snapshot(), remote=True),
+        "NEXTUSDT": _candidate_snapshot_is_executable(executable_snapshot(), remote=True),
+    }
+    selected = _select_bounded_scan_symbols(
+        ["ZEROUSDT", "NOQUOTEUSDT"],
+        ["ZEROUSDT", "NOQUOTEUSDT", "GOODUSDT", "NEXTUSDT"],
+        ["OWNEDUSDT"], limit=3,
+        is_candidate_ready=lambda symbol: bar_ready.get(symbol, False) and snapshot_ready.get(symbol, False),
+    )
+
+    assert bar_ready["ZEROUSDT"] is False
+    assert snapshot_ready["NOQUOTEUSDT"] is False
+    assert snapshot_ready["GOODUSDT"] is True
+    assert selected == ["OWNEDUSDT", "GOODUSDT", "NEXTUSDT"]
+
+
+def _closed_frame_bars(now, timeframe, count=32, *, gap_index=None, latest_offset_minutes=0):
+    minutes = {"5m": 5, "15m": 15, "1h": 60}[timeframe]
+    aligned = now.replace(second=0, microsecond=0)
+    aligned -= timedelta(minutes=aligned.minute % minutes)
+    latest_end = aligned + timedelta(minutes=latest_offset_minutes)
+    total = count + (1 if gap_index is not None else 0)
+    rows = []
+    for index in range(total):
+        if index == gap_index:
+            continue
+        end = latest_end - timedelta(minutes=minutes * (total - index - 1))
+        rows.append({
+            "bar_start": (end - timedelta(minutes=minutes)).isoformat(),
+            "bar_end": end.isoformat(),
+            "available_at": end.isoformat(),
+            "open": 100.0, "high": 102.0, "low": 99.0, "close": 101.0,
+            "volume": 10.0, "is_closed": True, "quality_status": "VALID",
+            "venue": "gate", "market_type": "perpetual", "price_type": "last",
+            "provider": "gate", "source": "gate_native_rest:last",
+        })
+    return rows
+
+
+def test_recent_closed_volume_requires_exact_duration_and_explicit_real_bar_flags():
+    now = datetime(2026, 10, 1, 16, 5, tzinfo=timezone.utc)
+    rows = _closed_frame_bars(now, "15m", count=1)
+
+    class Store:
+        def latest_bars(self, _symbol, _timeframe, *, limit, **_filters):
+            return rows[-limit:]
+
+    store = Store()
+    assert _candidate_has_recent_closed_volume(store, "PAIRUSDT", "15m", now)
+
+    row = rows[0]
+    row["bar_start"] = (datetime.fromisoformat(row["bar_end"]) - timedelta(minutes=1)).isoformat()
+    assert not _candidate_has_recent_closed_volume(store, "PAIRUSDT", "15m", now)
+
+    row["bar_start"] = (datetime.fromisoformat(row["bar_end"]) - timedelta(minutes=15)).isoformat()
+    row["is_closed"] = "false"
+    assert not _candidate_has_recent_closed_volume(store, "PAIRUSDT", "15m", now)
+
+    row["is_closed"] = 1  # SQLite's integer representation of TRUE.
+    row["synthetic"] = True
+    assert not _candidate_has_recent_closed_volume(store, "PAIRUSDT", "15m", now)
+
+    row["synthetic"] = "false"
+    assert not _candidate_has_recent_closed_volume(store, "PAIRUSDT", "15m", now)
+
+    row["synthetic"] = 0  # SQLite's integer representation of FALSE.
+    assert _candidate_has_recent_closed_volume(store, "PAIRUSDT", "15m", now)
+
+
+class _TechnicalBarsStore:
+    def __init__(self, frames):
+        self.frames = frames
+
+    def latest_bars(self, symbol, timeframe, *, limit, **_filters):
+        return list(self.frames.get((symbol, timeframe), []))[-limit:]
+
+
+def test_unready_top_ranked_candidate_refills_from_next_usable_technical_symbol():
+    now = datetime(2026, 10, 1, 16, 5, tzinfo=timezone.utc)
+    store = _TechnicalBarsStore({
+        ("TOPUSDT", "15m"): _closed_frame_bars(now, "15m"),
+        # The latest signal bar is fresh, but the required 1h context is empty.
+        ("ALTUSDT", "15m"): _closed_frame_bars(now, "15m"),
+        ("ALTUSDT", "1h"): _closed_frame_bars(now, "1h"),
+    })
+    executable_market = {
+        "contractSize": 0.01,
+        "precision": {"amount": 1, "price": 0.1},
+        "limits": {"amount": {"min": 1, "max": 100000}},
+        "leverage_max": 50,
+        "taker": 0.0005,
+    }
+    snapshots = {
+        symbol: {
+            "price": 100, "fresh": True, "market": executable_market,
+            "fee_rate": 0.0005, "slippage": 0.001,
+            "liquidity_ok": True, "cost_evidence_status": "OBSERVED_DEPTH_ENVELOPE",
+        }
+        for symbol in ("TOPUSDT", "ALTUSDT")
+    }
+    technical = {
+        symbol: _candidate_has_required_technical_history(
+            store, symbol, now, signal_timeframe="15m", context_timeframes=("1h",),
+        )
+        for symbol in ("TOPUSDT", "ALTUSDT")
+    }
+
+    assert _candidate_has_recent_closed_volume(store, "TOPUSDT", "15m", now)
+    assert _candidate_snapshot_is_executable(snapshots["TOPUSDT"], remote=True)
+    assert technical["TOPUSDT"] == (False, ("1h=INSUFFICIENT_OR_STALE(0)",))
+    assert technical["ALTUSDT"] == (True, ())
+
+    selected = _select_bounded_scan_symbols(
+        ["TOPUSDT"], ["TOPUSDT", "ALTUSDT"], ["OWNEDUSDT"], limit=2,
+        is_candidate_ready=lambda symbol: (
+            _candidate_has_recent_closed_volume(store, symbol, "15m", now)
+            and technical.get(symbol, (False, ()))[0]
+            and _candidate_snapshot_is_executable(snapshots.get(symbol), remote=True)
+        ),
+    )
+    assert selected == ["OWNEDUSDT", "ALTUSDT"]
+
+
+def test_technical_readiness_uses_32_fresh_contiguous_closed_bars():
+    now = datetime(2026, 10, 1, 16, 5, tzinfo=timezone.utc)
+    ready = {
+        ("PAIRUSDT", "15m"): _closed_frame_bars(now, "15m"),
+        ("PAIRUSDT", "1h"): _closed_frame_bars(now, "1h"),
+    }
+    assert _candidate_has_required_technical_history(
+        _TechnicalBarsStore(ready), "PAIRUSDT", now,
+        signal_timeframe="15m", context_timeframes=("1h",),
+    ) == (True, ())
+
+    insufficient = dict(ready)
+    insufficient[("PAIRUSDT", "1h")] = _closed_frame_bars(now, "1h", count=31)
+    assert _candidate_has_required_technical_history(
+        _TechnicalBarsStore(insufficient), "PAIRUSDT", now,
+        signal_timeframe="15m", context_timeframes=("1h",),
+    )[1] == ("1h=INSUFFICIENT_OR_STALE(31)",)
+
+    discontinuous = dict(ready)
+    discontinuous[("PAIRUSDT", "15m")] = _closed_frame_bars(now, "15m", gap_index=15)
+    assert _candidate_has_required_technical_history(
+        _TechnicalBarsStore(discontinuous), "PAIRUSDT", now,
+        signal_timeframe="15m", context_timeframes=("1h",),
+    )[1] == ("15m=INSUFFICIENT_OR_STALE(32)",)
+
+    stale = dict(ready)
+    stale[("PAIRUSDT", "1h")] = _closed_frame_bars(now, "1h", latest_offset_minutes=-120)
+    assert _candidate_has_required_technical_history(
+        _TechnicalBarsStore(stale), "PAIRUSDT", now,
+        signal_timeframe="15m", context_timeframes=("1h",),
+    )[1] == ("1h=INSUFFICIENT_OR_STALE(32)",)
+
+    future_dated = dict(ready)
+    future_dated[("PAIRUSDT", "15m")] = _closed_frame_bars(now, "15m", latest_offset_minutes=15)
+    assert _candidate_has_required_technical_history(
+        _TechnicalBarsStore(future_dated), "PAIRUSDT", now,
+        signal_timeframe="15m", context_timeframes=("1h",),
+    )[1] == ("15m=INSUFFICIENT_OR_STALE(31)",)
+
+
+def test_technical_readiness_honors_five_minute_signal_and_configured_context_frames():
+    now = datetime(2026, 10, 1, 16, 5, tzinfo=timezone.utc)
+    store = _TechnicalBarsStore({
+        ("FASTUSDT", "5m"): _closed_frame_bars(now, "5m"),
+        ("FASTUSDT", "1h"): _closed_frame_bars(now, "1h"),
+        # Explicit 1h context means the unrelated 15m frame is not required.
+    })
+    assert _candidate_has_required_technical_history(
+        store, "FASTUSDT", now, signal_timeframe="5m", context_timeframes=("1h",),
+    ) == (True, ())
+    assert _candidate_has_required_technical_history(
+        store, "FASTUSDT", now, signal_timeframe="5m", context_timeframes=None,
+    )[1] == ("15m=INSUFFICIENT_OR_STALE(0)",)
+
+
+def test_all_bad_refill_is_bounded_and_unready_managed_or_pending_symbols_survive():
+    candidates = [f"BAD{index}USDT" for index in range(10)]
+    managed, initial, refill, target = _candidate_refresh_plan(
+        candidates[:2], candidates, ["OWNEDUSDT", "PENDINGUSDT"], limit=3,
+    )
+    assert managed == ["OWNEDUSDT", "PENDINGUSDT"]
+    assert len(initial) == target - len(managed) == 1
+    assert len(refill) == MAX_CANDIDATE_REFILL_ATTEMPTS
+
+    attempted = [*initial, *refill]
+    ready = {symbol: False for symbol in attempted}
+    selected = _select_bounded_scan_symbols(
+        initial, candidates, managed, limit=3,
+        is_candidate_ready=lambda symbol: ready.get(symbol, False),
+    )
+    assert len(attempted) == 1 + MAX_CANDIDATE_REFILL_ATTEMPTS
+    assert selected == managed
+    assert _candidate_snapshot_is_executable(None, remote=True) is False
+
+
+def test_wait_history_is_not_reintroduced_as_a_current_decision_anchor():
+    recent, _experience = _compact_decision_experience([
+        {"action": "WAIT", "symbol": "ETHUSDT", "reason": "上一轮 WAIT 仍有效", "cycle_status": "WAITING"},
+        {"action": "OPEN_LONG", "symbol": "BTCUSDT", "reason": "prior actionable decision", "cycle_status": "REJECTED"},
+    ])
+    assert [row["action"] for row in recent] == ["OPEN_LONG"]
+    assert all(row.get("action") not in {"WAIT", "HOLD"} for row in recent)
 
 
 def _coordinator_for_symbols(store):

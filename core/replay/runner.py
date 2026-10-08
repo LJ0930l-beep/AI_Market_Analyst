@@ -16,7 +16,7 @@ from ..analysis_service import AnalysisService
 from ..ai import OllamaProvider, PROMPT_VERSION
 from ..ai.mock import MOCK_MODEL_ID, MockLLMProvider
 from ..instruments import instrument_for
-from ..model_routing import DEFAULT_FAST_MODEL, DEFAULT_MODEL, is_bonsai_model_identity
+from ..model_routing import DEFAULT_FAST_MODEL, DEFAULT_MODEL, is_configured_model_identity
 from ..outcomes import settle_prediction
 from ..performance.calibration import apply_calibration, fit_calibration
 from ..performance.metrics import aggregate_performance, build_performance_snapshot, is_actionable
@@ -113,7 +113,7 @@ def _sample_plan(config: ReplayConfig) -> tuple[list[dict[str, Any]], dict[str, 
         "seed": config.seed,
         "model_id": config.model_id,
         "model_mode": config.model_mode,
-        "model_provenance": "mock_simulation" if config.model_mode == "mock" else "bonsai_runtime",
+        "model_provenance": "mock_simulation" if config.model_mode == "mock" else "gemini_relay",
         "prompt_version": config.prompt_version,
         "sampling_policy": {
             "min_history_bars": 120,
@@ -142,20 +142,20 @@ def run_replay(
             raise ValueError("Mock replay requires the explicit mock-llm identity and MockLLMProvider")
     elif config.model_mode == "real":
         if config.model_id != DEFAULT_MODEL:
-            raise ValueError("Replay model is pinned to the manifest-verified Bonsai 2 27B model")
+            raise ValueError("Replay model is pinned to the manifest-verified Gemini 3.8 Flash High model")
         if type(model) is not OllamaProvider:
             raise ValueError("Real replay requires the exact production OllamaProvider; injected models must use mock mode")
         if model.model_name != DEFAULT_MODEL or model._route_error(DEFAULT_MODEL):
-            raise ValueError("Real replay provider is not configured for the pinned Bonsai route")
+            raise ValueError("Real replay provider is not configured for the pinned Gemini route")
         receipt = model.health()
         if not (
             receipt.get("available") is True
             and receipt.get("model_available") is True
             and receipt.get("model_id") == DEFAULT_MODEL
-            and receipt.get("model_identity_source") == "verified_manifest"
-            and is_bonsai_model_identity(receipt.get("actual_model_id"))
+            and receipt.get("model_identity_source") == "completion_probe"
+            and is_configured_model_identity(receipt.get("actual_model_id"))
         ):
-            raise ValueError("Real replay requires a verified Bonsai manifest receipt")
+            raise ValueError("Real replay requires a verified Gemini manifest receipt")
     else:
         raise ValueError("Replay model_mode must be 'real' or 'mock'")
 
@@ -187,7 +187,7 @@ def run_replay(
                 "manifest_path": str(manifest_path),
                 "model_mode": config.model_mode,
                 "model_provider": provider_name,
-                "model_provenance": "mock_simulation" if config.model_mode == "mock" else "bonsai_runtime",
+                "model_provenance": "mock_simulation" if config.model_mode == "mock" else "gemini_relay",
             },
             status="RUNNING",
         )
@@ -250,7 +250,7 @@ def run_replay(
                     "technical_only": True,
                     "underlying_market_provider": history.provider,
                     "model_mode": config.model_mode,
-                    "model_provenance": "mock_simulation" if config.model_mode == "mock" else "bonsai_runtime",
+                    "model_provenance": "mock_simulation" if config.model_mode == "mock" else "gemini_relay",
                 },
             )
             observed_timestamps = [bar.timestamp for bar in result.context.bars]
@@ -338,7 +338,7 @@ def run_replay(
         store.save_performance_snapshot(performance)
     if config.model_mode == "real":
         # Use only this fresh, identity-validated run. Older runs may predate
-        # the mock-vs-real provenance boundary and must not train Bonsai calibration.
+        # the mock-vs-real provenance boundary and must not train Gemini calibration.
         all_calibration_records = store.list_prediction_records(source_type="replay", replay_run_id=run_id, model_id=config.model_id, prompt_version=config.prompt_version)
         final_calibration = fit_calibration(
             all_calibration_records,
@@ -375,7 +375,7 @@ def run_replay(
         "db_path": config.db_path,
         "model_id": config.model_id,
         "model_mode": config.model_mode,
-        "model_provenance": "mock_simulation" if config.model_mode == "mock" else "bonsai_runtime",
+        "model_provenance": "mock_simulation" if config.model_mode == "mock" else "gemini_relay",
         "formal_acceptance_eligible": False,
         "prompt_version": config.prompt_version,
         "source_type": source_type,

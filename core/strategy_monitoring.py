@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from .agent_execution import AgentDecisionService
 from .instruments import AssetType, Instrument, TradingHours, canonical_instrument_key
 from .market_intelligence import build_market_intelligence
-from .model_routing import is_trusted_bonsai_provider
+from .model_routing import is_trusted_model_provider
 from .monitoring import MonitoringRunResult, MonitoringService
 from .providers.gateio_provider import GatePublicProvider
 from .quant.strategies import STRATEGIES
@@ -18,7 +18,7 @@ class StrategyMonitoringService(MonitoringService):
     def __init__(self, **kwargs):
         self.account_id = kwargs.pop("account_id", None)
         decision_model = kwargs.get("llm_provider")
-        decision_model_trusted = is_trusted_bonsai_provider(decision_model)
+        decision_model_trusted = is_trusted_model_provider(decision_model)
         if decision_model is not None and not decision_model_trusted:
             # The inherited opportunity scanner can persist model analysis too.
             # Do not let an injected adapter reach either that path or the
@@ -217,7 +217,7 @@ class StrategyMonitoringService(MonitoringService):
                         required_timeframes.update(
                             str(item).strip().lower()
                             for item in ai_context_timeframes
-                            if str(item).strip().lower() in {"5m", "15m", "1h", "1d"}
+                            if str(item).strip().lower() in {"5m", "15m", "1h", "4h", "1d"}
                         )
                 if any("1h" in STRATEGIES[s["strategy_id"]].context_timeframes for s in active):
                     required_timeframes.add("1h")

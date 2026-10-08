@@ -15,7 +15,7 @@ import json
 import math
 from typing import Any
 
-from core.model_routing import DEFAULT_SMART_MODEL, is_bonsai_model_identity
+from core.model_routing import DEFAULT_SMART_MODEL, is_configured_model_identity
 from ..trading.account_scope import resolve_account_scope
 from ..trading.gate_account_truth import (
     CAPITAL_BASIS_SOURCE,
@@ -284,17 +284,17 @@ def _public_cycle(row: dict[str, Any]) -> dict[str, Any]:
         if actual_model_id is None:
             actual_model_id = receipt.get("model_version")
         manifest_model_id = receipt.get("verified_manifest_model_id")
-        actual_is_bonsai = is_bonsai_model_identity(actual_model_id)
-        manifest_is_bonsai = is_bonsai_model_identity(manifest_model_id)
+        actual_is_configured_model = is_configured_model_identity(actual_model_id)
+        manifest_is_configured_model = is_configured_model_identity(manifest_model_id)
         manifest_is_absent = manifest_model_id is None
         source_is_verified = (
             source == "completion_response"
-            and (manifest_is_absent or manifest_is_bonsai)
+            and (manifest_is_absent or manifest_is_configured_model)
         ) or (
             source == "request_bound_to_verified_manifest"
-            and manifest_is_bonsai
+            and manifest_is_configured_model
         )
-        if actual_is_bonsai and source_is_verified:
+        if actual_is_configured_model and source_is_verified:
             model_receipt = receipt
     model_val = (model_receipt or {}).get("model_id")
     ai_analysis = None if system_blocked else payload.get("analysis")

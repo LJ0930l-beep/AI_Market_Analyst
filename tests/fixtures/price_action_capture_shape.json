@@ -1,0 +1,115 @@
+{
+  "fixture_kind": "CAPTURED_PUBLIC_BAR_SHAPE_OFFLINE_REGRESSION",
+  "timeframes": {
+    "15m": {
+      "status": "READY",
+      "as_of": "2026-10-03T00:08:50.341311Z",
+      "last_closed_at": "2026-10-03T00:00:00Z",
+      "source": "gate_native_rest:last",
+      "closed_bar_count": 239,
+      "confirmed_swings": [
+        {
+          "side": "HIGH",
+          "price": 84515.5,
+          "pivot_at": "2026-10-02T22:30:00Z",
+          "confirmation_bar_at": "2026-10-02T23:00:00Z",
+          "confirmed_at": "2026-10-03T00:00:28.323956Z"
+        },
+        {
+          "side": "LOW",
+          "price": 84434.9,
+          "pivot_at": "2026-10-02T23:15:00Z",
+          "confirmation_bar_at": "2026-10-02T23:45:00Z",
+          "confirmed_at": "2026-10-03T00:00:28.323956Z"
+        }
+      ],
+      "prior_range": {
+        "lookback_bars": 20,
+        "high": 84529.9,
+        "low": 83840.0,
+        "excludes_latest_close": true
+      },
+      "bos": {
+        "side": "LONG",
+        "level": 84515.5,
+        "pivot_confirmed_at": "2026-10-03T00:00:28.323956Z",
+        "bar_at": "2026-10-02T23:45:00Z",
+        "confirmed_at": "2026-10-03T00:00:28.323956Z",
+        "state": "INVALIDATED",
+        "invalidated_bar_at": "2026-10-03T00:00:00Z",
+        "invalidated_at": "2026-10-03T00:00:28.323956Z"
+      },
+      "sweep_reclaim": {
+        "side": "SHORT",
+        "level": 84515.5,
+        "pivot_confirmed_at": "2026-10-03T00:00:28.323956Z",
+        "bar_at": "2026-10-03T00:00:00Z",
+        "confirmed_at": "2026-10-03T00:00:28.323956Z"
+      },
+      "breakout_retest": {
+        "side": "SHORT",
+        "level": 84473.8,
+        "bos_at": "2026-10-03T00:00:28.323956Z",
+        "bar_at": "2026-10-02T21:45:00Z",
+        "confirmed_at": "2026-10-03T00:00:28.323956Z",
+        "state": "INVALIDATED",
+        "invalidated_at": "2026-10-03T00:00:28.323956Z",
+        "invalidated_bar_at": "2026-10-02T22:00:00Z"
+      },
+      "compaction": "latest_swing_per_side"
+    },
+    "1h": {
+      "status": "READY",
+      "as_of": "2026-10-03T00:08:50.341311Z",
+      "last_closed_at": "2026-10-03T00:00:00Z",
+      "source": "gate_native_rest:last",
+      "closed_bar_count": 239,
+      "confirmed_swings": [
+        {
+          "side": "HIGH",
+          "price": 87222.0,
+          "pivot_at": "2026-10-02T13:00:00Z",
+          "confirmation_bar_at": "2026-10-02T15:00:00Z",
+          "confirmed_at": "2026-10-03T00:00:29.466058Z"
+        },
+        {
+          "side": "LOW",
+          "price": 83840.0,
+          "pivot_at": "2026-10-02T19:00:00Z",
+          "confirmation_bar_at": "2026-10-02T21:00:00Z",
+          "confirmed_at": "2026-10-03T00:00:29.466058Z"
+        }
+      ],
+      "prior_range": {
+        "lookback_bars": 20,
+        "high": 87222.0,
+        "low": 83840.0,
+        "excludes_latest_close": true
+      },
+      "bos": {
+        "side": "SHORT",
+        "level": 85732.0,
+        "pivot_confirmed_at": "2026-10-03T00:00:29.466058Z",
+        "bar_at": "2026-10-02T15:00:00Z",
+        "confirmed_at": "2026-10-03T00:00:29.466058Z",
+        "state": "ACTIVE"
+      },
+      "sweep_reclaim": {
+        "side": "SHORT",
+        "level": 86662.8,
+        "pivot_confirmed_at": "2026-10-03T00:00:29.466058Z",
+        "bar_at": "2026-10-02T15:00:00Z",
+        "confirmed_at": "2026-10-03T00:00:29.466058Z"
+      },
+      "breakout_retest": {
+        "side": "LONG",
+        "level": 84061.1,
+        "bos_at": "2026-10-03T00:00:29.466058Z",
+        "bar_at": "2026-10-01T17:00:00Z",
+        "confirmed_at": "2026-10-03T00:00:29.466058Z",
+        "state": "SUPERSEDED"
+      },
+      "compaction": "latest_swing_per_side"
+    }
+  }
+}

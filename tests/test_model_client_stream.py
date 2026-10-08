@@ -14,7 +14,7 @@ class _JsonResponse:
     status = 200
 
     def __init__(self, value: dict[str, object]):
-        self.value = value
+        self.value = {"model": DEFAULT_MODEL, **value}
 
     def __enter__(self):
         return self
@@ -36,7 +36,7 @@ class _Response:
         return False
 
     def __iter__(self):
-        yield b'data: {"model":"Bonsai-2-27B-PTQ1_0","choices":[{"delta":{"content":"ok"}}]}\n'
+        yield ("data: " + json.dumps({"model": DEFAULT_MODEL, "choices": [{"delta": {"content": "ok"}}]}) + "\n").encode("utf-8")
         yield b"data: [DONE]\n"
 
 
@@ -50,7 +50,7 @@ def test_stream_uses_bounded_consult_output_budget(monkeypatch: pytest.MonkeyPat
         return _Response()
 
     monkeypatch.setattr(model_client_module, "urlopen", fake_urlopen)
-    client = ModelClient(base_url="http://127.0.0.1:8080/v1", model_name=DEFAULT_MODEL, retries=0)
+    client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL, retries=0)
     chunks = list(
         client.chat_completion_stream(
             [{"role": "user", "content": "hello"}],
@@ -61,14 +61,14 @@ def test_stream_uses_bounded_consult_output_budget(monkeypatch: pytest.MonkeyPat
     )
 
     assert len(chunks) == 1
-    assert captured["url"] == "http://127.0.0.1:8080/v1/chat/completions"
+    assert captured["url"] == "http://127.0.0.1:8045/v1/chat/completions"
     assert captured["payload"]["model"] == DEFAULT_MODEL  # type: ignore[index]
     assert captured["payload"]["max_tokens"] == 700  # type: ignore[index]
     assert captured["timeout"] == 12
     assert client.last_response_model == DEFAULT_MODEL
 
 
-def test_chat_completion_forwards_supported_reasoning_effort_only_when_requested(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_chat_completion_preserves_the_selected_high_reasoning_tier(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 
     def fake_urlopen(request, *, timeout):
@@ -76,18 +76,18 @@ def test_chat_completion_forwards_supported_reasoning_effort_only_when_requested
         return _JsonResponse({"choices": [{"message": {"content": "{}"}}]})
 
     monkeypatch.setattr(model_client_module, "urlopen", fake_urlopen)
-    client = ModelClient(base_url="http://127.0.0.1:8080/v1", model_name=DEFAULT_MODEL, retries=0)
+    client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL, retries=0)
     client.chat_completion(
         [{"role": "user", "content": "decision"}],
         model_name=DEFAULT_MODEL,
         reasoning_effort="medium",
     )
 
-    assert captured["payload"]["reasoning_effort"] == "medium"  # type: ignore[index]
+    assert captured["payload"]["reasoning_effort"] == "high"  # type: ignore[index]
 
 
 def test_structured_analysis_forwards_provider_timeout_and_retries(monkeypatch: pytest.MonkeyPatch) -> None:
-    client = ModelClient(base_url="http://127.0.0.1:8080/v1", model_name=DEFAULT_MODEL, retries=2)
+    client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL, retries=2)
     captured: dict[str, object] = {}
 
     def fake_chat_completion(*_args, **kwargs):
@@ -118,7 +118,7 @@ def test_chat_completion_honors_per_call_timeout_and_retry_count(monkeypatch: py
 
     monkeypatch.setattr(model_client_module, "urlopen", fake_urlopen)
     monkeypatch.setattr(model_client_module.time, "sleep", lambda _seconds: None)
-    client = ModelClient(base_url="http://127.0.0.1:8080/v1", model_name=DEFAULT_MODEL, retries=0)
+    client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL, retries=0)
 
     response = client.chat_completion(
         [{"role": "user", "content": "decision"}],
@@ -133,7 +133,7 @@ def test_chat_completion_honors_per_call_timeout_and_retry_count(monkeypatch: py
 
 def test_chat_completion_rejects_unknown_reasoning_effort_before_network(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(model_client_module, "urlopen", lambda *_args, **_kwargs: pytest.fail("unexpected network call"))
-    client = ModelClient(base_url="http://127.0.0.1:8080/v1", model_name=DEFAULT_MODEL, retries=0)
+    client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL, retries=0)
     with pytest.raises(ModelClientError, match="MODEL_REASONING_EFFORT_INVALID"):
         client.chat_completion(
             [{"role": "user", "content": "decision"}],
@@ -150,7 +150,7 @@ def test_stream_rejects_any_present_noncanonical_model_identity(response_model: 
             yield ("data: " + json.dumps(envelope) + "\n").encode("utf-8")
 
     monkeypatch.setattr(model_client_module, "urlopen", lambda *_args, **_kwargs: Response())
-    client = ModelClient(base_url="http://127.0.0.1:8080/v1", model_name=DEFAULT_MODEL, retries=0)
+    client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL, retries=0)
     with pytest.raises(ModelClientError, match="MODEL_RESPONSE_IDENTITY_MISMATCH"):
         list(client.chat_completion_stream([{"role": "user", "content": "hello"}], model_name=DEFAULT_MODEL))
 
@@ -161,7 +161,7 @@ def test_stream_allows_missing_response_identity_for_verified_manifest_binding(m
             yield b'data: {"choices":[{"delta":{"content":"ok"}}]}\n'
 
     monkeypatch.setattr(model_client_module, "urlopen", lambda *_args, **_kwargs: Response())
-    client = ModelClient(base_url="http://127.0.0.1:8080/v1", model_name=DEFAULT_MODEL, retries=0)
+    client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL, retries=0)
     assert len(list(client.chat_completion_stream([{"role": "user", "content": "hello"}], model_name=DEFAULT_MODEL))) == 1
     assert client.last_response_model is None
 
@@ -172,7 +172,7 @@ def test_stream_rejects_unbounded_or_invalid_max_tokens(value: object, monkeypat
         raise AssertionError("invalid token budgets must fail before network access")
 
     monkeypatch.setattr(model_client_module, "urlopen", forbidden_urlopen)
-    client = ModelClient(base_url="http://127.0.0.1:8080/v1", model_name=DEFAULT_MODEL, retries=0)
+    client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL, retries=0)
     with pytest.raises(ModelClientError, match="MODEL_MAX_TOKENS_INVALID"):
         list(
             client.chat_completion_stream(

@@ -395,7 +395,7 @@ class CandidateScanner:
                 dict.fromkeys(
                     str(item).lower()
                     for item in (context_timeframes_override or strategy_cls.context_timeframes)
-                    if str(item).lower() in {"5m", "15m", "1h", "8h", "1d"}
+                    if str(item).lower() in {"5m", "15m", "1h", "4h", "8h", "1d"}
                     and str(item).lower() != signal_timeframe
                 )
             )

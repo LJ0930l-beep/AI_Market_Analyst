@@ -111,6 +111,20 @@ describe("AI trader durable plan console", () => {
     expect(screen.getByTestId('strategy-run-summary')).not.toHaveTextContent('15 分钟');
   });
 
+  it("keeps native Gate protection unknown when only active positions were observed", async () => {
+    vi.spyOn(apiClient, "v2").mockImplementation(async (path: string) => {
+      if (path === "/accounts") return { accounts: [{ account_id: "gate_live", mode: "LIVE", venue: "gate" }] } as never;
+      if (path.startsWith("/ai-session/status")) return {
+        session: { state: "RUNNING" },
+        protection_summary: { active_positions: 3, protected_positions: null },
+      } as never;
+      if (path.startsWith("/trade-plans")) return { plans: [] } as never;
+      return {} as never;
+    });
+    render(<MemoryRouter><AITraderPanel currentMode="LIVE" activeAccount="gate_live" /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByText("PROTECTED POSITIONS").parentElement).toHaveTextContent("UNKNOWN"));
+  });
+
   it("does not surface legacy system-blocked cycles as a Qwen decision", async () => {
     vi.spyOn(apiClient, "v2").mockImplementation(async (path: string) => {
       if (path === "/accounts") return { accounts: [{ account_id: "paper_trace", mode: "PAPER", venue: "simulated" }] } as never;
@@ -268,15 +282,15 @@ describe("AI trader durable plan console", () => {
       status: 'READY',
       available: true,
       model_available: true,
-      model_id: 'Bonsai-2-27B-PTQ1_0',
-      actual_model_id: 'Ternary-Bonsai-2-27B-PTQ1_0.gguf',
-      model_identity_source: 'verified_manifest',
+      model_id: 'gemini-3.8-flash-high',
+      actual_model_id: 'gemini-3.8-flash-high',
+      model_identity_source: 'completion_probe',
       checked_at: new Date().toISOString(),
     } as never);
 
     render(<MemoryRouter><AITraderPanel currentMode="PAPER" activeAccount="paper_health" /></MemoryRouter>);
 
-    expect(await screen.findByLabelText('Bonsai model identity status')).toHaveTextContent('Bonsai 2.27B · 身份已核验');
+    expect(await screen.findByLabelText('Gemini model identity status')).toHaveTextContent('Gemini 3.8 Flash High · 身份已核验');
   });
 
   it("downgrades an expired Bonsai health response in the trading cockpit", async () => {
@@ -285,15 +299,15 @@ describe("AI trader durable plan console", () => {
       status: 'READY',
       available: true,
       model_available: true,
-      model_id: 'Bonsai-2-27B-PTQ1_0',
-      actual_model_id: 'Ternary-Bonsai-2-27B-PTQ1_0.gguf',
-      model_identity_source: 'verified_manifest',
+      model_id: 'gemini-3.8-flash-high',
+      actual_model_id: 'gemini-3.8-flash-high',
+      model_identity_source: 'completion_probe',
       checked_at: new Date(Date.now() - 120_000).toISOString(),
     } as never);
 
     render(<MemoryRouter><AITraderPanel currentMode="PAPER" activeAccount="paper_health_stale" /></MemoryRouter>);
 
-    expect(await screen.findByLabelText('Bonsai model identity status')).toHaveTextContent('Model identity check expired');
+    expect(await screen.findByLabelText('Gemini model identity status')).toHaveTextContent('Model identity check expired');
   });
 
   it("does not claim Bonsai is verified when the model health request fails", async () => {
@@ -302,6 +316,6 @@ describe("AI trader durable plan console", () => {
 
     render(<MemoryRouter><AITraderPanel currentMode="PAPER" activeAccount="paper_health_error" /></MemoryRouter>);
 
-    expect(await screen.findByLabelText('Bonsai model identity status')).toHaveTextContent('Model identity unverified');
+    expect(await screen.findByLabelText('Gemini model identity status')).toHaveTextContent('Model identity unverified');
   });
 });

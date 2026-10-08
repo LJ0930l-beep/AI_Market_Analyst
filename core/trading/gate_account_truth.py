@@ -279,6 +279,10 @@ def _unavailable_capital_basis(
         "baseline_equity": None,
         "baseline_observed_at": None,
         "baseline_basis": None,
+        "equity_change": None,
+        "equity_change_pct": None,
+        # Kept as an explicit null for older readers; account equity changes
+        # are never presented as system strategy PnL.
         "net_pnl": None,
         "roi_pct": None,
         "cumulative_fees": None,
@@ -400,8 +404,8 @@ def resolve_remote_capital_basis(
         fee_evidence = "OBSERVED_REMOTE_FILLS"
         break
 
-    net_pnl = current_equity - baseline_equity
-    roi = (net_pnl / baseline_equity * 100.0) if baseline_equity > 0 else None
+    equity_change = current_equity - baseline_equity
+    equity_change_pct = (equity_change / baseline_equity * 100.0) if baseline_equity > 0 else None
     live_account = canonical == "gate_live"
     return {
         "status": "AVAILABLE",
@@ -418,8 +422,12 @@ def resolve_remote_capital_basis(
         "baseline_equity": baseline_equity,
         "baseline_observed_at": _iso(baseline_row.get("observed_at")),
         "baseline_basis": "GATE_LIVE_FIRST_AVAILABLE_REMOTE_SNAPSHOT" if live_account else CAPITAL_BASIS_BASELINE,
-        "net_pnl": net_pnl,
-        "roi_pct": roi,
+        "equity_change": equity_change,
+        "equity_change_pct": equity_change_pct,
+        # Compatibility fields intentionally remain null: this service has no
+        # evidence to attribute account-wide movement to system strategies.
+        "net_pnl": None,
+        "roi_pct": None,
         "cumulative_fees": cumulative_fees,
         "fee_evidence": fee_evidence,
         "max_drawdown_pct": max_drawdown if series else None,

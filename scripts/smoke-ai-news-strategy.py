@@ -1,4 +1,4 @@
-"""Public Gate + RSS + real local Bonsai -> isolated PAPER execution smoke.
+"""Public Gate + RSS + real Gemini -> isolated PAPER execution smoke.
 
 Never opens a user's database, reads exchange credentials or starts a session.
 This verifies model/decision/execution integration, not profitability or the
@@ -265,7 +265,7 @@ def main(argv: list[str] | None = None):
             health = coordinator._health(force=True)
             report["model_health"] = health
             if health.get("status") != "READY":
-                raise RuntimeError("LOCAL_BONSAI_NOT_READY")
+                raise RuntimeError("GEMINI_NOT_READY")
             # AISessionCoordinator clones OllamaProvider in __init__ to pin
             # per-session inference settings, so instrument the effective
             # provider that will actually be called.

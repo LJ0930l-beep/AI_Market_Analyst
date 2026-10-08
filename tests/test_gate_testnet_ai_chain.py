@@ -7,13 +7,19 @@ availability or quality of a real Gate credential or Bonsai inference.
 
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+import json
 from typing import Any
 
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from apps.api.v2 import router_for
 from core.storage import SQLiteStore
 from core.trading.account_aliases import GATE_TESTNET_ACCOUNT_ID
 from core.trading.ai_led_engine import AICycleContext, AIActionOutput, AILedDecisionEngine
 from core.trading.authorization import AuthorizationManager, ConfirmationSource
-from core.trading.execution_gateway import ExecutionGateway, OrderIntent, ProtectionPlan, TradingMode, DecisionPath
+from core.trading.execution_gateway import ExecutionGateway, GatewayError, OrderIntent, ProtectionPlan, TradingMode, DecisionPath
 from core.trading.gate_account_truth import GateAccountTruthService
 from core.trading.gate_live_client import GateLiveTrader
 from core.trading.gate_testnet_e2e import GateTestnetE2EService
@@ -27,6 +33,12 @@ from core.trading.trader_capabilities import TraderCapabilityService
 def _store(tmp_path):
     store = SQLiteStore(tmp_path / "gate-testnet-ai-chain.db")
     store.initialize()
+    # Tests that exercise managed-entry ownership need the actual settlement
+    # schema so an absent ledger is not confused with an empty ledger.
+    from core.trading.gate_trade_settlement import GateTradeSettlementService
+    settlement_service = GateTradeSettlementService(store)
+    with store._connect() as db:
+        settlement_service._ensure(db)
     return store
 
 
@@ -112,6 +124,29 @@ def test_gate_risk_cockpit_projects_latest_remote_equity_and_positions(tmp_path)
     assert cockpit["capacity"]["basis"].startswith("REMOTE_GATE_TESTNET_PRIVATE_API")
 
 
+def test_live_position_read_models_use_gate_snapshot_not_local_simulator(tmp_path):
+    store = _store(tmp_path)
+    provision_default_gate_accounts(store)
+    trader = _RemoteTruthTrader()
+    trader.truth["api_environment"] = "LIVE"
+    trader.truth["pending_orders"] = []
+    GateAccountTruthService(store).refresh("gate_live", trader)
+    app = FastAPI()
+    app.include_router(router_for(lambda: store, lambda: None, lambda: None))
+    with TestClient(app) as client:
+        positions = client.get("/v2/positions", params={"account_id": "gate_live"})
+        workspace = client.get("/v2/workspace", params={"account_id": "gate_live"})
+        status = client.get("/v2/ai-session/status", params={"account_id": "gate_live"})
+    assert positions.status_code == workspace.status_code == status.status_code == 200
+    assert positions.json()["count"] == 1
+    assert positions.json()["positions"][0]["symbol"] == "BTCUSDT"
+    assert len(workspace.json()["positions"]) == 1
+    protection = status.json()["protection_summary"]
+    assert protection["active_positions"] == 1
+    assert protection["protected_positions"] is None
+    assert protection["protection_status"] == "NOT_VERIFIED_BY_ACCOUNT_SNAPSHOT"
+
+
 def test_gate_remote_truth_required_for_new_risk_but_not_reduce_only_boundary(tmp_path):
     store = _store(tmp_path)
     provision_default_gate_accounts(store)
@@ -163,6 +198,7 @@ def test_gate_gateway_open_and_reduce_only_use_remote_position_without_local_mir
         def __init__(self):
             self.open = False
             self.orders = []
+            self.position_contracts = "1"
 
         def get_market_metadata(self, symbol):
             return {
@@ -184,7 +220,7 @@ def test_gate_gateway_open_and_reduce_only_use_remote_position_without_local_mir
                 "positions": ([{
                     "symbol": "BTCUSDT",
                     "side": "LONG",
-                    "contracts": "1",
+                    "contracts": self.position_contracts,
                     "entry_price": "100",
                     "mark_price": "100",
                     "contract_size": "1",
@@ -203,9 +239,9 @@ def test_gate_gateway_open_and_reduce_only_use_remote_position_without_local_mir
             self.orders.append(dict(kwargs))
             if kwargs.get("reduce_only"):
                 self.open = False
-                return {"status": "FILLED", "order_id": "remote-close", "filled": kwargs["amount"], "amount": kwargs["amount"], "average_price": 101.0, "fee": 0.01, "contract_size": 1}
+                return {"status": "FILLED", "order_id": "123456002", "filled": kwargs["amount"], "amount": kwargs["amount"], "average_price": 101.0, "fee": 0.01, "contract_size": 1}
             self.open = True
-            return {"status": "FILLED", "order_id": "remote-open", "filled": kwargs["amount"], "amount": kwargs["amount"], "average_price": 100.0, "fee": 0.01, "contract_size": 1, "protection_verified": True}
+            return {"status": "FILLED", "order_id": "123456001", "filled": kwargs["amount"], "amount": kwargs["amount"], "average_price": 100.0, "fee": 0.01, "contract_size": 1, "protection_verified": True}
 
     trader = RemoteOrderTrader()
     monkeypatch.setattr("core.trading.gate_accounts.build_gate_trader", lambda _store, _account_id: trader)
@@ -235,7 +271,7 @@ def test_gate_gateway_open_and_reduce_only_use_remote_position_without_local_mir
     gateway = ExecutionGateway(store, ledger=ledger)
     opened = gateway.submit_intent(
         OrderIntent(
-            intent_id="remote-gateway-open",
+            intent_id="intent_ai_remote_gateway_open",
             idempotency_key="remote-gateway-open-idem",
             account_id=GATE_TESTNET_ACCOUNT_ID,
             mode=TradingMode.TESTNET,
@@ -246,6 +282,8 @@ def test_gate_gateway_open_and_reduce_only_use_remote_position_without_local_mir
             order_type="market",
             quantity=1,
             leverage=100,
+            decision_path=DecisionPath.AI_LED,
+            control_mode="AUTONOMOUS",
             protection_plan=ProtectionPlan(stop_price=99, take_profit=101),
             authorization_id=auth.authorization_id,
             authorization_version=auth.version,
@@ -258,14 +296,123 @@ def test_gate_gateway_open_and_reduce_only_use_remote_position_without_local_mir
     assert trader.orders[0]["leverage"] == 30
     with store._connect() as db:
         persisted = db.execute(
-            "SELECT leverage FROM order_intents WHERE intent_id='remote-gateway-open'"
+            "SELECT leverage FROM order_intents WHERE intent_id='intent_ai_remote_gateway_open'"
         ).fetchone()
     assert persisted["leverage"] == 30
     assert opened["protection_status"] == "ACTIVE"
 
+    # Gate exposes a net position. A same-side manual addition makes the
+    # remote quantity differ from the system's recorded fills and must block
+    # management before the adapter sees a reduction.
+    trader.position_contracts = "2"
+    with pytest.raises(GatewayError) as mixed:
+        gateway.submit_intent(
+            OrderIntent(
+                intent_id="intent_close_mixed_position",
+                idempotency_key="remote-gateway-mixed-close-idem",
+                account_id=GATE_TESTNET_ACCOUNT_ID,
+                mode=TradingMode.TESTNET,
+                environment="TESTNET",
+                venue="gate",
+                instrument_id="BTCUSDT",
+                side="SELL",
+                order_type="market",
+                quantity=1,
+                reduce_only=True,
+                position_id="remote-gateway-pos",
+                decision_path=DecisionPath.AI_LED,
+                control_mode="AUTONOMOUS",
+            ),
+            trader_client=trader,
+            market_snapshot=market,
+            now=now,
+        )
+    assert mixed.value.code == "SYSTEM_POSITION_OWNERSHIP_UNVERIFIED"
+    assert "REMOTE_NET_QUANTITY_MISMATCH" in mixed.value.message
+    assert len(trader.orders) == 1
+    trader.position_contracts = "1"
+
+    # The ledger may preserve either its canonical position-side spelling or
+    # an exchange BUY/SELL spelling. Both LONG->BUY and SHORT->SELL entry
+    # encodings are valid; an adverse side is never ownership evidence.
+    with store._connect() as db:
+        fill = db.execute(
+            "SELECT fill_id,payload_json FROM trade_fills WHERE order_id='123456001'"
+        ).fetchone()
+        fill_payload = json.loads(fill["payload_json"])
+        fill_payload["side"] = "BUY"
+        db.execute(
+            "UPDATE trade_fills SET side='BUY',payload_json=? WHERE fill_id=?",
+            (json.dumps(fill_payload), fill["fill_id"]),
+        )
+        for historical_id, historical_status, historical_receipt in (
+            ("intent_ai_historical_rejected", "REJECTED", {"status": "REJECTED"}),
+            ("intent_ai_historical_resting", "ACKNOWLEDGED", {"status": "ACKNOWLEDGED", "order_id": "123456090", "filled": 0}),
+        ):
+            db.execute(
+                """INSERT INTO order_intents
+                   (intent_id,idempotency_key,account_id,mode,instrument_id,side,order_type,quantity,
+                    payload_hash,status,execution_result_json,created_at,updated_at,venue,environment,
+                    reduce_only,decision_path,control_mode,selection_evidence_json)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    historical_id, historical_id + "_idem", GATE_TESTNET_ACCOUNT_ID,
+                    "TESTNET", "BTCUSDT", "LONG", "market", 1, "historical-hash",
+                    historical_status, json.dumps(historical_receipt), now.isoformat(), now.isoformat(),
+                    "gate", "TESTNET", 0, "AI_LED", "AUTONOMOUS", "{}",
+                ),
+            )
+
+    # A wrong-way fill is rejected before any reduction reaches Gate.
+    with store._connect() as db:
+        fill = db.execute(
+            "SELECT fill_id,payload_json FROM trade_fills WHERE order_id='123456001'"
+        ).fetchone()
+        fill_payload = json.loads(fill["payload_json"])
+        fill_payload["side"] = "SELL"
+        db.execute(
+            "UPDATE trade_fills SET side='SELL',payload_json=? WHERE fill_id=?",
+            (json.dumps(fill_payload), fill["fill_id"]),
+        )
+    with pytest.raises(GatewayError) as wrong_way:
+        gateway.submit_intent(
+            OrderIntent(
+                intent_id="intent_close_wrong_way_fill",
+                idempotency_key="remote-gateway-wrong-way-idem",
+                account_id=GATE_TESTNET_ACCOUNT_ID,
+                mode=TradingMode.TESTNET,
+                environment="TESTNET",
+                venue="gate",
+                instrument_id="BTCUSDT",
+                side="SELL",
+                order_type="market",
+                quantity=1,
+                reduce_only=True,
+                position_id="remote-gateway-pos",
+                decision_path=DecisionPath.AI_LED,
+                control_mode="AUTONOMOUS",
+            ),
+            trader_client=trader,
+            market_snapshot=market,
+            now=now,
+        )
+    assert wrong_way.value.code == "SYSTEM_POSITION_OWNERSHIP_UNVERIFIED"
+    assert "SYSTEM_FILL_SCOPE_OR_DIRECTION_MISMATCH" in wrong_way.value.message
+    assert len(trader.orders) == 1
+    with store._connect() as db:
+        fill = db.execute(
+            "SELECT fill_id,payload_json FROM trade_fills WHERE order_id='123456001'"
+        ).fetchone()
+        fill_payload = json.loads(fill["payload_json"])
+        fill_payload["side"] = "BUY"
+        db.execute(
+            "UPDATE trade_fills SET side='BUY',payload_json=? WHERE fill_id=?",
+            (json.dumps(fill_payload), fill["fill_id"]),
+        )
+
     closed = gateway.submit_intent(
         OrderIntent(
-            intent_id="remote-gateway-close",
+            intent_id="intent_close_remote_gateway_close",
             idempotency_key="remote-gateway-close-idem",
             account_id=GATE_TESTNET_ACCOUNT_ID,
             mode=TradingMode.TESTNET,
@@ -275,6 +422,8 @@ def test_gate_gateway_open_and_reduce_only_use_remote_position_without_local_mir
             side="SELL",
             order_type="market",
             quantity=1,
+            decision_path=DecisionPath.AI_LED,
+            control_mode="AUTONOMOUS",
             reduce_only=True,
             position_id="remote-gateway-pos",
         ),
@@ -293,6 +442,308 @@ def test_gate_gateway_open_and_reduce_only_use_remote_position_without_local_mir
             "SELECT COUNT(*) FROM trade_fills WHERE account_id=? AND venue='gate' AND mode='TESTNET'",
             (GATE_TESTNET_ACCOUNT_ID,),
         ).fetchone()[0] == 2
+        close_row = db.execute(
+            "SELECT selection_evidence_json FROM order_intents WHERE intent_id='intent_close_remote_gateway_close'"
+        ).fetchone()
+    close_proof = json.loads(close_row["selection_evidence_json"])["system_position_ownership"]
+    assert close_proof["status"] == "VERIFIED"
+    assert close_proof["owned_net_quantity"] == "1"
+
+    # A durable FILLED claim without trade_fills cannot be attributed after a
+    # restart and must never be silently omitted from the ownership balance.
+    with store._connect() as db:
+        db.execute(
+            """INSERT INTO order_intents
+               (intent_id,idempotency_key,account_id,mode,instrument_id,side,order_type,quantity,
+                payload_hash,status,execution_result_json,created_at,updated_at,venue,environment,
+                reduce_only,decision_path,control_mode,selection_evidence_json)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                "intent_ai_claimed_fill_without_ledger", "claimed-fill-without-ledger-idem",
+                GATE_TESTNET_ACCOUNT_ID, "TESTNET", "BTCUSDT", "LONG", "market", 1,
+                "missing-fill-hash", "FILLED",
+                json.dumps({"status": "FILLED", "intent_id": "intent_ai_claimed_fill_without_ledger", "order_id": "123456099", "filled": 1}),
+                now.isoformat(), now.isoformat(), "gate", "TESTNET", 0, "AI_LED", "AUTONOMOUS", "{}",
+            ),
+        )
+    with pytest.raises(GatewayError) as missing_fill:
+        gateway._gate_remote_position_ownership_evidence(
+            account_id=GATE_TESTNET_ACCOUNT_ID,
+            mode="TESTNET",
+            environment="TESTNET",
+            instrument_id="BTCUSDT",
+            side="LONG",
+            position={
+                "venue": "gate", "mode": "TESTNET", "symbol": "BTCUSDT", "side": "LONG",
+                "contracts": "1", "entry_price": "100", "position_id": "remote-gateway-pos",
+            },
+            truth={"status": "AVAILABLE", "account_id": GATE_TESTNET_ACCOUNT_ID, "api_environment": "TESTNET"},
+        )
+    assert missing_fill.value.code == "SYSTEM_POSITION_OWNERSHIP_UNVERIFIED"
+    assert "SYSTEM_FILL_RECONCILIATION_MISSING" in missing_fill.value.message
+
+
+@pytest.mark.parametrize(
+    "events,remote_position,expected_entry",
+    [
+        (
+            [
+                {"order": "810001", "side": "LONG", "qty": "1", "price": "100", "at": 1},
+                {"order": "810002", "side": "SELL", "qty": "0.5", "price": "105", "reduce": True, "at": 2, "pre_qty": "1", "pre_entry": "100", "position_id": "epoch-1"},
+                {"order": "810003", "side": "BUY", "qty": "1", "price": "120", "at": 3},
+            ],
+            {"contracts": "1.5", "entry_price": str(Decimal("170") / Decimal("1.5")), "position_id": "epoch-1"},
+            Decimal("170") / Decimal("1.5"),
+        ),
+        (
+            [
+                {"order": "820001", "side": "LONG", "qty": "1", "price": "100", "at": 1},
+                {"order": "820002", "side": "SELL", "qty": "1", "price": "101", "reduce": True, "at": 2, "pre_qty": "1", "pre_entry": "100", "position_id": "epoch-old"},
+                {"order": "820003", "side": "BUY", "qty": "2", "price": "120", "at": 3},
+            ],
+            {"contracts": "2", "entry_price": "120", "position_id": "epoch-new"},
+            Decimal("120"),
+        ),
+    ],
+    ids=("partial-reduce-then-add", "flat-then-reopen"),
+)
+def test_gate_ownership_replays_cost_basis_after_reduce_and_reentry(tmp_path, events, remote_position, expected_entry):
+    store = _store(tmp_path)
+    provision_default_gate_accounts(store)
+    ledger = AccountLedger(store)
+    gateway = ExecutionGateway(store, ledger=ledger)
+    start = datetime(2030, 1, 2, 12, 0, tzinfo=timezone.utc)
+    current_quantity = Decimal("0")
+    current_cost = Decimal("0")
+    entry_order_ids = []
+    reduction_order_ids = []
+
+    def persist_intent(event, proof=None):
+        is_reduction = bool(event.get("reduce"))
+        intent_id = f"intent_close_{event['order']}" if is_reduction else f"intent_ai_{event['order']}"
+        side = event["side"]
+        stamp = (start + timedelta(minutes=event["at"])).isoformat()
+        receipt = {
+            "intent_id": intent_id, "order_id": event["order"], "status": "FILLED",
+            "filled": event["qty"], "average_price": event["price"],
+        }
+        selection = {"system_position_ownership": proof} if proof else {}
+        with store._connect() as db:
+            db.execute(
+                """INSERT INTO order_intents
+                   (intent_id,idempotency_key,account_id,mode,instrument_id,side,order_type,quantity,
+                    payload_hash,status,execution_result_json,created_at,updated_at,venue,environment,
+                    reduce_only,position_id,decision_path,control_mode,selection_evidence_json)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    intent_id, intent_id + "_idem", GATE_TESTNET_ACCOUNT_ID, "TESTNET", "BTCUSDT",
+                    side, "market", float(event["qty"]), "replay-hash", "FILLED",
+                    json.dumps(receipt), stamp, stamp, "gate", "TESTNET", int(is_reduction),
+                    event.get("position_id"), "AI_LED", "AUTONOMOUS", json.dumps(selection),
+                ),
+            )
+        ledger.record_trade_fill(
+            account_id=GATE_TESTNET_ACCOUNT_ID,
+            instrument_id="BTCUSDT",
+            side=side,
+            quantity=Decimal(event["qty"]),
+            price=Decimal(event["price"]),
+            fee=Decimal("0"),
+            mode="TESTNET",
+            venue="gate",
+            order_id=event["order"],
+            event_id=f"event-{event['order']}",
+            trade_id=f"trade-{event['order']}",
+            reduce_only=is_reduction,
+            position_id=event.get("position_id"),
+            environment="TESTNET",
+            event_at=start + timedelta(minutes=event["at"]),
+        )
+
+    for event in events:
+        if event.get("reduce"):
+            average = current_cost / current_quantity
+            proof = {
+                "version": "gate_system_position_ownership_v1", "status": "VERIFIED",
+                "account_id": GATE_TESTNET_ACCOUNT_ID, "environment": "TESTNET", "venue": "gate",
+                "instrument_id": "BTCUSDT", "side": "LONG",
+                "remote_position_id": event["position_id"],
+                "remote_quantity": event["pre_qty"], "owned_net_quantity": event["pre_qty"],
+                "remote_entry_price": event["pre_entry"], "owned_average_entry_price": event["pre_entry"],
+                "entry_order_ids": list(entry_order_ids), "reduction_order_ids": list(reduction_order_ids),
+            }
+            assert current_quantity == Decimal(event["pre_qty"])
+            assert average == Decimal(event["pre_entry"])
+            current_quantity -= Decimal(event["qty"])
+            current_cost -= average * Decimal(event["qty"])
+            if current_quantity == 0:
+                current_cost = Decimal("0")
+            reduction_order_ids.append(event["order"])
+            persist_intent(event, proof)
+        else:
+            current_quantity += Decimal(event["qty"])
+            current_cost += Decimal(event["qty"]) * Decimal(event["price"])
+            entry_order_ids.append(event["order"])
+            persist_intent(event)
+
+    evidence = gateway._gate_remote_position_ownership_evidence(
+        account_id=GATE_TESTNET_ACCOUNT_ID,
+        mode="TESTNET",
+        environment="TESTNET",
+        instrument_id="BTCUSDT",
+        side="LONG",
+        position={
+            "venue": "gate", "mode": "TESTNET", "symbol": "BTCUSDT", "side": "LONG",
+            **remote_position,
+        },
+        truth={"status": "AVAILABLE", "account_id": GATE_TESTNET_ACCOUNT_ID, "api_environment": "TESTNET"},
+    )
+    assert evidence["owned_net_quantity"] == remote_position["contracts"]
+    assert Decimal(evidence["owned_average_entry_price"]) == pytest.approx(expected_entry)
+
+
+def test_gate_gateway_rejects_manual_remote_position_without_system_fills(tmp_path, monkeypatch):
+    store = _store(tmp_path)
+    provision_default_gate_accounts(store)
+    ledger = AccountLedger(store)
+    now = datetime(2030, 1, 2, 12, 0, tzinfo=timezone.utc)
+
+    class ManualPositionTrader:
+        testnet = True
+        live_trading_enabled = True
+
+        def __init__(self):
+            self.orders = []
+
+        def get_market_metadata(self, symbol):
+            return {
+                "symbol": symbol,
+                "precision": {"amount": 1, "price": 0.5},
+                "limits": {"amount": {"step": 1, "min": 1, "max": 100}},
+                "contractSize": 1,
+                "leverage_max": 100,
+                "taker": 0.0005,
+            }
+
+        def get_account_truth(self, *, include_trades=False):
+            return {
+                "status": "AVAILABLE",
+                "api_environment": "TESTNET",
+                "observed_at": now.isoformat(),
+                "equity": 1000.0,
+                "available_margin": 990.0,
+                "used_margin": 10.0,
+                "positions": [{
+                    "symbol": "BTCUSDT", "side": "LONG", "contracts": "1",
+                    "entry_price": "100", "mark_price": "100", "contract_size": "1",
+                    "position_id": "manual-gate-position",
+                }],
+                "pending_orders": [],
+                "fills": [],
+            }
+
+        def place_order(self, **kwargs):
+            self.orders.append(dict(kwargs))
+            return {"status": "FILLED", "order_id": "987654321", "filled": kwargs["amount"],
+                    "amount": kwargs["amount"], "average_price": 100.0, "fee": 0.01}
+
+    trader = ManualPositionTrader()
+    monkeypatch.setattr("core.trading.gate_accounts.build_gate_trader", lambda _store, _account_id: trader)
+    gateway = ExecutionGateway(store, ledger=ledger)
+    with pytest.raises(GatewayError) as rejected:
+        gateway.submit_intent(
+            OrderIntent(
+                intent_id="intent_close_manual_position",
+                idempotency_key="manual-gate-close-idem",
+                account_id=GATE_TESTNET_ACCOUNT_ID,
+                mode=TradingMode.TESTNET,
+                environment="TESTNET",
+                venue="gate",
+                instrument_id="BTCUSDT",
+                side="SELL",
+                order_type="market",
+                quantity=1,
+                reduce_only=True,
+                position_id="manual-gate-position",
+                decision_path=DecisionPath.AI_LED,
+                control_mode="AUTONOMOUS",
+            ),
+            trader_client=trader,
+            market_snapshot={
+                "price": 100.0,
+                "data_as_of": now.isoformat(),
+                "received_at": now.isoformat(),
+                "fresh": True,
+                "executable": True,
+                "freshness_status": "FRESH",
+                "stale_after_seconds": 120,
+                "market": trader.get_market_metadata("BTCUSDT"),
+            },
+            now=now,
+        )
+
+    assert rejected.value.code == "SYSTEM_POSITION_OWNERSHIP_UNVERIFIED"
+    assert "SYSTEM_FILLED_ENTRY_NOT_FOUND" in rejected.value.message
+    assert trader.orders == []
+    with store._connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM trade_fills").fetchone()[0] == 0
+
+
+def test_ai_cycle_persists_manual_remote_position_ownership_rejection(tmp_path):
+    store = _store(tmp_path)
+    provision_default_gate_accounts(store)
+    ledger = AccountLedger(store)
+    gateway = ExecutionGateway(store, ledger=ledger)
+    engine = AILedDecisionEngine(
+        store=store,
+        execution_gateway=gateway,
+        risk_engine=RiskEngine(ledger),
+        ledger=ledger,
+        guardian=PositionGuardian(store, ledger),
+    )
+    now = datetime(2030, 1, 2, 12, 0, tzinfo=timezone.utc)
+    context = AICycleContext(
+        cycle_id="cycle-manual-gate-position-close",
+        account_id=GATE_TESTNET_ACCOUNT_ID,
+        generation=1,
+        started_at=now.isoformat(),
+        expires_at=(now + timedelta(minutes=1)).isoformat(),
+        allowed_instruments=("BTCUSDT",),
+        mode=TradingMode.TESTNET,
+        venue="gate",
+        environment="TESTNET",
+        execution_environment="TESTNET",
+        account_truth={
+            "status": "AVAILABLE", "account_id": GATE_TESTNET_ACCOUNT_ID,
+            "api_environment": "TESTNET", "positions_status": "AVAILABLE",
+            "positions": [{
+                "symbol": "BTCUSDT", "side": "LONG", "contracts": "1",
+                "entry_price": "100", "mark_price": "100", "position_id": "manual-position",
+            }],
+            "pending_orders": [],
+        },
+    )
+    result = engine.execute_cycle(
+        context,
+        now=now,
+        model_output=AIActionOutput(
+            action="CLOSE_POSITION", instrument_id="BTCUSDT", position_id="manual-position",
+            reason="Fixture model requested a close.",
+        ),
+    )
+    assert result.status == "REJECTED"
+    assert result.reason == "GATE_SYSTEM_POSITION_OWNERSHIP_UNVERIFIED:SYSTEM_FILLED_ENTRY_NOT_FOUND"
+    with store._connect() as db:
+        row = db.execute(
+            "SELECT action,status,payload_json FROM ai_led_cycles WHERE cycle_id=?",
+            (context.cycle_id,),
+        ).fetchone()
+    assert row["action"] == "CLOSE_POSITION"
+    assert row["status"] == "REJECTED"
+    payload = json.loads(row["payload_json"])
+    assert payload["analysis"]["system_position_ownership"] == {
+        "status": "UNVERIFIED", "reason_code": "SYSTEM_FILLED_ENTRY_NOT_FOUND",
+    }
 
 
 def test_ai_system_block_is_not_persisted_as_model_wait(tmp_path):
@@ -414,6 +865,59 @@ def test_connection_test_is_read_only_and_does_not_create_authorization(tmp_path
     assert exchange.create_order_calls == 0
 
 
+@pytest.mark.parametrize(
+    "finish_as,expected_triggered",
+    [("succeeded", "9002"), ("cancelled", None), ("failed", None), ("expired", None)],
+)
+def test_gate_protection_readback_preserves_native_identity_without_fabricating_trigger_actor(finish_as, expected_triggered):
+    class Exchange:
+        def privateFuturesGetSettlePriceOrdersOrderId(self, params):
+            assert params == {"settle": "usdt", "order_id": "9001"}
+            return {
+                "id": 9001,
+                "id_string": "9001",
+                "status": "finished",
+                "finish_time": 20300102120000,
+                "finish_as": finish_as,
+                "trade_id": "9002",
+                "me_order_id": "8001",
+                "initial": {"contract": "BTC_USDT", "size": -2, "is_reduce_only": True, "text": "t-e2e-sl"},
+                "trigger": {"price": "89.0", "price_type": 1},
+                "api_secret": "must-not-persist",
+            }
+
+    trader = GateLiveTrader("key", "secret", testnet=True, exchange=Exchange())
+
+    result = trader.fetch_protection_order("9001", "BTCUSDT")
+
+    assert result["order_id"] == result["id_string"] == "9001"
+    assert result["initial"] == {"contract": "BTC_USDT", "size": -2, "is_reduce_only": True, "text": "t-e2e-sl"}
+    assert result["finish_time"] == 20300102120000
+    assert result["trade_id"] == "9002"
+    assert result["me_order_id"] == "8001"
+    assert result["triggered_order_id"] == expected_triggered
+    assert result["raw"]["initial"]["contract"] == "BTC_USDT"
+    assert "api_secret" not in result["raw"]
+
+
+def test_gate_protection_readback_rejects_conflicting_native_reduce_only_flags():
+    class Exchange:
+        def privateFuturesGetSettlePriceOrdersOrderId(self, _params):
+            return {
+                "id": "9001", "status": "finished", "finish_as": "cancelled",
+                "initial": {
+                    "contract": "BTC_USDT", "size": -1,
+                    "reduce_only": False, "is_reduce_only": True,
+                },
+                "trigger": {"price": "89.0", "price_type": 1},
+            }
+
+    trader = GateLiveTrader("key", "secret", testnet=True, exchange=Exchange())
+
+    with pytest.raises(ValueError, match="GATE_PROTECTION_REDUCE_ONLY_CONFLICT"):
+        trader.fetch_protection_order("9001", "BTCUSDT")
+
+
 class _E2EFixtureTrader:
     testnet = True
     live_trading_enabled = True
@@ -422,6 +926,8 @@ class _E2EFixtureTrader:
         self.open = False
         self.calls: list[dict[str, Any]] = []
         self.canceled: list[str] = []
+        self.protection_status = "OPEN"
+        self.protection_cleanup_mode = "success"
 
     def get_market_metadata(self, symbol):
         return {
@@ -451,7 +957,7 @@ class _E2EFixtureTrader:
             "order_id": "entry-1",
             "filled": kwargs["amount"],
             "protection_status": "PROTECTED",
-            "protection_orders": [{"order_id": "sl-tp-1"}],
+            "protection_orders": [{"leg": "stop_loss", "order_id": "9001"}],
         }
 
     def get_account_truth(self, *, include_trades=False):
@@ -468,6 +974,23 @@ class _E2EFixtureTrader:
 
     def cancel_order(self, order_id, symbol):
         self.canceled.append(order_id)
+        return {"status": "CANCELED", "order_id": order_id}
+
+    def fetch_protection_order(self, order_id, symbol):
+        return {
+            "order_id": str(order_id), "symbol": symbol, "status": self.protection_status,
+            "finish_as": "cancelled" if self.protection_status == "FINISHED" else None,
+            "reduce_only": True,
+            "initial": {"contract": "BTC_USDT", "size": "0.1", "reduce_only": True, "text": "t-e2e-sl"},
+            "observed_at": "2030-01-02T12:00:00+00:00",
+        }
+
+    def cancel_protection_order(self, order_id, symbol):
+        self.canceled.append(order_id)
+        if self.protection_cleanup_mode == "delete_fails":
+            raise RuntimeError("DELETE failed")
+        if self.protection_cleanup_mode != "nonterminal":
+            self.protection_status = "FINISHED"
         return {"status": "CANCELED", "order_id": order_id}
 
 
@@ -496,7 +1019,8 @@ def test_gate_testnet_e2e_uses_remote_fill_and_cleans_without_local_fill(tmp_pat
     assert len(trader.calls) == 2
     assert trader.calls[1]["reduce_only"] is True
     assert trader.calls[1]["leverage"] is None
-    assert trader.canceled == ["sl-tp-1"]
+    assert trader.canceled == ["9001"]
+    assert result["protection_cleanup"][0]["finish_as"] == "cancelled"
     with store._connect() as db:
         assert db.execute("SELECT COUNT(*) FROM trade_fills").fetchone()[0] == 0
     replay = GateTestnetE2EService(store).run(request, trader)
@@ -504,3 +1028,30 @@ def test_gate_testnet_e2e_uses_remote_fill_and_cleans_without_local_fill(tmp_pat
     assert len(trader.calls) == 2
     replay_without_credentials = GateTestnetE2EService(store).run(request, None)
     assert replay_without_credentials["idempotent_replay"] is True
+
+
+@pytest.mark.parametrize("cleanup_mode", ["delete_fails", "nonterminal"])
+def test_gate_testnet_e2e_never_completes_when_native_protection_cleanup_is_unverified(tmp_path, cleanup_mode):
+    store = _store(tmp_path)
+    provision_default_gate_accounts(store)
+    trader = _E2EFixtureTrader()
+    trader.protection_cleanup_mode = cleanup_mode
+    request = {
+        "account_id": GATE_TESTNET_ACCOUNT_ID,
+        "symbol": "BTCUSDT",
+        "side": "LONG",
+        "stop_type": "PRICE",
+        "stop_value": 99,
+        "take_profit_type": "PRICE",
+        "take_profit_value": 101,
+        "leverage": 1,
+        "cleanup": True,
+        "confirm_testnet": True,
+        "idempotency_key": f"fixture-e2e-protection-{cleanup_mode}",
+    }
+
+    result = GateTestnetE2EService(store).run(request, trader)
+
+    assert result["status"] == "RECONCILIATION_REQUIRED"
+    assert result["error_code"] == "PROTECTION_CLEANUP_FAILED"
+    assert not any(stage["stage"] == "CLEANUP" and stage["status"] == "COMPLETED" for stage in result["stages"])

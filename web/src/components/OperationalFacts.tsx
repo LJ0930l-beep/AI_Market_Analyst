@@ -26,12 +26,8 @@ function stringList(record: JsonRecord, key: string): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
-function isBonsaiModelIdentity(value: unknown): boolean {
-  if (typeof value !== "string" || !value.trim()) return false;
-  let basename = value.trim().replace(/\\/g, "/").split("/").pop() || "";
-  if (basename.toLowerCase().endsWith(".gguf")) basename = basename.slice(0, -5);
-  if (basename.toLowerCase().startsWith("ternary-")) basename = basename.slice("ternary-".length);
-  return basename.toLowerCase() === "bonsai-2-27b-ptq1_0";
+function isCurrentModelIdentity(value: unknown): boolean {
+  return typeof value === 'string' && ['gemini-3.8-flash-high', 'gemini-3.8-flash-control'].includes(value.trim());
 }
 
 const countLabels: Record<string, TranslationKey> = {
@@ -93,9 +89,9 @@ export function ModelFacts({ model }: { model: ModelHealthResponse }) {
   const identityVerified =
     model.available === true &&
     model.model_available === true &&
-    isBonsaiModelIdentity(stringValue(model, "model_id")) &&
-    isBonsaiModelIdentity(actualModelId) &&
-    stringValue(model, "model_identity_source") === "verified_manifest";
+    isCurrentModelIdentity(stringValue(model, "model_id")) &&
+    isCurrentModelIdentity(actualModelId) &&
+    stringValue(model, "model_identity_source") === "completion_probe";
   const identityStatus = model.available === false || model.model_available === false
     ? t("settings.modelIdentityUnavailable")
     : identityVerified

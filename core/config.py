@@ -1,16 +1,13 @@
-"""Bounded local runtime configuration shared by the API, release tools, and Bonsai 2 27B.
+"""Local application configuration with Gemini 3.8 Flash via Antigravity Tools.
 
-Strictly enforces:
-- Local loopback only (127.0.0.1:8080 / 127.0.0.1:8000)
-- Single authoritative reasoning model: Bonsai 2 27B PTQ1_0
-- Safe Context baseline: 8192 for RTX 4060 8GB
-- Generation presets: Mode A (ANALYSIS, thinking enabled) vs Mode B (FAST, thinking disabled)
-- Complete preservation of all database paths, schemas, and runtime contracts
+The API and credential storage remain local. Inference uses the operator's
+Google account through the authenticated loopback relay; cloud access is required.
 """
 
 from __future__ import annotations
 
 import os
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict
@@ -26,12 +23,10 @@ MAX_CORS_ORIGINS = 16
 APP_DATA_DIRECTORY_NAME = "AI Market Analyst"
 
 # Model & Server Endpoints
-DEFAULT_MODEL_NAME = "Bonsai-2-27B-PTQ1_0"
-DEFAULT_BASE_URL = "http://127.0.0.1:8080/v1"
+DEFAULT_MODEL_NAME = "gemini-3.8-flash-high"
+DEFAULT_BASE_URL = "http://127.0.0.1:8045/v1"
 DEFAULT_TIMEOUT_SEC = 180.0
 DEFAULT_CONTEXT_LENGTH = 8192  # Safe default for RTX 4060 8GB
-DEFAULT_NGL = 99
-DEFAULT_KV4 = 1
 
 
 class ConfigurationError(ValueError):
@@ -154,8 +149,8 @@ def redact_path(path: str | Path) -> str:
 
 def runtime_capabilities() -> dict[str, object]:
     return {
-        "local_only": True,
-        "cloud_required": False,
+        "local_only": False,
+        "cloud_required": True,
         "telemetry": False,
         "external_notifications": False,
         "broker_or_real_order": False,
@@ -208,16 +203,14 @@ PRESET_FAST = GenerationPreset(
 
 
 @dataclass
-class BonsaiConfig:
-    model_name: str = field(default_factory=lambda: os.environ.get("BONSAI_MODEL_NAME", DEFAULT_MODEL_NAME))
-    base_url: str = field(default_factory=lambda: os.environ.get("BONSAI_BASE_URL", DEFAULT_BASE_URL).rstrip("/"))
-    api_key: str = field(default_factory=lambda: os.environ.get("BONSAI_API_KEY", "not-needed-local"))
-    timeout_sec: float = field(default_factory=lambda: float(os.environ.get("BONSAI_TIMEOUT_SEC", DEFAULT_TIMEOUT_SEC)))
-    context_length: int = field(default_factory=lambda: int(os.environ.get("BONSAI_CTX", DEFAULT_CONTEXT_LENGTH)))
-    gpu_layers: int = field(default_factory=lambda: int(os.environ.get("BONSAI_NGL", DEFAULT_NGL)))
-    enable_kv4: bool = field(default_factory=lambda: os.environ.get("BONSAI_KV4", str(DEFAULT_KV4)).lower() in {"1", "true", "yes"})
-    host: str = field(default_factory=lambda: os.environ.get("BONSAI_HOST", "127.0.0.1"))
-    port: int = field(default_factory=lambda: int(os.environ.get("BONSAI_PORT", "8080")))
+class ModelConfig:
+    model_name: str = field(default_factory=lambda: os.environ.get("AIMA_MODEL_NAME", DEFAULT_MODEL_NAME))
+    base_url: str = field(default_factory=lambda: os.environ.get("AIMA_MODEL_BASE_URL", DEFAULT_BASE_URL).rstrip("/"))
+    api_key: str = field(default_factory=lambda: relay_api_key(), repr=False)
+    timeout_sec: float = field(default_factory=lambda: float(os.environ.get("AIMA_MODEL_TIMEOUT_SEC", DEFAULT_TIMEOUT_SEC)))
+    context_length: int = field(default_factory=lambda: int(os.environ.get("AIMA_MODEL_INPUT_BUDGET", DEFAULT_CONTEXT_LENGTH)))
+    host: str = "127.0.0.1"
+    port: int = field(default_factory=lambda: int(os.environ.get("AIMA_MODEL_PORT", "8045")))
 
     # Preset registry
     presets: Dict[str, GenerationPreset] = field(default_factory=lambda: {
@@ -237,12 +230,24 @@ class BonsaiConfig:
             "base_url": self.base_url,
             "timeout_sec": self.timeout_sec,
             "context_length": self.context_length,
-            "gpu_layers": self.gpu_layers,
-            "enable_kv4": self.enable_kv4,
             "host": self.host,
             "port": self.port,
         }
 
 
+def relay_api_key() -> str:
+    """Read the operator's local relay key without copying it into source/builds."""
+    override = os.environ.get("AIMA_MODEL_API_KEY")
+    if override:
+        return override
+    try:
+        path = Path.home() / ".antigravity_tools" / "gui_config.json"
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+        value = payload.get("proxy", {}).get("api_key")
+        return value if isinstance(value, str) else ""
+    except (OSError, ValueError, AttributeError):
+        return ""
+
+
 # Global singleton instance
-config = BonsaiConfig()
+config = ModelConfig()

@@ -87,13 +87,29 @@ interface MacroEvent {
   importance_stars?: number;
   schedule_only?: boolean;
   currency?: string;
+  actual_status?: string;
+  actual_source_url?: string;
+  actual_provider?: string;
+  actual_available_at?: string;
+  actual_reference_period?: string;
+  actual_error?: string;
+  actual_method?: string;
+  qualitative_status?: string;
+  qualitative_source_url?: string;
+  qualitative_provider?: string;
+  qualitative_title?: string;
+  qualitative_summary?: string;
+  qualitative_error?: string;
 }
 
 interface Workspace {
   account_id?: string | null;
   scope_required?: boolean;
   macro_events?: MacroEvent[];
-  macro_calendar?: { status: string; provider?: string; last_success_at?: string; error?: string; actual_supported?: boolean };
+  macro_calendar?: { status: string; provider?: string; last_success_at?: string; error?: string; actual_supported?: boolean;
+    actual_providers?: string[]; actual_verified_count?: number; actual_error_count?: number;
+    numeric_event_count?: number; qualitative_event_count?: number; qualitative_verified_count?: number; qualitative_recording_count?: number;
+    retry_after_seconds?: number; next_refresh_at?: string };
   watchlist: { symbol: string }[];
   subscriptions: Subscription[];
   runtime: MonitoringRuntimeStatus;
@@ -191,6 +207,10 @@ interface AiAnalysisResponse {
     initial_capital_usdt: number | null;
     current_equity_usdt: number | null;
     net_pnl_usdt: number | null;
+    strategy_net_pnl_usdt?: number | null;
+    strategy_pnl_basis?: string | null;
+    account_equity_change_usdt?: number | null;
+    account_equity_change_pct?: number | null;
     total_roi_pct: number | null;
     margin_used_usdt: number | null;
     margin_available_usdt: number | null;
@@ -611,12 +631,16 @@ function isInstitutionalDashboard(value: unknown): value is InstitutionalDashboa
   return typeof candidate.status === "string" && typeof candidate.scope?.account_id === "string";
 }
 
-function isBonsaiModelIdentity(value: unknown): value is string {
+function isLegacyBonsaiModelIdentity(value: unknown): value is string {
   if (typeof value !== "string" || !value.trim()) return false;
   let basename = value.trim().replace(/\\/g, "/").split("/").pop() || "";
   if (basename.toLowerCase().endsWith(".gguf")) basename = basename.slice(0, -5);
   if (basename.toLowerCase().startsWith("ternary-")) basename = basename.slice("ternary-".length);
   return basename.toLowerCase() === "bonsai-2-27b-ptq1_0";
+}
+
+function isCurrentModelIdentity(value: unknown): value is string {
+  return typeof value === "string" && ["gemini-3.8-flash-high", "gemini-3.8-flash-control"].includes(value);
 }
 
 const MODEL_HEALTH_MAX_AGE_MS = 60_000;
@@ -635,15 +659,15 @@ function readRuntimeModel(model: RiskCockpit["model"]) {
   const health = envelope?.model && typeof envelope.model === "object" ? envelope.model : envelope;
   const actualModelId = health?.actual_model_id || health?.model_version;
   const configuredModelId = health?.required_model || health?.model_id || (typeof model === "string" ? model : undefined);
-  const actualIdentityValid = isBonsaiModelIdentity(actualModelId);
+  const actualIdentityValid = isCurrentModelIdentity(actualModelId);
   const actualModelLabel = typeof actualModelId === "string"
     ? actualModelId.replace(/\\/g, "/").split("/").pop()
     : undefined;
-  const identityEvidenceValid = actualIdentityValid && isBonsaiModelIdentity(configuredModelId) && health?.model_identity_source === "verified_manifest";
+  const identityEvidenceValid = actualIdentityValid && isCurrentModelIdentity(configuredModelId) && health?.model_identity_source === "completion_probe";
   const checked = isFreshModelHealthTimestamp(health?.checked_at);
   const identityVerified = identityEvidenceValid && checked;
   const modelName = identityVerified
-    ? "Bonsai-2-27B-PTQ1_0"
+    ? "gemini-3.8-flash-high"
     : typeof configuredModelId === "string"
       ? configuredModelId.replace(/\\/g, "/").split("/").pop()
       : undefined;
@@ -672,10 +696,13 @@ function decisionModelName(details: unknown): string | undefined {
   const actual = verified.actual_model_id ?? verified.model_version;
   const manifest = verified.verified_manifest_model_id;
   const source = verified.model_identity_source;
-  return model === "Bonsai-2-27B-PTQ1_0" && isBonsaiModelIdentity(actual) && isBonsaiModelIdentity(manifest) &&
-    (source === "completion_response" || source === "request_bound_to_verified_manifest")
-    ? model
-    : undefined;
+  const current = model === "gemini-3.8-flash-high" && isCurrentModelIdentity(actual) &&
+    isCurrentModelIdentity(manifest) && source === "completion_response";
+  // Historical local receipts keep their original identity; they do not attest current runtime health.
+  const historical = model === "Bonsai-2-27B-PTQ1_0" && isLegacyBonsaiModelIdentity(actual) &&
+    isLegacyBonsaiModelIdentity(manifest) &&
+    (source === "completion_response" || source === "request_bound_to_verified_manifest");
+  return current || historical ? model : undefined;
 }
 
 export function V2WorkspacePage({
@@ -725,6 +752,7 @@ export function V2WorkspacePage({
   const [strategy, setStrategy] = useState<StrategyId>("ema_trend");
   const [newsFilter, setNewsFilter] = useState<"all" | "bull" | "bear" | "macro">("all");
   const [error, setError] = useState("");
+  const [macroRefreshNotice, setMacroRefreshNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [symbolStrategyMap, setSymbolStrategyMap] = useState<Record<string, StrategyId>>({});
 
@@ -1717,7 +1745,13 @@ export function V2WorkspacePage({
       <header className="v2-panel-header">
         <h2>🏛️ {copy.macro}</h2>
         <span className="v2-badge v2-badge--gold">{zh ? "前值 · 预期 · 实际" : "Previous · Forecast · Actual"}</span>
-        <button disabled={busy} onClick={() => void action(() => apiClient.v2("/macro-calendar/refresh", "POST"))}>
+        <button disabled={busy} onClick={() => void action(async () => {
+          const result = await apiClient.v2("/macro-calendar/refresh", "POST") as { refresh_deferred?: boolean; retry_after_seconds?: number };
+          setMacroRefreshNotice(result.refresh_deferred
+            ? (zh ? `刷新冷却中，${Math.ceil((result.retry_after_seconds ?? 0) / 60)} 分钟后可重试；保留上次数据。`
+              : `Refresh cooldown: retry in ${Math.ceil((result.retry_after_seconds ?? 0) / 60)} minutes; cached data retained.`)
+            : (zh ? "本次同步已完成，各事件显示官方来源核验结果。" : "Sync finished; official source results are shown per event."));
+        })}>
           {zh ? "更新公开日历" : "Refresh public calendar"}
         </button>
       </header>
@@ -1725,8 +1759,17 @@ export function V2WorkspacePage({
       <p className="v2-time-hint">
         {zh ? "公开日历：" : "Calendar: "}{workspace?.macro_calendar?.provider ?? "Forex Factory"}
         {workspace?.macro_calendar?.last_success_at && ` · ${formatHktDateTime(workspace.macro_calendar.last_success_at)}`}
-        {" · "}{zh ? "周历仅提供日程、前值和预期，不提供实际公布值，不等于交易放行或官方核验。" : "Schedule/previous/forecast only; actual values and trading clearance are not provided."}
+        {" · "}{workspace?.macro_calendar?.actual_supported
+          ? zh ? "日程与预期来自周历；实际值同步官方发布，并核对发布日、统计月份与单位。" : "Schedule and forecasts come from the calendar; actuals are matched to official releases by date, reference period and unit."
+          : zh ? "日程与预期已接入，官方公布值来源待接入；刷新周历不会补齐实际值。" : "Schedule and forecasts are available; an official actuals source is still required."}
       </p>
+      {workspace?.macro_calendar?.actual_verified_count !== undefined && <p className="v2-time-hint" role="status">
+        {zh ? "官方已核验" : "Official actuals verified"} {workspace.macro_calendar.actual_verified_count} {zh ? "项" : "events"}
+        {workspace.macro_calendar.actual_providers?.length ? ` · ${workspace.macro_calendar.actual_providers.join(" / ")}` : ""}
+        {workspace.macro_calendar.actual_error_count ? ` · ${zh ? "需重试" : "Needs retry"} ${workspace.macro_calendar.actual_error_count}` : ""}
+        {workspace.macro_calendar.qualitative_event_count ? ` · ${zh ? "讲话/声明" : "Speeches/statements"} ${workspace.macro_calendar.qualitative_event_count} (${zh ? "官方原文" : "Official texts"} ${workspace.macro_calendar.qualitative_verified_count ?? 0}${workspace.macro_calendar.qualitative_recording_count ? `, ${zh ? "录播" : "Recordings"} ${workspace.macro_calendar.qualitative_recording_count}` : ""})` : ""}
+      </p>}
+      {macroRefreshNotice && <p className="v2-time-hint" role="status">{macroRefreshNotice}</p>}
       {workspace?.macro_calendar?.error && <p role="alert" className="v2-warning">{workspace.macro_calendar.error}</p>}
 
       <div
@@ -1741,6 +1784,19 @@ export function V2WorkspacePage({
               (Date.parse(event.event_time) - Date.now()) / 60000
             );
             const isReleased = Boolean(event.actual && event.actual !== "待公布");
+            const actualStatus = String(event.actual_status || "").toUpperCase();
+            const qualitative = actualStatus === "NON_NUMERIC_EVENT";
+            const actualStateLabel = qualitative
+              ? (zh ? "讲话/声明，无数值公布项" : "Speech/statement; no numeric actual")
+              : minutesLeft > 0
+              ? (zh ? "待公布" : "Pending release")
+              : ["SOURCE_FETCH_FAILED", "SOURCE_UNAVAILABLE", "FETCH_FAILED", "UNAVAILABLE"].includes(actualStatus)
+              ? (zh ? "官方源同步失败" : "Official source sync failed")
+              : ["PERIOD_MISMATCH", "RELEASE_MISMATCH", "MISMATCH"].includes(actualStatus)
+              ? (zh ? "发布期次未匹配" : "Release period unmatched")
+              : ["UNMAPPED", "NOT_PROVIDED", "SOURCE_REQUIRED", "UNSUPPORTED"].includes(actualStatus) || event.schedule_only
+              ? (zh ? "公布值来源待接入" : "Actuals source required")
+              : (zh ? "官方公布值同步中" : "Awaiting official actual");
             const isForbidLong = event.directive === "FORBID_LONG";
             const isForbidShort = event.directive === "FORBID_SHORT";
 
@@ -1756,7 +1812,7 @@ export function V2WorkspacePage({
                       ? zh ? "已公布" : "Released"
                       : minutesLeft > 0
                       ? `${copy.countdown}: ${minutesLeft} ${copy.minutes}`
-                      : zh ? "待核实公布值" : "Actual unverified"}
+                      : actualStateLabel}
                   </span>
                 </div>
 
@@ -1773,10 +1829,21 @@ export function V2WorkspacePage({
                   <div className={`v2-factor-col ${isReleased ? "v2-factor-col--actual" : ""}`}>
                     <span className="v2-factor-label">{copy.actual}</span>
                     <strong className="v2-factor-val v2-factor-val--highlight">
-                      {event.actual ?? (event.schedule_only ? (zh ? "此源不提供" : "Not supplied") : (zh ? "待公布" : "Pending"))}
+                      {event.actual ?? actualStateLabel}
                     </strong>
                   </div>
                 </div>
+
+                {qualitative && <div className="v2-time-hint">
+                  <p>{event.qualitative_status === "OFFICIAL_TEXT_AVAILABLE"
+                    ? (zh ? `官方原文已同步 · ${event.qualitative_provider ?? ""} · ${event.qualitative_title ?? ""}` : `Official text synced · ${event.qualitative_provider ?? ""} · ${event.qualitative_title ?? ""}`)
+                    : event.qualitative_status === "OFFICIAL_RECORDING_AVAILABLE"
+                    ? (zh ? "官方活动介绍及录播已接入，无逐字稿。" : "Official event page and recording available; no transcript.")
+                    : minutesLeft > 0 ? (zh ? "等待官方讲话/声明发布" : "Waiting for official publication")
+                    : (zh ? "官方原文尚未匹配到本次事件，将自动重试。" : "Official text has not been matched to this event; retry scheduled.")}</p>
+                  {event.qualitative_summary && <p>{event.qualitative_summary}</p>}
+                  {event.qualitative_error && <p>{event.qualitative_error}</p>}
+                </div>}
 
                 {/* Hard Circuit Breaker Alert Banner */}
                 {(isForbidLong || isForbidShort) && (
@@ -1791,19 +1858,27 @@ export function V2WorkspacePage({
 
                 {event.ai_summary && (
                   <div className="v2-macro-ai">
-                    <span className="v2-macro-ai__label">Bonsai-2-27B {zh ? "宏观速评" : "Macro Take"}:</span>
+                    <span className="v2-macro-ai__label">Gemini 3.8 Flash {zh ? "宏观速评" : "Macro Take"}:</span>
                     <p>{event.ai_summary}</p>
                   </div>
                 )}
 
                 <div className="v2-macro-footer">
-                  <span className="v2-time-hint">{event.event_time.slice(0, 16).replace("T", " ")}</span>
-                  {event.source_url && (
-                    <a className="v2-news-link" href={event.source_url} target="_blank" rel="noreferrer">
-                      {zh ? "查看原始来源" : "Source"} ↗
+                  <span className="v2-time-hint">{formatHktDateTime(event.event_time)}</span>
+                  {(event.actual_source_url || event.qualitative_source_url || event.source_url) && (
+                    <a className="v2-news-link" href={event.actual_source_url || event.qualitative_source_url || event.source_url} target="_blank" rel="noreferrer">
+                      {event.qualitative_source_url ? event.qualitative_status === "OFFICIAL_RECORDING_AVAILABLE" ? (zh ? "查看官方录播" : "Official recording") : (zh ? "查看官方原文" : "Official text") : event.actual_source_url ? (zh ? "查看官方公布" : "Official release") : (zh ? "查看原始来源" : "Source")} ↗
                     </a>
                   )}
                 </div>
+                {isReleased && event.actual_provider && <p className="v2-time-hint">
+                  {event.actual_provider}{event.actual_reference_period ? ` · ${event.actual_reference_period}` : ""}
+                  {String(event.actual_method || "").includes("DERIVED") ? ` · ${zh ? "由官方序列计算" : "Derived from official series"}` : ""}
+                  {event.actual_available_at ? ` · ${zh ? "获取时间" : "Observed"} ${formatHktDateTime(event.actual_available_at)}` : ""}
+                </p>}
+                {event.actual_error && <p className="v2-time-hint" role="status">
+                  {isReleased ? (zh ? "保留已核验公布值；本次同步：" : "Keeping the verified actual; latest sync: ") : ""}{event.actual_error}
+                </p>}
               </article>
             );
           })
@@ -2632,16 +2707,16 @@ export function V2WorkspacePage({
             const latestDecision = institutionalDashboard?.timeline?.[0];
             const runtimeModel = readRuntimeModel(workspace?.risk_cockpit?.model);
             const decisionModel = decisionModelName(latestDecision?.details);
-            const runtimeModelLabel = runtimeModel.modelName || (zh ? "Bonsai-2-27B-PTQ1_0" : "Bonsai-2-27B-PTQ1_0");
+            const runtimeModelLabel = runtimeModel.modelName || (zh ? "gemini-3.8-flash-high" : "gemini-3.8-flash-high");
             const decisionModelLabel = decisionModel || (zh ? "决策模型未报告" : "Decision model not reported");
             const decisionSummary = latestDecision
               ? latestDecision.reason || (zh ? "API 未提供本条决策理由。" : "The API did not include a reason for this decision.")
               : (zh ? "暂无真实决策记录。启动 AI 做单后，首轮调度结果会显示在这里。" : "No recorded decision yet. The first scheduled AI cycle will appear here after trading starts.");
-            return <section className="terminal-panel v2-model-reasoning-panel" aria-label={zh ? "Bonsai 做单分析与决策记录" : "Bonsai trading analysis and decision records"}>
+            return <section className="terminal-panel v2-model-reasoning-panel" aria-label={zh ? "Gemini 做单分析与决策记录" : "Gemini trading analysis and decision records"}>
             <header className="v2-panel-header">
               <div>
                 <p className="eyebrow">MODEL ROUTE / VERIFIED RUNTIME</p>
-                <h2>🧠 {zh ? "Bonsai-2-27B 做单分析" : "Bonsai-2-27B Trading Analysis"}</h2>
+                <h2>🧠 {zh ? "Gemini 3.8 Flash 做单分析" : "Gemini 3.8 Flash Trading Analysis"}</h2>
                 <small className="v2-subtitle">
                   {zh ? `目标模型：${runtimeModelLabel} · 模型状态：${runtimeModel.status}` : `Target model: ${runtimeModelLabel} · Model status: ${runtimeModel.status}`}
                 </small>
@@ -2722,9 +2797,13 @@ export function V2WorkspacePage({
               <strong className="v2-kpi-value">
                 ${analysisData?.account?.current_equity_usdt != null ? analysisData.account.current_equity_usdt.toFixed(2) : "—"}
               </strong>
-              <small className={`v2-kpi-sub ${(analysisData?.account?.net_pnl_usdt ?? 0) >= 0 ? "v2-val--bull" : "v2-val--bear"}`}>
+              <small className={`v2-kpi-sub ${(analysisData?.account?.strategy_net_pnl_usdt ?? analysisData?.account?.net_pnl_usdt ?? 0) >= 0 ? "v2-val--bull" : "v2-val--bear"}`}>
                 {analysisData?.account?.net_pnl_usdt != null ? (
-                  <>{analysisData.account.net_pnl_usdt >= 0 ? "+" : ""}{analysisData.account.net_pnl_usdt.toFixed(2)} USDT ({analysisData.account.total_roi_pct != null ? `${analysisData.account.total_roi_pct.toFixed(2)}%` : "—"})</>
+                  <>
+                    <span>系统已核验收益 {analysisData.account.net_pnl_usdt >= 0 ? "+" : ""}{analysisData.account.net_pnl_usdt.toFixed(2)} USDT ({analysisData.account.total_roi_pct != null ? `${analysisData.account.total_roi_pct.toFixed(2)}%` : "—"})</span>
+                    <br />
+                    <span>账户权益变动 {analysisData.account.account_equity_change_usdt != null ? `${analysisData.account.account_equity_change_usdt >= 0 ? "+" : ""}${analysisData.account.account_equity_change_usdt.toFixed(2)} USDT` : "—"}</span>
+                  </>
                 ) : "—"}
               </small>
             </article>

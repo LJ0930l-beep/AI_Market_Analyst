@@ -191,12 +191,8 @@ function decisionInstrument(cycle: AIDecisionCycle | null): string {
   return String(output.instrument_id || payload.instrument_id || 'MARKET').toUpperCase();
 }
 
-function isBonsaiIdentity(value: unknown): boolean {
-  if (typeof value !== 'string' || !value.trim()) return false;
-  let basename = value.trim().replace(/\\/g, '/').split('/').pop() || '';
-  if (basename.toLowerCase().endsWith('.gguf')) basename = basename.slice(0, -5);
-  if (basename.toLowerCase().startsWith('ternary-')) basename = basename.slice('ternary-'.length);
-  return basename.toLowerCase() === 'bonsai-2-27b-ptq1_0';
+function isCurrentModelIdentity(value: unknown): boolean {
+  return typeof value === 'string' && ['gemini-3.8-flash-high', 'gemini-3.8-flash-control'].includes(value.trim());
 }
 
 const MODEL_HEALTH_MAX_AGE_MS = 60_000;
@@ -355,7 +351,10 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
         setSessionState(isPaused ? 'PAUSED' : (status.ai_session ? (status.ai_session.enabled && status.ai_session.worker_alive ? 'RUNNING' : status.ai_session.state || 'STOPPED') : status.session?.state || 'NOT_REPORTED'));
         setRuntimeDetail(status.ai_session);
         setGeneration(Number(status.session?.generation) || 0);
-        setProtectionCount(status.protection_summary?.protected_positions ?? status.protection_summary?.active_positions ?? null);
+        const protection = status.protection_summary;
+        setProtectionCount(protection && 'protected_positions' in protection
+          ? protection.protected_positions ?? null
+          : protection?.active_positions ?? null);
       }).catch(async error => {
         if (!valid()) return;
         if (error instanceof ApiError && error.status === 409) {
@@ -489,14 +488,14 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
   const modelIdentityEvidenceValid = Boolean(
     modelHealth?.available === true &&
     modelHealth.model_available === true &&
-    isBonsaiIdentity(modelHealth.model_id || modelHealth.required_model) &&
-    isBonsaiIdentity(modelHealth.actual_model_id) &&
-    modelHealth.model_identity_source === 'verified_manifest',
+    isCurrentModelIdentity(modelHealth.model_id || modelHealth.required_model) &&
+    isCurrentModelIdentity(modelHealth.actual_model_id) &&
+    modelHealth.model_identity_source === 'completion_probe',
   );
-  const verifiedBonsai = modelIdentityEvidenceValid && modelHealthFresh;
+  const verifiedConfiguredModel = modelIdentityEvidenceValid && modelHealthFresh;
   const modelHealthStale = modelIdentityEvidenceValid && !modelHealthFresh;
-  const modelIdentityLabel = verifiedBonsai
-    ? 'Bonsai 2.27B · 身份已核验'
+  const modelIdentityLabel = verifiedConfiguredModel
+    ? 'Gemini 3.8 Flash High · 身份已核验'
     : modelHealthStale
       ? 'Model identity check expired'
       : modelHealth?.available === false || modelHealth?.model_available === false
@@ -515,7 +514,7 @@ export const AITraderPanel: React.FC<AITraderPanelProps> = ({
             <span data-tone={displayMode === 'LIVE' ? 'short' : 'active'}>{displayMode === 'LIVE' ? 'LIVE · 实盘' : displayMode}</span>
             <span>账户 {selectedAccount ? maskAccount(selectedAccount) : '未选择'}</span>
             <span data-tone={sessionState === 'RUNNING' ? 'active' : 'muted'}>{sessionState} · GEN {generation}</span>
-            <span data-tone={verifiedBonsai ? 'active' : 'warning'} aria-label="Bonsai model identity status">{modelIdentityLabel}</span>
+            <span data-tone={verifiedConfiguredModel ? 'active' : 'warning'} aria-label="Gemini model identity status">{modelIdentityLabel}</span>
           </div>
           {accounts.length > 1 && (
             <select

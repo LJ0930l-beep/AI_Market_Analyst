@@ -230,15 +230,7 @@ $sidecarHash = (Get-FileHash -LiteralPath $SidecarSource -Algorithm SHA256).Hash
 Copy-Item -LiteralPath $builtExe -Destination (Join-Path $InstallDir $AppExeName) -Force
 Copy-Item -LiteralPath $SidecarSource -Destination (Join-Path $InstallDir $BackendExeName) -Force
 
-# The installed sidecar can restart Bonsai after an unexpected model-process
-# exit.  Pin it to this checkout's verified runner and the build interpreter;
-# never search PATH or launch a different local model on a health failure.
-$runnerPath = Join-Path $ProjectRoot "infra\bonsai\server_runner.py"
-if (-not (Test-Path -LiteralPath $runnerPath -PathType Leaf)) { throw "Bonsai runner missing: $runnerPath" }
-if (-not $buildPython) { $buildPython = Resolve-BuildPython }
-@{ python = $buildPython; runner = $runnerPath } |
-    ConvertTo-Json -Compress |
-    Set-Content -LiteralPath (Join-Path $InstallDir "bonsai-recovery.json") -Encoding UTF8
+# Gemini uses the separately installed Antigravity relay; do not configure a local GGUF fallback.
 
 $installedAppHash = (Get-FileHash -LiteralPath (Join-Path $InstallDir $AppExeName) -Algorithm SHA256).Hash
 $installedSidecarHash = (Get-FileHash -LiteralPath (Join-Path $InstallDir $BackendExeName) -Algorithm SHA256).Hash

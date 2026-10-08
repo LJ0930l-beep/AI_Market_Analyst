@@ -115,6 +115,21 @@ class MarketUniverse:
             slots = limit - len(chosen)
             offset = (slot * slots) % len(rest)
             chosen.extend((rest + rest)[offset:offset + min(slots, len(rest))])
+        # The coordinator may need to replace a top-ranked contract whose
+        # latest closed candle or execution economics are unusable. Keep a
+        # small, already ranked public-market pool so it can fill those slots
+        # without deep-scanning the full exchange universe.
+        rotated_rest = rest
+        if rest:
+            offset = slot % len(rest)
+            rotated_rest = rest[offset:] + rest[:offset]
+        pool_limit = max(limit, min(12, max(6, limit * 4)))
+        candidate_pool = list(dict.fromkeys([
+            *held,
+            *chosen,
+            *(item['symbol'] for item in factor_leaders),
+            *rotated_rest,
+        ]))[:pool_limit]
         return {
             'status': 'READY' if chosen else 'EMPTY',
             'environment': 'TESTNET' if testnet else 'LIVE',
@@ -123,6 +138,8 @@ class MarketUniverse:
             'selected_symbols': chosen, 'mode': config['universe_mode'],
             'selection': 'positions_then_liquidity_up_momentum_down_momentum_range_and_rotation',
             'candidate_metrics': [by_symbol[symbol] for symbol in chosen if symbol in by_symbol],
+            'candidate_pool_symbols': candidate_pool,
+            'candidate_pool_metrics': [by_symbol[symbol] for symbol in candidate_pool if symbol in by_symbol],
             'candidate_sources': list(runtime.get('candidate_sources') or ['gate_active_usdt_perpetuals']),
             'excluded_symbols': sorted(excluded),
             'unsupported_sources': list(runtime.get('unsupported_sources') or []),

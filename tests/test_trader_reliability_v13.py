@@ -149,6 +149,39 @@ def _bar(
     )
 
 
+def _synthetic_closed_history(now: datetime) -> dict[str, list[Bar]]:
+    """Build synthetic closed bars for the coordinator's default 15m/1h frames."""
+    result: dict[str, list[Bar]] = {}
+    for timeframe, interval_minutes in {"15m": 15, "1h": 60}.items():
+        interval_seconds = interval_minutes * 60
+        latest_end = datetime.fromtimestamp(
+            int(now.timestamp()) // interval_seconds * interval_seconds,
+            tz=timezone.utc,
+        )
+        bars = []
+        for index in range(32):
+            end = latest_end - timedelta(minutes=interval_minutes * (31 - index))
+            start = end - timedelta(minutes=interval_minutes)
+            close = 100.0 + ((index % 7) - 3) * 0.05
+            open_price = close + (0.02 if index % 2 else -0.02)
+            bars.append(
+                Bar(
+                    start,
+                    open_price,
+                    max(open_price, close) + 0.05,
+                    min(open_price, close) - 0.05,
+                    close,
+                    10.0 + index % 4,
+                    is_closed=True,
+                    available_at=end,
+                    fetched_at=now,
+                    source="local_paper_fixture",
+                )
+            )
+        result[timeframe] = bars
+    return result
+
+
 def _fresh_market(point: datetime | None = None, price: float = 100.0) -> dict:
     point = point or datetime.now(timezone.utc)
     return {
@@ -532,18 +565,25 @@ def test_v13_c_runtime_lease_loss_cancels_ai_and_pauses_session(v13_store: SQLit
         },
         now=now,
     )
-    # The AI session must pass the real closed-bar calibration gate before the
-    # lease-fence test can exercise an in-flight model call.  One deterministic
-    # closed fixture bar is sufficient here; production keeps the 500-bar /
-    # 30-day requirement.
-    v13_store.upsert_market_bars(
-        "BTCUSDT",
-        "15m",
-        [Bar(now - timedelta(minutes=15), 100.0, 101.0, 99.0, 100.0, 10.0)],
-        provider="local-paper-fixture",
-        data_as_of=now - timedelta(seconds=1),
-        now=now,
-    )
+    # The PAPER coordinator requires 32 contiguous, fresh closed bars on its
+    # 15m signal and 1h context frames before it reaches the in-flight model
+    # call. These explicitly synthetic rows satisfy only this local fixture;
+    # they are not Gate market evidence and do not lower calibration.
+    for timeframe, bars in _synthetic_closed_history(now).items():
+        v13_store.upsert_market_bars(
+            "BTCUSDT",
+            timeframe,
+            bars,
+            provider="local_paper_fixture",
+            data_as_of=now - timedelta(seconds=1),
+            now=now,
+            venue="gate",
+            market_type="perpetual",
+            native_symbol="BTC_USDT",
+            settle_currency="USDT",
+            price_type="last",
+            volume_unit="contracts",
+        )
     AuthorizationManager(v13_store).grant_authorization(
         account_id="lease_cycle",
         venue="simulated",

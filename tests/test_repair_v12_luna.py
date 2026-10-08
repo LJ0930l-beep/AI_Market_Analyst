@@ -28,7 +28,7 @@ from core.monitoring_runtime import MonitoringRuntime
 from core.providers import Bar
 from core.realtime import RealtimeConnectionState
 from core.storage import SQLiteStore
-from core.trading.ai_session_coordinator import AISessionCoordinator
+from core.trading.ai_session_coordinator import AISessionCoordinator, INTENT_TTL_SECONDS
 from core.trading.authorization import AuthorizationManager, ConfirmationSource
 from core.trading.execution_gateway import (
     DecisionPath,
@@ -78,6 +78,39 @@ def fresh_market(symbol: str, price: float, *, now: datetime | None = None, cont
             "taker": 0.0005,
         },
     }
+
+
+def _synthetic_closed_history(now: datetime) -> dict[str, list[Bar]]:
+    """Build explicitly synthetic closed history for the default 15m/1h scan contract."""
+    result: dict[str, list[Bar]] = {}
+    for timeframe, interval_minutes in {"15m": 15, "1h": 60}.items():
+        interval_seconds = interval_minutes * 60
+        latest_end = datetime.fromtimestamp(
+            int(now.timestamp()) // interval_seconds * interval_seconds,
+            tz=timezone.utc,
+        )
+        bars = []
+        for index in range(32):
+            end = latest_end - timedelta(minutes=interval_minutes * (31 - index))
+            start = end - timedelta(minutes=interval_minutes)
+            close = 100.0 + ((index % 7) - 3) * 0.05
+            open_price = close + (0.02 if index % 2 else -0.02)
+            bars.append(
+                Bar(
+                    start,
+                    open_price,
+                    max(open_price, close) + 0.05,
+                    min(open_price, close) - 0.05,
+                    close,
+                    10.0 + index % 4,
+                    is_closed=True,
+                    available_at=end,
+                    fetched_at=now,
+                    source="local_paper_fixture",
+                )
+            )
+        result[timeframe] = bars
+    return result
 
 
 def make_intent(
@@ -326,8 +359,16 @@ def test_unknown_reconciliation_records_concrete_fill_once(repair_store):
     assert adapter.fetch_calls
 
 
-def test_production_ai_coordinator_uses_explicit_smart_model_and_persists_cycles(repair_store):
-    now = datetime.now(timezone.utc)
+@pytest.mark.parametrize("calibration_delay_seconds", [1, 241])
+def test_production_ai_coordinator_uses_explicit_smart_model_and_persists_cycles(
+    repair_store, calibration_delay_seconds,
+):
+    # 05:55:59 makes the 241-second case land on a real 15m/1h close at 06:00,
+    # so the post-calibration history remains fresh while the original intent
+    # is already expired.
+    now = datetime(2026, 10, 3, 5, 55, 59, tzinfo=timezone.utc)
+    late_available_at = now + timedelta(seconds=calibration_delay_seconds)
+    clock_state = {"now": now}
 
     class FakeLocalSmartModel:
         provider_name = "fake_local_model_for_trace"
@@ -342,6 +383,7 @@ def test_production_ai_coordinator_uses_explicit_smart_model_and_persists_cycles
 
         def __init__(self):
             self.calls = []
+            self.wrote_late_bars = False
 
         def health(self):
             return {"available": True, "model_available": True, "models": [r"D:\RJ\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"], "model_id": "Bonsai-2-27B-PTQ1_0", "actual_model_id": r"D:\RJ\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf", "model_identity_source": "verified_manifest", "context_length": self.context_length}
@@ -349,6 +391,40 @@ def test_production_ai_coordinator_uses_explicit_smart_model_and_persists_cycles
         def generate_json(self, _messages, **kwargs):
             self.calls.append(kwargs)
             if kwargs.get("prompt_version") in {"ai_calibration_operation_profile_v1", "ai_calibration_operation_profile_v2"}:
+                if not self.wrote_late_bars:
+                    self.wrote_late_bars = True
+                    # Model calibration blocks while an independent input
+                    # refresh publishes the newest closed bars. Preserve their
+                    # real availability point; they are not visible at `now`.
+                    for timeframe, bars in _synthetic_closed_history(late_available_at).items():
+                        latest = bars[-1]
+                        bars[-1] = Bar(
+                            latest.timestamp,
+                            latest.open,
+                            latest.high,
+                            latest.low,
+                            latest.close,
+                            latest.volume,
+                            is_closed=True,
+                            available_at=late_available_at,
+                            fetched_at=late_available_at,
+                            source="local_paper_fixture",
+                        )
+                        repair_store.upsert_market_bars(
+                            "BTCUSDT",
+                            timeframe,
+                            [bars[-1]],
+                            provider="local_paper_fixture",
+                            data_as_of=now - timedelta(seconds=1),
+                            now=late_available_at,
+                            venue="gate",
+                            market_type="perpetual",
+                            native_symbol="BTC_USDT",
+                            settle_currency="USDT",
+                            price_type="last",
+                            volume_unit="contracts",
+                        )
+                    clock_state["now"] = late_available_at
                 answer = {
                     "risk_regime": "fixture",
                     "entry_style": "CONSERVATIVE",
@@ -375,14 +451,33 @@ def test_production_ai_coordinator_uses_explicit_smart_model_and_persists_cycles
         duration_seconds=3600,
         confirmed_by=ConfirmationSource.LOCAL_USER_WIZARD,
     )
-    repair_store.upsert_market_bars(
-        "BTCUSDT",
-        "15m",
-        [Bar(now - timedelta(minutes=15), 100, 101, 99, 100, 10)],
-        provider="local_repair_fixture",
-        data_as_of=now - timedelta(seconds=1),
+    repair_store.save_realtime_state(
+        {
+            **fresh_market("BTCUSDT", 100.0, now=now),
+            "provider": "local_paper_fixture",
+            "freshness_status": "fresh",
+            "stale_after_seconds": 120,
+        },
         now=now,
     )
+    # The PAPER coordinator requires 32 contiguous, fresh closed bars on its
+    # 15m signal and 1h context frames. These are explicitly synthetic local
+    # fixtures, not Gate market evidence.
+    for timeframe, bars in _synthetic_closed_history(now).items():
+        repair_store.upsert_market_bars(
+            "BTCUSDT",
+            timeframe,
+            bars,
+            provider="local_paper_fixture",
+            data_as_of=now - timedelta(seconds=1),
+            now=now,
+            venue="gate",
+            market_type="perpetual",
+            native_symbol="BTC_USDT",
+            settle_currency="USDT",
+            price_type="last",
+            volume_unit="contracts",
+        )
     session_manager = SessionManager(repair_store)
     session_manager.start()
     provider = FakeLocalSmartModel()
@@ -394,22 +489,65 @@ def test_production_ai_coordinator_uses_explicit_smart_model_and_persists_cycles
         guardian=PositionGuardian(repair_store, ledger),
         execution_gateway=ExecutionGateway(repair_store, ledger=ledger),
         model_provider=provider,
-        clock=lambda: datetime.now(timezone.utc),
+        clock=lambda: clock_state["now"],
         cycle_interval_seconds=60,
         calibration_min_bars=1,
     )
+    built_contexts = []
+    original_build_context = coordinator._build_context
+
+    def capture_context(**kwargs):
+        context = original_build_context(**kwargs)
+        built_contexts.append(context)
+        return context
+
+    coordinator._build_context = capture_context
+    scanner_as_of = []
+    original_scan = coordinator._scanner.scan
+
+    def capture_scan(**kwargs):
+        scanner_as_of.append(kwargs["now"])
+        return original_scan(**kwargs)
+
+    coordinator._scanner.scan = capture_scan
     try:
         coordinator.start(account_id="ai_account")
         # Startup is deliberately no-catch-up: the first explicit cycle
         # calibrates, and the following cycle consumes that ready profile.
         first = coordinator.run_cycle_once()
         assert first.reason == "CALIBRATION_NOT_READY" or coordinator.status()["calibration_state"] == "READY"
-        coordinator.run_cycle_once()
-        assert len(provider.calls) >= 2
+        assert late_available_at > now
+        assert scanner_as_of and scanner_as_of[0] == late_available_at
+        first_context = built_contexts[0]
+        assert first_context.started_at == late_available_at.isoformat()
+        assert first_context.expires_at == (now + timedelta(seconds=INTENT_TTL_SECONDS)).isoformat()
+        assert first_context.expires_at < (
+            late_available_at + timedelta(seconds=INTENT_TTL_SECONDS)
+        ).isoformat()
+        assert first_context.market_snapshots["BTCUSDT"]["data_as_of"] == now.isoformat()
+        expected_schedule = coordinator._aligned_scan_at(
+            now, coordinator._strategy_scan_minutes("ai_account"),
+        )
+        assert first_context.scheduled_at == expected_schedule.isoformat()
+        assert first_context.technical_context["BTCUSDT"]["status"] == "READY"
+        assert all(
+            first_context.technical_context["BTCUSDT"]["timeframes"][timeframe]["status"] == "READY"
+            for timeframe in ("15m", "1h")
+        )
+        if calibration_delay_seconds >= INTENT_TTL_SECONDS:
+            assert "Cycle timeout" in first.reason
+            assert first.status == "TIMEOUT_DISCARDED"
+            assert not any(
+                call.get("prompt_version") == "ai_news_technical_strategy_v9_capital_aware"
+                for call in provider.calls
+            )
+        else:
+            coordinator.run_cycle_once()
+            assert len(provider.calls) >= 2
         assert all(call["model_name"] == "Bonsai-2-27B-PTQ1_0" for call in provider.calls)
         with repair_store._connect() as db:
             rows = db.execute("SELECT account_id, session_id, generation, authorization_id, market_snapshot_hash FROM ai_led_cycles WHERE account_id='ai_account'").fetchall()
-        assert len(rows) >= 2
+        assert len(rows) >= (1 if calibration_delay_seconds >= INTENT_TTL_SECONDS else 2)
         assert all(row["authorization_id"] is None for row in rows)
         assert all(row["market_snapshot_hash"] for row in rows)
         assert coordinator.status()["model"]["required_model"] == "Bonsai-2-27B-PTQ1_0"
@@ -573,6 +711,30 @@ def test_unscoped_ai_status_reports_runtime_owner_when_ai_worker_is_stopped(repa
     assert response.json()["runtime_account_id"] == "bound_testnet"
     assert response.json()["runtime_state"] == "degraded"
     assert response.json()["ai_session"]["status"] == "RUNTIME_UNAVAILABLE"
+
+
+def test_ai_status_read_does_not_mutate_runtime_market_freshness(repair_store):
+    ledger = AccountLedger(repair_store)
+    ledger.create_account("status_reader", mode="PAPER", initial_deposit=Decimal("1000"))
+    now = datetime(2026, 10, 1, 15, 30, tzinfo=timezone.utc)
+    calls = []
+    runtime = SimpleNamespace(
+        account_id="status_reader",
+        _last_market_event_at=now - timedelta(seconds=20),
+        clock=lambda: now,
+        check_market_freshness=lambda: calls.append("mutated"),
+        status=lambda: {"state": "running", "account_id": "status_reader"},
+    )
+    app = FastAPI()
+    app.include_router(router_for(lambda: repair_store, lambda: runtime, lambda: None))
+    with TestClient(app) as client:
+        response = client.get("/v2/ai-session/status", params={"account_id": "status_reader"})
+    assert response.status_code == 200
+    assert calls == []
+    assert response.json()["runtime_state"] == "running"
+    assert response.json()["market_freshness"] == {
+        "status": "DEGRADED", "fresh": False, "gap_seconds": 20.0,
+    }
 
 
 def test_testnet_capability_is_not_run_without_adapter_and_verified_with_probe():

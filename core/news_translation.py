@@ -1,4 +1,4 @@
-"""Bonsai-backed news translation cache with provenance and numeric preservation."""
+"""Gemini-backed news translation cache with provenance and numeric preservation."""
 
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ from .ai.ollama import OllamaProvider
 from .model_routing import (
     DEFAULT_FAST_MODEL,
     ModelRoutingConfig,
-    is_bonsai_model_identity,
-    is_verified_bonsai_receipt,
+    is_configured_model_identity,
+    is_verified_model_receipt,
 )
 from .providers.news import NewsEvent
 from .storage import SQLiteStore
@@ -300,7 +300,7 @@ def _event_fields(event: NewsEvent | Mapping[str, object]) -> tuple[str, str, st
 
 
 class NewsTranslationService:
-    """Cache one Bonsai translation per source hash and locale."""
+    """Cache one Gemini translation per source hash and locale."""
 
     def __init__(self, *, store: SQLiteStore, llm_provider: object | None = None, fast_model: str | None = None) -> None:
         self.store = store
@@ -316,13 +316,13 @@ class NewsTranslationService:
         model_metadata = evidence.get("model_metadata") if isinstance(evidence, dict) else None
         model_id = str(row.get("model_id") or "")
         status = str(row.get("status") or "")
-        # Older cache entries could be labelled Bonsai because an injected
+        # Older cache entries could be labelled Gemini because an injected
         # translator returned a plausible model_id. Never reuse those labels
         # as successful production translations without an inference receipt.
         cached_input_hash = model_metadata.get("input_hash") if isinstance(model_metadata, Mapping) else None
         if (
             model_id != DEFAULT_FAST_MODEL
-            or not is_verified_bonsai_receipt(model_metadata)
+            or not is_verified_model_receipt(model_metadata)
             or model_metadata.get("prompt_version") != NEWS_TRANSLATION_PROMPT_VERSION
             or not isinstance(cached_input_hash, str)
             or re.fullmatch(r"[0-9a-f]{64}", cached_input_hash) is None
@@ -357,24 +357,24 @@ class NewsTranslationService:
         temperature: float | None = None,
     ) -> tuple[dict[str, object], str, dict[str, object]]:
         if self.llm_provider is None:
-            raise RuntimeError("Bonsai translation model is unavailable")
+            raise RuntimeError("Gemini translation model is unavailable")
         provider = self.llm_provider
         if type(provider) is not OllamaProvider or self.fast_model != DEFAULT_FAST_MODEL:
-            raise RuntimeError("Bonsai translation requires the pinned OllamaProvider route")
+            raise RuntimeError("Gemini translation requires the pinned OllamaProvider route")
         health = provider.health(model_name=DEFAULT_FAST_MODEL)
         models = health.get("models") if isinstance(health, Mapping) else None
-        manifest_matches = isinstance(models, list) and any(is_bonsai_model_identity(item) for item in models)
+        manifest_matches = isinstance(models, list) and any(is_configured_model_identity(item) for item in models)
         health_confirms_bonsai = (
             isinstance(health, Mapping)
             and health.get("available") is True
             and health.get("model_available") is True
             and health.get("model_id") == DEFAULT_FAST_MODEL
-            and health.get("model_identity_source") == "verified_manifest"
-            and is_bonsai_model_identity(health.get("actual_model_id"))
+            and health.get("model_identity_source") in {"verified_manifest", "completion_probe"}
+            and is_configured_model_identity(health.get("actual_model_id"))
             and manifest_matches
         )
         if not health_confirms_bonsai:
-            raise RuntimeError("Bonsai translation model is unavailable")
+            raise RuntimeError("Gemini translation model is unavailable")
         call_options: dict[str, object] = {
             "model_name": DEFAULT_FAST_MODEL,
             "prompt_version": prompt_version,
@@ -384,24 +384,24 @@ class NewsTranslationService:
             call_options["temperature"] = temperature
         result = provider.generate_json(prompt, **call_options)
         if not isinstance(result, tuple) or len(result) != 3:
-            raise RuntimeError("Bonsai translation inference receipt is missing")
+            raise RuntimeError("Gemini translation inference receipt is missing")
         payload, raw_value, raw_metadata = result
         raw = str(raw_value) if raw_value is not None else ""
         if not isinstance(raw_metadata, Mapping):
-            raise RuntimeError("Bonsai translation inference receipt is invalid")
+            raise RuntimeError("Gemini translation inference receipt is invalid")
         metadata = dict(raw_metadata)
         if isinstance(payload, str):
             raw = payload
             payload = json.loads(payload)
         if not isinstance(payload, dict):
-            raise RuntimeError("Bonsai translation output is not a JSON object")
+            raise RuntimeError("Gemini translation output is not a JSON object")
         if (
-            not is_verified_bonsai_receipt(metadata)
+            not is_verified_model_receipt(metadata)
             or metadata.get("prompt_version") != prompt_version
             or metadata.get("input_hash") != input_hash
             or metadata.get("parse_status") != "valid"
         ):
-            raise RuntimeError("Bonsai translation inference receipt is invalid")
+            raise RuntimeError("Gemini translation inference receipt is invalid")
         return payload, raw, metadata
 
     def translate(self, event: NewsEvent | Mapping[str, object], *, locale: str = "zh-CN") -> LocalizedNewsArtifact:
@@ -454,7 +454,7 @@ class NewsTranslationService:
             translated_title = sanitize_untrusted_text(payload.get("title_zh") or payload.get("title"), max_chars=500)
             translated_summary = sanitize_untrusted_text(payload.get("summary_zh") or payload.get("summary"), max_chars=2000) or None
             if not translated_title:
-                raise RuntimeError("Bonsai translation omitted title_zh")
+                raise RuntimeError("Gemini translation omitted title_zh")
             guard = numeric_guard(original, "\n".join(part for part in (translated_title, translated_summary or "") if part))
             evidence["numeric_guard"] = guard.to_dict()
             evidence["translation"] = {"title_zh": translated_title, "summary_zh": translated_summary}

@@ -34,6 +34,10 @@ export interface InstitutionalDashboard {
     realized_pnl_usdt?: number | null;
     unrealized_pnl_usdt?: number | null;
     net_pnl_usdt?: number | null;
+    strategy_net_pnl_usdt?: number | null;
+    strategy_pnl_basis?: string | null;
+    account_equity_change_usdt?: number | null;
+    account_equity_change_pct?: number | null;
     cumulative_fees_usdt?: number | null;
     cumulative_fees_basis?: string | null;
     total_roi_pct?: number | null;
@@ -299,7 +303,8 @@ export function InstitutionalAnalysisDashboard({ dashboard, loading = false, err
             value: finite(account.current_equity_usdt) ? `${account.current_equity_usdt.toFixed(2)} USDT` : "—",
             sub: account.equity_basis || "observed ledger",
           },
-          { label: zh ? "净盈亏" : "Net PnL", value: money(account.net_pnl_usdt), sub: zh ? "远端权益变动" : "remote equity delta" },
+          { label: zh ? "系统已核验收益" : "Verified system PnL", value: money(account.strategy_net_pnl_usdt ?? account.net_pnl_usdt), sub: account.strategy_pnl_basis || (zh ? "已核验平仓 episode" : "verified closed episodes") },
+          { label: zh ? "账户权益变动" : "Account equity change", value: money(account.account_equity_change_usdt), sub: finite(account.account_equity_change_pct) ? `${account.account_equity_change_pct >= 0 ? "+" : ""}${account.account_equity_change_pct.toFixed(2)}%` : (zh ? "账户级变化，含外部活动" : "account-level change, includes external activity") },
           { label: zh ? "已实现盈亏" : "Realized PnL", value: money(account.realized_pnl_usdt), sub: zh ? "Gate 账户累计" : "Gate account cumulative" },
           {
             label: zh ? "可用保证金" : "Available margin",

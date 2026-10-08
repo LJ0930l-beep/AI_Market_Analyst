@@ -34,7 +34,7 @@ describe("QwenConsultPage", () => {
 
     expect(await screen.findByText("Fixture local model answer.")).toBeInTheDocument();
     expect(screen.getByText("Response complete")).toBeInTheDocument();
-    expect(screen.getByText("Verified model").parentElement).toHaveTextContent("Bonsai-2-27B-PTQ1_0");
+    expect(screen.getByText("Verified model").parentElement).toHaveTextContent("gemini-3.8-flash-high");
     const context = screen.getByRole("region", { name: "Read-only context evidence" });
     expect(within(context).getByText("2030-01-02T12:00:00Z")).toBeInTheDocument();
     expect(within(context).getByText("durable_latest_live_prediction")).toBeInTheDocument();
@@ -70,7 +70,7 @@ describe("QwenConsultPage", () => {
         contract_version: "qwen_consult_v2",
         request_id: "blocking-request",
         provider: "fake_local_qwen",
-        model_id: "Bonsai-2-27B-PTQ1_0",
+        model_id: "gemini-3.8-flash-high",
         context: { status: "unavailable", sources: [], missing_reasons: ["symbol_not_selected"], read_only: true },
       });
       return new Promise<void>((_resolve, reject) => {
@@ -111,7 +111,7 @@ describe("QwenConsultPage", () => {
       modelHealth: vi.fn().mockResolvedValue({
         provider: "ollama",
         available: false,
-        consult: { contract_version: "qwen_consult_v2", configured: true, available: false, model_id: "Bonsai-2-27B-PTQ1_0" },
+        consult: { contract_version: "qwen_consult_v2", configured: true, available: false, model_id: "gemini-3.8-flash-high" },
       }),
     });
     const first = renderConsult(unavailable);

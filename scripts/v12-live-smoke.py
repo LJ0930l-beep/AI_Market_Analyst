@@ -21,7 +21,7 @@ from time import perf_counter
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from core.model_routing import is_bonsai_model_identity
+from core.model_routing import is_configured_model_identity
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -37,7 +37,7 @@ def _utc_now() -> str:
 def _is_valid_smart_analysis(row: object) -> bool:
     return (
         isinstance(row, dict)
-        and is_bonsai_model_identity(row.get("model_id"))
+        and is_configured_model_identity(row.get("model_id"))
         and row.get("validator_status") == "VALID"
     )
 
@@ -47,9 +47,9 @@ def _is_verified_bonsai_health(health: object) -> bool:
         isinstance(health, dict)
         and health.get("available") is True
         and health.get("model_available") is True
-        and is_bonsai_model_identity(health.get("model_id"))
-        and is_bonsai_model_identity(health.get("actual_model_id"))
-        and health.get("model_identity_source") == "verified_manifest"
+        and is_configured_model_identity(health.get("model_id"))
+        and is_configured_model_identity(health.get("actual_model_id"))
+        and health.get("model_identity_source") == "completion_probe"
     )
 
 
@@ -122,7 +122,7 @@ def _endpoint_summary(result: dict[str, object], *, fields: tuple[str, ...] = ()
 
 
 def _model_smoke() -> dict[str, object]:
-    requested_model = "Bonsai-2-27B-PTQ1_0"
+    requested_model = "gemini-3.8-flash-high"
     result: dict[str, object] = {"requested_model": requested_model, "checked_at": _utc_now()}
     try:
         from core.ai.ollama import OllamaProvider
@@ -151,11 +151,11 @@ def _model_smoke() -> dict[str, object]:
             messages,
             model_name=requested_model,
             prompt_version="v12_live_smoke_v1",
-            input_hash="v12-live-smoke-Bonsai-2-27B-PTQ1_0",
+            input_hash="v12-live-smoke-gemini-3.8-flash-high",
         )
         receipt_verified = (
             metadata.get("model_id") == requested_model
-            and is_bonsai_model_identity(metadata.get("actual_model_id") or metadata.get("model_version"))
+            and is_configured_model_identity(metadata.get("actual_model_id") or metadata.get("model_version"))
             and metadata.get("model_identity_source") in {"completion_response", "request_bound_to_verified_manifest"}
         )
         result.update(
@@ -167,7 +167,7 @@ def _model_smoke() -> dict[str, object]:
                 "metadata": {key: metadata.get(key) for key in ("model_id", "model_version", "actual_model_id", "model_identity_source", "prompt_version", "latency_ms", "parse_status", "output_chars")},
             }
         )
-    except Exception as exc:  # pragma: no cover - depends on the local Bonsai runtime
+    except Exception as exc:  # pragma: no cover - depends on the Gemini relay
         result["status"] = "failed"
         result["error"] = type(exc).__name__
         result["error_code"] = str(getattr(exc, "code", "MODEL_SMOKE_FAILED"))
@@ -417,9 +417,9 @@ def run(binary: Path, output: Path, *, port: int) -> int:
             "ALLOW_FIXTURE_FALLBACK": "0",
             "MARKET_DATA_MODE": "real",
             "NEWS_MODE": "real",
-            "LLM_MODE": "bonsai",
-            "FAST_MODEL": "Bonsai-2-27B-PTQ1_0",
-            "SMART_MODEL": "Bonsai-2-27B-PTQ1_0",
+            "LLM_MODE": "gemini",
+            "FAST_MODEL": "gemini-3.8-flash-high",
+            "SMART_MODEL": "gemini-3.8-flash-high",
         }
     )
     process: subprocess.Popen[bytes] | None = None

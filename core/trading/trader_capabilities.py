@@ -2849,7 +2849,7 @@ class TraderCapabilityService:
             except Exception as exc:
                 model_status = {"status": UNKNOWN, "error": str(exc)[:240]}
         else:
-            model_status = {"status": "UNAVAILABLE", "required_model": "Bonsai-2-27B-PTQ1_0"}
+            model_status = {"status": "UNAVAILABLE", "required_model": "gemini-3.8-flash-high"}
         validated_digests = {
             str(item.get("model_digest"))
             for item in evaluations

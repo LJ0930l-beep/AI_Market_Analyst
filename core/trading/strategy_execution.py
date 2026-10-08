@@ -9,7 +9,7 @@ DEFAULT_EXECUTION = {
     "direction": "BOTH", "sizing_mode": "RISK_BASED",
     "fixed_notional_usdt": 1000.0, "equity_notional_pct": 5.0,
     "max_notional_usdt": 5000.0, "risk_per_trade_pct": 0.25,
-    "leverage": 3, "max_positions": 3, "max_margin_pct": 20.0,
+    "leverage": 3, "leverage_mode": "STRATEGY_LIMIT", "max_positions": 3, "max_margin_pct": 20.0,
     "margin_cap_mode": "PERCENT", "max_margin_usdt": 1000.0,
     "min_confidence": 70, "min_net_rr": 2.0, "cooldown_minutes": 30,
     "order_preference": "AUTO",
@@ -134,6 +134,8 @@ def normalize_execution(value=None):
         raise ValueError('STRATEGY_EXECUTION_MODE_INVALID')
     if config['margin_cap_mode'] not in {'PERCENT', 'FIXED_USDT'}:
         raise ValueError('STRATEGY_MARGIN_CAP_MODE_INVALID')
+    if config['leverage_mode'] not in {'STRATEGY_LIMIT', 'VENUE_LIMIT'}:
+        raise ValueError('STRATEGY_LEVERAGE_MODE_INVALID')
     symbols = config['symbols']
     if not isinstance(symbols, list) or len(symbols) > 5000 or any(not isinstance(s, str) or not re.fullmatch(r'[A-Z0-9]{1,30}USDT', s) for s in symbols) or len(set(symbols)) != len(symbols):
         raise ValueError('STRATEGY_SYMBOLS_INVALID')

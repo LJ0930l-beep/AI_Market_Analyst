@@ -56,7 +56,7 @@ from core.memory import MarketMemoryService, memory_capabilities
 from core.market_intelligence import MARKET_INTELLIGENCE_VERSION, build_market_intelligence
 from core.market_hydration import HYDRATION_CONTRACT_VERSION, MarketHydrationRuntime
 from core.model_client import model_client
-from core.model_routing import DEFAULT_FAST_MODEL, DEFAULT_SMART_MODEL, ModelRoutingConfig, is_bonsai_model_identity
+from core.model_routing import DEFAULT_FAST_MODEL, DEFAULT_SMART_MODEL, ModelRoutingConfig, is_configured_model_identity
 from core.monitoring import MonitoringPolicy, MonitoringService, SUPPORTED_TRIGGER_TYPES
 from core.monitoring_runtime import MonitoringRuntime
 from core.strategy_monitoring import StrategyMonitoringService
@@ -67,7 +67,7 @@ from core.performance.metrics import build_performance_snapshot
 from core.radar import RADAR_CATEGORIES, build_radar
 from core.scheduler import (
     DefaultScanAnalysisExecutor,
-    LocalResourceProbe,
+    RemoteInferenceResourceProbe,
     LocalSchedulerRuntime,
     ResourceProbe,
     ScanAnalysisExecutor,
@@ -189,7 +189,7 @@ def _news_provider() -> object:
 
 
 def _llm_provider() -> OllamaProvider | None:
-    if os.environ.get("LLM_MODE", "bonsai").lower() in {"disabled", "off", "none"}:
+    if os.environ.get("LLM_MODE", "gemini").lower() in {"disabled", "off", "none"}:
         return None
     return OllamaProvider(base_url=model_client.base_url, model_name=DEFAULT_SMART_MODEL)
 
@@ -266,7 +266,7 @@ def get_consult_service(request: Request) -> QwenConsultService:
 
     service = getattr(request.app.state, "consult_service", None)
     if not isinstance(service, QwenConsultService):
-        raise RuntimeError("Bonsai consultation service is not configured")
+        raise RuntimeError("Gemini consultation service is not configured")
     return service
 
 
@@ -835,25 +835,25 @@ if FastAPI is not None:
             smart_model = str(configured_models.get("smart", DEFAULT_SMART_MODEL))
             if isinstance(llm_provider, OllamaProvider):
                 actual_model_id = safe_health.get("actual_model_id")
-                bonsai_ready = bool(
+                configured_model_ready = bool(
                     safe_health.get("available")
                     and safe_health.get("model_available") is True
                     and safe_health.get("model_id") == DEFAULT_SMART_MODEL
-                    and is_bonsai_model_identity(actual_model_id)
-                    and safe_health.get("model_identity_source") == "verified_manifest"
+                    and is_configured_model_identity(actual_model_id)
+                    and safe_health.get("model_identity_source") == "completion_probe"
                 )
                 safe_health["server_available"] = bool(safe_health.get("available"))
-                safe_health["available"] = bonsai_ready
-                model_ready = bonsai_ready
+                safe_health["available"] = configured_model_ready
+                model_ready = configured_model_ready
             else:
                 # Only the production Ollama adapter can bind runtime identity
-                # to the locally verified Bonsai manifest. Another provider's
+                # to the locally verified Gemini manifest. Another provider's
                 # self-reported model list is not evidence of the loaded weights.
                 safe_health["server_available"] = bool(safe_health.get("available"))
                 safe_health["available"] = False
                 safe_health["model_available"] = False
                 safe_health["model_identity_source"] = "unverified_provider"
-                safe_health["error_code"] = "BONSAI_PROVIDER_REQUIRED"
+                safe_health["error_code"] = "GEMINI_RELAY_PROVIDER_REQUIRED"
                 model_ready = False
             consult["models_status"] = {
                 "fast": {"model_id": fast_model, "available": model_ready},
@@ -1046,7 +1046,7 @@ if FastAPI is not None:
         store: SQLiteStore = Depends(get_store),
         service: QwenConsultService = Depends(get_consult_service),
     ):
-        """Stream local Bonsai text as versioned NDJSON without domain writes."""
+        """Stream local Gemini text as versioned NDJSON without domain writes."""
 
         payload = await _consult_payload(request, service)
         try:
@@ -1801,7 +1801,7 @@ if FastAPI is not None:
             raise APIError(400, "INVALID_SAMPLES", "samples must be an integer", detail=str(body.get("samples"))) from exc
         requested_model = str(body.get("model_id", DEFAULT_SMART_MODEL)).strip()
         if requested_model != DEFAULT_SMART_MODEL:
-            raise APIError(400, "INVALID_MODEL_ID", "replay model_id is pinned to Bonsai-2-27B-PTQ1_0")
+            raise APIError(400, "INVALID_MODEL_ID", "replay model_id is pinned to gemini-3.8-flash-high")
         store.create_replay_run(
             run_id=run_id,
             model_id=requested_model,
@@ -2214,7 +2214,7 @@ if FastAPI is not None:
         return {
             "contract_version": "opportunity_analysis_v1",
             "validator": "python",
-            "model_tier": "bonsai_27b_only",
+            "model_tier": "gemini_flash_high_only",
             "analyses": store.list_opportunity_analyses(symbol=normalized, limit=_clamp_limit(limit, maximum=500)),
         }
 
@@ -2376,6 +2376,7 @@ def create_app(
     market_hydration_interval_seconds: float = 300.0,
     daily_brief_schedule_enabled: bool | None = None,
     daily_brief_clock: Callable[[], datetime] | None = None,
+    automatic_resume_enabled: bool | None = None,
 ):
     """Create an API app with optional service injections for isolated tests."""
 
@@ -2388,7 +2389,7 @@ def create_app(
     app = FastAPI(
         title="AI Market Analyst",
         version=API_VERSION,
-        description="Local-first crypto research API with sidecar-owned public cache hydration, deterministic point-in-time evidence, explicit opt-in monitoring, paper-only tracking, app-supplied charts and Bonsai 2 27B assistance.",
+        description="Local-first crypto research API with sidecar-owned public cache hydration, deterministic point-in-time evidence, explicit opt-in monitoring, paper-only tracking, app-supplied charts and Gemini 3.8 Flash High assistance.",
         openapi_extra={"x-phase": API_PHASE, "x-product-baseline": "v1.2.1"},
     )
     app.state.api_phase = API_PHASE
@@ -2532,7 +2533,7 @@ def create_app(
         return LocalSchedulerRuntime(
             store=scheduler_store,
             analysis_executor=executor,
-            resource_probe=scheduler_resource_probe or LocalResourceProbe(),
+            resource_probe=scheduler_resource_probe or RemoteInferenceResourceProbe(),
             clock=scheduler_clock or (lambda: datetime.now(timezone.utc)),
             settlement_service=settlement_service,
             alert_reconciler=alert_reconciler,
@@ -2611,7 +2612,10 @@ def create_app(
             resume_setting = runtime.store.get_app_setting("monitoring.resume").get("value") is True
         except Exception:
             resume_setting = False
-        if resume_setting:
+        allow_resume = (not _env_bool("AIMA_DISABLE_AUTO_RESUME", False)
+                        if automatic_resume_enabled is None else automatic_resume_enabled)
+        app.state.automatic_resume_suppressed = not allow_resume
+        if resume_setting and allow_resume:
             # Restore the AI autonomous session as well when the operator had it
             # running.  ``monitoring.resume`` on its own only revives the
             # fixed-strategy worker: it never passes ``enable_ai``, so the AI

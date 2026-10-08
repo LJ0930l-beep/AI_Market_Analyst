@@ -84,7 +84,10 @@ def _seed_enabled_policy(store: SQLiteStore) -> None:
     store.upsert_monitoring_policy({**MonitoringPolicy.defaults("BTCUSDT").to_dict(), "enabled": True})
 
 
-def test_public_hydration_worker_is_sidecar_owned_and_never_runs_analysis(tmp_path: Path) -> None:
+def test_public_hydration_worker_is_sidecar_owned_and_never_runs_analysis(tmp_path: Path, monkeypatch) -> None:
+    # This worker lifecycle test must not contact a real weekly calendar or
+    # official release server. The macro adapters have separate contract tests.
+    monkeypatch.setattr("core.macro_calendar.refresh_calendar", lambda _store: {})
     store = SQLiteStore(tmp_path / "hydration.sqlite3")
     store.initialize()
     runtime = MarketHydrationRuntime(
@@ -134,6 +137,34 @@ def test_public_hydration_worker_is_sidecar_owned_and_never_runs_analysis(tmp_pa
     restarted_runtime = MarketHydrationRuntime(store=store, enabled=True, market_symbols=(), news_symbols=())
     restarted_runtime._seed_default_watchlist()
     assert store.list_watchlist_entries() == []
+
+
+def test_macro_source_latency_cannot_delay_public_market_cache(tmp_path: Path, monkeypatch) -> None:
+    import threading
+    store = SQLiteStore(tmp_path / "macro-latency.sqlite3")
+    store.initialize()
+    entered, release = threading.Event(), threading.Event()
+    def macro_fetch(_store):
+        entered.set()
+        assert release.wait(4), "macro test source was not released"
+    monkeypatch.setattr("core.macro_calendar.refresh_calendar", macro_fetch)
+    runtime = MarketHydrationRuntime(store=store, enabled=True, initial_delay_seconds=0,
+                                    market_symbols=("BTCUSDT",), news_symbols=())
+    def market_fetch(symbol, instrument, *, now):
+        store.save_realtime_state({"symbol": symbol, "provider": "test_public_source",
+                                   "price": 42000, "freshness_status": "fresh"}, now=now)
+        return True, "test_public_source"
+    runtime._save_market = market_fetch
+    try:
+        runtime.start()
+        assert entered.wait(4)
+        assert runtime.status()["run_count"] == 1
+        assert runtime.status()["state"] == "ready"
+        assert store.list_realtime_states()[0]["price"] == 42000
+        assert store.counts()["predictions"] == 0
+    finally:
+        release.set()
+        runtime.stop()
 
 
 def test_market_intelligence_reads_hydrated_cache_without_fetch_or_domain_write(tmp_path: Path) -> None:

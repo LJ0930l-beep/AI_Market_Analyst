@@ -36,6 +36,17 @@ def test_gate_open_contract_requires_model_amount_leverage_and_explicit_order_ty
             raise AssertionError(f"{missing} must be model-authored")
 
 
+@pytest.mark.parametrize("field", ["entry_price", "stop_price", "take_profit"])
+@pytest.mark.parametrize("value", [None, 0, -1, float("nan"), True])
+def test_gate_open_cannot_accept_missing_or_invalid_protection_prices(field, value):
+    proposal = {"action": "OPEN_LONG", "entry_price": 100, "stop_price": 95,
+        "take_profit": 110, "position_size_usdt": 2000, "requested_leverage": 20,
+        "order_preference": "LIMIT", "evidence_refs": ["market_snapshot:BTCUSDT:observed"]}
+    proposal[field] = value
+    with pytest.raises(ValueError, match="NOFX_GATE_OPEN_"):
+        require_nofx_gate_open_contract(proposal)
+
+
 def test_four_templates_use_one_gate_prompt_without_old_rr_gate():
     for template in TEMPLATES:
         prompt = build_strategy_system_prompt({
@@ -45,8 +56,9 @@ def test_four_templates_use_one_gate_prompt_without_old_rr_gate():
         }, nofx_gate=True)
         assert "position_size_usdt" in prompt
         assert "requested_leverage" in prompt
-        assert "用户授权上限，不是目标杠杆" in prompt
-        assert "不要机械填写上限" in prompt
+        assert "每笔开仓名义价值固定为 2000.0 USDT" in prompt
+        assert "不受策略旧的固定杠杆数字限制" in prompt
+        assert "不要机械填写最高杠杆" in prompt
         assert "LIMIT" in prompt and "MARKET" in prompt
         assert "单笔风险" not in prompt
         assert template["sections"]["entry_standards"][:80] in prompt
@@ -92,7 +104,13 @@ def test_partial_gate_fill_extends_both_protection_legs_and_resumes_by_order_id(
 
         def fetch_protection_order(self, order_id, symbol):
             assert symbol == "BTCUSDT"
-            return {"order_id": str(order_id), "reduce_only": True, **self.orders[str(order_id)]}
+            order = self.orders[str(order_id)]
+            return {
+                "order_id": str(order_id), "symbol": symbol, "reduce_only": True,
+                "initial": {"contract": "BTC_USDT", "size": -order["amount"], "reduce_only": True, "text": "t-test"},
+                "finish_as": "cancelled" if order["status"] == "FINISHED" else None,
+                **order,
+            }
 
         def cancel_protection_order(self, order_id, symbol):
             self.events.append(("cancel", str(order_id)))
@@ -124,6 +142,100 @@ def test_partial_gate_fill_extends_both_protection_legs_and_resumes_by_order_id(
     assert fake.orders["11"]["status"] == "FINISHED"
     assert fake.orders["12"]["status"] == "FINISHED"
     assert len([event for event in fake.events if event[0] == "create"]) == 4
+
+
+@pytest.mark.parametrize("parent_status,filled", [("FILLED", 2), ("CANCELED", 1)])
+def test_gateway_reconcile_resumes_terminal_parent_protection_replacement_without_model_call(tmp_path, monkeypatch, parent_status, filled):
+    import core.trading.gate_accounts as gate_accounts
+
+    store = SQLiteStore(tmp_path / f"resume-protection-{parent_status.lower()}.sqlite3")
+    store.initialize()
+    AccountLedger(store).create_account("gate_testnet", "PAPER", config={
+        "account_type": "GATE_TESTNET", "provider": "gate", "execution_mode": "TESTNET",
+    })
+    gateway = ExecutionGateway(store)
+    now = datetime.now(timezone.utc).isoformat()
+    receipt = {
+        "intent_id": "intent_ai_resume_protection",
+        "order_id": "8100",
+        "status": parent_status,
+        "filled_quantity": filled,
+        "average_price": 100,
+        "protection_status": "PENDING_VERIFICATION",
+        "protection_orders": [
+            {"leg": "stop_loss", "order_id": "11", "status": "open", "trigger_price": 95},
+            {"leg": "take_profit", "order_id": "12", "status": "open", "trigger_price": 110},
+        ],
+        "protection_replacements": {
+            "stop_loss": {"old_id": "11", "new_id": "13", "target_price": 94.0},
+        },
+    }
+    with store._connect() as db:
+        db.execute(
+            """INSERT INTO order_intents
+               (intent_id,idempotency_key,account_id,mode,environment,venue,instrument_id,side,order_type,
+                quantity,protection_plan_json,payload_hash,status,execution_result_json,created_at,updated_at,
+                reduce_only,decision_path,control_mode)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            ("intent_ai_resume_protection", "resume-protection", "gate_testnet", "TESTNET", "TESTNET", "gate",
+             "BTCUSDT", "LONG", "limit", 2, json.dumps({"stop_price": 95, "take_profit": 110}),
+             "resume-hash", parent_status, json.dumps(receipt), now, now, 0, "AI_LED", "AUTONOMOUS"),
+        )
+
+    class FakeGate:
+        def __init__(self):
+            self.orders = {
+                "11": {"status": "OPEN", "amount": filled, "trigger_price": 95},
+                "12": {"status": "OPEN", "amount": filled, "trigger_price": 110},
+                "13": {"status": "OPEN", "amount": filled, "trigger_price": 94},
+            }
+            self.canceled = []
+            self.parent_fetches = 0
+
+        def fetch_protection_order(self, order_id, symbol):
+            order = self.orders[str(order_id)]
+            return {
+                "order_id": str(order_id), "symbol": symbol, "status": order["status"],
+                "amount": order["amount"], "trigger_price": order["trigger_price"], "reduce_only": True,
+                "finish_as": "cancelled" if order["status"] == "FINISHED" else None,
+                "trade_id": None, "me_order_id": "8100",
+                "initial": {"contract": "BTC_USDT", "size": -order["amount"], "reduce_only": True, "text": "t-resume"},
+                "raw": {"id": str(order_id), "initial": {"contract": "BTC_USDT", "size": -order["amount"], "reduce_only": True, "text": "t-resume"}},
+                "observed_at": now,
+            }
+
+        def cancel_protection_order(self, order_id, symbol):
+            self.canceled.append(str(order_id))
+            self.orders[str(order_id)]["status"] = "FINISHED"
+            return {"status": "CANCELED", "order_id": str(order_id)}
+
+        def place_protection_orders(self, *args, **kwargs):
+            raise AssertionError("recovery must use the persisted new ID, not create another leg")
+
+        def normalize_protection_price(self, symbol, price):
+            return float(price)
+
+        def fetch_order(self, *args):
+            self.parent_fetches += 1
+            raise AssertionError("terminal parent protection recovery must not need a model or parent refetch")
+
+    fake = FakeGate()
+    monkeypatch.setattr(gate_accounts, "build_gate_trader", lambda *_: fake)
+
+    result = gateway.reconcile_in_flight_orders("gate_testnet", TradingMode.TESTNET)
+
+    assert result and result[0]["reconciled"] is True
+    assert result[0]["reconciled_status"] == parent_status
+    assert fake.canceled == ["11"]
+    assert fake.parent_fetches == 0
+    with store._connect() as db:
+        row = db.execute("SELECT status,execution_result_json FROM order_intents WHERE intent_id=?", ("intent_ai_resume_protection",)).fetchone()
+    final = json.loads(row["execution_result_json"])
+    assert row["status"] == parent_status
+    assert final["protection_status"] == "PROTECTED"
+    assert not final["protection_replacements"]
+    assert {item["order_id"] for item in final["protection_orders"]} == {"12", "13"}
+    assert final["protection_terminal_observations"][0]["protection_order_id"] == "11"
 
 
 def test_filled_gate_entry_without_verified_protection_stays_reconcilable():
@@ -212,11 +324,12 @@ def test_gate_native_trigger_rejects_undercovered_partial_fill():
 ])
 def test_gate_model_open_uses_ai_leverage_and_account_margin_without_old_risk_engine(requested_leverage, expected_leverage, expected_quantity, cap_mode, cap_usdt, equity, used, available, requested_notional):
     now = datetime.now(timezone.utc)
-    model_file = r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"
+    model_file = DEFAULT_SMART_MODEL
     template = TEMPLATES[0]
     strategy = {
         "template_id": template["id"], "revision": 65,
-        "execution": {**template["execution_defaults"], "margin_cap_mode": cap_mode, "max_margin_usdt": cap_usdt},
+        "execution": {**template["execution_defaults"], "sizing_mode": "RISK_BASED", "leverage_mode": "STRATEGY_LIMIT", "max_notional_usdt": 2500,
+                      "margin_cap_mode": cap_mode, "max_margin_usdt": cap_usdt},
     }
     context = AICycleContext(
         cycle_id="nofx-gate-cycle", account_id="gate_testnet", generation=1,
@@ -272,7 +385,7 @@ def test_gate_model_open_uses_ai_leverage_and_account_margin_without_old_risk_en
 
 def test_gate_live_model_open_uses_scoped_margin_only_gateway_without_order_side_effects():
     now = datetime.now(timezone.utc)
-    model_file = r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"
+    model_file = DEFAULT_SMART_MODEL
     template = TEMPLATES[0]
     context = AICycleContext(
         cycle_id="live-fixture-cycle", account_id="gate_live", generation=1,
@@ -524,7 +637,7 @@ def test_owned_protection_replacement_arms_new_leg_before_cancel_and_can_resume(
     gateway = ExecutionGateway(store)
     now = datetime.now(timezone.utc).isoformat()
     receipt = {
-        "filled": 2, "average": 100,
+        "order_id": "1000", "filled": 2, "average": 100,
         "protection_orders": [
             {"leg": "stop_loss", "order_id": "11", "trigger_price": 110},
             {"leg": "take_profit", "order_id": "12", "trigger_price": 90},
@@ -554,13 +667,19 @@ def test_owned_protection_replacement_arms_new_leg_before_cancel_and_can_resume(
 
         def fetch_protection_order(self, order_id, symbol):
             status, price = self.orders[str(order_id)]
-            return {"order_id": str(order_id), "status": status, "trigger_price": price,
+            return {"order_id": str(order_id), "symbol": symbol, "status": status, "trigger_price": price,
+                    "reduce_only": True,
+                    "initial": {"contract": "BTC_USDT", "size": -2, "reduce_only": True, "text": "t-test"},
                     "finish_as": "cancelled" if status == "FINISHED" else None, "observed_at": now}
 
         def place_protection_orders(self, symbol, **kwargs):
             self.events.append("create")
             self.orders["13"] = ["OPEN", kwargs["take_profit"]]
             return [{"leg": "take_profit", "order_id": "13"}]
+
+        def normalize_protection_price(self, symbol, price):
+            assert symbol == "BTCUSDT"
+            return float((Decimal(str(price)) / Decimal("0.1")).to_integral_value(rounding="ROUND_DOWN") * Decimal("0.1"))
 
         def cancel_protection_order(self, order_id, symbol):
             self.events.append("cancel")
@@ -575,16 +694,18 @@ def test_owned_protection_replacement_arms_new_leg_before_cancel_and_can_resume(
     monkeypatch.setattr(gate_accounts, "build_gate_trader", lambda *_: fake)
     with pytest.raises(GatewayError, match="Replacement is armed"):
         gateway.update_gate_protection(account_id="gate_testnet", instrument_id="BTCUSDT",
-                                       position_id="7", new_take_profit=89)
+                                       position_id="7", new_take_profit=89.04)
     with store._connect() as db:
         pending = json.loads(db.execute("SELECT execution_result_json FROM order_intents WHERE intent_id='intent_ai_filled'").fetchone()[0])
     assert pending["protection_replacements"]["take_profit"]["new_id"] == "13"
+    assert pending["protection_replacements"]["take_profit"]["target_price"] == 89.0
     assert fake.orders["12"][0] == "OPEN" and fake.orders["13"][0] == "OPEN"
     result = gateway.update_gate_protection(account_id="gate_testnet", instrument_id="BTCUSDT",
-                                            position_id="7", new_take_profit=89)
+                                            position_id="7", new_take_profit=89.04)
     assert result["status"] == "VERIFIED"
     assert fake.events == ["create", "cancel", "cancel"]
     assert fake.orders["12"][0] == "FINISHED" and fake.orders["13"][0] == "OPEN"
+    assert fake.orders["13"][1] == 89.0
     with store._connect() as db:
         final = json.loads(db.execute("SELECT execution_result_json FROM order_intents WHERE intent_id='intent_ai_filled'").fetchone()[0])
     assert next(item for item in final["protection_orders"] if item["leg"] == "take_profit")["order_id"] == "13"
@@ -601,7 +722,7 @@ def test_closed_gate_position_cancels_only_its_owned_orphan_protection(tmp_path,
     })
     gateway = ExecutionGateway(store)
     now = datetime.now(timezone.utc).isoformat()
-    receipt = {"protection_orders": [{"leg": "take_profit", "order_id": "11", "status": "open"}]}
+    receipt = {"order_id": "123456", "protection_orders": [{"leg": "take_profit", "order_id": "11", "status": "open"}]}
     with store._connect() as db:
         db.execute(
             """INSERT INTO order_intents
@@ -613,25 +734,35 @@ def test_closed_gate_position_cancels_only_its_owned_orphan_protection(tmp_path,
         )
 
     canceled = []
+    fetched = []
 
     class FakeGate:
         def fetch_protection_order(self, order_id, symbol):
             assert (order_id, symbol) == ("11", "BTCUSDT")
-            return {"status": "OPEN", "reduce_only": True}
+            fetched.append(order_id)
+            status = "FINISHED" if (order_id, symbol) in canceled else "OPEN"
+            return {"order_id": order_id, "symbol": symbol, "status": status,
+                    "finish_as": "cancelled" if status == "FINISHED" else None,
+                    "reduce_only": True,
+                    "initial": {"contract": "BTC_USDT", "size": -2, "reduce_only": True, "text": "t-test"}}
 
         def cancel_protection_order(self, order_id, symbol):
             canceled.append((order_id, symbol))
-            return {"status": "CANCELED"}
+            return {"status": "CANCELED", "order_id": order_id,
+                    "after": {"order_id": order_id, "symbol": symbol, "status": "FINISHED",
+                              "finish_as": "cancelled", "reduce_only": True,
+                              "initial": {"contract": "BTC_USDT", "size": -2, "reduce_only": True, "text": "t-test"}}}
 
     monkeypatch.setattr(gate_accounts, "build_gate_trader", lambda *_: FakeGate())
     truth = {"status": "AVAILABLE", "positions_status": "AVAILABLE", "pending_orders_status": "AVAILABLE",
              "positions": [], "pending_orders": [
-                 {"order_id": "11", "symbol": "BTCUSDT", "reduce_only": True},
+                 # Gate ordinary pending orders omit native price triggers.
                  {"order_id": "22", "symbol": "ETHUSDT", "reduce_only": True},
              ]}
     assert gateway.cleanup_closed_gate_protection(account_id="gate_testnet", remote_truth={**truth, "positions": [{"symbol": "BTCUSDT"}]}) == []
     cleaned = gateway.cleanup_closed_gate_protection(account_id="gate_testnet", remote_truth=truth)
     assert cleaned == [{"intent_id": "intent_ai_closed", "symbol": "BTCUSDT", "order_id": "11", "leg": "take_profit", "status": "canceled_after_position_close"}]
+    assert fetched == ["11"]
     assert canceled == [("11", "BTCUSDT")]
     with store._connect() as db:
         final = json.loads(db.execute("SELECT execution_result_json FROM order_intents WHERE intent_id='intent_ai_closed'").fetchone()[0])
@@ -655,7 +786,7 @@ def test_closed_gate_protection_reconciles_terminal_gate_order_without_pending_r
                 payload_hash,status,execution_result_json,created_at,updated_at,venue,reduce_only)
                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             ("intent_ai_terminal", "intent_ai_terminal", "gate_testnet", "TESTNET", "BTCUSDT", "SHORT",
-             "limit", 2, "hash", "FILLED", json.dumps({"protection_status": "ACTIVE", "protection_orders": [
+             "limit", 2, "hash", "FILLED", json.dumps({"order_id": "88", "protection_status": "ACTIVE", "protection_orders": [
                  {"leg": "stop_loss", "order_id": "11", "status": "open"},
                  {"leg": "take_profit", "order_id": "12", "status": "open"},
              ]}), now, now, "gate", 0),
@@ -664,7 +795,11 @@ def test_closed_gate_protection_reconciles_terminal_gate_order_without_pending_r
     class FakeGate:
         def fetch_protection_order(self, order_id, symbol):
             assert symbol == "BTCUSDT"
-            return {"status": "FINISHED", "finish_as": "triggered" if order_id == "11" else "cancelled", "reduce_only": True}
+            native_initial = {"contract": "BTC_USDT", "size": -2, "is_reduce_only": True, "text": "t-test"}
+            return {"order_id": order_id, "symbol": symbol, "status": "FINISHED", "finish_as": "succeeded" if order_id == "11" else "cancelled", "reduce_only": True,
+                    "initial": native_initial,
+                    "trade_id": "99" if order_id == "11" else None, "triggered_order_id": "99" if order_id == "11" else None,
+                    "me_order_id": "0", "raw": {"initial": native_initial}}
 
         def cancel_protection_order(self, *_args):
             raise AssertionError("Gate already ended both orders")
@@ -673,10 +808,40 @@ def test_closed_gate_protection_reconciles_terminal_gate_order_without_pending_r
     truth = {"status": "AVAILABLE", "positions_status": "AVAILABLE", "pending_orders_status": "AVAILABLE",
              "positions": [], "pending_orders": []}
     result = gateway.cleanup_closed_gate_protection(account_id="gate_testnet", remote_truth=truth)
-    assert {item["status"] for item in result} == {"finished_triggered", "finished_cancelled"}
+    assert {item["status"] for item in result} == {"finished_succeeded", "finished_cancelled"}
     with store._connect() as db:
         receipt = json.loads(db.execute("SELECT execution_result_json FROM order_intents WHERE intent_id='intent_ai_terminal'").fetchone()[0])
     assert receipt["protection_status"] == "CLOSED_POSITION_RECONCILED"
+    assert receipt["protection_terminal_observations"][0]["triggered_order_id"] == "99"
+    assert receipt["protection_terminal_observations"][0]["native_readback"]["initial"]["is_reduce_only"] is True
+    assert receipt["protection_terminal_observations"][0]["native_readback"]["me_order_id"] == "0"
+
+
+def test_terminal_observation_rejects_conflicting_native_reduce_only_aliases(tmp_path):
+    store = SQLiteStore(tmp_path / "terminal-protection-conflict.sqlite3")
+    store.initialize()
+    gateway = ExecutionGateway(store)
+    receipt = {
+        "order_id": "88",
+        "protection_orders": [{"leg": "stop_loss", "order_id": "11"}],
+    }
+    native_initial = {
+        "contract": "BTC_USDT", "size": -2,
+        "reduce_only": False, "is_reduce_only": True,
+    }
+    observed = {
+        "order_id": "11", "symbol": "BTCUSDT", "status": "FINISHED",
+        "finish_as": "cancelled", "reduce_only": True,
+        "initial": native_initial, "raw": {"initial": native_initial},
+    }
+
+    recorded = gateway._append_gate_protection_terminal_observation(
+        receipt, leg="stop_loss", account_id="gate_testnet", environment="TESTNET",
+        symbol="BTCUSDT", protection_order_id="11", observed=observed,
+    )
+
+    assert recorded is False
+    assert "protection_terminal_observations" not in receipt
 
 
 def test_gateway_margin_reservation_preserves_ai_leverage(tmp_path):

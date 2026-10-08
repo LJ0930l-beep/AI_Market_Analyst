@@ -16,6 +16,7 @@ from ..trading.gate_account_truth import (
     resolve_remote_capital_basis,
 )
 from ..trading.gate_accounts import GATE_TESTNET_ACCOUNT_TYPE, GATE_LIVE_ACCOUNT_TYPE
+from ..trading.decision_memory import FLAT_BAND_USDT
 
 
 INITIAL_SIMULATED_CAPITAL = 1000.0
@@ -70,6 +71,65 @@ def _projection_time(value: Any) -> datetime | None:
 def _projection_iso(value: Any) -> str | None:
     point = _projection_time(value)
     return point.isoformat() if point else (str(value) if value else None)
+
+
+def _verified_gate_episode_rows(
+    store: Any,
+    account_id: str,
+    environment: str,
+    *,
+    from_at: datetime | str | None = None,
+    to_at: datetime | str | None = None,
+) -> list[dict[str, Any]]:
+    """Return only complete native Gate settlements for this account scope."""
+    start = _projection_time(from_at)
+    end = _projection_time(to_at)
+    start_ms = int(start.timestamp() * 1000) if start else None
+    end_ms = int(end.timestamp() * 1000) if end else None
+    with store._connect() as db:
+        if not _projection_table_exists(db, "gate_episode_settlements"):
+            return []
+        rows = db.execute(
+            """SELECT e.episode_id, e.account_id, e.environment, e.canonical_symbol,
+                      e.side, e.entry_intent_id, e.entry_order_id, e.cycle_id,
+                      e.strategy_id, e.strategy_version, s.total_pnl, s.settlement_currency,
+                      s.fee_status, s.funding_status, s.settlement_json, s.settled_at
+               FROM gate_episode_settlements s
+               JOIN gate_accounting_episodes e ON e.episode_id=s.episode_id
+               WHERE e.account_id=? AND lower(e.environment)=? AND s.status='SETTLED_FULL_COST'
+                 AND s.settlement_id=(
+                   SELECT latest.settlement_id FROM gate_episode_settlements latest
+                   WHERE latest.episode_id=e.episode_id AND latest.status='SETTLED_FULL_COST'
+                   ORDER BY latest.settled_at DESC, latest.settlement_id DESC LIMIT 1
+                 )
+               ORDER BY s.settled_at, e.episode_id""",
+            (account_id, environment.lower()),
+        ).fetchall()
+    output: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        try:
+            settlement = json.loads(item.get("settlement_json") or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if not isinstance(settlement, dict) or settlement.get("status") != "SETTLED_FULL_COST":
+            continue
+        try:
+            closed_at_ms = int(settlement.get("closed_at_ms"))
+        except (TypeError, ValueError):
+            continue
+        if start_ms is not None and closed_at_ms < start_ms:
+            continue
+        if end_ms is not None and closed_at_ms > end_ms:
+            continue
+        item["settlement"] = settlement
+        item["closed_at_ms"] = closed_at_ms
+        output.append(item)
+    # Replays and delayed database recovery can write older closes later.
+    # Performance paths must follow the venue close time, never ingestion or
+    # settlement-write order.
+    output.sort(key=lambda item: (int(item["closed_at_ms"]), str(item.get("episode_id") or "")))
+    return output
 
 
 def _projection_number(value: Any, default: float | None = None) -> float | None:
@@ -999,6 +1059,10 @@ def analyze_ai_trading_ledger(
         str(account_config.get("account_type") or "").upper() in {GATE_TESTNET_ACCOUNT_TYPE, GATE_LIVE_ACCOUNT_TYPE}
         or expected_mode in {"TESTNET", "LIVE"}
     )
+    if managed_gate:
+        # Local simulated_positions and aggregate fill mirrors are not a
+        # settlement authority for managed Gate accounts.
+        positions_rows = []
     capital_basis = resolve_remote_capital_basis(store, account_id or "") if managed_gate and account_id else {}
     remote_capital_ready = managed_gate and str(capital_basis.get("status") or "").upper() == "AVAILABLE"
     if remote_capital_ready:
@@ -1264,6 +1328,106 @@ def analyze_ai_trading_ledger(
                 data["losses"] = int(metrics.get("losing_exit_count") or 0)
         current_equity = initial_capital + total_realized_pnl
 
+    verified_strategy_curve: list[dict[str, Any]] = []
+    if managed_gate and account_id:
+        gate_rows = _verified_gate_episode_rows(
+            store,
+            account_id,
+            str(expected_mode or "").lower(),
+            from_at=from_at,
+            to_at=to_at,
+        )
+        trades = []
+        total_realized_pnl = 0.0
+        total_wins = 0
+        total_losses = 0
+        gross_profit = 0.0
+        gross_loss = 0.0
+        verified_strategy_curve = []
+        for data in strategy_matrix.values():
+            data.update({"trades": 0, "wins": 0, "losses": 0, "pnl": 0.0, "total_rr": 0.0, "leverages": []})
+        for row in gate_rows:
+            settlement = row["settlement"]
+            pnl = _projection_number(settlement.get("total_pnl"))
+            if pnl is None:
+                continue
+            outcome = "WIN" if pnl > FLAT_BAND_USDT else "LOSS" if pnl < -FLAT_BAND_USDT else "FLAT"
+            strategy_id = str(row.get("strategy_id") or "UNKNOWN")
+            if strategy_id not in strategy_matrix:
+                strategy_matrix[strategy_id] = {
+                    "name": strategy_id,
+                    "style": "核验系统成交 · 策略说明不足" if strategy_id == "UNKNOWN" else "核验 Gate 系统成交",
+                    "trades": 0, "wins": 0, "losses": 0, "pnl": 0.0, "total_rr": 0.0, "leverages": [],
+                }
+            data = strategy_matrix[strategy_id]
+            data["trades"] += 1
+            data["pnl"] += pnl
+            if outcome == "WIN":
+                data["wins"] += 1
+                total_wins += 1
+            elif outcome == "LOSS":
+                data["losses"] += 1
+                total_losses += 1
+            total_realized_pnl += pnl
+            if pnl > 0:
+                gross_profit += pnl
+            elif pnl < 0:
+                gross_loss += abs(pnl)
+            opened_ms = _projection_number(settlement.get("first_native_fill_at_ms"))
+            closed_ms = int(row["closed_at_ms"])
+            opened_at = datetime.fromtimestamp(opened_ms / 1000.0, timezone.utc).isoformat() if opened_ms is not None else str(row.get("settled_at") or "")
+            closed_at = datetime.fromtimestamp(closed_ms / 1000.0, timezone.utc).isoformat()
+            trade = {
+                "trade_id": str(row["episode_id"]),
+                "accounting_episode_id": str(row["episode_id"]),
+                "entry_intent_id": row.get("entry_intent_id"),
+                "entry_order_id": row.get("entry_order_id"),
+                "cycle_id": row.get("cycle_id"),
+                "symbol": row.get("canonical_symbol") or settlement.get("contract"),
+                "strategy_id": strategy_id,
+                "strategy_template_id": strategy_id,
+                "strategy_name": data["name"],
+                "strategy_style": data["style"],
+                "strategy_version": row.get("strategy_version") or "UNKNOWN",
+                "side": settlement.get("side") or row.get("side"),
+                "entry_price": None,
+                "exit_price": None,
+                "margin_usdt": None,
+                "pnl_usdt": round(pnl, 8),
+                "net_pnl_usdt": round(pnl, 8),
+                "roi_pct": None,
+                "status": "CLOSED",
+                "outcome_status": outcome,
+                "closed_at": closed_at,
+                "opened_at": opened_at,
+                "attribution": "AI_LED_VERIFIED_GATE_SETTLEMENT",
+                "settlement_currency": settlement.get("settlement_currency"),
+                "fee_status": settlement.get("fee_status"),
+                "funding_status": settlement.get("funding_status"),
+                "pnl_source": settlement.get("pnl_source"),
+            }
+            trades.append(trade)
+            running_system_pnl = round(total_realized_pnl, 8)
+            equity_curve.append({
+                "time": closed_at,
+                "equity": round(initial_capital + running_system_pnl, 8),
+                "pnl": running_system_pnl,
+            })
+            verified_strategy_curve.append({
+                "time": closed_at,
+                "system_realized_pnl_usdt": running_system_pnl,
+                "accounting_episode_id": str(row["episode_id"]),
+            })
+        # Gate's account-wide equity can move due to transfers or foreign
+        # positions. These strategy metrics use only complete verified episodes.
+        remote_equity = _projection_number(capital_basis.get("current_equity")) if remote_capital_ready else None
+        if remote_capital_ready:
+            current_equity = remote_equity or 0.0
+            margin_used = _projection_number(capital_basis.get("used_margin"), 0.0) or 0.0
+        else:
+            current_equity = 0.0
+            margin_used = 0.0
+
     # Strategy matrix summary
     per_strategy_summary = []
     for sid, sdata in strategy_matrix.items():
@@ -1288,11 +1452,11 @@ def analyze_ai_trading_ledger(
         })
 
     # Overall metrics
-    total_closed = total_wins + total_losses
+    total_closed = len(trades) if managed_gate else total_wins + total_losses
     win_rate = round((total_wins / total_closed) * 100.0, 1) if total_closed > 0 else 0.0
     profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else (9.99 if gross_profit > 0 else 1.0)
     net_pnl = round(total_realized_pnl, 2)
-    roi_total = round((net_pnl / initial_capital) * 100.0, 2) if initial_capital > 0 else 0.0
+    roi_total = round((net_pnl / initial_capital) * 100.0, 2) if initial_capital > 0 else (None if managed_gate else 0.0)
     avg_leverage_overall = round(sum(all_leverages) / len(all_leverages), 1) if all_leverages else 35.0
 
     # Max Drawdown calculation
@@ -1322,6 +1486,10 @@ def analyze_ai_trading_ledger(
         "initial_capital_usdt": round(initial_capital, 2),
         "current_equity_usdt": round(current_equity, 2),
         "net_pnl_usdt": net_pnl,
+        "strategy_net_pnl_usdt": net_pnl if managed_gate else None,
+        "strategy_pnl_basis": "GATE_VERIFIED_SYSTEM_EPISODES" if managed_gate else "LOCAL_PAPER_LEDGER",
+        "account_equity_change_usdt": _projection_number(capital_basis.get("equity_change")) if managed_gate and remote_capital_ready else None,
+        "account_equity_change_pct": _projection_number(capital_basis.get("equity_change_pct")) if managed_gate and remote_capital_ready else None,
         "total_roi_pct": roi_total,
         "margin_used_usdt": round(margin_used, 2),
         "margin_available_usdt": max(0.0, round(current_equity - margin_used, 2)),
@@ -1348,8 +1516,12 @@ def analyze_ai_trading_ledger(
                     "initial_capital_basis": remote_basis.get("baseline_basis"),
                     "initial_capital_observed_at": remote_basis.get("baseline_observed_at"),
                     "current_equity_usdt": _projection_number(remote_basis.get("current_equity")),
-                    "net_pnl_usdt": _projection_number(remote_basis.get("net_pnl")),
-                    "total_roi_pct": _projection_number(remote_basis.get("roi_pct")),
+                    "net_pnl_usdt": net_pnl,
+                    "strategy_net_pnl_usdt": net_pnl,
+                    "total_roi_pct": roi_total,
+                    "account_equity_change_usdt": _projection_number(remote_basis.get("equity_change")),
+                    "account_equity_change_pct": _projection_number(remote_basis.get("equity_change_pct")),
+                    "account_equity_max_drawdown_pct": _projection_number(remote_basis.get("max_drawdown_pct")),
                     "realized_pnl_usdt": _projection_number(remote_basis.get("realized_pnl")),
                     "unrealized_pnl_usdt": _projection_number(remote_basis.get("unrealized_pnl")),
                     "cumulative_fees_usdt": _projection_number(remote_basis.get("cumulative_fees")),
@@ -1369,7 +1541,8 @@ def analyze_ai_trading_ledger(
                 {
                     "time": point.get("time"),
                     "equity": point.get("equity_usdt"),
-                    "pnl": (
+                    "pnl": None,
+                    "account_equity_change_usdt": (
                         (point.get("equity_usdt") - baseline)
                         if baseline is not None and point.get("equity_usdt") is not None
                         else None
@@ -1382,8 +1555,11 @@ def analyze_ai_trading_ledger(
                 {
                     "initial_capital_usdt": None,
                     "current_equity_usdt": None,
-                    "net_pnl_usdt": None,
-                    "total_roi_pct": None,
+                    "net_pnl_usdt": net_pnl,
+                    "strategy_net_pnl_usdt": net_pnl,
+                    "account_equity_change_usdt": None,
+                    "account_equity_change_pct": None,
+                    "total_roi_pct": roi_total,
                     "realized_pnl_usdt": None,
                     "unrealized_pnl_usdt": None,
                     "cumulative_fees_usdt": None,
@@ -1416,6 +1592,8 @@ def analyze_ai_trading_ledger(
         "execution_pagination": execution_projection["pagination"],
         "legacy_unscoped_positions": execution_projection["legacy_unscoped_positions"],
         "equity_curve": remote_equity_curve[-30:] if remote_equity_curve is not None else equity_curve[-30:],
+        "strategy_equity_curve": verified_strategy_curve if managed_gate else [],
+        "account_equity_curve": remote_equity_curve[-30:] if remote_equity_curve is not None else [],
         "timezone": "Asia/Hong_Kong",
         "timezone_label": "中国香港时区 (HKT UTC+8)",
     }
@@ -1567,6 +1745,10 @@ def build_performance_context(
         "profit_factor": profit_factor,
         "max_drawdown_pct": drawdown,
         "net_pnl_usdt": _finite_or_none(account.get("net_pnl_usdt")),
+        "strategy_net_pnl_usdt": _finite_or_none(account.get("strategy_net_pnl_usdt")),
+        "strategy_pnl_basis": account.get("strategy_pnl_basis"),
+        "account_equity_change_usdt": _finite_or_none(account.get("account_equity_change_usdt")),
+        "account_equity_change_pct": _finite_or_none(account.get("account_equity_change_pct")),
         "current_equity_usdt": _finite_or_none(account.get("current_equity_usdt")),
         "initial_capital_usdt": _finite_or_none(account.get("initial_capital_usdt")),
         "equity_basis": account.get("equity_basis"),

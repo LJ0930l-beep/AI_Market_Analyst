@@ -1,7 +1,7 @@
 """Python-owned crypto monitoring pipeline for V1.2.
 
 The module keeps all financial calculations, trigger decisions, dedupe,
-cooldown, and output validation on the backend. Bonsai ModelClient is called only after a
+cooldown, and output validation on the backend. Gemini ModelClient is called only after a
 closed-bar trigger has passed the deterministic gate, and the Smart tier is
 never replaced by the Fast tier when it is unavailable.
 """
@@ -22,7 +22,7 @@ from .ai.contracts import LLMError
 from .ai.ollama import OllamaProvider
 from .alerts import AlertReconciler
 from .instruments import AssetType, Instrument
-from .model_routing import DEFAULT_SMART_MODEL, ModelRoutingConfig, is_bonsai_model_identity, is_verified_bonsai_receipt
+from .model_routing import DEFAULT_SMART_MODEL, ModelRoutingConfig, is_configured_model_identity, is_verified_model_receipt
 from .providers.base import Bar, MarketProvider, ProviderError
 from .providers.runtime import MarketDataBundle, ProviderChain, build_default_provider, fetch_market_data
 from .signals import Action, SignalProposal
@@ -490,8 +490,8 @@ class OpportunityAnalysis:
     def __post_init__(self) -> None:
         if self.bias not in {"LONG_WATCH", "SHORT_WATCH", "WAIT"}:
             raise ValueError("bias must be LONG_WATCH, SHORT_WATCH, or WAIT")
-        if not is_bonsai_model_identity(self.model_id):
-            raise ValueError("OpportunityAnalysis requires the Bonsai 2 27B model")
+        if not is_configured_model_identity(self.model_id):
+            raise ValueError("OpportunityAnalysis requires the Gemini 3.8 Flash model")
         if self.timeframe not in SUPPORTED_TIMEFRAMES:
             raise ValueError("opportunity timeframe is unsupported")
         if self.data_as_of.tzinfo is None or self.re_evaluate_at.tzinfo is None:
@@ -664,7 +664,7 @@ def _opportunity_messages(
         "instructions": "Return JSON only, with exactly the output_schema fields. Use bias LONG_WATCH, SHORT_WATCH, or WAIT. If the evidence does not justify a directional watch, choose WAIT and set watch_zone, invalidation_price, and targets to null/empty values. For LONG_WATCH use low <= high, stop below the entry zone, and targets above it; for SHORT_WATCH use stop above the entry zone and targets below it. Python validates every level. Do not invent news; state missing evidence. Keep evidence concise.",
     }
     return [
-        {"role": "system", "content": "You are the Bonsai 2 27B opportunity explanation layer. Never place orders or claim certainty. The Python backend owns calculations, levels, risk, and trigger policy."},
+        {"role": "system", "content": "You are the Gemini 3.8 Flash opportunity explanation layer. Never place orders or claim certainty. The Python backend owns calculations, levels, risk, and trigger policy."},
         {"role": "user", "content": json.dumps(evidence, ensure_ascii=False, sort_keys=True)},
     ]
 
@@ -675,8 +675,8 @@ class SmartOpportunityAnalyzer:
     def __init__(self, llm_provider: object | None, *, smart_model: str | None = None) -> None:
         self.llm_provider = llm_provider
         self.smart_model = smart_model or ModelRoutingConfig.from_env().smart_model
-        if not is_bonsai_model_identity(self.smart_model):
-            raise ValueError("OpportunityAnalysis requires the manifest-verified Bonsai 2 27B reasoning model")
+        if not is_configured_model_identity(self.smart_model):
+            raise ValueError("OpportunityAnalysis requires the manifest-verified Gemini 3.8 Flash reasoning model")
 
     def _check_available(self) -> None:
         if self.llm_provider is None:
@@ -693,8 +693,8 @@ class SmartOpportunityAnalyzer:
                     status.get("available") is not True
                     or status.get("model_available") is not True
                     or status.get("model_id") != DEFAULT_SMART_MODEL
-                    or status.get("model_identity_source") != "verified_manifest"
-                    or not is_bonsai_model_identity(actual_model_id)
+                    or status.get("model_identity_source") not in {"verified_manifest", "completion_probe"}
+                    or not is_configured_model_identity(actual_model_id)
                 ):
                     raise SmartModelUnavailable()
 
@@ -751,9 +751,9 @@ class SmartOpportunityAnalyzer:
         mutable = dict(payload)
         supplied_model = mutable.get("model_id")
         if supplied_model is not None and str(supplied_model) != self.smart_model:
-            raise MonitoringError("Smart output model_id does not match the configured Bonsai model", code="SMART_MODEL_MISMATCH")
+            raise MonitoringError("Smart output model_id does not match the configured Gemini model", code="SMART_MODEL_MISMATCH")
         mutable["model_id"] = self.smart_model
-        if not is_verified_bonsai_receipt(metadata):
+        if not is_verified_model_receipt(metadata):
             raise MonitoringError("Smart model inference identity could not be verified", code="SMART_MODEL_IDENTITY_UNVERIFIED")
         mutable.setdefault("prompt_version", OPPORTUNITY_PROMPT_VERSION)
         analysis = OpportunityAnalysis.from_payload(

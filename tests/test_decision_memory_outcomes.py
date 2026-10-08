@@ -4,7 +4,8 @@ Regression guard for the second broken link: ``update_memory_outcome`` had no
 caller, so ``memory_for_prompt`` returned a permanently null ``outcome_status``
 and the model could never tell a winning setup from a losing one.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import json
 
 import pytest
 
@@ -16,7 +17,7 @@ from core.trading.decision_memory import (
     record_decision_memory,
 )
 
-ACCOUNT = "gate_testnet"
+ACCOUNT = "paper_test"
 
 
 def _store(tmp_path, name):
@@ -26,17 +27,17 @@ def _store(tmp_path, name):
 
 
 def _fill(store, *, fill_id, cycle_id, position_id, side, quantity, price, fee=0.0,
-          contract_size=1.0, fee_source="REMOTE_ADAPTER"):
+          contract_size=1.0, fee_source="REMOTE_ADAPTER", account_id=ACCOUNT, mode="PAPER"):
     with store._connect() as db:
         db.execute(
             """INSERT INTO trade_fills
                (fill_id, account_id, venue, mode, order_id, trade_id, position_id, symbol,
                 side, quantity, price, fee, fee_amount, fee_currency, contract_size,
                 status, payload_json, created_at, event_at, cycle_id, fee_source)
-               VALUES (?, ?, 'gate', 'TESTNET', ?, ?, ?, 'BTCUSDT', ?, ?, ?, ?, ?, 'USDT', ?,
+               VALUES (?, ?, 'simulated', ?, ?, ?, ?, 'BTCUSDT', ?, ?, ?, ?, ?, 'USDT', ?,
                        'RECORDED', '{}', ?, ?, ?, ?)""",
             (
-                fill_id, ACCOUNT, f"order_{fill_id}", f"trade_{fill_id}", position_id,
+                fill_id, account_id, mode, f"order_{fill_id}", f"trade_{fill_id}", position_id,
                 side, str(quantity), str(price), str(fee), str(fee), str(contract_size),
                 datetime.now(timezone.utc).isoformat(),
                 datetime.now(timezone.utc).isoformat(),
@@ -49,8 +50,8 @@ def _entry_memory(store, *, cycle_id, action="OPEN_LONG", symbol="BTCUSDT"):
     return record_decision_memory(
         store,
         account_id=ACCOUNT,
-        provider="gate",
-        environment="testnet",
+        provider="simulated",
+        environment="paper",
         cycle_id=cycle_id,
         session_id="sess_1",
         candidate_id=None,
@@ -237,6 +238,98 @@ def test_resolved_outcome_reaches_the_prompt_memory(tmp_path):
     assert prompt_rows[0]["outcome_pnl"] == pytest.approx(-3.0)
 
 
+def test_verified_gate_lesson_survives_twenty_four_newer_wait_rows_and_8k_compaction(tmp_path):
+    from core.trading.ai_session_coordinator import _compact_decision_experience, _fit_prompt_payload
+    from core.trading.gate_trade_settlement import GateTradeSettlementService
+
+    store = _store(tmp_path, "verified-lesson.sqlite3")
+    service = GateTradeSettlementService(store)
+    opened_at = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    closed_at_ms = int(datetime(2026, 9, 2, tzinfo=timezone.utc).timestamp() * 1000)
+    memory = record_decision_memory(
+        store, account_id="gate_live", provider="gate", environment="live",
+        cycle_id="cycle-native-lesson", session_id="session-native", candidate_id=None,
+        symbol="BTCUSDT", action="OPEN_LONG", cycle_status="EXECUTED",
+        decision_at=opened_at, reason="原生证据已核验的入场",
+        payload={"strategy_template_id": "trend_15m", "strategy_id": "ema_trend_v2"},
+    )
+    episode = {
+        "episode_id": "episode-native-lesson", "account_id": "gate_live", "environment": "live",
+        "contract": "BTC_USDT", "canonical_symbol": "BTCUSDT", "entry_order_id": "45678",
+        "entry_intent_id": "intent_ai_native_lesson", "cycle_id": "cycle-native-lesson",
+        "side": "LONG", "strategy_id": "ema_trend_v2", "strategy_version": "v2",
+    }
+    settlement = {
+        "status": "SETTLED_FULL_COST", "account_id": "gate_live", "environment": "live",
+        "accounting_episode_id": episode["episode_id"], "entry_order_id": episode["entry_order_id"],
+        "entry_intent_id": episode["entry_intent_id"], "total_pnl": "5.25",
+        "settlement_currency": "USDT", "fee_status": "VERIFIED", "fee_effect": "-0.75",
+        "fee_currency": "USDT", "fee_sources": ["native_trade"],
+        "funding_status": "VERIFIED", "funding_effect": "0.10",
+        "exit_trade_ids": ["native-exit-1"], "position_close_evidence_id": "position-close-1",
+        "closed_at_ms": closed_at_ms, "pnl_source": "NATIVE_TRADE_AND_POSITION_CLOSE",
+    }
+    with store._connect() as db:
+        service._ensure(db)
+        db.execute(
+            """INSERT INTO gate_accounting_episodes
+               (episode_id,account_id,environment,contract,canonical_symbol,entry_order_id,entry_intent_id,
+                cycle_id,memory_id,side,strategy_id,strategy_version,identity_json,created_at)
+               VALUES (?,?,?,?,?,?,?,?,NULL,?,?,?,?,?)""",
+            (episode["episode_id"], episode["account_id"], episode["environment"], episode["contract"],
+             episode["canonical_symbol"], episode["entry_order_id"], episode["entry_intent_id"],
+             episode["cycle_id"], episode["side"], episode["strategy_id"], episode["strategy_version"],
+             "{}", opened_at.isoformat()),
+        )
+        db.execute(
+            """INSERT INTO gate_episode_settlements
+               (settlement_id,episode_id,status,settlement_currency,total_pnl,fee_effect,fee_status,
+                funding_effect,funding_status,pnl_source,settlement_json,settled_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            ("settlement-native-lesson", episode["episode_id"], settlement["status"], "USDT",
+             settlement["total_pnl"], settlement["fee_effect"], settlement["fee_status"],
+             settlement["funding_effect"], settlement["funding_status"], settlement["pnl_source"],
+             json.dumps(settlement), "2026-09-02T00:00:00+00:00"),
+        )
+    resolved = service._resolve_memory(episode, settlement)
+    assert resolved and resolved["updated"] is True
+    assert resolved["memory_id"] == memory["memory_id"]
+
+    for index in range(24):
+        record_decision_memory(
+            store, account_id="gate_live", provider="gate", environment="live",
+            cycle_id=f"cycle-wait-{index}", session_id="session-native", candidate_id=None,
+            symbol="BTCUSDT", action="WAIT", cycle_status="WAITING",
+            decision_at=datetime(2026, 9, 3, tzinfo=timezone.utc) + timedelta(minutes=index),
+            reason="本轮没有可执行入场条件",
+        )
+
+    retrieved = memory_for_prompt(store, "gate_live")
+    lessons = [row for row in retrieved if row.get("memory_role") == "VERIFIED_SETTLED_LESSON"]
+    assert len(lessons) == 1
+    assert lessons[0]["outcome_status"] == "WIN" and lessons[0]["outcome_pnl"] == pytest.approx(5.25)
+    assert lessons[0]["strategy_id"] == "ema_trend_v2"
+    recent_decisions, experience = _compact_decision_experience(retrieved)
+    assert recent_decisions[0]["memory_role"] == "VERIFIED_SETTLED_LESSON"
+    assert recent_decisions[0]["outcome_evidence"]["accounting_episode_id"] == episode["episode_id"]
+    assert experience["recent_closed_trades"][0]["strategy_template_id"] == "trend_15m"
+    full_evidence = experience["recent_closed_trades"][0]["outcome_evidence"]
+    assert full_evidence["fee_effect"] == "-0.75" and full_evidence["funding_effect"] == "0.10"
+    assert full_evidence["exit_trade_ids"] == ["native-exit-1"]
+
+    projected, metadata = _fit_prompt_payload(
+        {"decision_memory": recent_decisions, "strategy_experience": experience,
+         "market_radar": {"optional_history": "x" * 20_000}},
+        "system", context_length=8192, reserve=1024,
+    )
+    assert metadata["compacted"] is True and "keep_current_radar_facts_only" in metadata["steps"]
+    compact_memory = projected["decision_memory"][0]
+    assert compact_memory["memory_role"] == "VERIFIED_SETTLED_LESSON"
+    assert compact_memory["strategy_id"] == "ema_trend_v2"
+    assert compact_memory["outcome_evidence"]["accounting_episode_id"] == episode["episode_id"]
+    assert projected["strategy_experience"]["recent_closed_trades"][0]["outcome_evidence"]["fee_effect"] == "-0.75"
+
+
 def test_flat_result_inside_the_fee_band_is_recorded_as_flat(tmp_path):
     store = _store(tmp_path, "flat.sqlite3")
     memory = _entry_memory(store, cycle_id="cycle_flat")
@@ -279,3 +372,35 @@ def test_contract_size_scales_the_notional(tmp_path):
     row = _outcomes(store)[memory["memory_id"]]
     assert row["outcome_status"] == "WIN"
     assert row["outcome_pnl"] == pytest.approx(10.0)
+
+
+def test_gate_memory_is_not_settled_from_local_fill_mirror(tmp_path):
+    store = _store(tmp_path, "gate-local-mirror.sqlite3")
+    memory = record_decision_memory(
+        store,
+        account_id="gate_testnet",
+        provider="gate",
+        environment="testnet",
+        cycle_id="cycle_gate_unverified",
+        session_id="sess_gate",
+        candidate_id=None,
+        symbol="BTCUSDT",
+        action="OPEN_LONG",
+        cycle_status="EXECUTED",
+        decision_at=datetime.now(timezone.utc),
+        reason="test Gate entry",
+        decision_origin="MODEL",
+    )
+    _fill(store, fill_id="gate_e1", cycle_id="cycle_gate_unverified", position_id="local_pos",
+          side="BUY", quantity=1, price=100, account_id="gate_testnet", mode="TESTNET")
+    _fill(store, fill_id="gate_x1", cycle_id="cycle_gate_unverified", position_id="local_pos",
+          side="SELL", quantity=1, price=110, account_id="gate_testnet", mode="TESTNET")
+
+    result = reconcile_decision_outcomes(store, "gate_testnet")
+
+    assert result == {"considered": 0, "pending": 0, "resolved": []}
+    row = {item["memory_id"]: item for item in list_decision_memory(store, "gate_testnet")}[
+        memory["memory_id"]
+    ]
+    assert row["outcome_status"] is None
+    assert row["outcome_pnl"] is None

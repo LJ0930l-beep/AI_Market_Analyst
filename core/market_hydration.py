@@ -266,9 +266,6 @@ class MarketHydrationRuntime:
 
     def _refresh_once(self) -> None:
         now = _utc(self.clock())
-        # Uses its own persistent cooldown; never runs orders or model calls.
-        from .macro_calendar import refresh_calendar
-        refresh_calendar(self.store)
         run_id = f"hydration-{uuid4().hex}"
         self._set(state="refreshing", last_refresh_at=now.isoformat(), last_error=None, last_errors=[], last_run_id=run_id)
         market_errors: list[str] = []
@@ -332,6 +329,14 @@ class MarketHydrationRuntime:
             )
         except Exception:
             pass
+
+        # Official releases can need several bounded HTTP reads. Publish the
+        # market/news cache first so an unavailable macro site cannot hold back
+        # every quote and prevent the hydration status from becoming ready.
+        # This remains part of the owned worker, never an order or model call.
+        if not self._stop_event.is_set():
+            from .macro_calendar import refresh_calendar
+            refresh_calendar(self.store)
 
     def _worker_loop(self) -> None:
         if self.initial_delay_seconds > 0 and self._stop_event.wait(self.initial_delay_seconds):

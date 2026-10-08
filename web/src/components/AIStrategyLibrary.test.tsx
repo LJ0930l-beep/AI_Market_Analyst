@@ -16,7 +16,7 @@ it('shows the actual Gate AI margin route instead of legacy risk gates', async (
     return { active, templates: [], fixed_policy: { execution_route: 'AI_AUTHORED_GATE_TESTNET' } } as never;
   });
   render(<MemoryRouter><AIStrategyLibrary accountId="gate_testnet" /></MemoryRouter>);
-  expect(await screen.findByText(/AI 自定仓位与订单方式/)).toBeInTheDocument();
+  expect(await screen.findByText(/固定名义价值开仓，AI 自选杠杆与订单方式/)).toBeInTheDocument();
   expect(screen.getByLabelText(/总保证金占用上限/)).toHaveValue(18);
   expect(screen.queryByText('组合风险硬上限')).not.toBeInTheDocument();
   expect(screen.queryByLabelText(/每笔止损风险/)).not.toBeInTheDocument();
@@ -240,6 +240,7 @@ it('labels account-wide memories honestly and distinguishes active from unsaved 
     { id: 'aggressive_momentum_15m', name: '趋势加速', sections, style: 'AGGRESSIVE', scan_interval_minutes: 15, order_preference: 'LIMIT' },
     { id: 'conservative_pullback', name: '稳健回踩', sections, style: 'CONSERVATIVE', scan_interval_minutes: 15, order_preference: 'LIMIT' },
     { id: 'conservative_range', name: '区间确认', sections, style: 'CONSERVATIVE', scan_interval_minutes: 15, order_preference: 'LIMIT' },
+    { id: 'price_action_structure', name: '结构自主', sections, style: 'PRICE_ACTION', scan_interval_minutes: 15, order_preference: 'LIMIT' },
   ];
   vi.spyOn(apiClient, 'v2').mockImplementation(async (path, method, body) => {
     if (path.startsWith('/gate/markets')) return { markets: [] } as never;
@@ -253,6 +254,7 @@ it('labels account-wide memories honestly and distinguishes active from unsaved 
 
   expect(await screen.findByText(/账户级 AI 经验池 · 3 条决策记录/)).toBeInTheDocument();
   expect(screen.getByText(/策略归属来自决策时保存的模板版本/)).toBeInTheDocument();
+  expect(screen.getByText(/每个账户仅运行当前选中的一套/)).toBeInTheDocument();
   const active = await screen.findByRole('button', { name: /稳健回踩/ });
   expect(active).toHaveAttribute('aria-pressed', 'true');
   expect(active).toHaveTextContent('当前生效 · 已选中');
@@ -260,6 +262,9 @@ it('labels account-wide memories honestly and distinguishes active from unsaved 
   expect(aggressive).toHaveTextContent('单笔风险 ≤ 0.2%');
   expect(aggressive).toHaveTextContent('用户杠杆 ≤ 4×');
   expect(aggressive).toHaveTextContent('AI 经验池 · 1 条策略决策 · 1 条已复盘');
+  const priceAction = screen.getByRole('button', { name: /结构自主/ });
+  expect(priceAction).toHaveTextContent('价格行为 / 自主');
+  expect(priceAction).not.toHaveTextContent('保守策略');
   fireEvent.click(aggressive);
   expect(aggressive).toHaveTextContent('草稿已载入 · 尚未生效');
 });
@@ -308,7 +313,7 @@ it('previews the exact strategy text limits and runs a local-only configuration 
   expect(preview).not.toHaveTextContent(`角色：${tooLongRole}`);
   fireEvent.click(screen.getByRole('button', { name: '运行本地配置检查' }));
   expect(screen.getByRole('status')).toHaveTextContent('配置字段检查通过');
-  expect(screen.getByText(/不代表 Bonsai、行情、新闻或交易所连接已就绪/)).toBeInTheDocument();
+  expect(screen.getByText(/不代表 Gemini、行情、新闻或交易所连接已就绪/)).toBeInTheDocument();
   expect(calls.every(item => !item.startsWith('PUT '))).toBe(true);
   expect(call).toHaveBeenCalledTimes(4);
 });

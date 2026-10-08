@@ -24,19 +24,15 @@ interface DisplayMessage extends ConsultMessage {
   id: string;
 }
 
-function bonsaiReceiptArtifact(receipt: ModelIdentityReceipt | undefined): string | undefined {
-  if (!receipt || receipt.model_id !== "Bonsai-2-27B-PTQ1_0") return undefined;
+function configuredReceiptArtifact(receipt: ModelIdentityReceipt | undefined): string | undefined {
+  if (!receipt || receipt.model_id !== "gemini-3.8-flash-high") return undefined;
   const identity = (value: unknown): string | undefined => {
-    if (typeof value !== "string" || !value.trim()) return undefined;
-    let basename = value.trim().replace(/\\/g, "/").split("/").pop() || "";
-    if (basename.toLowerCase().endsWith(".gguf")) basename = basename.slice(0, -5);
-    if (basename.toLowerCase().startsWith("ternary-")) basename = basename.slice("ternary-".length);
-    return basename.toLowerCase() === "bonsai-2-27b-ptq1_0" ? "Bonsai-2-27B-PTQ1_0" : undefined;
+    return typeof value === 'string' && ['gemini-3.8-flash-high', 'gemini-3.8-flash-control'].includes(value.trim()) ? 'gemini-3.8-flash-high' : undefined;
   };
   const actual = identity(receipt.actual_model_id ?? receipt.model_version);
   const manifest = identity(receipt.verified_manifest_model_id);
   return actual && actual === manifest &&
-    (receipt.model_identity_source === "completion_response" || receipt.model_identity_source === "request_bound_to_verified_manifest")
+    receipt.model_identity_source === "completion_response"
     ? actual
     : undefined;
 }
@@ -353,7 +349,7 @@ export function QwenConsultPage({ apiClient }: { apiClient: ApplicationShellApiC
         <dl className="fact-list consult-capability__facts">
           <div className="fact-list__row"><dt>{t("common.provider")}</dt><dd data-i18n-skip>{modelHealth?.provider ?? "—"}</dd></div>
           <div className="fact-list__row"><dt>{t("consult.requestedModel")}</dt><dd data-i18n-skip>{actualRoute?.model ?? capability?.model_id ?? (typeof modelHealth?.model_id === "string" ? modelHealth.model_id : "—")}</dd></div>
-          <div className="fact-list__row"><dt>{t("consult.verifiedModel")}</dt><dd data-i18n-skip>{bonsaiReceiptArtifact(actualRoute?.receipt) ?? (status === "complete" ? t("consult.modelIdentityUnverified") : actualRoute?.model ? t("consult.modelIdentityPending") : "—")}</dd></div>
+          <div className="fact-list__row"><dt>{t("consult.verifiedModel")}</dt><dd data-i18n-skip>{configuredReceiptArtifact(actualRoute?.receipt) ?? (status === "complete" ? t("consult.modelIdentityUnverified") : actualRoute?.model ? t("consult.modelIdentityPending") : "—")}</dd></div>
           <div className="fact-list__row"><dt>{t("consult.contract")}</dt><dd data-i18n-skip>{(capability?.contract_version || "local_model_consult_v2").replace(/qwen/gi, "local_model")}</dd></div>
           <div className="fact-list__row"><dt>{t("v11.modelPreference")}</dt><dd data-i18n-skip>{modelPreference} · {actualRoute?.tier ?? "pending"} · {actualRoute?.reason ?? "server task policy"}</dd></div>
           <div className="fact-list__row"><dt>{t("consult.sessionStorage")}</dt><dd>{t("consult.sessionOnly")}</dd></div>

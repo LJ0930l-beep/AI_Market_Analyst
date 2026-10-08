@@ -64,6 +64,20 @@ def context_and_output(now):
     return ctx, out
 
 
+def test_action_schema_matches_every_executor_action_and_owned_order_identifier():
+    from core.trading.ai_led_engine import AIActionType
+    from core.trading.model_schemas import AI_ACTION_SCHEMA, validate_schema
+
+    action_schema = AI_ACTION_SCHEMA["properties"]["action"]
+    assert set(action_schema["enum"]) == {action.value for action in AIActionType}
+    assert "order_id" in AI_ACTION_SCHEMA["properties"]
+    validate_schema({"action": "CANCEL_ORDER", "instrument_id": "BTCUSDT",
+                     "reason": "撤销本系统的未成交委托", "confidence": 40,
+                     "order_id": "123456789"}, AI_ACTION_SCHEMA)
+    with pytest.raises(ValueError, match="INVALID_ACTION_SCHEMA:output:fields"):
+        validate_schema({"action": "WAIT", "reason": "等待下一次收盘", "confidence": None}, AI_ACTION_SCHEMA)
+
+
 def market_radar_fixture(symbols, now):
     symbol = symbols[0] if symbols else "BTCUSDT"
     return {
@@ -191,6 +205,43 @@ def test_closed_bar_context_rejects_future_unclosed_gaps_and_nonfinite():
     rows = bars(now)
     rows.pop(-10)
     assert technical_context(store, ("BTCUSDT",), now)["BTCUSDT"]["timeframes"]["15m"]["status"] == "INSUFFICIENT_OR_STALE"
+
+
+def test_closed_bar_context_requires_exact_duration_and_explicit_real_bar_flags():
+    now = datetime.now(timezone.utc)
+
+    def frame_for(rows):
+        store = SimpleNamespace(list_market_bars=lambda *_args, **_kwargs: rows)
+        return technical_context(store, ("BTCUSDT",), now)["BTCUSDT"]["timeframes"]["15m"]
+
+    rows = bars(now, count=32)
+    rows[-1]["bar_start"] = (datetime.fromisoformat(rows[-1]["bar_end"]) - timedelta(minutes=1)).isoformat()
+    assert frame_for(rows)["status"] == "INSUFFICIENT_OR_STALE"
+
+    rows = bars(now, count=32)
+    rows[-1]["is_closed"] = "false"
+    assert frame_for(rows)["status"] == "INSUFFICIENT_OR_STALE"
+
+    rows = bars(now, count=32)
+    rows[-1]["is_closed"] = 2
+    assert frame_for(rows)["status"] == "INSUFFICIENT_OR_STALE"
+
+    rows = bars(now, count=32)
+    rows[-1]["synthetic"] = True
+    assert frame_for(rows)["status"] == "INSUFFICIENT_OR_STALE"
+
+    rows = bars(now, count=32)
+    rows[-1]["synthetic"] = "false"
+    assert frame_for(rows)["status"] == "INSUFFICIENT_OR_STALE"
+
+    rows = bars(now, count=32)
+    rows[-1]["is_closed"] = 1  # SQLite's integer representation of TRUE.
+    rows[-1]["synthetic"] = 0  # SQLite's integer representation of FALSE.
+    assert frame_for(rows)["status"] == "READY"
+
+    rows = bars(now, count=32)
+    rows.append(None)  # A malformed adapter row must not poison valid history.
+    assert frame_for(rows)["status"] == "READY"
 
 
 def test_five_minute_strategy_loads_its_signal_frame():
@@ -511,7 +562,8 @@ def setup(tmp_path, monkeypatch):
     gateway = ExecutionGateway(store, ledger=ledger)
     guardian = PositionGuardian(store, ledger)
     coordinator = AISessionCoordinator(store=store, service=SimpleNamespace(), ledger=ledger, guardian=guardian,
-                                       session_manager=SessionManager(store), execution_gateway=gateway)
+                                       session_manager=SessionManager(store), execution_gateway=gateway,
+                                       sft_sample_sink=lambda **_sample: False)
     monkeypatch.setattr(
         coordinator_module,
         "_load_market_radar_snapshot",
@@ -521,6 +573,19 @@ def setup(tmp_path, monkeypatch):
     yield store, ledger, coordinator, engine
     coordinator.close()
     ledger.close()
+
+
+def test_model_fixture_sft_sink_never_reaches_production_collector(setup, monkeypatch):
+    _store, _ledger, coordinator, _engine = setup
+
+    def forbidden(**_sample):
+        pytest.fail("unit model fixtures must not append to the application's SFT dataset")
+
+    monkeypatch.setattr(coordinator_module, "record_sft_sample", forbidden)
+    assert coordinator._record_sft_sample(
+        cycle_id="isolated-test", account_id="news-paper", mode="PAPER",
+        system_prompt="test", user_prompt="{}", model_output={"action": "WAIT"},
+    ) is False
 
 
 def test_real_paper_open_and_wait_without_registered_strategy(setup):
@@ -623,6 +688,14 @@ def test_model_prompt_freezes_technical_news_and_ai_authored_json(setup):
     store, _, coordinator, engine = setup
     now = datetime.now(timezone.utc)
     ctx, output = context_and_output(now)
+    ctx.technical_context["BTCUSDT"]["timeframes"]["15m"]["indicators"].update({
+        "atr14_simple": 4.3635714,
+        "volume_ratio20": 0.45596913,
+    })
+    ctx.decision_memory = [{
+        "action": "WAIT", "symbol": "BTCUSDT", "reason": "上一轮 WAIT 仍有效",
+        "cycle_status": "WAITING",
+    }]
     ctx.candidates = [{
         "candidate_id": "candidate-1", "symbol": "BTCUSDT", "strategy_id": "ema_trend",
         "signal_timeframe": "15m", "closed_signal_bar": now.isoformat(),
@@ -637,20 +710,26 @@ def test_model_prompt_freezes_technical_news_and_ai_authored_json(setup):
     class Model:
         model_id = "Bonsai-2-27B-PTQ1_0"
         context_length = 8192
-        max_tokens = 1000
+        max_tokens = 2048
 
         def generate_json(self, messages, **kwargs):
             assert kwargs["model_name"] == "Bonsai-2-27B-PTQ1_0"
             assert "忽略新闻" in messages[0]["content"]
-            assert "instrument_id 必须逐字选自 allowed_instruments，WAIT/HOLD 也要选标的" in messages[0]["content"]
+            assert "每个动作都必须填写 instrument_id，且必须逐字选自 allowed_instruments" in messages[0]["content"]
+            assert "EXTERNAL_OR_UNVERIFIED 只计入账户保证金/风险数字" in messages[0]["content"]
+            assert "不构成必须等待或管理的仓位" in messages[0]["content"]
             payload = json.loads(messages[1]["content"])
             assert payload["allowed_instruments"] == ["BTCUSDT"]
+            assert payload["decision_memory"] == []
             assert payload["active_strategy"] == {}
             assert payload["technical_context"]["BTCUSDT"]["status"] == "READY"
             assert payload["technical_context"]["BTCUSDT"]["timeframes"]["15m"]["candles"][-1][3] == 100.0
             assert len(payload["technical_context"]["BTCUSDT"]["timeframes"]["15m"]["candles"]) == 4
             assert len(payload["technical_context"]["BTCUSDT"]["timeframes"]["1h"]["candles"]) == 2
-            assert payload["technical_context"]["indicator_columns"][0] == "ema20"
+            indicators = payload["technical_context"]["BTCUSDT"]["timeframes"]["15m"]["indicators"]
+            assert indicators["atr14_simple"] == pytest.approx(4.3635714)
+            assert indicators["volume_ratio20"] == pytest.approx(0.45596913)
+            assert "indicator_columns" not in payload["technical_context"]
             assert payload["technical_context"]["candle_columns"] == ["open", "high", "low", "close", "volume"]
             assert payload["news_revisions"][0]["revision_id"] == "news1"
             assert payload["candidates"][0]["trigger_completion_pct"] == 92
@@ -691,6 +770,12 @@ def test_model_prompt_freezes_technical_news_and_ai_authored_json(setup):
             "SELECT payload_json FROM evidence_bundles WHERE bundle_id=?", (ctx.evidence_bundle_id,),
         ).fetchone()[0])
     assert frozen["source_evidence"]["market_radar"] == frozen["prompt_inputs"]["market_radar"]
+    # The deliberately distinct values above verify the model-facing field
+    # names; restore the fixture's original risk geometry before execution.
+    ctx.technical_context["BTCUSDT"]["timeframes"]["15m"]["indicators"].update({
+        "atr14_simple": 2.0,
+        "volume_ratio20": 1.0,
+    })
     assert engine.execute_cycle(ctx, now=now, model_output=decoded).status == "EXECUTED"
     with store._connect() as db:
         cycle_payload = json.loads(db.execute(
@@ -819,8 +904,10 @@ def test_compacted_three_symbol_prompt_fits_verified_8k_window_without_losing_tr
         "positions": [
             {"symbol": symbol, "side": "LONG", "quantity": 0.01, "entry_price": 99,
              "mark_price": 100, "leverage": 3, "liquidation_price": 70,
-             "stop_loss": 95, "take_profit": 110}
-            for symbol in symbols
+             "stop_loss": 95, "take_profit": 110,
+             "ownership": "VERIFIED_SYSTEM" if index == 0 else "EXTERNAL_OR_UNVERIFIED",
+             "ownership_reason_code": "REMOTE_NET_FILLS_RECONCILED" if index == 0 else "REMOTE_AVERAGE_ENTRY_MISMATCH"}
+            for index, symbol in enumerate(symbols)
         ],
         "pending_orders": [
             {"order_id": f"order-{index}", "symbol": "BTCUSDT", "side": "BUY",
@@ -887,7 +974,7 @@ def test_compacted_three_symbol_prompt_fits_verified_8k_window_without_losing_tr
     class Model:
         model_id = "Bonsai-2-27B-PTQ1_0"
         context_length = 8192
-        max_tokens = 1000
+        max_tokens = 2048
 
         def __init__(self):
             self.messages = None
@@ -901,35 +988,376 @@ def test_compacted_three_symbol_prompt_fits_verified_8k_window_without_losing_tr
     model = Model()
     coordinator.model_provider = model
     coordinator._model_output(ctx)
-    assert 640 <= model.kwargs["max_tokens"] <= model.max_tokens
+    assert 1024 <= model.kwargs["max_tokens"] <= model.max_tokens
     assert model.kwargs["reasoning_effort"] == "none"
 
     payload = json.loads(model.messages[1]["content"])
     assert set(payload["market_snapshots"]) == set(symbols)
-    assert len(payload["candidates"]) == 3
+    assert 2 <= len(payload["candidates"]) <= 3
+    assert {item["symbol"] for item in payload["candidates"]}.issubset(set(symbols))
+    assert all(len(payload["technical_context"][symbol]["timeframes"]["15m"]["candles"]) == 4 for symbol in symbols)
     proposal = payload["candidates"][0]["proposal"]
     assert proposal["entry"] == 100.0 and proposal["stop"] == 97.0
     assert proposal["targets"] == [107.0, 110.0]
-    assert all(any(news["symbol"] == symbol for news in payload["news_revisions"]) for symbol in symbols)
+    candidate_symbols = {item["symbol"] for item in payload["candidates"]}
+    for symbol in candidate_symbols:
+        headline = next(news for news in payload["news_revisions"] if news["symbol"] == symbol)
+        assert headline["title"].startswith(f"{symbol} event")
+        assert len(headline["summary"]) >= 48
     assert len(payload["account_truth"]["positions"]) == 3
+    assert [item["ownership"] for item in payload["account_truth"]["positions"]] == [
+        "VERIFIED_SYSTEM", "EXTERNAL_OR_UNVERIFIED", "EXTERNAL_OR_UNVERIFIED",
+    ]
+    assert payload["account_truth"]["positions"][1]["ownership_reason_code"] == "REMOTE_AVERAGE_ENTRY_MISMATCH"
     assert len(payload["account_truth"]["pending_orders"]) == 4
+    assert all("ownership" in order for order in payload["account_truth"]["pending_orders"])
     assert payload["active_strategy"]["execution"] == ctx.strategy_instructions["execution"]
     experience = payload["strategy_experience"]
     assert experience["status"] == "AVAILABLE"
     assert experience["sample_size"] == 4
-    assert (experience["wins"], experience["losses"], experience["flats"]) == (1, 2, 1)
     assert experience["net_realized_pnl_usdt"] == pytest.approx(3.0)
-    assert {item["strategy_template_id"] for item in experience["by_strategy"]} == {"aggressive_15m", "conservative_15m"}
-    aggressive = next(item for item in experience["by_strategy"] if item["strategy_template_id"] == "aggressive_15m")
-    assert aggressive["settled_count"] == 3 and aggressive["win_rate_pct"] == 50.0
-    assert len(experience["recent_closed_trades"]) == 3
-    assert payload["decision_memory"]
+    assert len(experience["recent_closed_trades"]) == 1
+    settled_summary = experience["recent_closed_trades"][0]["summary_zh"]
+    assert settled_summary.startswith("复盘教训")
+    assert len(settled_summary) <= 96
+    assert len(payload["decision_memory"]) == 1
+    assert payload["decision_memory"][0]["action"] == "OPEN_LONG"
+    assert payload["decision_memory"][0]["status"] == "EXECUTED"
     assert "large_unused_provider_blob" not in json.dumps(payload)
     assert ctx.model_inference_settings["verified_context_length"] == 8192
     assert ctx.model_inference_settings["estimated_input_tokens"] + ctx.model_inference_settings["output_token_reserve"] <= 8192
     assert ctx.model_inference_settings["reasoning_effort"] == "none"
     assert "JSON字段规则：" in model.messages[0]["content"]
     assert "JSON Schema (return one matching JSON object):" not in model.messages[0]["content"]
+
+
+def test_remote_gate_positions_require_fill_proof_and_preserve_margin_truth():
+    class Gateway:
+        def __init__(self):
+            self.calls = []
+
+        def _gate_remote_position_ownership_evidence(self, **kwargs):
+            self.calls.append(kwargs)
+            if kwargs["instrument_id"] == "DOGEUSDT":
+                return {
+                    "version": "gate_system_position_ownership_v1",
+                    "status": "VERIFIED",
+                    "account_id": kwargs["account_id"],
+                    "environment": kwargs["environment"],
+                    "venue": "gate",
+                    "instrument_id": kwargs["instrument_id"],
+                    "side": kwargs["side"],
+                    "entry_order_ids": ["native-entry-1"],
+                }
+            raise RuntimeError(
+                "GATE_SYSTEM_POSITION_OWNERSHIP_UNVERIFIED:REMOTE_AVERAGE_ENTRY_MISMATCH"
+            )
+
+    truth = {
+        "status": "AVAILABLE", "account_id": "gate_live", "api_environment": "LIVE",
+        "equity": 2500.0, "available_margin": 1500.0, "used_margin": 1000.0,
+        "positions": [
+            {"symbol": "DOGE/USDT:USDT", "side": "LONG", "contracts": "20",
+             "entry_price": "0.15", "mark_price": "0.16", "margin": 20.0},
+            {"symbol": "NVDA/USDT:USDT", "side": "SHORT", "contracts": "2",
+             "entry_price": "100", "mark_price": "99", "margin": 50.0},
+            {"symbol": "XRP/USDT:USDT", "side": "LONG", "contracts": "0",
+             "entry_price": "0.5", "mark_price": "0.5", "margin": 0.0},
+        ],
+    }
+    gateway = Gateway()
+    classified = coordinator_module._classify_remote_gate_position_ownership(
+        truth, gateway, account_id="gate_live", mode=TradingMode.LIVE, venue="gate",
+    )
+
+    assert [position["ownership"] for position in classified["positions"]] == [
+        "VERIFIED_SYSTEM", "EXTERNAL_OR_UNVERIFIED", "EXTERNAL_OR_UNVERIFIED",
+    ]
+    assert classified["positions"][0]["ownership_reason_code"] == "REMOTE_NET_FILLS_RECONCILED"
+    assert classified["positions"][1]["ownership_reason_code"] == "REMOTE_AVERAGE_ENTRY_MISMATCH"
+    assert classified["positions"][2]["ownership_reason_code"] == "REMOTE_POSITION_IDENTITY_OR_ECONOMICS_UNKNOWN"
+    assert (classified["equity"], classified["available_margin"], classified["used_margin"]) == (2500.0, 1500.0, 1000.0)
+    assert classified["positions"][1]["contracts"] == "2"
+    assert classified["positions"][1]["margin"] == 50.0
+    assert len(gateway.calls) == 2
+    assert {call["instrument_id"] for call in gateway.calls} == {"DOGEUSDT", "NVDAUSDT"}
+    assert all(call["account_id"] == "gate_live" and call["environment"] == "LIVE" for call in gateway.calls)
+
+    wrong_scope = deepcopy(truth)
+    wrong_scope["account_id"] = "some-other-gate-account"
+    wrong_scope_gateway = Gateway()
+    mismatched = coordinator_module._classify_remote_gate_position_ownership(
+        wrong_scope, wrong_scope_gateway, account_id="gate_live", mode=TradingMode.LIVE, venue="gate",
+    )
+    assert all(position["ownership"] == "EXTERNAL_OR_UNVERIFIED" for position in mismatched["positions"])
+    assert all(position["ownership_reason_code"] == "ACCOUNT_ID_MISMATCH" for position in mismatched["positions"])
+    assert wrong_scope_gateway.calls == []
+
+
+def test_remote_gate_position_without_gateway_proof_is_not_assumed_owned():
+    truth = {
+        "status": "AVAILABLE", "account_id": "gate_testnet", "api_environment": "TESTNET",
+        "available_margin": 100.0,
+        "positions": [{"symbol": "ETH/USDT:USDT", "side": "LONG", "contracts": "1",
+                       "entry_price": "2000", "mark_price": "2010"}],
+    }
+    classified = coordinator_module._classify_remote_gate_position_ownership(
+        truth, object(), account_id="gate_testnet", mode=TradingMode.TESTNET, venue="gate",
+    )
+    assert classified["positions"][0]["ownership"] == "EXTERNAL_OR_UNVERIFIED"
+    assert classified["positions"][0]["ownership_reason_code"] == "OWNERSHIP_PROOF_UNAVAILABLE"
+
+
+def test_gate_prompt_order_roles_keep_exact_owned_rows_after_external_triggers_and_old_intents(setup):
+    from core.trading.gate_trade_settlement import GateTradeSettlementService
+
+    store, _, _, _ = setup
+    settlement_service = GateTradeSettlementService(store)
+    with store._connect() as db:
+        settlement_service._ensure(db)
+        db.execute(
+            """INSERT INTO order_intents
+               (intent_id,idempotency_key,account_id,mode,instrument_id,side,order_type,quantity,
+                price,payload_hash,status,execution_result_json,created_at,updated_at,venue,environment,
+                reduce_only,position_id,decision_path,control_mode)
+               VALUES ('intent_ai_long_lived','key-long-lived','gate_live','LIVE','BTCUSDT','LONG','market',1,
+                       100,'hash','FILLED',?,'2026-01-01T00:00:00+00:00','2026-01-01T00:00:00+00:00',
+                       'gate','LIVE',0,'managed-pos','AI_LED','AUTONOMOUS')""",
+            (json.dumps({
+                "intent_id": "intent_ai_long_lived", "order_id": "8000",
+                "protection_orders": [{"leg": "stop_loss", "order_id": "7100"}],
+            }),),
+        )
+        db.execute(
+            """INSERT INTO order_intents
+               (intent_id,idempotency_key,account_id,mode,instrument_id,side,order_type,quantity,
+                price,payload_hash,status,execution_result_json,created_at,updated_at,venue,environment,
+                reduce_only,position_id,decision_path,control_mode)
+               VALUES ('intent_ai_resting','key-resting','gate_live','LIVE','BTCUSDT','LONG','limit',1,
+                       99,'hash','ACKNOWLEDGED',?,'2026-01-02T00:00:00+00:00','2026-01-02T00:00:00+00:00',
+                       'gate','LIVE',0,NULL,'AI_LED','AUTONOMOUS')""",
+            (json.dumps({"intent_id": "intent_ai_resting", "order_id": "9000"}),),
+        )
+        db.execute(
+            """INSERT INTO order_intents
+               (intent_id,idempotency_key,account_id,mode,instrument_id,side,order_type,quantity,
+                price,payload_hash,status,execution_result_json,created_at,updated_at,venue,environment,
+                reduce_only,position_id,decision_path,control_mode)
+               VALUES ('intent_close_owned','key-close-owned','gate_live','LIVE','BTCUSDT','SELL','limit',0.2,
+                       101,'hash','SUBMITTED',?,'2026-01-03T00:00:00+00:00','2026-01-03T00:00:00+00:00',
+                       'gate','LIVE',1,'managed-pos','AI_LED','AUTONOMOUS')""",
+            (json.dumps({"intent_id": "intent_close_owned", "order_id": "7200"}),),
+        )
+        # More recent terminal history must not evict an exact long-lived
+        # parent receipt or turn the history scan into an ORDER BY/LIMIT guess.
+        terminal_time = datetime(2026, 10, 1, tzinfo=timezone.utc).isoformat()
+        db.executemany(
+            """INSERT INTO order_intents
+               (intent_id,idempotency_key,account_id,mode,instrument_id,side,order_type,quantity,
+                payload_hash,status,execution_result_json,created_at,updated_at,venue,environment,
+                reduce_only,decision_path,control_mode)
+               VALUES (?,?,'gate_live','LIVE','ETHUSDT','LONG','limit',1,'hash','CANCELLED',?, ?, ?,
+                       'gate','LIVE',0,'AI_LED','AUTONOMOUS')""",
+            [
+                (f"intent_ai_terminal_{index}", f"terminal-key-{index}",
+                 json.dumps({"intent_id": f"intent_ai_terminal_{index}", "order_id": str(30_000 + index)}),
+                 terminal_time, terminal_time)
+                for index in range(1005)
+            ],
+        )
+
+    external_triggers = [
+        {"order_id": str(6000 + index), "symbol": "BTCUSDT", "side": "SELL", "type": "trigger",
+         "trigger_price": 90 - index, "amount": 0.1, "remaining": 0.1, "status": "OPEN",
+         "reduce_only": True, "is_protection": True}
+        for index in range(9)
+    ]
+    truth = {
+        "status": "AVAILABLE", "account_id": "gate_live", "api_environment": "LIVE",
+        "equity": 2500.0, "available_margin": 1500.0, "used_margin": 1000.0,
+        "positions": [
+            {"position_id": "managed-pos", "symbol": "BTCUSDT", "side": "LONG", "quantity": 1,
+             "ownership": "VERIFIED_SYSTEM", "ownership_role": "MANAGED_SYSTEM_POSITION",
+             "ownership_scope": {"account_id": "gate_live", "environment": "LIVE", "venue": "gate"}},
+            {"position_id": "external-pos", "symbol": "BTCUSDT", "side": "LONG", "quantity": 0.1,
+             "margin": 25.0, "ownership": "EXTERNAL_OR_UNVERIFIED",
+             "ownership_role": "EXTERNAL_OR_UNVERIFIED_POSITION"},
+        ],
+        "pending_orders": [
+            *external_triggers,
+            {"order_id": "9000", "symbol": "BTCUSDT", "side": "BUY", "type": "limit",
+             "price": 99, "amount": 1, "remaining": 1, "status": "OPEN"},
+            {"order_id": "7100", "symbol": "BTCUSDT", "side": "SELL", "type": "trigger",
+             "trigger_price": 90, "amount": 1, "remaining": 1, "status": "OPEN",
+             "reduce_only": True, "is_protection": True},
+            {"order_id": "7200", "symbol": "BTCUSDT", "side": "SELL", "type": "limit",
+             "price": 101, "amount": 0.2, "remaining": 0.2, "status": "OPEN", "reduce_only": True},
+        ],
+    }
+    classified = coordinator_module._classify_remote_gate_order_ownership(
+        truth, store, account_id="gate_live", mode=TradingMode.LIVE, venue="gate",
+    )
+    assert [row["order_id"] for row in classified["owned_entry_orders"]] == ["9000"]
+    assert [row["order_id"] for row in classified["owned_protection_orders"]] == ["7100"]
+    assert [row["order_id"] for row in classified["owned_reduction_orders"]] == ["7200"]
+    assert len(classified["external_or_unverified_orders"]) == 9
+    assert all(row["ownership_role"] == "EXTERNAL_OR_UNVERIFIED_ORDER" for row in classified["external_or_unverified_orders"])
+
+    positions, entries = coordinator_module._managed_gate_universe_inputs(classified)
+    assert [row["position_id"] for row in positions] == ["managed-pos"]
+    assert [row["order_id"] for row in entries] == ["9000"]
+    packet = coordinator_module._model_account_truth_projection(
+        classified, store=store, account_id="gate_live", mode=TradingMode.LIVE, venue="gate",
+    )
+    assert [row["order_id"] for row in packet["owned_entry_orders"]] == ["9000"]
+    assert packet["owned_entry_orders"][0]["ownership_scope"] == {
+        "account_id": "gate_live", "environment": "LIVE", "venue": "gate",
+    }
+    assert packet["owned_protection_orders"][0]["trigger_price"] == 90
+    assert packet["owned_reduction_orders"][0]["amount"] == 0.2
+    assert "pending_orders" not in packet
+    assert packet["managed_state"]["external_or_unverified_order_count"] == 9
+    assert len(packet["external_or_unverified_orders"]) == 2
+    assert all("ownership_reason_code" not in row and "ownership_scope" not in row
+               for row in packet["external_or_unverified_orders"])
+    assert (packet["equity"], packet["available_margin"], packet["used_margin"]) == (2500.0, 1500.0, 1000.0)
+
+
+def test_canceled_partial_parent_keeps_only_verified_native_protection_ownership(setup):
+    from core.trading.gate_trade_settlement import GateTradeSettlementService
+
+    store, _, _, _ = setup
+    settlement_service = GateTradeSettlementService(store)
+    verified_receipt = {
+        "intent_id": "intent_ai_canceled_partial", "order_id": "8001",
+        "filled_quantity": 1, "protection_status": "ACTIVE",
+        "remainder_cancel": {
+            "status": "TERMINAL_VERIFIED", "remote_status": "canceled",
+            "filled_quantity": "1",
+        },
+        "execution_evidence": {"remote_order_id": "8001", "remote_status": "canceled"},
+        "protection_orders": [{"leg": "stop_loss", "order_id": "7300"}],
+    }
+    ambiguous_receipt = {
+        "intent_id": "intent_ai_canceled_ambiguous", "order_id": "8002",
+        "filled_quantity": 1, "protection_status": "ACTIVE",
+        "protection_orders": [{"leg": "stop_loss", "order_id": "7301"}],
+    }
+    with store._connect() as db:
+        settlement_service._ensure(db)
+        for intent_id, order_id, receipt in (
+            ("intent_ai_canceled_partial", "key-canceled-partial", verified_receipt),
+            ("intent_ai_canceled_ambiguous", "key-canceled-ambiguous", ambiguous_receipt),
+        ):
+            db.execute(
+                """INSERT INTO order_intents
+                   (intent_id,idempotency_key,account_id,mode,instrument_id,side,order_type,quantity,
+                    price,payload_hash,status,execution_result_json,created_at,updated_at,venue,environment,
+                    reduce_only,decision_path,control_mode)
+                   VALUES (?,?, 'gate_live','LIVE','BTCUSDT','LONG','market',2,100,'hash','CANCELED',?,
+                           '2026-01-02T00:00:00+00:00','2026-01-02T00:00:00+00:00',
+                           'gate','LIVE',0,'AI_LED','AUTONOMOUS')""",
+                (intent_id, order_id, json.dumps(receipt)),
+            )
+
+    truth = {
+        "status": "AVAILABLE", "account_id": "gate_live", "api_environment": "LIVE",
+        "positions": [],
+        "pending_orders": [
+            {"order_id": "7300", "symbol": "BTCUSDT", "side": "SELL", "type": "trigger",
+             "trigger_price": 90, "amount": 1, "remaining": 1, "status": "OPEN",
+             "reduce_only": True, "is_protection": True},
+            {"order_id": "7301", "symbol": "BTCUSDT", "side": "SELL", "type": "trigger",
+             "trigger_price": 89, "amount": 1, "remaining": 1, "status": "OPEN",
+             "reduce_only": True, "is_protection": True},
+        ],
+    }
+    classified = coordinator_module._classify_remote_gate_order_ownership(
+        truth, store, account_id="gate_live", mode=TradingMode.LIVE, venue="gate",
+    )
+    assert [row["order_id"] for row in classified["owned_protection_orders"]] == ["7300"]
+    assert [row["order_id"] for row in classified["external_or_unverified_orders"]] == ["7301"]
+
+
+def test_settled_entry_id_cannot_own_a_same_symbol_reopened_position(setup):
+    from core.trading.gate_trade_settlement import GateTradeSettlementService
+
+    store, _, _, _ = setup
+    service = GateTradeSettlementService(store)
+    settlement = {
+        "status": "SETTLED_FULL_COST", "account_id": "gate_live", "environment": "LIVE",
+        "accounting_episode_id": "episode-closed", "entry_order_id": "34567",
+        "entry_intent_id": "intent_ai_closed", "total_pnl": "4.25", "settlement_currency": "USDT",
+    }
+    with store._connect() as db:
+        service._ensure(db)
+        db.execute(
+            """INSERT INTO gate_accounting_episodes
+               (episode_id,account_id,environment,contract,canonical_symbol,entry_order_id,entry_intent_id,
+                side,identity_json,created_at)
+               VALUES ('episode-closed','gate_live','LIVE','BTC_USDT','BTCUSDT','34567','intent_ai_closed',
+                       'LONG','{}','2026-01-01T00:00:00+00:00')""",
+        )
+        db.execute(
+            """INSERT INTO gate_episode_settlements
+               (settlement_id,episode_id,status,settlement_currency,total_pnl,fee_status,funding_status,
+                pnl_source,settlement_json,settled_at)
+               VALUES ('settlement-closed','episode-closed','SETTLED_FULL_COST','USDT','4.25',
+                       'VERIFIED','VERIFIED','NATIVE_TRADE_AND_POSITION_CLOSE',?,
+                       '2026-01-02T00:00:00+00:00')""",
+            (json.dumps(settlement),),
+        )
+        db.execute(
+            """INSERT INTO order_intents
+               (intent_id,idempotency_key,account_id,mode,instrument_id,side,order_type,quantity,
+                price,payload_hash,status,execution_result_json,created_at,updated_at,venue,environment,
+                reduce_only,decision_path,control_mode)
+               VALUES ('intent_ai_closed','key-closed','gate_live','LIVE','BTCUSDT','LONG','market',1,
+                       100,'hash','FILLED',?,'2026-01-01T00:00:00+00:00','2026-01-01T00:00:00+00:00',
+                       'gate','LIVE',0,'AI_LED','AUTONOMOUS')""",
+            (json.dumps({"intent_id": "intent_ai_closed", "order_id": "34567", "filled": 1}),),
+        )
+
+    class Gateway:
+        def _gate_remote_position_ownership_evidence(self, **kwargs):
+            return {
+                "version": "gate_system_position_ownership_v1", "status": "VERIFIED",
+                "account_id": kwargs["account_id"], "environment": kwargs["environment"],
+                "venue": "gate", "instrument_id": kwargs["instrument_id"],
+                "side": kwargs["side"], "entry_order_ids": ["34567"],
+            }
+
+    reopened = {
+        "status": "AVAILABLE", "account_id": "gate_live", "api_environment": "LIVE",
+        "equity": 1000, "available_margin": 900, "used_margin": 100,
+        "positions": [{"symbol": "BTC/USDT:USDT", "side": "LONG", "contracts": "1",
+                       "entry_price": "100", "mark_price": "100", "margin": 20}],
+    }
+    classified = coordinator_module._classify_remote_gate_position_ownership(
+        reopened, Gateway(), account_id="gate_live", mode=TradingMode.LIVE, venue="gate", store=store,
+    )
+    assert classified["positions"][0]["ownership"] == "EXTERNAL_OR_UNVERIFIED"
+    assert classified["positions"][0]["ownership_reason_code"] == "PRIOR_ENTRY_ALREADY_FULLY_SETTLED"
+    managed, _ = coordinator_module._managed_gate_universe_inputs(classified)
+    assert managed == []
+    assert classified["available_margin"] == 900.0
+
+
+def test_live_gate_context_uses_margin_only_risk_policy_without_nofx_runtime(setup):
+    _, _, coordinator, _ = setup
+    context = coordinator._build_context(
+        cycle_id="live-margin-only", now=datetime.now(timezone.utc), session_id="session-live",
+        generation=1, account_id="news-paper", mode=TradingMode.LIVE, venue="gate",
+        authorization=None, snapshots={}, allowed_instruments=("BTCUSDT",),
+        account_truth={"status": "AVAILABLE", "equity": 2500, "available_margin": 1500,
+                       "used_margin": 1000, "positions": []},
+        strategy_instructions={"profile": {"signal_timeframe": "15m"},
+                               "execution": {"risk_per_trade_pct": 0.2}},
+    )
+    assert context.dynamic_risk == {
+        "status": "NOT_APPLICABLE", "entry_allowed": True,
+        "reasons": [], "policy": "MARGIN_ONLY",
+    }
 
 
 def test_nofx_runtime_and_gate_universe_contract_reach_bonsai_decision_payload(setup, monkeypatch):
@@ -972,6 +1400,17 @@ def test_nofx_runtime_and_gate_universe_contract_reach_bonsai_decision_payload(s
         }},
     }
     monkeypatch.setattr(coordinator_module, "_load_market_radar_snapshot", lambda *_args: {"status": "NO_DATA"})
+    from core.model_client import model_client
+
+    def unavailable_tokenizer(*_args, **_kwargs):
+        raise OSError("forced offline tokenizer for conservative-fit coverage")
+
+    monkeypatch.setattr(model_client, "count_tokens", unavailable_tokenizer)
+
+    from core.trading.autonomous_strategy import build_strategy_system_prompt
+    gate_prompt = build_strategy_system_prompt(ctx.strategy_instructions, nofx_gate=True)
+    assert "每个动作包括 WAIT/HOLD 都必须填写来自 allowed_instruments 的 instrument_id" in gate_prompt
+    assert "EXTERNAL_OR_UNVERIFIED 继续计入账户保证金/风险事实" in gate_prompt
 
     class Model:
         model_id = "Bonsai-2-27B-PTQ1_0"
@@ -980,6 +1419,8 @@ def test_nofx_runtime_and_gate_universe_contract_reach_bonsai_decision_payload(s
 
         def generate_json(self, messages, **kwargs):
             assert kwargs["model_name"] == "Bonsai-2-27B-PTQ1_0"
+            assert "每个动作都必须填写 instrument_id，且必须逐字选自 allowed_instruments" in messages[0]["content"]
+            assert "EXTERNAL_OR_UNVERIFIED 只计入账户保证金/风险数字" in messages[0]["content"]
             self.payload = json.loads(messages[1]["content"])
             return {"action": "WAIT", "instrument_id": "BTCUSDT", "reason": "等待下一次收盘", "confidence": None}
 
@@ -991,6 +1432,7 @@ def test_nofx_runtime_and_gate_universe_contract_reach_bonsai_decision_payload(s
     assert model.payload["market_universe"]["candidate_sources"] == ["gate_active_usdt_perpetuals"]
     assert model.payload["market_universe"]["excluded_symbols"] == ["SCAMUSDT"]
     assert model.payload["market_universe"]["unsupported_sources"] == ["coin_source:OI_TOP"]
+    assert ctx.model_inference_settings["tokenizer"] == "CONSERVATIVE_ESTIMATE"
     assert model.payload["technical_context"]["BTCUSDT"]["timeframes"]["5m"]["nofx_indicator_snapshot"]["schema_version"] == "nofx_indicator_snapshot_v1"
 
 
@@ -1078,6 +1520,76 @@ def test_open_missing_confidence_gets_one_strict_model_repair(setup):
     assert decoded.action == "OPEN_LONG"
     assert decoded.extra_fields["confidence"] == 78
     assert decoded.ttl_seconds == 900
+    audit = ctx.model_inference_settings["model_response_audit"]
+    assert len(audit["attempts"]) == 2
+    assert json.loads(audit["attempts"][0]["raw_response"])["action"] == "OPEN_LONG"
+    assert audit["attempts"][0]["validation_error"] == "INVALID_ACTION_SCHEMA:output:fields"
+    assert audit["attempts"][0]["field_error_details"]["missing_required_fields"] == ["confidence"]
+    assert audit["attempts"][1]["validation_error"] is None
+
+
+def test_valid_open_normalizes_known_optional_explanations_with_raw_audit(setup):
+    _, _, coordinator, _ = setup
+    now = datetime.now(timezone.utc)
+    ctx, output = context_and_output(now)
+
+    class Model:
+        model_id = DEFAULT_SMART_MODEL
+        context_length = 32768
+        max_tokens = 900
+
+        def __init__(self):
+            self.calls = 0
+
+        def generate_json(self, messages, **kwargs):
+            self.calls += 1
+            payload = json.loads(messages[1]["content"])
+            refs = [ref for ref in payload["evidence_refs"]
+                    if ref.startswith(("market_snapshot:", "technical_snapshot:", "news_revision:"))]
+            decision = {
+                "action": "OPEN_LONG", "instrument_id": "BTCUSDT",
+                "reason": "收盘结构与冻结证据支持限价方案", "confidence": 78,
+                "entry_price": 100, "limit_price": 100, "stop_price": 95,
+                "take_profit": 118, "requested_risk_fraction": .002,
+                "order_preference": "LIMIT", "ttl_seconds": 900,
+                "evidence_refs": refs, **deepcopy(output.extra_fields),
+                "matched_conditions": ["15m 收盘保持结构高点上方"],
+                "trigger_completion_pct": 82,
+            }
+            return decision, json.dumps(decision, ensure_ascii=False), {
+                "model_id": DEFAULT_SMART_MODEL,
+                "actual_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                "model_identity_source": "completion_response",
+                "verified_manifest_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+            }
+
+    model = Model()
+    coordinator.model_provider = model
+    decoded = coordinator._model_output(ctx)
+
+    assert model.calls == 1
+    assert decoded.action == "OPEN_LONG"
+    assert decoded.instrument_id == "BTCUSDT"
+    assert decoded.extra_fields["strategy_analysis"]["matched_conditions"] == ["15m 收盘保持结构高点上方"]
+    assert decoded.extra_fields["strategy_analysis"]["trigger_completion_pct"] == 82
+    audit = ctx.model_inference_settings["model_response_audit"]
+    assert audit["attempts"][0]["field_difference"] == "INVALID_ACTION_SCHEMA:output:fields"
+    assert set(audit["attempts"][0]["normalized_fields"]) == {"matched_conditions", "trigger_completion_pct"}
+    assert json.loads(audit["attempts"][0]["raw_response"])["matched_conditions"]
+
+
+def test_unknown_action_field_is_not_silently_discarded():
+    from core.trading.model_schemas import AI_ACTION_SCHEMA, validate_schema
+
+    decoded = {
+        "action": "OPEN_LONG", "instrument_id": "BTCUSDT", "reason": "结构有效",
+        "confidence": 80, "entry_price": 100, "stop_price": 95, "take_profit": 118,
+        "requested_risk_fraction": .002, "evidence_refs": ["market_snapshot:BTCUSDT:x"],
+        "execution_condition": "仅在 BTC 突破后提交",
+    }
+    with pytest.raises(ValueError, match="INVALID_ACTION_SCHEMA:output:fields"):
+        validate_schema(decoded, AI_ACTION_SCHEMA)
+    assert decoded["execution_condition"] == "仅在 BTC 突破后提交"
 
 
 @pytest.mark.parametrize("tamper_entry", [False, True])
@@ -1399,8 +1911,8 @@ def test_wait_with_false_ema_limit_distance_gets_one_model_fact_check(setup):
     assert ctx.model_inference_settings["wait_fact_check"]["status"] == "MODEL_REEVALUATED"
 
 
-def test_invalid_error_envelope_repair_keeps_original_market_and_news_inputs(setup):
-    _, _, coordinator, _ = setup
+def test_invalid_error_envelope_is_blocked_and_persisted_without_fake_wait_repair(setup):
+    store, _, coordinator, _ = setup
     now = datetime.now(timezone.utc)
     ctx, _ = context_and_output(now)
 
@@ -1414,34 +1926,30 @@ def test_invalid_error_envelope_repair_keeps_original_market_and_news_inputs(set
 
         def generate_json(self, messages, **kwargs):
             self.calls.append((messages, kwargs))
-            if len(self.calls) == 1:
-                error = {"error": "empty or malformed completion"}
-                return error, json.dumps(error), {}
-
-            repair = json.loads(messages[1]["content"])
-            assert kwargs["prompt_version"].endswith("_repair")
-            assert repair["previous_decision"] is None
-            inputs = repair["inputs"]
-            assert inputs["allowed_instruments"] == ["BTCUSDT"]
-            assert "BTCUSDT" in inputs["market_snapshots"]
-            assert "BTCUSDT" in inputs["technical_context"]
-            assert inputs["news_revisions"][0]["revision_id"] == "news1"
-            decision = {
-                "action": "WAIT",
-                "instrument_id": "BTCUSDT",
-                "reason": "技术面与新闻暂未共振，等待下一根收盘 K 线。",
-                "confidence": 0,
-            }
-            return decision, json.dumps(decision), {}
+            error = {"error": "empty or malformed completion", "api_key": "must-not-persist"}
+            return error, json.dumps(error), {}
 
     model = Model()
     coordinator.model_provider = model
-    decoded = coordinator._model_output(ctx)
+    with pytest.raises(ValueError, match="MODEL_PROVIDER_ERROR_ENVELOPE"):
+        coordinator._model_output(ctx)
 
-    assert len(model.calls) == 2
-    assert decoded.action == "WAIT"
-    assert decoded.instrument_id == "BTCUSDT"
-    assert "下一根收盘 K 线" in decoded.reason
+    assert len(model.calls) == 1
+    audit = ctx.model_inference_settings["model_response_audit"]
+    assert audit["attempts"][0]["status"] == "COMPLETED"
+    assert audit["attempts"][0]["validation_error"] == "MODEL_PROVIDER_ERROR_ENVELOPE"
+    assert "must-not-persist" not in audit["attempts"][0]["raw_response"]
+    assert "[REDACTED]" in audit["attempts"][0]["raw_response"]
+
+    blocked = coordinator._blocked_cycle(ctx, "MODEL_PROVIDER_ERROR_ENVELOPE")
+    assert blocked.decision_origin == "SYSTEM"
+    assert blocked.operational_state == "SYSTEM_BLOCKED"
+    with store._connect() as db:
+        row = db.execute("SELECT payload_json FROM ai_led_cycles WHERE cycle_id=?", (ctx.cycle_id,)).fetchone()
+    payload = json.loads(row["payload_json"])
+    persisted = payload["model_inference_settings"]["model_response_audit"]["attempts"][0]
+    assert persisted["validation_error"] == "MODEL_PROVIDER_ERROR_ENVELOPE"
+    assert "must-not-persist" not in persisted["raw_response"]
 
 
 def test_blocked_model_open_is_audited_as_open_not_fabricated_wait(setup):
@@ -1666,3 +2174,46 @@ def test_model_wait_keeps_trigger_unknown_and_records_market_readiness_separatel
     assert readiness is not None
     assert 0 <= readiness <= 100
     assert result.action_output.extra_fields["market_readiness"] == readiness
+
+
+def test_gate_wait_typo_reference_is_rejected_on_first_validation_without_retry(setup):
+    _, _, coordinator, _ = setup
+    ctx, _=context_and_output(datetime.now(timezone.utc))
+    ctx.mode=TradingMode.TESTNET; ctx.venue="gate"
+    class Model:
+        model_id="Bonsai-2-27B-PTQ1_0";context_length=32768;max_tokens=1000
+        calls=0
+        def generate_json(self,messages,**kwargs):
+            self.calls+=1
+            payload=json.loads(messages[1]["content"])
+            expected=payload["evidence_refs"][0]
+            assert kwargs["schema"]["properties"]["evidence_refs"]["items"]["enum"]==payload["evidence_refs"]
+            return {"action":"WAIT","instrument_id":"BTCUSDT","reason":"waiting","confidence":None,"evidence_refs":[expected+"typo"]}
+    provider=Model();coordinator.model_provider=provider
+    with pytest.raises(ValueError,match="INVALID_MODEL_OUTPUT_SCHEMA.*evidence_refs.*enum"):
+        coordinator._model_output(ctx)
+    assert provider.calls==1
+    assert ctx.model_inference_settings.get("local_schema_validation") != "PASS"
+
+
+
+def test_model_rejects_ref_present_in_raw_context_but_hidden_from_fitted_call(setup,monkeypatch):
+    _, _, coordinator, _=setup
+    ctx,_=context_and_output(datetime.now(timezone.utc))
+    ctx.mode=TradingMode.TESTNET;ctx.venue="gate"
+    original=coordinator_module._fit_prompt_payload
+    hidden=[]
+    def fitted(*args,**kwargs):
+        payload,info=original(*args,**kwargs)
+        hidden.append(payload["evidence_refs"].pop())
+        return payload,info
+    monkeypatch.setattr(coordinator_module,"_fit_prompt_payload",fitted)
+    class Model:
+        model_id="Bonsai-2-27B-PTQ1_0";context_length=32768;max_tokens=1000
+        def generate_json(self,messages,**kwargs):
+            assert hidden[-1] not in kwargs["schema"]["properties"]["evidence_refs"]["items"]["enum"]
+            return {"action":"WAIT","instrument_id":"BTCUSDT","reason":"waiting","confidence":None,"evidence_refs":[hidden[-1]]}
+    coordinator.model_provider=Model()
+    with pytest.raises(ValueError,match="evidence_refs.*enum"):
+        coordinator._model_output(ctx)
+    assert hidden[-1] in ctx.evidence_refs

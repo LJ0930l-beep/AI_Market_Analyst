@@ -1379,6 +1379,39 @@ class AccountLedger:
             conn.commit()
             return cur.rowcount > 0
 
+    def resize_pending_risk_reservation(
+        self,
+        account_id: str,
+        reservation_id: str,
+        *,
+        amount_risk: Decimal,
+        amount_margin: Decimal,
+        status: str = "PENDING",
+    ) -> bool:
+        """Resize a pending reservation after a terminal partial fill.
+
+        The caller supplies amounts derived from the immutable original risk
+        decision and the verified filled/requested quantity ratio. This method
+        changes only a still-pending reservation in the same account scope.
+        """
+        account_id = self._canonical_account_id(account_id)
+        risk = Decimal(str(amount_risk))
+        margin = Decimal(str(amount_margin))
+        target_status = str(status or "PENDING").upper()
+        if (not risk.is_finite() or risk < 0 or not margin.is_finite() or margin < 0
+                or target_status not in {"PENDING", "COMMITTED"}):
+            return False
+        with self._lock:
+            conn = self._get_conn()
+            cur = conn.execute(
+                """UPDATE risk_reservations
+                   SET amount_risk=?,amount_margin=?,status=?
+                   WHERE reservation_id=? AND account_id=? AND status='PENDING'""",
+                (str(risk), str(margin), target_status, reservation_id, account_id),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
     def commit_risk(self, account_id: str, reservation_id: str) -> bool:
         """Mark reservation as committed upon successful fill."""
         account_id = self._canonical_account_id(account_id)

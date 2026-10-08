@@ -24,7 +24,7 @@ from core.ai import OllamaProvider
 from core.analysis_service import AnalysisError, AnalysisService
 from core.instruments import instrument_for, phase1_universe
 from core.model_client import model_client
-from core.model_routing import DEFAULT_SMART_MODEL, bonsai_manifest_entry_matches
+from core.model_routing import DEFAULT_SMART_MODEL, configured_manifest_entry_matches
 from core.news_engine import RSSNewsProvider
 
 
@@ -64,12 +64,12 @@ def _nvidia_smi() -> dict[str, object]:
     return {"command": result, "gpus": rows}
 
 
-def _bonsai_inventory(base_url: str, model_name: str) -> dict[str, object]:
+def _model_inventory(base_url: str, model_name: str) -> dict[str, object]:
     try:
         if base_url.rstrip("/") != model_client.base_url or model_name != DEFAULT_SMART_MODEL:
-            return {"available": False, "model": model_name, "registered": False, "error": "Bonsai endpoint/model configuration mismatch"}
+            return {"available": False, "model": model_name, "registered": False, "error": "Gemini endpoint/model configuration mismatch"}
         models = model_client.list_models(timeout=10)
-        matching = [item for item in models if bonsai_manifest_entry_matches(item, requested_model=model_name)]
+        matching = [item for item in models if configured_manifest_entry_matches(item, requested_model=model_name)]
         selected = matching[0] if len(matching) == 1 else None
         return {
             "available": True,
@@ -168,7 +168,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", default="data/phase2-real-smoke.json")
     parser.add_argument("--strict", action="store_true", help="return non-zero if any symbol cannot complete")
-    parser.add_argument("--require-model", action="store_true", help="also fail if Bonsai-2-27B is unavailable")
+    parser.add_argument("--require-model", action="store_true", help="also fail if Gemini 3.8 Flash High is unavailable")
     parser.add_argument("--require-schema-coverage", action="store_true", help="require observed LONG, SHORT, and WAIT outputs")
     args = parser.parse_args(argv)
     os.environ["MARKET_DATA_MODE"] = "real"
@@ -180,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
     records: list[dict[str, object]] = []
     failures = 0
     health = service.llm_provider.health()  # type: ignore[union-attr]
-    inventory = _bonsai_inventory(base_url, model_name)
+    inventory = _model_inventory(base_url, model_name)
     sampler = RuntimeSampler(base_url)
     sampler.start()
     for instrument in phase1_universe():
@@ -222,7 +222,7 @@ def main(argv: list[str] | None = None) -> int:
     report = {
         "phase": 2,
         "mode": "real",
-        "model_server": {"health": health, "manifest_inventory": inventory, "residency": "NOT_EXPOSED_BY_BONSAI_API"},
+        "model_server": {"health": health, "manifest_inventory": inventory, "residency": "REMOTE_NOT_EXPOSED"},
         "hardware": hardware_snapshot(base_url),
         "runtime_samples": samples,
         "schema_coverage": schema_coverage,

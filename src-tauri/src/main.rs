@@ -7,9 +7,6 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
-#[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
-
 use serde::Serialize;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
@@ -19,8 +16,13 @@ use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 use uuid::Uuid;
 
+mod sidecar_process;
+use sidecar_process::OwnedProcessTree;
+
 const DEFAULT_SIDECAR_PORT: u16 = 18_765;
 const MAX_PORT_PROBES: u16 = 64;
+const MAX_AUTOMATIC_RECOVERY_ATTEMPTS: u8 = 3;
+const AUTOMATIC_RECOVERY_BASE_DELAY_SECONDS: u64 = 1;
 const API_VERSION: &str = "2.0.0";
 const DESKTOP_CONTRACT_VERSION: &str = "desktop_backend_v1";
 const BACKEND_EVENT: &str = "aima://backend-state";
@@ -47,9 +49,16 @@ struct SessionIdentity {
 
 struct OwnedSidecar {
     child: Mutex<Option<CommandChild>>,
+    ownership: Mutex<Option<std::sync::Arc<OwnedProcessTree>>>,
     status: Mutex<SidecarStatus>,
     session: Mutex<Option<SessionIdentity>>,
+    operation_lock: Mutex<()>,
     generation: AtomicU64,
+    cleanup_in_progress: AtomicBool,
+    ownership_failure_blocked: AtomicBool,
+    automatic_recovery_in_progress: AtomicBool,
+    manual_restart_in_progress: AtomicBool,
+    shutdown_requested: AtomicBool,
     close_notice_sent: AtomicBool,
 }
 
@@ -57,6 +66,7 @@ impl OwnedSidecar {
     fn new() -> Self {
         Self {
             child: Mutex::new(None),
+            ownership: Mutex::new(None),
             status: Mutex::new(SidecarStatus {
                 state: "starting".to_string(),
                 port: 0,
@@ -69,10 +79,48 @@ impl OwnedSidecar {
                 last_error: None,
             }),
             session: Mutex::new(None),
+            operation_lock: Mutex::new(()),
             generation: AtomicU64::new(0),
+            cleanup_in_progress: AtomicBool::new(false),
+            ownership_failure_blocked: AtomicBool::new(false),
+            automatic_recovery_in_progress: AtomicBool::new(false),
+            manual_restart_in_progress: AtomicBool::new(false),
+            shutdown_requested: AtomicBool::new(false),
             close_notice_sent: AtomicBool::new(false),
         }
     }
+}
+
+fn automatic_recovery_delay(attempt: u8) -> Option<Duration> {
+    if attempt == 0 || attempt > MAX_AUTOMATIC_RECOVERY_ATTEMPTS {
+        return None;
+    }
+    Some(Duration::from_secs(
+        AUTOMATIC_RECOVERY_BASE_DELAY_SECONDS.saturating_mul(1_u64 << (attempt - 1)),
+    ))
+}
+
+fn automatic_recovery_may_continue(
+    expected_generation: u64,
+    current_generation: u64,
+    manual_restart_in_progress: bool,
+    shutdown_requested: bool,
+) -> bool {
+    expected_generation == current_generation
+        && !manual_restart_in_progress
+        && !shutdown_requested
+}
+
+fn status_transition_is_authorized(
+    expected_generation: u64,
+    current_generation: u64,
+    manual_owner: bool,
+    manual_restart_in_progress: bool,
+    shutdown_requested: bool,
+) -> bool {
+    expected_generation == current_generation
+        && !shutdown_requested
+        && (manual_owner || !manual_restart_in_progress)
 }
 
 fn configured_sidecar_port() -> Result<Option<u16>, String> {
@@ -105,7 +153,24 @@ fn select_sidecar_port() -> Result<u16, String> {
     Err(format!("no available loopback port in {start}..{}; foreign listeners were not touched", start.saturating_add(MAX_PORT_PROBES - 1)))
 }
 
-fn sidecar_is_healthy(port: u16, identity: &SessionIdentity, pid: u32) -> Result<(), String> {
+#[derive(Clone, Copy)]
+struct SidecarHealthEvidence {
+    backend_pid: u32,
+    launcher_pid: u32,
+}
+
+fn health_launcher_matches(expected_launcher: u32, backend_pid: u32, reported_launcher: u32) -> bool {
+    #[cfg(target_os = "windows")]
+    { let _ = backend_pid; reported_launcher == expected_launcher }
+    #[cfg(not(target_os = "windows"))]
+    { reported_launcher == expected_launcher || backend_pid == expected_launcher }
+}
+
+fn sidecar_health_evidence(
+    port: u16,
+    identity: &SessionIdentity,
+    expected_launcher_pid: u32,
+) -> Result<SidecarHealthEvidence, String> {
     let Ok(mut stream) = TcpStream::connect_timeout(
         &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
         Duration::from_millis(800),
@@ -129,22 +194,50 @@ fn sidecar_is_healthy(port: u16, identity: &SessionIdentity, pid: u32) -> Result
     }
     let body = response.split("\r\n\r\n").nth(1).ok_or_else(|| "backend health response had no body".to_string())?;
     let payload: serde_json::Value = serde_json::from_str(body).map_err(|_| "backend health response was not JSON".to_string())?;
+    let backend_pid = payload.get("pid").and_then(serde_json::Value::as_u64).and_then(|value| u32::try_from(value).ok());
+    let launcher_pid = payload.get("launcher_pid").and_then(serde_json::Value::as_u64).and_then(|value| u32::try_from(value).ok());
+    let pid_matches = match (backend_pid, launcher_pid) {
+        (Some(backend), Some(launcher)) => health_launcher_matches(expected_launcher_pid, backend, launcher),
+        _ => false,
+    };
     let matches = payload.get("status").and_then(serde_json::Value::as_str) == Some("ok")
         && payload.get("ready").and_then(serde_json::Value::as_bool) == Some(true)
         && payload.get("product").and_then(serde_json::Value::as_str) == Some("AI Market Analyst")
         && payload.get("api_version").and_then(serde_json::Value::as_str) == Some(API_VERSION)
         && payload.get("contract_version").and_then(serde_json::Value::as_str) == Some(DESKTOP_CONTRACT_VERSION)
         && payload.get("instance_id").and_then(serde_json::Value::as_str) == Some(identity.instance_id.as_str())
-        // PyInstaller one-file uses a small bootstrap process which owns the
-        // child Python process.  The child PID is still reported truthfully;
-        // launcher_pid binds the health contract to the exact Rust-owned
-        // process tree that can be stopped without touching foreign listeners.
-        && payload.get("pid").and_then(serde_json::Value::as_u64).map(|value| value > 0).unwrap_or(false)
-        && (payload.get("launcher_pid").and_then(serde_json::Value::as_u64) == Some(pid as u64)
-            || payload.get("pid").and_then(serde_json::Value::as_u64) == Some(pid as u64))
+        && backend_pid.is_some_and(|value| value > 0)
+        && launcher_pid.is_some_and(|value| value > 0)
+        && pid_matches
         && payload.get("port").and_then(serde_json::Value::as_u64) == Some(port as u64)
         && payload.get("ownership_verified").and_then(serde_json::Value::as_bool) == Some(true);
-    if matches { Ok(()) } else { Err("backend health contract or ownership identity mismatch".to_string()) }
+    if !matches {
+        return Err("backend health contract or ownership identity mismatch".to_string());
+    }
+    Ok(SidecarHealthEvidence {
+        backend_pid: backend_pid.expect("validated above"),
+        launcher_pid: launcher_pid.expect("validated above"),
+    })
+}
+
+fn sidecar_is_healthy(
+    port: u16,
+    identity: &SessionIdentity,
+    pid: u32,
+    ownership: &OwnedProcessTree,
+) -> Result<(), String> {
+    if ownership.pid() != pid || !ownership.launcher_is_alive() {
+        return Err("Tauri-owned launcher process handle is no longer alive".to_string());
+    }
+    let evidence = sidecar_health_evidence(port, identity, pid)?;
+    if evidence.launcher_pid != pid {
+        return Err("health response launcher PID did not match the owned child handle".to_string());
+    }
+    ownership.verify_health_worker(evidence.backend_pid)?;
+    if !ownership.launcher_is_alive() {
+        return Err("Tauri-owned launcher exited during health ownership verification".to_string());
+    }
+    Ok(())
 }
 
 fn http_json(port: u16, method: &str, path: &str, ownership_token: Option<&str>) -> Option<serde_json::Value> {
@@ -167,10 +260,30 @@ fn http_json(port: u16, method: &str, path: &str, ownership_token: Option<&str>)
     serde_json::from_str(body).ok()
 }
 
-fn wait_for_sidecar(port: u16, identity: &SessionIdentity, pid: u32) -> Result<(), String> {
+fn sidecar_generation_can_start(app: &AppHandle, generation: u64, manual_owner: bool) -> bool {
+    let Some(state) = app.try_state::<OwnedSidecar>() else {
+        return false;
+    };
+    state.generation.load(Ordering::SeqCst) == generation
+        && !state.shutdown_requested.load(Ordering::SeqCst)
+        && (manual_owner || !state.manual_restart_in_progress.load(Ordering::SeqCst))
+}
+
+fn wait_for_sidecar(
+    app: &AppHandle,
+    generation: u64,
+    port: u16,
+    identity: &SessionIdentity,
+    pid: u32,
+    ownership: &OwnedProcessTree,
+    manual_owner: bool,
+) -> Result<(), String> {
     let mut last_error = "backend is not ready".to_string();
     for _ in 0..120 {
-        match sidecar_is_healthy(port, identity, pid) {
+        if !sidecar_generation_can_start(app, generation, manual_owner) {
+            return Err("sidecar startup was superseded by a stop or newer lifecycle action".to_string());
+        }
+        match sidecar_is_healthy(port, identity, pid, ownership) {
             Ok(()) => return Ok(()),
             Err(error) => last_error = error,
         }
@@ -243,31 +356,85 @@ fn route_main_window(app: &AppHandle, route: &str) {
     }
 }
 
-fn emit_backend_status(app: &AppHandle, state_name: &str, port: u16, pid: Option<u32>, error: Option<String>) {
-    let Some(state) = app.try_state::<OwnedSidecar>() else {
-        return;
-    };
-    let status = if let Ok(mut current) = state.status.lock() {
-        current.state = state_name.to_string();
-        current.port = port;
-        current.base_url = if port > 0 { format!("http://127.0.0.1:{port}") } else { String::new() };
-        current.pid = pid;
-        current.ownership_verified = state_name == "ready";
-        current.last_error = error.map(|value| value.chars().take(240).collect());
-        current.clone()
-    } else {
-        return;
-    };
+fn publish_backend_status_locked(app: &AppHandle, status: &SidecarStatus) {
     if let Some(window) = app.get_webview_window("main") {
         let base_url = status.base_url.replace('\\', "").replace('\'', "");
         let _ = window.eval(&format!("window.__AIMA_API_BASE_URL__ = '{}';", base_url));
     }
-    let _ = app.emit(BACKEND_EVENT, status);
+    let _ = app.emit(BACKEND_EVENT, status.clone());
+}
+
+fn update_backend_status(
+    current: &mut SidecarStatus,
+    state_name: &str,
+    port: u16,
+    pid: Option<u32>,
+    error: Option<String>,
+) {
+    current.state = state_name.to_string();
+    current.port = port;
+    current.base_url = if port > 0 { format!("http://127.0.0.1:{port}") } else { String::new() };
+    current.pid = pid;
+    current.ownership_verified = state_name == "ready";
+    current.last_error = error.map(|value| value.chars().take(240).collect());
 }
 
 fn sidecar_status(app: &AppHandle) -> Option<SidecarStatus> {
     app.try_state::<OwnedSidecar>()
         .and_then(|state| state.status.lock().ok().map(|status| status.clone()))
+}
+
+fn emit_backend_status_for_generation(
+    app: &AppHandle,
+    generation: u64,
+    state_name: &str,
+    port: u16,
+    pid: Option<u32>,
+    error: Option<String>,
+) -> bool {
+    emit_backend_status_for_generation_owner(app, generation, state_name, port, pid, error, false)
+}
+
+fn emit_backend_status_for_generation_owner(
+    app: &AppHandle,
+    generation: u64,
+    state_name: &str,
+    port: u16,
+    pid: Option<u32>,
+    error: Option<String>,
+    manual_owner: bool,
+) -> bool {
+    let Some(state) = app.try_state::<OwnedSidecar>() else {
+        return false;
+    };
+    let Ok(mut current) = state.status.lock() else {
+        return false;
+    };
+    if !status_transition_is_authorized(
+        generation,
+        state.generation.load(Ordering::SeqCst),
+        manual_owner,
+        state.manual_restart_in_progress.load(Ordering::SeqCst),
+        state.shutdown_requested.load(Ordering::SeqCst),
+    ) {
+        return false;
+    }
+    if state_name == "ready" {
+        let Some(expected_pid) = pid else { return false; };
+        let Ok(child) = state.child.lock() else { return false; };
+        let Ok(ownership) = state.ownership.lock() else { return false; };
+        if child.as_ref().map(CommandChild::pid) != Some(expected_pid)
+            || !ownership.as_ref().is_some_and(|tree| tree.pid() == expected_pid && tree.launcher_is_alive())
+        {
+            return false;
+        }
+    }
+    update_backend_status(&mut current, state_name, port, pid, error);
+    // Keep event publication inside the same short lock as the generation
+    // check and status write. A stale ready event cannot overtake stop or a
+    // newer start after the lock is released.
+    publish_backend_status_locked(app, &current);
+    true
 }
 
 fn owns_sidecar_generation(app: &AppHandle, generation: u64) -> bool {
@@ -278,84 +445,451 @@ fn owns_sidecar_generation(app: &AppHandle, generation: u64) -> bool {
         && state.child.lock().map(|child| child.is_some()).unwrap_or(false)
 }
 
-fn owned_sidecar_process_alive(app: &AppHandle) -> bool {
-    app.try_state::<OwnedSidecar>()
-        .and_then(|state| state.child.lock().ok().map(|child| child.is_some()))
-        .unwrap_or(false)
-}
-
-fn clear_child_if_generation(app: &AppHandle, generation: u64) -> bool {
+fn owns_sidecar_pid_generation(
+    app: &AppHandle,
+    generation: u64,
+    pid: u32,
+    manual_owner: bool,
+) -> bool {
     let Some(state) = app.try_state::<OwnedSidecar>() else {
         return false;
     };
-    if state.generation.load(Ordering::SeqCst) != generation {
+    sidecar_generation_can_start(app, generation, manual_owner)
+        && state.child.lock().map(|child| child.as_ref().map(CommandChild::pid) == Some(pid)).unwrap_or(false)
+        && state.ownership.lock().map(|ownership| {
+            ownership.as_ref().is_some_and(|owned| owned.pid() == pid && owned.launcher_is_alive())
+        }).unwrap_or(false)
+}
+
+fn registered_sidecar_generation_is_current(
+    app: &AppHandle,
+    generation: u64,
+    pid: u32,
+    manual_owner: bool,
+) -> bool {
+    let Some(state) = app.try_state::<OwnedSidecar>() else { return false; };
+    sidecar_generation_can_start(app, generation, manual_owner)
+        && state.child.lock().map(|child| child.as_ref().map(CommandChild::pid) == Some(pid)).unwrap_or(false)
+        && state.ownership.lock().map(|owned| owned.as_ref().is_some_and(|tree| tree.pid() == pid)).unwrap_or(false)
+}
+
+fn owned_sidecar_process_alive(app: &AppHandle) -> bool {
+    app.try_state::<OwnedSidecar>()
+        .and_then(|state| {
+            let child_alive = state.child.lock().ok().map(|child| child.is_some()).unwrap_or(false);
+            let cleanup_pending = state.ownership.lock().ok().map(|ownership| ownership.is_some()).unwrap_or(false);
+            Some(child_alive || cleanup_pending)
+        })
+        .unwrap_or(false)
+}
+
+fn kill_owned_child(process: CommandChild) {
+    // CommandChild.kill delegates to the retained std::process::Child handle,
+    // which avoids targeting a recycled numeric PID. Never search by port or
+    // executable name. Verified PyInstaller workers are retired through the
+    // Job Object held beside this exact launcher handle.
+    let _ = process.kill();
+}
+
+fn take_owned_child_if_pid(app: &AppHandle, pid: u32) -> Option<CommandChild> {
+    let state = app.try_state::<OwnedSidecar>()?;
+    let mut child = state.child.lock().ok()?;
+    if child.as_ref().map(|owned| owned.pid()) == Some(pid) {
+        child.take()
+    } else {
+        None
+    }
+}
+
+fn prepare_owned_tree_for_termination(
+    port: u16,
+    identity: &SessionIdentity,
+    pid: u32,
+    ownership: &OwnedProcessTree,
+) -> Result<(), String> {
+    if !ownership.has_verified_worker() {
+        let evidence = sidecar_health_evidence(port, identity, pid).map_err(|error| {
+            format!("cannot prove the PyInstaller worker is owned; automatic restart is blocked: {error}")
+        })?;
+        if evidence.launcher_pid != pid {
+            return Err("health worker launcher identity changed; automatic restart is blocked".to_string());
+        }
+        ownership.verify_health_worker(evidence.backend_pid)?;
+    }
+    if !ownership.terminate_and_wait() {
+        return Err("owned sidecar Job Object did not become empty; automatic restart is blocked".to_string());
+    }
+    Ok(())
+}
+
+fn finish_owned_tree_cleanup(
+    app: &AppHandle,
+    generation: u64,
+    ownership: Option<&std::sync::Arc<OwnedProcessTree>>,
+) -> bool {
+    let Some(state) = app.try_state::<OwnedSidecar>() else { return false; };
+    let Ok(_operation) = state.operation_lock.lock() else { return false; };
+    let Ok(status) = state.status.lock() else { return false; };
+    let Ok(child) = state.child.lock() else { return false; };
+    let Ok(mut session) = state.session.lock() else { return false; };
+    let Ok(mut current_ownership) = state.ownership.lock() else { return false; };
+    if state.generation.load(Ordering::SeqCst) != generation || child.is_some() {
         return false;
     }
-    if let Ok(mut child) = state.child.lock() {
-        *child = None;
+    if let Some(expected) = ownership {
+        if !current_ownership.as_ref().is_some_and(|current| std::sync::Arc::ptr_eq(current, expected)) {
+            return false;
+        }
+    } else if current_ownership.is_some() {
+        return false;
     }
-    if let Ok(mut session) = state.session.lock() {
-        *session = None;
-    }
+    *current_ownership = None;
+    *session = None;
+    // Keep the state selected by the caller (stopped/recovering) and only
+    // publish after all ownership slots are consistent under the status lock.
+    publish_backend_status_locked(app, &status);
     true
+}
+
+fn report_cleanup_failure(app: &AppHandle, generation: u64, error: String) {
+    let Some(state) = app.try_state::<OwnedSidecar>() else { return; };
+    let Ok(mut status) = state.status.lock() else { return; };
+    if state.generation.load(Ordering::SeqCst) != generation { return; }
+    let port = status.port;
+    update_backend_status(&mut status, "degraded", port, None, Some(error));
+    publish_backend_status_locked(app, &status);
+}
+
+fn retire_owned_generation(
+    app: &AppHandle,
+    expected_generation: u64,
+    expected_pid: Option<u32>,
+    state_name: &str,
+    error: Option<String>,
+) -> Option<u64> {
+    let state = app.try_state::<OwnedSidecar>()?;
+    if state.cleanup_in_progress.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+        return None;
+    }
+    let _cleanup_guard = AtomicFlagReset(&state.cleanup_in_progress);
+    let operation = state.operation_lock.lock().ok()?;
+    let (next_generation, port, process, ownership, identity, process_pid) = {
+        let mut status = state.status.lock().ok()?;
+        let mut child = state.child.lock().ok()?;
+        let session = state.session.lock().ok()?;
+        let ownership = state.ownership.lock().ok()?;
+        if state.generation.load(Ordering::SeqCst) != expected_generation {
+            return None;
+        }
+        if expected_pid.is_some() && child.as_ref().map(CommandChild::pid) != expected_pid {
+            return None;
+        }
+        let next_generation = expected_generation.wrapping_add(1);
+        state.generation.store(next_generation, Ordering::SeqCst);
+        let port = status.port;
+        update_backend_status(&mut status, state_name, port, None, error);
+        publish_backend_status_locked(app, &status);
+        let process = child.take();
+        let ownership = ownership.clone();
+        let identity = session.clone();
+        let process_pid = expected_pid.or_else(|| ownership.as_ref().map(|item| item.pid()))
+            .or_else(|| process.as_ref().map(CommandChild::pid));
+        (next_generation, port, process, ownership, identity, process_pid)
+    };
+    drop(operation);
+
+    let cleanup = match (&ownership, &identity, process_pid) {
+        (Some(tree), Some(identity), Some(pid)) => prepare_owned_tree_for_termination(port, identity, pid, tree),
+        (Some(_), _, _) => Err("sidecar ownership metadata is incomplete; automatic restart is blocked".to_string()),
+        (None, _, _) if process.is_some() => Err("spawned sidecar has no retained process ownership handle".to_string()),
+        (None, _, _) => Ok(()),
+    };
+    if let Some(process) = process { kill_owned_child(process); }
+    if let Err(cleanup_error) = cleanup {
+        report_cleanup_failure(app, next_generation, cleanup_error);
+        return None;
+    }
+
+    if !finish_owned_tree_cleanup(app, next_generation, ownership.as_ref()) {
+        report_cleanup_failure(app, next_generation, "sidecar cleanup raced a newer lifecycle action".to_string());
+        return None;
+    }
+    Some(next_generation)
+}
+
+fn retire_current_owned_sidecar(app: &AppHandle, state_name: &str, error: Option<String>) -> Result<(), String> {
+    let Some(state) = app.try_state::<OwnedSidecar>() else {
+        return Err("owned sidecar state is unavailable".to_string());
+    };
+    if state.cleanup_in_progress.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+        return Err("sidecar ownership cleanup is already in progress".to_string());
+    }
+    let _cleanup_guard = AtomicFlagReset(&state.cleanup_in_progress);
+    let operation = state.operation_lock.lock().map_err(|_| "sidecar lifecycle lock is unavailable".to_string())?;
+    let (generation, port, process, ownership, identity, pid) = {
+        let mut status = state.status.lock().map_err(|_| "sidecar status lock is unavailable".to_string())?;
+        let mut child = state.child.lock().map_err(|_| "sidecar child lock is unavailable".to_string())?;
+        let session = state.session.lock().map_err(|_| "sidecar session lock is unavailable".to_string())?;
+        let ownership = state.ownership.lock().map_err(|_| "sidecar ownership lock is unavailable".to_string())?;
+        let generation = state.generation.fetch_add(1, Ordering::SeqCst).wrapping_add(1);
+        let port = status.port;
+        update_backend_status(&mut status, state_name, port, None, error);
+        publish_backend_status_locked(app, &status);
+        let process = child.take();
+        let ownership = ownership.clone();
+        let identity = session.clone();
+        let pid = ownership.as_ref().map(|tree| tree.pid()).or_else(|| process.as_ref().map(CommandChild::pid));
+        (generation, port, process, ownership, identity, pid)
+    };
+    drop(operation);
+
+    let cleanup = match (&ownership, &identity, pid) {
+        (Some(tree), Some(identity), Some(pid)) => prepare_owned_tree_for_termination(port, identity, pid, tree),
+        (Some(_), _, _) => Err("sidecar ownership metadata is incomplete".to_string()),
+        (None, _, _) if process.is_some() => Err("spawned sidecar has no retained ownership handle".to_string()),
+        (None, _, _) => Ok(()),
+    };
+    if let Some(process) = process { kill_owned_child(process); }
+    if let Err(cleanup_error) = cleanup {
+        report_cleanup_failure(app, generation, cleanup_error.clone());
+        return Err(cleanup_error);
+    }
+    if !finish_owned_tree_cleanup(app, generation, ownership.as_ref()) {
+        let message = "sidecar cleanup raced a newer lifecycle action".to_string();
+        report_cleanup_failure(app, generation, message.clone());
+        return Err(message);
+    }
+    Ok(())
 }
 
 fn stop_owned_sidecar(app: &AppHandle) {
     let Some(state) = app.try_state::<OwnedSidecar>() else {
         return;
     };
-    state.generation.fetch_add(1, Ordering::SeqCst);
-    let process = state.child.lock().ok().and_then(|mut child| child.take());
-    if let Ok(mut session) = state.session.lock() {
-        *session = None;
+    // Pair the shutdown intent with ready-status publication under the same
+    // lock so an old health waiter cannot publish ready after Exit was chosen.
+    if let Ok(_status) = state.status.lock() {
+        state.shutdown_requested.store(true, Ordering::SeqCst);
+    } else {
+        state.shutdown_requested.store(true, Ordering::SeqCst);
     }
-    if let Some(process) = process {
-        let pid = process.pid();
-        // This is the exact PID returned by the Rust-owned sidecar spawn.  No
-        // port/name search is used, so foreign processes remain untouched.
-        #[cfg(target_os = "windows")]
-        {
-            let _ = std::process::Command::new("taskkill")
-                .args(["/PID", &pid.to_string(), "/T", "/F"])
-                .creation_flags(0x0800_0000)
-                .output();
-        }
-        let _ = process.kill();
-    }
-    emit_backend_status(app, "stopped", 0, None, None);
+    let _ = retire_current_owned_sidecar(app, "stopped", None);
 }
 
-fn start_owned_sidecar(app: &AppHandle) -> Result<(), String> {
-    let port = select_sidecar_port()?;
+#[derive(Clone, Copy)]
+enum SidecarStartKind {
+    Initial,
+    AutomaticRecovery,
+    ManualRestart,
+}
+
+struct SidecarStartFailure {
+    message: String,
+    recovery_generation: Option<u64>,
+}
+
+impl SidecarStartFailure {
+    fn terminal(message: impl Into<String>) -> Self {
+        Self { message: message.into(), recovery_generation: None }
+    }
+
+    fn retryable(message: impl Into<String>, generation: u64) -> Self {
+        Self { message: message.into(), recovery_generation: Some(generation) }
+    }
+}
+
+impl SidecarStartKind {
+    fn manual_owner(self) -> bool {
+        matches!(self, Self::ManualRestart)
+    }
+}
+
+struct AtomicFlagReset<'a>(&'a AtomicBool);
+
+impl Drop for AtomicFlagReset<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
+fn mark_start_generation_degraded(app: &AppHandle, generation: u64, error: String, manual_owner: bool) {
+    let current = sidecar_status(app);
+    emit_backend_status_for_generation_owner(
+        app,
+        generation,
+        "degraded",
+        current.as_ref().map(|status| status.port).unwrap_or(0),
+        None,
+        Some(error),
+        manual_owner,
+    );
+}
+
+fn handle_owned_launcher_exit(app: &AppHandle, generation: u64, pid: u32, detail: String) {
+    if let Some(recovery_generation) = retire_owned_generation(app, generation, Some(pid), "degraded", Some(detail.clone())) {
+        schedule_automatic_recovery(app.clone(), recovery_generation, detail);
+    }
+}
+
+fn start_owned_sidecar_watchers(
+    app: &AppHandle,
+    generation: u64,
+    port: u16,
+    pid: u32,
+    ownership: std::sync::Arc<OwnedProcessTree>,
+    mut events: tauri::async_runtime::Receiver<CommandEvent>,
+    manual_owner: bool,
+) {
+    let event_app = app.clone();
+    let event_ownership = ownership.clone();
+    tauri::async_runtime::spawn(async move {
+        while let Some(event) = events.recv().await {
+            match event {
+                CommandEvent::Terminated(payload) => {
+                    if registered_sidecar_generation_is_current(&event_app, generation, pid, manual_owner) {
+                        handle_owned_launcher_exit(
+                            &event_app,
+                            generation,
+                            pid,
+                            format!("owned backend launcher exited with code {:?}", payload.code),
+                        );
+                    }
+                    break;
+                }
+                CommandEvent::Error(error) => {
+                    if registered_sidecar_generation_is_current(&event_app, generation, pid, manual_owner) {
+                        emit_backend_status_for_generation(
+                            &event_app,
+                            generation,
+                            "degraded",
+                            port,
+                            Some(pid),
+                            Some(error),
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+        drop(event_ownership);
+    });
+
+    let watch_app = app.clone();
+    thread::spawn(move || loop {
+        if !registered_sidecar_generation_is_current(&watch_app, generation, pid, manual_owner) {
+            break;
+        }
+        if !ownership.launcher_is_alive() {
+            handle_owned_launcher_exit(
+                &watch_app,
+                generation,
+                pid,
+                "Tauri-owned launcher process handle exited unexpectedly".to_string(),
+            );
+            break;
+        }
+        thread::sleep(Duration::from_millis(250));
+    });
+}
+
+fn start_owned_sidecar(
+    app: &AppHandle,
+    start_kind: SidecarStartKind,
+) -> Result<u64, SidecarStartFailure> {
     let state = app
         .try_state::<OwnedSidecar>()
-        .ok_or_else(|| "owned sidecar state is unavailable".to_string())?;
-    let generation = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
-    let identity = SessionIdentity {
-        instance_id: Uuid::new_v4().to_string(),
-        ownership_token: Uuid::new_v4().to_string(),
-    };
-    let restart_count = if let Ok(mut status) = state.status.lock() {
-        status.restart_count = status.restart_count.saturating_add(1);
-        status.state = "starting".to_string();
-        status.port = port;
-        status.base_url = format!("http://127.0.0.1:{port}");
-        status.pid = None;
-        status.instance_id = Some(identity.instance_id.clone());
-        status.contract_version = DESKTOP_CONTRACT_VERSION.to_string();
-        status.ownership_verified = false;
-        status.last_error = None;
-        status.restart_count
-    } else {
-        0
-    };
-    emit_backend_status(app, "starting", port, None, None);
+        .ok_or_else(|| SidecarStartFailure::terminal("owned sidecar state is unavailable"))?;
+    if state.shutdown_requested.load(Ordering::SeqCst) {
+        return Err(SidecarStartFailure::terminal(
+            "sidecar startup suppressed because this desktop instance is shutting down",
+        ));
+    }
+    let (generation, port, identity, pid, ownership, events) = {
+        // Serialize only port selection, spawn, and ownership registration.
+        // Health checks can take up to 30 seconds and intentionally happen
+        // after this lock is released so stop/restart/exit stay responsive.
+        let _operation = state
+            .operation_lock
+            .lock()
+            .map_err(|_| SidecarStartFailure::terminal("sidecar lifecycle lock is unavailable"))?;
+        if state.shutdown_requested.load(Ordering::SeqCst) {
+            return Err(SidecarStartFailure::terminal(
+                "sidecar startup suppressed because this desktop instance is shutting down",
+            ));
+        }
+        if state.manual_restart_in_progress.load(Ordering::SeqCst) && !start_kind.manual_owner() {
+            return Err(SidecarStartFailure::terminal(
+                "sidecar startup superseded by a manual restart",
+            ));
+        }
+        if state.cleanup_in_progress.load(Ordering::SeqCst) {
+            return Err(SidecarStartFailure::terminal("sidecar startup suppressed while prior ownership is being cleaned"));
+        }
+        if state.ownership_failure_blocked.load(Ordering::SeqCst) {
+            return Err(SidecarStartFailure::terminal(
+                "previous sidecar ownership could not be proven; restart is blocked until the desktop app is relaunched",
+            ));
+        }
+        if state.ownership.lock().map(|ownership| ownership.is_some()).unwrap_or(true) {
+            return Err(SidecarStartFailure::terminal(
+                "prior sidecar worker ownership is unresolved; automatic restart is blocked",
+            ));
+        }
 
-    let command = app
-        .shell()
-        .sidecar("ai-market-analyst-backend")
-        .map_err(|_| "packaged backend sidecar is missing".to_string())?
-        // These arguments are assembled in Rust.  The WebView has no shell
+        let (generation, restart_count) = {
+            let mut status = state
+                .status
+                .lock()
+                .map_err(|_| SidecarStartFailure::terminal("owned sidecar status lock is unavailable"))?;
+            if state.shutdown_requested.load(Ordering::SeqCst)
+                || (state.manual_restart_in_progress.load(Ordering::SeqCst)
+                    && !start_kind.manual_owner())
+            {
+                return Err(SidecarStartFailure::terminal("sidecar startup was superseded before its generation began"));
+            }
+            let generation = state.generation.fetch_add(1, Ordering::SeqCst).wrapping_add(1);
+            status.restart_count = status.restart_count.saturating_add(1);
+            status.state = "starting".to_string();
+            status.port = 0;
+            status.base_url.clear();
+            status.pid = None;
+            status.instance_id = None;
+            status.contract_version = DESKTOP_CONTRACT_VERSION.to_string();
+            status.ownership_verified = false;
+            status.last_error = None;
+            publish_backend_status_locked(app, &status);
+            (generation, status.restart_count)
+        };
+        let port = match select_sidecar_port() {
+            Ok(port) => port,
+            Err(error) => {
+                mark_start_generation_degraded(app, generation, error.clone(), start_kind.manual_owner());
+                return Err(SidecarStartFailure::retryable(error, generation));
+            }
+        };
+        let identity = SessionIdentity {
+            instance_id: Uuid::new_v4().to_string(),
+            ownership_token: Uuid::new_v4().to_string(),
+        };
+        if let Ok(mut status) = state.status.lock() {
+            status.port = port;
+            status.base_url = format!("http://127.0.0.1:{port}");
+            status.instance_id = Some(identity.instance_id.clone());
+        }
+        emit_backend_status_for_generation_owner(app, generation, "starting", port, None, None, start_kind.manual_owner());
+        if !sidecar_generation_can_start(app, generation, start_kind.manual_owner()) {
+            return Err(SidecarStartFailure::terminal("sidecar startup superseded before spawn"));
+        }
+
+        let command = match app.shell().sidecar("ai-market-analyst-backend") {
+            Ok(command) => command,
+            Err(_) => {
+                let error = "packaged backend sidecar is missing".to_string();
+                mark_start_generation_degraded(app, generation, error.clone(), start_kind.manual_owner());
+                return Err(SidecarStartFailure::retryable(error, generation));
+            }
+        }
+        // These arguments are assembled in Rust. The WebView has no shell
         // spawn permission and cannot replace the executable, port or model.
         .args({
             let port_arg = port.to_string();
@@ -378,52 +912,140 @@ fn start_owned_sidecar(app: &AppHandle) -> Result<(), String> {
         .env("AIMA_PACKAGED_SIDECAR", "1")
         .env("API_CORS_ORIGINS", "https://tauri.localhost,tauri://localhost,http://tauri.localhost")
         .env("ALLOW_FIXTURE_FALLBACK", "0");
-    let (mut events, child) = command
-        .spawn()
-        .map_err(|_| "owned backend sidecar could not be started".to_string())?;
-    let pid = child.pid();
-    if let Ok(mut slot) = state.child.lock() {
-        *slot = Some(child);
-    }
-    if let Ok(mut status) = state.status.lock() {
-        status.pid = Some(pid);
-        status.restart_count = restart_count;
-    }
-    if let Ok(mut session) = state.session.lock() {
-        *session = Some(identity.clone());
-    }
-    emit_backend_status(app, "starting", port, Some(pid), None);
-
-    if let Err(error) = wait_for_sidecar(port, &identity, pid) {
-        stop_owned_sidecar(app);
-        emit_backend_status(app, "degraded", port, None, Some(error.clone()));
-        return Err(error);
-    }
-    emit_backend_status(app, "ready", port, Some(pid), None);
-
-    let event_app = app.clone();
-    tauri::async_runtime::spawn(async move {
-        while let Some(event) = events.recv().await {
-            match event {
-                CommandEvent::Terminated(payload) => {
-                    if owns_sidecar_generation(&event_app, generation) {
-                        let detail = format!("owned backend exited with code {:?}", payload.code);
-                        clear_child_if_generation(&event_app, generation);
-                        emit_backend_status(&event_app, "degraded", port, None, Some(detail));
-                    }
-                    break;
-                }
-                CommandEvent::Error(error) => {
-                    if owns_sidecar_generation(&event_app, generation) {
-                        emit_backend_status(&event_app, "degraded", port, None, Some(error));
-                    }
-                }
-                _ => {}
+        let (events, child) = match command.spawn() {
+            Ok(spawned) => spawned,
+            Err(_) => {
+                let error = "owned backend sidecar could not be started".to_string();
+                mark_start_generation_degraded(app, generation, error.clone(), start_kind.manual_owner());
+                return Err(SidecarStartFailure::retryable(error, generation));
             }
+        };
+        let pid = child.pid();
+        let ownership = match OwnedProcessTree::new(pid, std::process::id()) {
+            Ok(ownership) => std::sync::Arc::new(ownership),
+            Err(error) => {
+                state.ownership_failure_blocked.store(true, Ordering::SeqCst);
+                kill_owned_child(child);
+                let message = format!("could not establish exact sidecar process ownership: {error}");
+                mark_start_generation_degraded(app, generation, message.clone(), start_kind.manual_owner());
+                return Err(SidecarStartFailure::terminal(message));
+            }
+        };
+        if !sidecar_generation_can_start(app, generation, start_kind.manual_owner()) {
+            kill_owned_child(child);
+            return Err(SidecarStartFailure::terminal(
+                "sidecar startup superseded before child ownership was registered",
+            ));
         }
-    });
+        let mut unregistered_child = Some(child);
+        let mut unregistered_ownership = Some(ownership.clone());
+        let registration: Result<bool, String> = (|| {
+            let mut status = state.status.lock().map_err(|_| "owned sidecar status lock is unavailable".to_string())?;
+            let mut slot = state.child.lock().map_err(|_| "owned sidecar child state is unavailable".to_string())?;
+            let mut session = state.session.lock().map_err(|_| "owned sidecar session state is unavailable".to_string())?;
+            let mut owned_tree = state.ownership.lock().map_err(|_| "owned sidecar process ownership lock is unavailable".to_string())?;
+            let still_current = state.generation.load(Ordering::SeqCst) == generation
+                && !state.shutdown_requested.load(Ordering::SeqCst)
+                && (start_kind.manual_owner()
+                    || !state.manual_restart_in_progress.load(Ordering::SeqCst));
+            if !still_current || slot.is_some() || owned_tree.is_some() {
+                Ok(false)
+            } else {
+                *slot = unregistered_child.take();
+                *owned_tree = unregistered_ownership.take();
+                status.pid = Some(pid);
+                status.restart_count = restart_count;
+                *session = Some(identity.clone());
+                publish_backend_status_locked(app, &status);
+                Ok(true)
+            }
+        })();
+        let registered = match registration {
+            Ok(registered) => registered,
+            Err(error) => {
+                let cleanup = unregistered_ownership
+                    .as_ref()
+                    .map(|tree| prepare_owned_tree_for_termination(port, &identity, pid, tree));
+                if let Some(process) = unregistered_child.take() {
+                    kill_owned_child(process);
+                }
+                if let Some(Err(_)) = cleanup {
+                    state.ownership_failure_blocked.store(true, Ordering::SeqCst);
+                }
+                if let Some(tree) = unregistered_ownership.take() {
+                    if !tree.terminate_and_wait() {
+                        state.ownership_failure_blocked.store(true, Ordering::SeqCst);
+                    }
+                }
+                mark_start_generation_degraded(app, generation, error.clone(), start_kind.manual_owner());
+                return Err(SidecarStartFailure::retryable(error, generation));
+            }
+        };
+        if !registered {
+            // The exact newly spawned handle was never installed over another
+            // child. Retire only this local handle if a lifecycle action won.
+            let cleanup = unregistered_ownership
+                .as_ref()
+                .map(|tree| prepare_owned_tree_for_termination(port, &identity, pid, tree));
+            if let Some(process) = unregistered_child.take() {
+                kill_owned_child(process);
+            }
+            if let Some(tree) = unregistered_ownership.take() {
+                if !tree.terminate_and_wait() || matches!(cleanup, Some(Err(_))) {
+                    state.ownership_failure_blocked.store(true, Ordering::SeqCst);
+                }
+            }
+            let error = "sidecar startup was superseded or another owned child is still registered".to_string();
+            let generation_is_current = state.generation.load(Ordering::SeqCst) == generation
+                && !state.shutdown_requested.load(Ordering::SeqCst)
+                && (start_kind.manual_owner()
+                    || !state.manual_restart_in_progress.load(Ordering::SeqCst));
+            if generation_is_current {
+                mark_start_generation_degraded(app, generation, error.clone(), start_kind.manual_owner());
+                return Err(SidecarStartFailure::retryable(error, generation));
+            }
+            return Err(SidecarStartFailure::terminal(error));
+        }
+        if !owns_sidecar_pid_generation(app, generation, pid, start_kind.manual_owner()) {
+            if let Some(process) = take_owned_child_if_pid(app, pid) {
+                kill_owned_child(process);
+            }
+            return Err(SidecarStartFailure::terminal(
+                "sidecar startup superseded while registering child ownership",
+            ));
+        }
+        emit_backend_status_for_generation_owner(app, generation, "starting", port, Some(pid), None, start_kind.manual_owner());
+        (generation, port, identity, pid, ownership, events)
+    };
+
+    start_owned_sidecar_watchers(
+        app,
+        generation,
+        port,
+        pid,
+        ownership.clone(),
+        events,
+        start_kind.manual_owner(),
+    );
+
+    if let Err(error) = wait_for_sidecar(app, generation, port, &identity, pid, &ownership, start_kind.manual_owner()) {
+        let retired_generation = retire_owned_generation(app, generation, Some(pid), "degraded", Some(error.clone()));
+        return Err(SidecarStartFailure { message: error, recovery_generation: retired_generation });
+    }
+    // Health can return after a manual stop/restart has replaced this child.
+    // Recheck both generation and exact child PID before announcing readiness.
+    if !owns_sidecar_pid_generation(app, generation, pid, start_kind.manual_owner()) {
+        return Err(SidecarStartFailure::terminal(
+            "sidecar startup was superseded before health ownership verification",
+        ));
+    }
+    if !emit_backend_status_for_generation_owner(app, generation, "ready", port, Some(pid), None, start_kind.manual_owner()) {
+        return Err(SidecarStartFailure::terminal("owned launcher exited or lifecycle changed before ready publication"));
+    }
 
     let health_app = app.clone();
+    let health_identity = identity.clone();
+    let health_ownership = ownership.clone();
     thread::spawn(move || {
         let mut misses = 0_u8;
         loop {
@@ -431,34 +1053,153 @@ fn start_owned_sidecar(app: &AppHandle) -> Result<(), String> {
             if !owns_sidecar_generation(&health_app, generation) {
                 break;
             }
-            let Some(identity) = health_app
-                .try_state::<OwnedSidecar>()
-                .and_then(|state| state.session.lock().ok().and_then(|value| value.clone()))
-            else {
-                break;
-            };
             let Some(pid) = sidecar_status(&health_app).and_then(|status| status.pid) else {
                 misses = misses.saturating_add(1);
                 continue;
             };
-            if sidecar_is_healthy(port, &identity, pid).is_ok() {
+            if sidecar_is_healthy(port, &health_identity, pid, &health_ownership).is_ok() {
                 misses = 0;
+                if sidecar_status(&health_app).map(|status| status.state.as_str() != "ready").unwrap_or(false) {
+                    emit_backend_status_for_generation(&health_app, generation, "ready", port, Some(pid), None);
+                }
                 continue;
             }
             misses = misses.saturating_add(1);
             if misses >= 3 {
-                emit_backend_status(
+                let detail = "owned backend health or launcher ownership watchdog failed three checks".to_string();
+                emit_backend_status_for_generation(
                     &health_app,
+                    generation,
                     "degraded",
                     port,
                     None,
-                    Some("owned backend health watchdog could not reach /health".to_string()),
+                    Some(detail.clone()),
                 );
+                schedule_automatic_recovery(health_app.clone(), generation, detail);
                 break;
             }
         }
     });
-    Ok(())
+    Ok(generation)
+}
+
+fn automatic_recovery_is_current(app: &AppHandle, expected_generation: u64) -> bool {
+    let Some(state) = app.try_state::<OwnedSidecar>() else {
+        return false;
+    };
+    automatic_recovery_may_continue(
+        expected_generation,
+        state.generation.load(Ordering::SeqCst),
+        state.manual_restart_in_progress.load(Ordering::SeqCst),
+        state.shutdown_requested.load(Ordering::SeqCst),
+    )
+}
+
+fn schedule_automatic_recovery(app: AppHandle, generation: u64, cause: String) {
+    let Some(state) = app.try_state::<OwnedSidecar>() else {
+        return;
+    };
+    if !automatic_recovery_is_current(&app, generation)
+        || state.automatic_recovery_in_progress.compare_exchange(
+            false,
+            true,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        ).is_err()
+    {
+        return;
+    }
+    let port = sidecar_status(&app).map(|status| status.port).unwrap_or(0);
+    let first_delay = automatic_recovery_delay(1).unwrap_or(Duration::from_secs(1));
+    emit_backend_status_for_generation(
+        &app,
+        generation,
+        "recovering",
+        port,
+        None,
+        Some(format!(
+            "Owned sidecar recovery 1/{MAX_AUTOMATIC_RECOVERY_ATTEMPTS} scheduled in {}s: {cause}",
+            first_delay.as_secs(),
+        )),
+    );
+
+    thread::spawn(move || {
+        let Some(recovery_state) = app.try_state::<OwnedSidecar>() else {
+            return;
+        };
+        let _recovery_guard = AtomicFlagReset(&recovery_state.automatic_recovery_in_progress);
+        let mut expected_generation = generation;
+        let mut last_error = cause;
+
+        for attempt in 1..=MAX_AUTOMATIC_RECOVERY_ATTEMPTS {
+            if !automatic_recovery_is_current(&app, expected_generation) {
+                return;
+            }
+            let Some(delay) = automatic_recovery_delay(attempt) else {
+                break;
+            };
+            let status = sidecar_status(&app);
+            emit_backend_status_for_generation(
+                &app,
+                expected_generation,
+                "recovering",
+                status.as_ref().map(|item| item.port).unwrap_or(0),
+                None,
+                Some(format!(
+                    "Owned sidecar recovery {attempt}/{MAX_AUTOMATIC_RECOVERY_ATTEMPTS} in {}s: {last_error}",
+                    delay.as_secs(),
+                )),
+            );
+            // Backoff holds no lifecycle lock; explicit stop/restart can bump
+            // generation and cancel this worker immediately.
+            thread::sleep(delay);
+            if !automatic_recovery_is_current(&app, expected_generation) {
+                return;
+            }
+
+            if retire_owned_generation(
+                &app,
+                expected_generation,
+                None,
+                "recovering",
+                Some(format!("Automatic recovery attempt {attempt}/{MAX_AUTOMATIC_RECOVERY_ATTEMPTS}")),
+            ).is_none() {
+                return;
+            }
+            match start_owned_sidecar(&app, SidecarStartKind::AutomaticRecovery) {
+                Ok(_) => return,
+                Err(failure) => {
+                    last_error = failure.message;
+                    if recovery_state.manual_restart_in_progress.load(Ordering::SeqCst)
+                        || recovery_state.shutdown_requested.load(Ordering::SeqCst)
+                    {
+                        return;
+                    }
+                    let Some(next_generation) = failure.recovery_generation else {
+                        return;
+                    };
+                    expected_generation = next_generation;
+                    if !automatic_recovery_is_current(&app, expected_generation) {
+                        return;
+                    }
+                }
+            }
+        }
+
+        if automatic_recovery_is_current(&app, expected_generation) {
+            let status = sidecar_status(&app);
+            emit_backend_status_for_generation(
+                &app,
+                expected_generation,
+                "degraded",
+                status.as_ref().map(|item| item.port).unwrap_or(0),
+                None,
+                Some(format!(
+                    "Owned sidecar recovery exhausted after {MAX_AUTOMATIC_RECOVERY_ATTEMPTS} attempts; manual restart required: {last_error}"
+                )),
+            );
+        }
+    });
 }
 
 fn set_monitoring_tray_text<R: tauri::Runtime>(app: &AppHandle, status_item: &MenuItem<R>, toggle_item: &MenuItem<R>) {
@@ -517,12 +1258,44 @@ fn notify_monitoring_continues(app: &AppHandle) {
 
 #[tauri::command]
 fn restart_backend(app: AppHandle) -> Result<SidecarStatus, String> {
-    stop_owned_sidecar(&app);
-    match start_owned_sidecar(&app) {
-        Ok(()) => sidecar_status(&app).ok_or_else(|| "backend status is unavailable after restart".to_string()),
-        Err(error) => {
-            emit_backend_status(&app, "degraded", 0, None, Some(error.clone()));
-            Err(error)
+    let state = app
+        .try_state::<OwnedSidecar>()
+        .ok_or_else(|| "owned sidecar state is unavailable".to_string())?;
+    if state.shutdown_requested.load(Ordering::SeqCst) {
+        return Err("backend restart is unavailable while this desktop instance is shutting down".to_string());
+    }
+    {
+        let _status = state
+            .status
+            .lock()
+            .map_err(|_| "owned sidecar status lock is unavailable".to_string())?;
+        if state.shutdown_requested.load(Ordering::SeqCst) {
+            return Err("backend restart is unavailable while this desktop instance is shutting down".to_string());
+        }
+        state
+            .manual_restart_in_progress
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .map_err(|_| "a manual backend restart is already in progress".to_string())?;
+    }
+    let _manual_restart_guard = AtomicFlagReset(&state.manual_restart_in_progress);
+
+    // Invalidate any startup/recovery health waiter before replacing its exact
+    // owned child. The generation bump makes stale workers unable to publish
+    // ready, while no lifecycle lock is held during stop/start or health I/O.
+    if let Err(error) = retire_current_owned_sidecar(
+        &app,
+        "recovering",
+        Some("Manual backend restart requested".to_string()),
+    ) {
+        return Err(format!("manual restart was blocked because the previous sidecar is not safely retired: {error}"));
+    }
+    match start_owned_sidecar(&app, SidecarStartKind::ManualRestart) {
+        Ok(_) => sidecar_status(&app).ok_or_else(|| "backend status is unavailable after restart".to_string()),
+        Err(failure) => {
+            if let Some(generation) = failure.recovery_generation {
+                mark_start_generation_degraded(&app, generation, failure.message.clone(), true);
+            }
+            Err(failure.message)
         }
     }
 }
@@ -565,8 +1338,10 @@ fn main() {
 
             let startup_app = app.handle().clone();
             thread::spawn(move || {
-                if let Err(error) = start_owned_sidecar(&startup_app) {
-                    emit_backend_status(&startup_app, "degraded", 0, None, Some(error));
+                if let Err(failure) = start_owned_sidecar(&startup_app, SidecarStartKind::Initial) {
+                    if let Some(generation) = failure.recovery_generation {
+                        schedule_automatic_recovery(startup_app.clone(), generation, failure.message);
+                    }
                 }
             });
 
@@ -654,4 +1429,46 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("error while running AI Market Analyst desktop");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn automatic_recovery_uses_three_bounded_exponential_delays() {
+        assert_eq!(automatic_recovery_delay(1), Some(Duration::from_secs(1)));
+        assert_eq!(automatic_recovery_delay(2), Some(Duration::from_secs(2)));
+        assert_eq!(automatic_recovery_delay(3), Some(Duration::from_secs(4)));
+        assert_eq!(automatic_recovery_delay(0), None);
+        assert_eq!(automatic_recovery_delay(4), None);
+        assert_eq!(MAX_AUTOMATIC_RECOVERY_ATTEMPTS, 3);
+    }
+
+    #[test]
+    fn stale_manual_and_shutdown_generations_cancel_automatic_recovery() {
+        assert!(automatic_recovery_may_continue(7, 7, false, false));
+        assert!(!automatic_recovery_may_continue(7, 8, false, false));
+        assert!(!automatic_recovery_may_continue(7, 7, true, false));
+        assert!(!automatic_recovery_may_continue(7, 7, false, true));
+    }
+
+    #[test]
+    fn ready_or_degraded_status_cannot_publish_for_a_stale_generation() {
+        assert!(status_transition_is_authorized(4, 4, false, false, false));
+        assert!(!status_transition_is_authorized(4, 5, false, false, false));
+        assert!(!status_transition_is_authorized(4, 4, false, true, false));
+        assert!(status_transition_is_authorized(4, 4, true, true, false));
+        assert!(!status_transition_is_authorized(4, 4, true, false, true));
+    }
+
+    #[test]
+    fn health_identity_cannot_be_satisfied_by_an_unrelated_worker_pid_on_windows() {
+        let expected_launcher = 41;
+        let worker_pid = 52;
+        assert!(health_launcher_matches(expected_launcher, worker_pid, expected_launcher));
+        assert!(!health_launcher_matches(expected_launcher, worker_pid, 99));
+        #[cfg(target_os = "windows")]
+        assert!(!health_launcher_matches(expected_launcher, expected_launcher, 99));
+    }
 }

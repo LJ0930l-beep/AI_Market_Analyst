@@ -405,7 +405,7 @@ def router_for(get_store, get_runtime, get_translation):
     def gate_remote_position_records(store, account_id: str) -> tuple[list[dict[str, Any]], str]:
         """Project the latest Gate snapshot for read-only API consumers.
 
-        Managed Gate TestNet positions are exchange facts.  Historical
+        Managed Gate TestNet and Live positions are exchange facts.  Historical
         ``simulated_positions`` rows remain available for audit, but they must
         never be returned as active workspace positions after the account was
         switched to remote authority.  A missing or unavailable snapshot is
@@ -585,7 +585,7 @@ def router_for(get_store, get_runtime, get_translation):
         if body.actual and body.forecast and service and getattr(service, "llm_provider", None):
             try:
                 if type(service) is not NewsTranslationService:
-                    raise RuntimeError("macro analysis requires the production Bonsai translation service")
+                    raise RuntimeError("macro analysis requires the production Gemini translation service")
                 messages = [
                     {
                         "role": "system",
@@ -662,12 +662,12 @@ def router_for(get_store, get_runtime, get_translation):
 
     @router.post("/qwen-market-scans/start")
     def start_qwen_market_scans(body: QwenMarketScanBody, store=Depends(get_store), runtime=Depends(get_runtime)):
-        """Start the independent five-minute Bonsai 2 27B analysis loop."""
+        """Start the independent five-minute Gemini 3.8 Flash analysis loop."""
         return qwen_market_scanner(store, runtime).start(body.symbols)
 
     @router.post("/qwen-market-scans/run")
     def run_qwen_market_scan_once(body: QwenMarketScanBody, store=Depends(get_store), runtime=Depends(get_runtime)):
-        """Run one analysis-only Bonsai 2 27B scan now; never creates an order."""
+        """Run one analysis-only Gemini 3.8 Flash scan now; never creates an order."""
         return qwen_market_scanner(store, runtime).run_once(body.symbols)
 
     @router.post("/qwen-market-scans/stop")
@@ -762,7 +762,9 @@ def router_for(get_store, get_runtime, get_translation):
 
         gate_remote_scope = False
         if account_id and is_managed_gate_account(store, account_id):
-            gate_remote_scope = get_gate_account_profile(store, account_id)["mode"] == TradingMode.TESTNET.value
+            gate_remote_scope = get_gate_account_profile(store, account_id)["mode"] in {
+                TradingMode.TESTNET.value, TradingMode.LIVE.value,
+            }
         if gate_remote_scope:
             scoped_positions, positions_data_status = gate_remote_position_records(store, account_id)
             positions_source = "GATE_REMOTE_PRIVATE_API_SNAPSHOT"
@@ -839,7 +841,7 @@ def router_for(get_store, get_runtime, get_translation):
                 "real_execution": "ACCOUNT_SCOPED_GATE_CREDENTIAL_REQUIRED",
                 "external_messaging": "LOCKED",
                 "macro_provider": calendar_status(store)["status"],
-                "model": "Bonsai-2-27B-PTQ1_0",
+                "model": "gemini-3.8-flash-high",
                 "mode": "SIMULATION",
             },
         }
@@ -1881,7 +1883,7 @@ def router_for(get_store, get_runtime, get_translation):
     ):
         """Explicit Gate TestNet order -> fill -> protection -> cleanup test.
 
-        This endpoint does not call Bonsai or the strategy engine.  It is a
+        This endpoint does not call Gemini or the strategy engine.  It is a
         TestNet-only transport check and never substitutes a local fill.
         """
 
@@ -2544,27 +2546,40 @@ def router_for(get_store, get_runtime, get_translation):
                         "symbols": list(dict.fromkeys(scoped_symbols)),
                     }
 
-        if account_id and expected_mode == TradingMode.TESTNET.value and expected_venue == "gate" and is_managed_gate_account(store, account_id):
+        if account_id and expected_mode in {TradingMode.TESTNET.value, TradingMode.LIVE.value} and expected_venue == "gate" and is_managed_gate_account(store, account_id):
             remote_positions, remote_status = gate_remote_position_records(store, account_id)
             protection_summary = {
                 "active_positions": len(remote_positions) if remote_status == "AVAILABLE" else None,
-                "protected_positions": sum(1 for position in remote_positions if position.get("protected")) if remote_status == "AVAILABLE" else None,
+                # Standard account snapshots do not prove that native Gate
+                # conditional SL/TP orders remain open. Their receipt IDs
+                # require a separate private readback; never present a count
+                # inferred from ordinary pending orders as verified coverage.
+                "protected_positions": 0 if remote_status == "AVAILABLE" and not remote_positions else None,
+                "protection_status": "NO_POSITIONS" if remote_status == "AVAILABLE" and not remote_positions else "NOT_VERIFIED_BY_ACCOUNT_SNAPSHOT",
                 "symbols": [position["symbol"] for position in remote_positions] if remote_status == "AVAILABLE" else [],
                 "status": remote_status,
                 "source": "GATE_REMOTE_PRIVATE_API_SNAPSHOT",
             }
 
         last_market_at = getattr(runtime, "_last_market_event_at", None) if runtime else None
-        if runtime and hasattr(runtime, "check_market_freshness"):
-            is_fresh = bool(runtime.check_market_freshness())
-            freshness = {
-                "status": "HEALTHY" if is_fresh else ("NO_DATA" if getattr(runtime, "_last_market_event_at", None) is None else "DEGRADED"),
-                "fresh": is_fresh,
-                "gap_seconds": None,
-            }
+        if runtime:
+            # This endpoint is observational. check_market_freshness() changes
+            # the runtime state to degraded, so a dashboard poll must not call it.
+            now = runtime.clock() if callable(getattr(runtime, "clock", None)) else datetime.now(timezone.utc)
+            if isinstance(last_market_at, datetime):
+                observed = last_market_at.replace(tzinfo=timezone.utc) if last_market_at.tzinfo is None else last_market_at
+                gap_seconds = max(0.0, (now - observed).total_seconds())
+                is_fresh = gap_seconds <= 15.0
+                freshness = {
+                    "status": "HEALTHY" if is_fresh else "DEGRADED",
+                    "fresh": is_fresh,
+                    "gap_seconds": round(gap_seconds, 3),
+                }
+            else:
+                freshness = {"status": "NO_DATA", "fresh": False, "gap_seconds": None}
         else:
             freshness = {"status": "RUNTIME_UNAVAILABLE", "fresh": False, "gap_seconds": None}
-        ai_status = getattr(runtime, "ai_coordinator", None).status() if runtime and getattr(runtime, "ai_coordinator", None) is not None else {"status": "RUNTIME_UNAVAILABLE", "required_model": "Bonsai-2-27B-PTQ1_0"}
+        ai_status = getattr(runtime, "ai_coordinator", None).status() if runtime and getattr(runtime, "ai_coordinator", None) is not None else {"status": "RUNTIME_UNAVAILABLE", "required_model": "gemini-3.8-flash-high"}
         runtime_status = runtime.status() if runtime and callable(getattr(runtime, "status", None)) else {}
 
         return {
@@ -2773,11 +2788,11 @@ def router_for(get_store, get_runtime, get_translation):
     ):
         """Return active AI strategy configuration and built-in templates."""
         target_account = canonical_account_id(store, str(account_id or GATE_TESTNET_ACCOUNT_ID))
-        from core.trading.ai_strategy_book import TEMPLATES, AIStrategyBook
+        from core.trading.ai_strategy_book import ACTIVE_TEMPLATES, AIStrategyBook
         book = AIStrategyBook(store)
         return {
             "active": book.active(target_account),
-            "templates": TEMPLATES,
+            "templates": ACTIVE_TEMPLATES,
         }
 
     @router.put("/ai-strategy")
@@ -2821,7 +2836,7 @@ def router_for(get_store, get_runtime, get_translation):
         store=Depends(get_store),
         runtime=Depends(get_runtime),
     ):
-        """Translate NOFX instructions and supported analysis inputs into Bonsai.
+        """Translate NOFX instructions and supported analysis inputs into Gemini.
 
         The active Gate universe, local risk controls, and this project's
         execution gateway remain authoritative. External providers and NOFX
@@ -2998,7 +3013,7 @@ def router_for(get_store, get_runtime, get_translation):
         expected_mode, expected_venue = account_execution_scope(store, account_id)
         if is_managed_gate_account(store, account_id):
             profile = get_gate_account_profile(store, account_id)
-            if profile["mode"] == TradingMode.TESTNET.value:
+            if profile["mode"] in {TradingMode.TESTNET.value, TradingMode.LIVE.value}:
                 remote_positions, data_status = gate_remote_position_records(store, account_id)
                 if status:
                     remote_positions = [

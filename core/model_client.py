@@ -19,14 +19,25 @@ import threading
 import time
 from typing import Any, Callable, Dict, Generator, List, Optional
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import Request, urlopen as _stdlib_urlopen
 from urllib.parse import urlparse
 
 from .config import config, GenerationPreset
 from .logging import get_logger
-from .model_routing import DEFAULT_MODEL, is_bonsai_model_identity
+from .model_routing import DEFAULT_MODEL, is_configured_model_identity
+from .completion_stream import CompletionStreamError, collect_completion_stream
 
 logger = get_logger("model_client")
+
+
+def urlopen(request, *, timeout):
+    """Keep the injectable opener contract; trace only completion requests."""
+    trace = getattr(request, "_completion_transport_trace", None)
+    if trace is None:
+        return _stdlib_urlopen(request, timeout=timeout)
+    # Deferred import preserves the standalone model_client entry point.
+    from .ai.transport_diagnostics import open_traced_request
+    return open_traced_request(request, timeout=timeout, trace=trace)
 
 
 class ModelClientError(Exception):
@@ -39,11 +50,14 @@ class ModelTimeoutError(ModelClientError):
 
 
 class ModelSchemaError(ModelClientError):
-    pass
+    def __init__(self, message: str, *, raw_response: str | None = None, finish_reason: str | None = None):
+        super().__init__(message)
+        self.raw_response = raw_response
+        self.finish_reason = finish_reason
 
 
 class ModelClient:
-    """Authoritative client for Bonsai 2 27B OpenAI-compatible inference server."""
+    """Authoritative client for Gemini 3.8 Flash OpenAI-compatible inference server."""
 
     def __init__(
         self,
@@ -65,6 +79,15 @@ class ModelClient:
         value = getattr(self._response_state, "model", None)
         return str(value) if isinstance(value, str) and value.strip() else None
 
+    @property
+    def last_schema_enforcement(self) -> str | None:
+        return getattr(self._response_state, "schema_enforcement", None)
+
+    @property
+    def last_transport_trace(self) -> dict[str, Any] | None:
+        trace = getattr(self._response_state, "transport_trace", None)
+        return trace.snapshot() if trace is not None else None
+
     def _configuration_error(self, requested_model: str | None = None) -> str | None:
         if self.model_name != DEFAULT_MODEL:
             return "MODEL_CONFIGURATION_MISMATCH"
@@ -77,7 +100,7 @@ class ModelClient:
             if (
                 parsed.scheme != "http"
                 or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
-                or parsed.port != 8080
+                or parsed.port != 8045
                 or parsed.path.rstrip("/") != "/v1"
                 or parsed.username is not None
                 or parsed.password is not None
@@ -89,52 +112,16 @@ class ModelClient:
             return "MODEL_ENDPOINT_NOT_ALLOWED"
         return None
 
-    def _assert_bonsai_route(self, requested_model: str | None = None) -> str:
+    def _assert_model_route(self, requested_model: str | None = None) -> str:
         error = self._configuration_error(requested_model)
         if error:
             raise ModelClientError(error)
         return DEFAULT_MODEL
 
     def count_tokens(self, content: str, *, timeout_sec: float = 5.0) -> int:
-        """Count text with the tokenizer of the pinned local Bonsai runtime.
-
-        The /tokenize endpoint is read-only and is constrained to the same
-        loopback Bonsai route as inference. Callers may fall back to a
-        conservative estimator when the endpoint is unavailable.
-        """
-        self._assert_bonsai_route()
-        if not isinstance(content, str):
-            raise ModelClientError("MODEL_TOKENIZER_INPUT_INVALID")
-        if len(content) > 250_000:
-            raise ModelClientError("MODEL_TOKENIZER_INPUT_TOO_LARGE")
-        if (
-            isinstance(timeout_sec, bool)
-            or not isinstance(timeout_sec, (int, float))
-            or not math.isfinite(timeout_sec)
-            or timeout_sec <= 0
-        ):
-            raise ModelClientError("MODEL_TOKENIZER_TIMEOUT_INVALID")
-        tokenizer_url = f"{self.base_url.rsplit('/v1', 1)[0]}/tokenize"
-        body = json.dumps({"content": content}, ensure_ascii=False).encode("utf-8")
-        request = Request(
-            tokenizer_url,
-            data=body,
-            headers={
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "User-Agent": "AI-Market-Analyst-V2/Tokenizer",
-            },
-            method="POST",
-        )
-        try:
-            with urlopen(request, timeout=float(timeout_sec)) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except Exception as exc:
-            raise ModelClientError("MODEL_TOKENIZER_UNAVAILABLE") from exc
-        tokens = payload.get("tokens") if isinstance(payload, dict) else None
-        if not isinstance(tokens, list):
-            raise ModelClientError("MODEL_TOKENIZER_RESPONSE_INVALID")
-        return len(tokens)
+        """The relay has no verified tokenizer; callers use their labeled estimator."""
+        self._assert_model_route()
+        raise ModelClientError("MODEL_TOKENIZER_UNAVAILABLE_REMOTE_PROVIDER")
 
     def chat_completion(
         self,
@@ -154,8 +141,13 @@ class ModelClient:
         retries: int | None = None,
     ) -> Dict[str, Any]:
         """Execute a standard chat completion call."""
+        # Providers import this module; load their package after client initialization.
+        from .ai.transport_diagnostics import CompletionTransportTrace
+
         self._response_state.model = None
-        selected_model = self._assert_bonsai_route(model_name)
+        selected_model = self._assert_model_route(model_name)
+        if not isinstance(stream, bool):
+            raise ModelClientError("MODEL_STREAM_FLAG_INVALID")
         preset = config.get_preset(mode)
         actual_max_tokens = max_tokens if max_tokens is not None else max_tokens_override
         if actual_max_tokens is None:
@@ -167,16 +159,18 @@ class ModelClient:
             "stream": stream,
             "temperature": temperature_override if temperature_override is not None else preset.temperature,
             "top_p": preset.top_p,
-            "top_k": preset.top_k,  # llama.cpp standard sampling param
             "max_tokens": actual_max_tokens,
         }
-        # The pinned PrismML llama.cpp build advertises reasoning-effort support
-        # in /props; keep the option opt-in so only scoped callers change it.
+        # Preserve older callers while keeping the operator-selected High tier.
         if reasoning_effort is not None:
             normalized_effort = str(reasoning_effort).strip().lower()
-            if normalized_effort not in {"none", "minimal", "low", "medium", "high", "xhigh", "max"}:
+            if normalized_effort in {"none", "minimal"}:
+                normalized_effort = "high"
+            if normalized_effort not in {"low", "medium", "high"}:
                 raise ModelClientError("MODEL_REASONING_EFFORT_INVALID")
-            payload["reasoning_effort"] = normalized_effort
+            payload["reasoning_effort"] = "high"  # The selected release is explicitly High.
+
+        payload["reasoning_effort"] = "high"
 
         if tools:
             payload["tools"] = tools
@@ -201,6 +195,9 @@ class ModelClient:
         last_exception = None
         for attempt in range(request_retries + 1):
             start_t = time.time()
+            trace = CompletionTransportTrace(messages, attempt + 1, request_timeout)
+            trace.data["transport_mode"] = "SSE" if stream else "JSON"
+            self._response_state.transport_trace = trace
             try:
                 body_bytes = json.dumps(payload, ensure_ascii=False).encode("utf-8")
                 req = Request(
@@ -208,24 +205,42 @@ class ModelClient:
                     data=body_bytes,
                     headers={
                         "Content-Type": "application/json",
-                        "Accept": "application/json",
+                        "Accept": "text/event-stream" if stream else "application/json",
                         "Authorization": f"Bearer {config.api_key}",
-                        "User-Agent": "AI-Market-Analyst-V2/Bonsai",
+                        "User-Agent": "AI-Market-Analyst-V2/Gemini",
+                        "X-AI-Correlation-ID": trace.data["correlation_id"],
                     },
                     method="POST",
                 )
+                req._completion_transport_trace = trace
+                trace.awaiting_headers()
                 with urlopen(req, timeout=request_timeout) as resp:
-                    raw_data = resp.read().decode("utf-8")
+                    trace.headers_received(getattr(resp, "status", None))
+                    if stream:
+                        try:
+                            parsed, response_size = collect_completion_stream(
+                                resp, deadline=trace.started + request_timeout,
+                                identity_check=is_configured_model_identity, trace=trace,
+                                bounded_ttl_text=bool(response_format and
+                                    response_format.get("json_schema", {}).get("schema", {}).get(
+                                        "properties", {}).get("ttl_seconds", {}).get("type") in ("string", "object")),
+                            )
+                        except CompletionStreamError as exc:
+                            raise ModelSchemaError(str(exc)) from exc
+                        trace.body_received(response_size)
+                    else:
+                        response_bytes = resp.read()
+                        trace.body_received(len(response_bytes))
+                        raw_data = response_bytes.decode("utf-8")
+                        parsed = json.loads(raw_data)
                     latency_ms = (time.time() - start_t) * 1000.0
-                    parsed = json.loads(raw_data)
                     if not isinstance(parsed, dict):
                         raise ModelSchemaError("Model response must be a JSON object")
                     response_model = parsed.get("model")
                     self._response_state.model = None
-                    if "model" in parsed:
-                        if not isinstance(response_model, str) or not response_model.strip() or not is_bonsai_model_identity(response_model):
-                            raise ModelClientError("MODEL_RESPONSE_IDENTITY_MISMATCH")
-                        self._response_state.model = response_model.strip()
+                    if not is_configured_model_identity(response_model):
+                        raise ModelClientError("MODEL_RESPONSE_IDENTITY_MISMATCH")
+                    self._response_state.model = response_model.strip()
                     logger.debug(
                         "Chat completion succeeded in %.2fms (mode=%s, tokens=%s)",
                         latency_ms, mode, parsed.get("usage", {}).get("total_tokens")
@@ -239,10 +254,28 @@ class ModelClient:
                     else:
                         parsed["content"] = ""
                         parsed["thinking"] = ""
+                    trace.completed()
                     return parsed
-            except ModelClientError:
+            except ModelClientError as exc:
+                trace.failed(exc)
+                exc.transport_trace = trace.snapshot()
                 raise
-            except (HTTPError, URLError, TimeoutError) as exc:
+            except HTTPError as exc:
+                trace.failed(exc)
+                try:
+                    remote = json.loads(exc.read(16384).decode("utf-8"))
+                    message = str((remote.get("error") or {}).get("message") or "")
+                except (ValueError, UnicodeError, AttributeError):
+                    message = ""
+                if "location is not supported" in message.lower():
+                    raise ModelClientError("MODEL_UPSTREAM_REGION_UNSUPPORTED") from exc
+                if exc.code in {400, 401, 403, 404}:
+                    raise ModelClientError(f"MODEL_UPSTREAM_HTTP_{exc.code}") from exc
+                last_exception = exc
+                if attempt < request_retries:
+                    time.sleep(1.0 * (2 ** attempt))
+            except (URLError, TimeoutError) as exc:
+                trace.failed(exc)
                 last_exception = exc
                 latency_ms = (time.time() - start_t) * 1000.0
                 logger.warning(
@@ -252,13 +285,17 @@ class ModelClient:
                 if attempt < request_retries:
                     time.sleep(1.0 * (2 ** attempt))
             except json.JSONDecodeError as exc:
+                trace.failed(exc)
                 raise ModelSchemaError(f"Model returned invalid JSON: {exc}") from exc
             except Exception as exc:
+                trace.failed(exc)
                 raise ModelClientError(f"Unexpected error calling model: {exc}") from exc
 
-        raise ModelTimeoutError(
+        failure = ModelTimeoutError(
             f"Failed to communicate with model at {self._endpoint} after {request_retries + 1} attempts: {last_exception}"
-        ) from last_exception
+        )
+        failure.transport_trace = self.last_transport_trace
+        raise failure from last_exception
 
     def chat_completion_stream(
         self,
@@ -274,7 +311,7 @@ class ModelClient:
     ) -> Generator[Dict[str, Any], None, None]:
         """Stream chunks from OpenAI-compatible SSE stream."""
         self._response_state.model = None
-        selected_model = self._assert_bonsai_route(model_name)
+        selected_model = self._assert_model_route(model_name)
         preset = config.get_preset(mode)
         if max_tokens is not None and (
             isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or not 1 <= max_tokens <= 2048
@@ -286,7 +323,7 @@ class ModelClient:
             "stream": True,
             "temperature": temperature_override if temperature_override is not None else preset.temperature,
             "top_p": preset.top_p,
-            "top_k": preset.top_k,
+            "reasoning_effort": "high",
             "max_tokens": max_tokens if max_tokens is not None else preset.max_tokens,
         }
         body_bytes = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -317,7 +354,7 @@ class ModelClient:
                         chunk = json.loads(data_str)
                         if isinstance(chunk, dict) and "model" in chunk:
                             response_model = chunk.get("model")
-                            if not isinstance(response_model, str) or not response_model.strip() or not is_bonsai_model_identity(response_model):
+                            if not isinstance(response_model, str) or not response_model.strip() or not is_configured_model_identity(response_model):
                                 raise ModelClientError("MODEL_RESPONSE_IDENTITY_MISMATCH")
                             self._response_state.model = response_model.strip()
                         yield chunk
@@ -340,9 +377,19 @@ class ModelClient:
         reasoning_effort: str | None = None,
         timeout_sec: float | None = None,
         retries: int | None = None,
+        allow_syntax_repair: bool = True,
+        stream: bool = False,
     ) -> Dict[str, Any]:
         """Request a JSON object; callers remain responsible for schema validation."""
-        self._assert_bonsai_route(model_name)
+        self._assert_model_route(model_name)
+        if not isinstance(allow_syntax_repair, bool):
+            raise ModelClientError("MODEL_SYNTAX_REPAIR_FLAG_INVALID")
+        # Generation and execution representations differ only for canonical
+        # TTL digits. Include the generation schema in uncompressed prompts too.
+        frozen_schema = bool(schema and schema.get("$id") == "aima:frozen-decision:v1")
+        from .trading.model_schemas import gemini_response_format
+        response_format = (gemini_response_format(schema)
+                           if frozen_schema else {"type": "json_object"})
         req_messages = [dict(m) for m in messages]
         if schema:
             has_compact_contract = any(
@@ -352,15 +399,17 @@ class ModelClient:
             if not has_compact_contract:
                 schema_instruction = (
                     "JSON Schema (return one matching JSON object):\n"
-                    + json.dumps(schema, ensure_ascii=False, separators=(",", ":"))
+                    + json.dumps(response_format["json_schema"]["schema"] if frozen_schema else schema,
+                                 ensure_ascii=False, separators=(",", ":"))
                 )
                 if req_messages and req_messages[0].get("role") == "system":
                     req_messages[0]["content"] = req_messages[0]["content"] + "\n\n" + schema_instruction
                 else:
                     req_messages.insert(0, {"role": "system", "content": schema_instruction})
 
-        # Use universal json_object format to avoid llama.cpp grammar parser 400 errors
-        response_format = {"type": "json_object"}
+        # Keep the relay-compatible schema separate from local conditional
+        # validation; the relay normalizes bounds and cannot attest a grammar.
+        self._response_state.schema_enforcement = None
 
         response = self.chat_completion(
             messages=req_messages,
@@ -372,7 +421,9 @@ class ModelClient:
             reasoning_effort=reasoning_effort,
             timeout_sec=timeout_sec,
             retries=retries,
+            stream=stream,
         )
+        self._response_state.schema_enforcement = response_format["type"]
         
         choices = response.get("choices") or []
         if not choices:
@@ -390,7 +441,7 @@ class ModelClient:
             usage = response.get("usage") if isinstance(response.get("usage"), dict) else {}
             reasoning_content = message.get("reasoning_content")
             logger.error(
-                "Bonsai returned empty final content (finish_reason=%s, reasoning_chars=%s, completion_tokens=%s)",
+                "Gemini returned empty final content (finish_reason=%s, reasoning_chars=%s, completion_tokens=%s)",
                 first_choice.get("finish_reason"),
                 len(reasoning_content) if isinstance(reasoning_content, str) else 0,
                 usage.get("completion_tokens"),
@@ -407,6 +458,9 @@ class ModelClient:
         try:
             return json.loads(cleaned)
         except json.JSONDecodeError as exc:
+            if not allow_syntax_repair:
+                raise ModelSchemaError(f"Model returned invalid JSON: {exc}", raw_response=content,
+                                       finish_reason=first_choice.get("finish_reason")) from exc
             # Self-repair attempt using FAST mode
             logger.warning("JSON decode failed (%s). Triggering self-repair...", exc)
             repair_messages = [
@@ -422,6 +476,7 @@ class ModelClient:
                 model_name=model_name,
                 timeout_sec=timeout_sec,
                 retries=retries,
+                stream=stream,
             )
             repair_choices = repair_resp.get("choices") or []
             if not repair_choices or not isinstance(repair_choices[0], dict):
@@ -456,7 +511,7 @@ class ModelClient:
         effective (not training) context window, so callers can fail closed
         when those facts are absent.
         """
-        self._assert_bonsai_route()
+        self._assert_model_route()
         req = Request(
             f"{self.base_url}/models",
             headers={

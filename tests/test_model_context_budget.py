@@ -21,8 +21,10 @@ from core.model_client import model_client
 from core.model_routing import DEFAULT_SMART_MODEL
 from core.trading.ai_session_coordinator import (
     DECISION_OUTPUT_TOKEN_BUDGET,
+    INFERENCE_SOFT_CONTEXT_LIMIT,
     MIN_MODEL_CONTEXT_LENGTH,
     MODEL_CONTEXT_LENGTH,
+    PROMPT_BUDGET_SAFETY_MARGIN_TOKENS,
     _assert_prompt_fits,
     _estimate_tokens,
     _fit_prompt_payload,
@@ -344,20 +346,54 @@ def _production_sized_prompt_payload() -> dict[str, object]:
     return payload
 
 
+def _add_production_named_technical_evidence(payload: dict[str, object]) -> None:
+    """Give readiness tests the same named indicators and provenance as production."""
+    technical = payload["technical_context"]
+    for symbol, instrument in technical.items():
+        if symbol in {"candle_columns", "indicator_columns"} or not isinstance(instrument, dict):
+            continue
+        for timeframe, frame in instrument["timeframes"].items():
+            values = frame.get("indicators")
+            if isinstance(values, list):
+                names = (
+                    "ema20", "rsi14_simple", "atr14_simple", "volume_ratio20",
+                    "support20", "resistance20",
+                )
+                frame["indicators"] = dict(zip(names, values))
+            frame["nofx_indicator_snapshot"] = {
+                "schema_version": "nofx-indicator-snapshot-v1",
+                "status": "READY",
+                "source": "gate_native_rest",
+                "timeframe": timeframe,
+                "as_of": frame["last_closed_at"],
+                "bar_count": 32,
+                "reason": None,
+                "diagnostics": {"display_only": "remove from model projection"},
+            }
+
+
 def test_prompt_payload_is_compacted_to_verified_budget_without_losing_decision_evidence() -> None:
     system_content = "系统规则" * 507 + "。" * 3
     payload = _production_sized_prompt_payload()
+    payload["decision_memory"] = [
+        {"action": "WAIT", "symbol": "BTCUSDT", "status": "WAITING", "reason": "已过期等待锚点" * 12},
+        {
+            "action": "OPEN_LONG", "symbol": "ETHUSDT", "status": "CLOSED",
+            "outcome_status": "WIN", "outcome_pnl": 12.3,
+            "summary_zh": "15m 收盘突破前高后按止损风险限额入场，达到首个目标后保护剩余仓位。" * 2,
+        },
+    ]
     original = copy.deepcopy(payload)
     serialized = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     raw_user_tokens = _estimate_tokens(serialized)
     assert raw_user_tokens >= 7505
-    assert _estimate_tokens(system_content) + raw_user_tokens + 640 > 8192
+    assert _estimate_tokens(system_content) + raw_user_tokens + 1024 > 8192
 
     projected, metadata = _fit_prompt_payload(
         payload,
         system_content,
         context_length=8192,
-        reserve=640,
+        reserve=1024,
         signal_timeframe="5m",
     )
 
@@ -373,7 +409,7 @@ def test_prompt_payload_is_compacted_to_verified_budget_without_losing_decision_
     assert metadata["steps"]
     assert metadata["estimated_input_tokens"] == _estimate_tokens(system_content) + _estimate_tokens(projected_json)
     assert metadata["context_length"] == 8192
-    assert metadata["reserve_tokens"] == 640
+    assert metadata["reserve_tokens"] == 1024
     assert metadata["safety_margin_tokens"] == 256
 
     symbols = original["allowed_instruments"]
@@ -384,6 +420,14 @@ def test_prompt_payload_is_compacted_to_verified_budget_without_losing_decision_
         item["revision_id"] for item in original["news_revisions"]
     }
     for symbol in symbols:
+        headline = next(item for item in projected["news_revisions"] if item.get("symbol") == symbol)
+        assert headline["title"].startswith(f"{symbol}资金流")
+        assert len(headline["summary"]) >= 20
+    assert len(projected["decision_memory"]) == 1
+    assert projected["decision_memory"][0]["outcome_status"] == "WIN"
+    assert projected["decision_memory"][0]["summary_zh"].startswith("15m 收盘突破前高")
+    assert len(projected["decision_memory"][0]["summary_zh"]) <= 96
+    for symbol in symbols:
         assert projected["technical_context"][symbol]["timeframes"]["5m"]["candles"][-2:] == original["technical_context"][symbol]["timeframes"]["5m"]["candles"][-2:]
         assert projected["market_snapshots"][symbol]["slippage"] == 0.0012
         assert projected["market_snapshots"][symbol]["fee_rate"] == 0.00075
@@ -392,8 +436,68 @@ def test_prompt_payload_is_compacted_to_verified_budget_without_losing_decision_
     assert payload == original, "compaction must not mutate the frozen cycle input"
 
 
+def test_latency_target_keeps_all_owned_rows_and_account_wide_margin_facts() -> None:
+    payload = _production_sized_prompt_payload()
+    account = payload["account_truth"]
+    account.update({
+        "equity": 10000.0,
+        "available_margin": 7500.0,
+        "used_margin": 2500.0,
+        "managed_state": {
+            "status": "AVAILABLE", "account_id": "acct", "environment": "TESTNET",
+            "venue": "gate", "managed_position_count": 1, "owned_entry_order_count": 1,
+            "owned_protection_order_count": 1, "owned_reduction_order_count": 1,
+        },
+        "managed_positions": [{
+            "position_id": "position-btc", "symbol": "BTCUSDT", "side": "LONG",
+            "quantity": 0.01, "entry_price": 61000.0, "mark_price": 61200.0,
+            "notional": 612.0, "margin": 30.6, "leverage": 20,
+            "stop_price": 60500.0, "ownership": "VERIFIED_SYSTEM",
+        }],
+        "owned_entry_orders": [{
+            "order_id": "entry-eth", "symbol": "ETHUSDT", "side": "LONG",
+            "type": "LIMIT", "price": 3000.0, "amount": 0.2, "remaining": 0.2,
+            "status": "open", "ownership": "VERIFIED_SYSTEM",
+        }],
+        "owned_protection_orders": [{
+            "order_id": "stop-btc", "symbol": "BTCUSDT", "side": "SELL",
+            "type": "STOP", "trigger_price": 60500.0, "amount": 0.01,
+            "status": "open", "reduce_only": True, "ownership": "VERIFIED_SYSTEM",
+        }],
+        "owned_reduction_orders": [{
+            "order_id": "reduce-sol", "symbol": "SOLUSDT", "side": "SELL",
+            "type": "LIMIT", "price": 140.0, "amount": 1.0, "remaining": 1.0,
+            "status": "open", "reduce_only": True, "ownership": "VERIFIED_SYSTEM",
+        }],
+    })
+
+    projected, metadata = _fit_prompt_payload(
+        payload,
+        "system",
+        context_length=INFERENCE_SOFT_CONTEXT_LIMIT,
+        reserve=DECISION_OUTPUT_TOKEN_BUDGET,
+        signal_timeframe="5m",
+    )
+
+    compacted_account = projected["account_truth"]
+    assert metadata["estimated_input_tokens"] + DECISION_OUTPUT_TOKEN_BUDGET + metadata["safety_margin_tokens"] <= INFERENCE_SOFT_CONTEXT_LIMIT
+    assert projected["allowed_instruments"] == payload["allowed_instruments"]
+    assert compacted_account["managed_positions"][0]["position_id"] == "position-btc"
+    assert compacted_account["managed_positions"][0]["stop_price"] == 60500.0
+    assert compacted_account["owned_entry_orders"][0]["order_id"] == "entry-eth"
+    assert compacted_account["owned_entry_orders"][0]["price"] == 3000.0
+    assert compacted_account["owned_entry_orders"][0]["remaining"] == 0.2
+    assert compacted_account["owned_protection_orders"][0]["order_id"] == "stop-btc"
+    assert compacted_account["owned_protection_orders"][0]["trigger_price"] == 60500.0
+    assert compacted_account["owned_reduction_orders"][0]["order_id"] == "reduce-sol"
+    assert compacted_account["owned_reduction_orders"][0]["remaining"] == 1.0
+    for field in ("equity", "available_margin", "used_margin"):
+        assert compacted_account[field] == account[field]
+
+
 def test_empty_trade_history_and_unavailable_radar_do_not_displace_closed_candles() -> None:
     payload = _production_sized_prompt_payload()
+    _add_production_named_technical_evidence(payload)
     payload["performance_context"] = {
         "status": "AVAILABLE", "stance": "INSUFFICIENT_SAMPLE", "closed_trades": 0,
         "guidance_zh": "没有已结算交易" * 20, "win_rate_pct": 0,
@@ -407,15 +511,31 @@ def test_empty_trade_history_and_unavailable_radar_do_not_displace_closed_candle
     payload["market_radar"]["derivatives_matrix"] = [["BTCUSDT", "AVAILABLE", 1.2, 0.01]]
 
     projected, metadata = _fit_prompt_payload(
-        payload, "系统规则" * 620, context_length=8192, reserve=640,
+        payload, "系统规则" * 620, context_length=8192, reserve=1024,
         signal_timeframe="5m",
     )
 
     assert metadata["estimated_input_tokens"] + metadata["reserve_tokens"] + metadata["safety_margin_tokens"] <= 8192
+    assert "keep_named_primary_indicators" in metadata["steps"]
     for symbol in payload["allowed_instruments"]:
-        for timeframe, expected in (("5m", 4), ("15m", 2), ("1h", 2)):
-            actual = projected["technical_context"][symbol]["timeframes"][timeframe]["candles"]
-            assert actual == payload["technical_context"][symbol]["timeframes"][timeframe]["candles"][-expected:]
+        frames = projected["technical_context"][symbol]["timeframes"]
+        signal_bars = frames["5m"]["candles"]
+        assert signal_bars == payload["technical_context"][symbol]["timeframes"]["5m"]["candles"][-4:]
+        for timeframe in ("15m", "1h"):
+            source_frame = payload["technical_context"][symbol]["timeframes"][timeframe]
+            actual_frame = frames[timeframe]
+            assert actual_frame["status"] == "READY"
+            assert actual_frame["last_closed_at"] == source_frame["last_closed_at"]
+            assert actual_frame["candles"] == source_frame["candles"][-1:]
+            assert actual_frame["indicators"] == {
+                "ema20": source_frame["indicators"]["ema20"],
+                "atr14_simple": source_frame["indicators"]["atr14_simple"],
+            }
+            snapshot = actual_frame["nofx_indicator_snapshot"]
+            assert snapshot["source"] == "gate_native_rest"
+            assert snapshot["timeframe"] == timeframe
+            assert snapshot["as_of"] == source_frame["last_closed_at"]
+            assert "diagnostics" not in snapshot
     assert projected["decision_memory"] == []
     assert projected["performance_context"]["closed_trades"] == 0
 
@@ -433,7 +553,7 @@ def test_prompt_payload_fails_closed_when_required_decision_contract_cannot_fit(
             payload,
             "固定交易规则和JSON决策合同。",
             context_length=8192,
-            reserve=640,
+            reserve=1024,
             signal_timeframe="5m",
         )
 
@@ -449,20 +569,21 @@ def test_prompt_payload_uses_an_injected_runtime_token_counter() -> None:
         payload,
         system_content,
         context_length=8192,
-        reserve=640,
+        reserve=1024,
         signal_timeframe="5m",
         token_counter=exact_counter,
     )
     projected_json = json.dumps(projected, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     exact_input_tokens = exact_counter(system_content) + exact_counter(projected_json)
 
-    assert metadata["tokenizer"] == "BONSAI_RUNTIME"
+    assert metadata["tokenizer"] == "PROVIDER_TOKENIZER"
     assert metadata["estimated_input_tokens"] == exact_input_tokens
     assert exact_input_tokens + metadata["reserve_tokens"] + metadata["safety_margin_tokens"] <= 8192
 
 
 def test_extended_scan_defers_lower_ranked_symbols_but_keeps_held_position() -> None:
     payload = _production_sized_prompt_payload()
+    _add_production_named_technical_evidence(payload)
     template = copy.deepcopy(payload["technical_context"]["BTCUSDT"])
     snapshot = copy.deepcopy(payload["market_snapshots"]["BTCUSDT"])
     for index in range(5):
@@ -470,21 +591,168 @@ def test_extended_scan_defers_lower_ranked_symbols_but_keeps_held_position() -> 
         payload["allowed_instruments"].append(symbol)
         payload["technical_context"][symbol] = copy.deepcopy(template)
         payload["market_snapshots"][symbol] = copy.deepcopy(snapshot)
-    payload["account_truth"]["positions"] = [{"symbol": "EXTRA4USDT", "side": "SHORT", "quantity": 1}]
+    owned_alias = "EXTRA4/USDT:USDT"
+    payload["account_truth"]["positions"] = [{
+        "symbol": owned_alias, "side": "SHORT", "quantity": 1,
+        "ownership": "VERIFIED_SYSTEM", "ownership_role": "MANAGED_SYSTEM_POSITION",
+    }]
+    payload["account_truth"]["managed_positions"] = [{
+        "position_id": "managed-extra4", "symbol": owned_alias, "side": "SHORT",
+        "quantity": 1, "ownership": "VERIFIED_SYSTEM",
+        "ownership_role": "MANAGED_SYSTEM_POSITION",
+    }]
+    payload["account_truth"]["pending_orders"] = [{
+        "order_id": "entry-extra4", "symbol": owned_alias, "side": "SHORT",
+        "amount": 1, "remaining": 1, "status": "open",
+        "ownership": "VERIFIED_SYSTEM", "ownership_role": "OWNED_ENTRY_ORDER",
+    }]
+    payload["account_truth"]["owned_entry_orders"] = [{
+        "order_id": "entry-extra4", "symbol": owned_alias, "side": "SHORT",
+        "amount": 1, "remaining": 1, "status": "open",
+        "ownership": "VERIFIED_SYSTEM", "ownership_role": "OWNED_ENTRY_ORDER",
+    }]
+    payload["account_truth"]["owned_protection_orders"] = [{
+        "order_id": "stop-extra4", "symbol": owned_alias, "side": "BUY",
+        "amount": 1, "remaining": 1, "status": "open", "reduce_only": True,
+        "ownership": "VERIFIED_SYSTEM", "ownership_role": "OWNED_PROTECTION_ORDER",
+    }]
+    payload["account_truth"]["owned_reduction_orders"] = [{
+        "order_id": "reduce-extra4", "symbol": owned_alias, "side": "BUY",
+        "amount": 1, "remaining": 1, "status": "open", "reduce_only": True,
+        "ownership": "VERIFIED_SYSTEM", "ownership_role": "OWNED_REDUCTION_ORDER",
+    }]
     original = copy.deepcopy(payload)
 
     projected, metadata = _fit_prompt_payload(
-        payload, "系统规则" * 620, context_length=8192, reserve=640,
+        payload, "系统规则" * 620, context_length=8192, reserve=1024,
         signal_timeframe="5m",
     )
 
     assert any(step.startswith("defer_symbol_for_model_window:") for step in metadata["steps"])
+    assert metadata["selected_symbols"] == original["allowed_instruments"]
+    assert metadata["visible_symbols"] == projected["allowed_instruments"]
+    assert metadata["deferred_symbols"] == [symbol for symbol in original["allowed_instruments"]
+                                            if symbol not in projected["allowed_instruments"]]
+    assert metadata["visibility_reason"] == "MODEL_CONTEXT_BUDGET"
     assert "EXTRA4USDT" in projected["allowed_instruments"]
+    account = projected["account_truth"]
+    assert account["positions"][0]["symbol"] == owned_alias
+    assert account["managed_positions"][0]["position_id"] == "managed-extra4"
+    assert account["managed_positions"][0]["ownership_role"] == "MANAGED_SYSTEM_POSITION"
+    assert account["managed_positions"][0]["quantity"] == 1
+    for collection, order_id, role in (
+        ("pending_orders", "entry-extra4", "OWNED_ENTRY_ORDER"),
+        ("owned_entry_orders", "entry-extra4", "OWNED_ENTRY_ORDER"),
+        ("owned_protection_orders", "stop-extra4", "OWNED_PROTECTION_ORDER"),
+        ("owned_reduction_orders", "reduce-extra4", "OWNED_REDUCTION_ORDER"),
+    ):
+        order = account[collection][0]
+        assert order["order_id"] == order_id
+        assert order["ownership_role"] == role
+        assert order["remaining"] == 1
     assert len(projected["allowed_instruments"]) < len(original["allowed_instruments"])
     assert set(projected["market_snapshots"]) == set(projected["allowed_instruments"])
     assert set(projected["technical_context"]) - {"candle_columns", "indicator_columns"} == set(projected["allowed_instruments"])
+    for symbol in projected["allowed_instruments"]:
+        for timeframe in ("15m", "1h"):
+            frame = projected["technical_context"][symbol]["timeframes"][timeframe]
+            if frame["status"] == "READY":
+                assert frame["candles"]
+                assert frame["last_closed_at"]
+                assert frame["indicators"]["ema20"] > 0
+                assert frame["indicators"]["atr14_simple"] > 0
+                assert frame["nofx_indicator_snapshot"]["source"] == "gate_native_rest"
     assert payload == original
     assert projected["news_revisions"][0]["summary"]
+
+
+@pytest.mark.parametrize(
+    "owned_collection",
+    (
+        "managed_positions", "positions", "pending_orders",
+        "owned_entry_orders", "owned_protection_orders", "owned_reduction_orders",
+    ),
+)
+@pytest.mark.parametrize("native_alias", ("EXTRA4/USDT:USDT", "EXTRA4_USDT"))
+def test_8k_symbol_deferral_preserves_owned_gate_alias_context(
+    owned_collection: str,
+    native_alias: str,
+) -> None:
+    payload = _production_sized_prompt_payload()
+    _add_production_named_technical_evidence(payload)
+    template = copy.deepcopy(payload["technical_context"]["BTCUSDT"])
+    snapshot_template = copy.deepcopy(payload["market_snapshots"]["BTCUSDT"])
+    for index in range(5):
+        symbol = f"EXTRA{index}USDT"
+        payload["allowed_instruments"].append(symbol)
+        payload["technical_context"][symbol] = copy.deepcopy(template)
+        payload["market_snapshots"][symbol] = copy.deepcopy(snapshot_template)
+        payload["market_snapshots"][symbol]["symbol"] = symbol
+
+    ownership_role = (
+        "MANAGED_SYSTEM_POSITION"
+        if owned_collection in {"managed_positions", "positions"}
+        else {
+            "pending_orders": "OWNED_ENTRY_ORDER",
+            "owned_entry_orders": "OWNED_ENTRY_ORDER",
+            "owned_protection_orders": "OWNED_PROTECTION_ORDER",
+            "owned_reduction_orders": "OWNED_REDUCTION_ORDER",
+        }[owned_collection]
+    )
+    owned_row = {
+        "symbol": native_alias,
+        "side": "SHORT",
+        "quantity": 1.0,
+        "ownership": "VERIFIED_SYSTEM",
+        "ownership_role": ownership_role,
+    }
+    if owned_collection in {"managed_positions", "positions"}:
+        owned_row.update(position_id=f"position-{owned_collection}", status="OPEN")
+    else:
+        owned_row.update(
+            order_id=f"order-{owned_collection}", amount=1.0, remaining=1.0,
+            status="open", reduce_only=owned_collection != "owned_entry_orders",
+        )
+    payload["account_truth"][owned_collection] = [owned_row]
+    original = copy.deepcopy(payload)
+
+    projected, metadata = _fit_prompt_payload(
+        payload,
+        "系统规则" * 620,
+        context_length=8192,
+        reserve=1024,
+        signal_timeframe="5m",
+    )
+
+    assert any(step.startswith("defer_symbol_for_model_window:") for step in metadata["steps"])
+    assert len(projected["allowed_instruments"]) < len(original["allowed_instruments"])
+    assert "EXTRA4USDT" in projected["allowed_instruments"]
+    assert "EXTRA4USDT" in projected["market_snapshots"]
+    assert projected["market_snapshots"]["EXTRA4USDT"]["symbol"] == "EXTRA4USDT"
+    assert "EXTRA4USDT" in projected["technical_context"]
+    context_1h = projected["technical_context"]["EXTRA4USDT"]["timeframes"]["1h"]
+    assert context_1h["status"] == "READY"
+    assert context_1h["candles"]
+    assert context_1h["indicators"]["ema20"] > 0
+    assert context_1h["indicators"]["atr14_simple"] > 0
+
+    preserved = projected["account_truth"][owned_collection][0]
+    assert preserved["symbol"] == native_alias
+    assert preserved["ownership_role"] == ownership_role
+    if owned_collection in {"managed_positions", "positions"}:
+        assert preserved["position_id"] == f"position-{owned_collection}"
+        assert preserved["quantity"] == 1.0
+    else:
+        assert preserved["order_id"] == f"order-{owned_collection}"
+        assert preserved["amount"] == 1.0
+        assert preserved["remaining"] == 1.0
+    assert (
+        metadata["estimated_input_tokens"]
+        + metadata["reserve_tokens"]
+        + metadata["safety_margin_tokens"]
+        <= 8192
+    )
+    assert payload == original, "symbol deferral must not mutate source ownership or evidence"
 
 
 # --------------------------------------------------------------------------
@@ -498,9 +766,19 @@ def test_default_session_window_matches_safe_desktop_runtime() -> None:
 
 
 def test_session_decision_output_budget_leaves_room_inside_verified_context() -> None:
-    """A complete structured decision needs the full supported 2048-token cap."""
-    assert DECISION_OUTPUT_TOKEN_BUDGET == 2048
+    """Observed decisions fit a 1024-token cap while keeping the schema unchanged."""
+    assert DECISION_OUTPUT_TOKEN_BUDGET == 1024
     assert DECISION_OUTPUT_TOKEN_BUDGET < MODEL_CONTEXT_LENGTH
+
+
+def test_latency_soft_window_reserves_output_and_safety_margin() -> None:
+    assert INFERENCE_SOFT_CONTEXT_LIMIT == 5500
+    assert (
+        INFERENCE_SOFT_CONTEXT_LIMIT
+        - DECISION_OUTPUT_TOKEN_BUDGET
+        - PROMPT_BUDGET_SAFETY_MARGIN_TOKENS
+        == 4220
+    )
 
 
 def test_session_window_honors_a_smaller_preflight_override(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -534,19 +812,22 @@ def test_provider_default_is_pinned_to_modelclient_and_reports_legacy_overrides(
 
 
 def test_provider_inference_requires_verified_modelclient_manifest(monkeypatch: pytest.MonkeyPatch) -> None:
+    from core.ai.ollama import _GEMINI_HEALTH_CACHE
+    _GEMINI_HEALTH_CACHE.clear()
     provider = OllamaProvider(base_url=model_client.base_url, model_name=DEFAULT_SMART_MODEL)
     monkeypatch.setattr(model_client, "is_healthy", lambda **_kwargs: True)
     monkeypatch.setattr(
         model_client,
         "list_models",
-        lambda **_kwargs: [{"id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf", "meta": {"n_ctx": 8192}}],
+        lambda **_kwargs: [{"id": DEFAULT_SMART_MODEL}],
     )
     captured: dict[str, object] = {}
 
     def fake_analysis(messages, **kwargs):
         captured["messages"] = messages
         captured.update(kwargs)
-        return {"action": "WAIT"}
+        model_client._response_state.model = DEFAULT_SMART_MODEL
+        return {"ok": True} if "Connection test only" in messages[0]["content"] else {"action": "WAIT"}
 
     monkeypatch.setattr(model_client, "structured_analysis", fake_analysis)
     model_client._response_state.model = None
@@ -563,16 +844,70 @@ def test_provider_inference_requires_verified_modelclient_manifest(monkeypatch: 
     assert captured["model_name"] == DEFAULT_SMART_MODEL
     assert captured["temperature_override"] == 0.0
     assert captured["max_tokens"] == 900
-    assert captured["reasoning_effort"] == "none"
-    assert receipt["actual_model_id"] == r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"
-    assert receipt["model_identity_source"] == "request_bound_to_verified_manifest"
+    assert captured["reasoning_effort"] == "high"
+    assert receipt["actual_model_id"] == DEFAULT_SMART_MODEL
+    assert receipt["model_identity_source"] == "completion_response"
 
 
 def test_provider_does_not_fallback_when_manifest_identity_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     from core.ai.contracts import LLMError
 
+    from core.ai.ollama import _GEMINI_HEALTH_CACHE
+    _GEMINI_HEALTH_CACHE.clear()
     provider = OllamaProvider(base_url=model_client.base_url, model_name=DEFAULT_SMART_MODEL)
     monkeypatch.setattr(model_client, "is_healthy", lambda **_kwargs: True)
     monkeypatch.setattr(model_client, "list_models", lambda **_kwargs: [{"id": "Other-Bonsai.gguf"}])
-    with pytest.raises(LLMError, match="MODEL_UNAVAILABLE"):
+    with pytest.raises(LLMError, match="MODEL_MANIFEST_IDENTITY_MISMATCH"):
         provider.generate_json([], model_name=DEFAULT_SMART_MODEL, prompt_version="v", input_hash="h")
+
+
+def test_8k_prompt_compaction_preserves_selected_price_action_structure_evidence() -> None:
+    payload = _production_sized_prompt_payload()
+    _add_production_named_technical_evidence(payload)
+    for symbol in payload["allowed_instruments"]:
+        frames = payload["technical_context"][symbol]["timeframes"]
+        for timeframe in ("15m", "1h"):
+            frames[timeframe]["price_action"] = {
+                "status": "READY",
+                "as_of": frames[timeframe]["last_closed_at"],
+                "source": "gate_native_rest:last",
+                "closed_bar_count": 240,
+                "confirmed_swings": [{
+                    "side": "HIGH", "price": 61250.0,
+                    "pivot_at": "2026-09-21T11:15:00Z",
+                    "confirmed_at": "2026-09-21T11:45:00Z",
+                }, {
+                    "side": "LOW", "price": 60800.0,
+                    "pivot_at": "2026-09-21T10:15:00Z",
+                    "confirmed_at": "2026-09-21T10:45:00Z",
+                }],
+                "prior_range": {"lookback_bars": 20, "high": 61300.0, "low": 60700.0,
+                                "excludes_latest_close": True},
+                "bos": {"side": "LONG", "level": 61250.0,
+                        "pivot_confirmed_at": "2026-09-21T11:45:00Z",
+                        "confirmed_at": "2026-09-21T12:00:00Z"},
+                "sweep_reclaim": None,
+                "breakout_retest": {"side": "LONG", "level": 61250.0,
+                                     "bos_at": "2026-09-21T12:00:00Z",
+                                     "confirmed_at": "2026-09-21T12:15:00Z"},
+            }
+    original = copy.deepcopy(payload)
+
+    projected, metadata = _fit_prompt_payload(
+        payload,
+        "系统规则" * 620,
+        context_length=8192,
+        reserve=1024,
+        signal_timeframe="15m",
+    )
+
+    assert metadata["compacted"] is True
+    assert metadata["estimated_input_tokens"] + metadata["reserve_tokens"] + metadata["safety_margin_tokens"] <= 8192
+    for symbol in projected["allowed_instruments"]:
+        for timeframe in ("15m", "1h"):
+            frame = projected["technical_context"][symbol]["timeframes"][timeframe]
+            assert frame["status"] == "READY"
+            assert frame["candles"]
+            from tests.prompt_evidence_helpers import decode_price_action
+            assert decode_price_action(projected["technical_context"], frame["price_action"]) == original["technical_context"][symbol]["timeframes"][timeframe]["price_action"]
+    assert payload == original, "prompt compaction must not mutate the frozen source evidence"

@@ -94,6 +94,8 @@ def humanize_reason(reason: Any, *, stage: str | None = None) -> str:
     if code.startswith("AUTONOMOUS AI-LED ORDER"):
         return "本轮已通过统一网关提交订单，等待远端回执与成交回读。"
     messages = {
+        "MODEL_UPSTREAM_REGION_UNSUPPORTED": "Gemini 上游拒绝当前网络地区；检查 Antigravity 代理出口，本轮未创建订单。",
+        "MODEL_RESPONSE_IDENTITY_MISMATCH": "模型响应身份与 Gemini High 配置不一致，本轮拒绝执行。",
         "AI_STRATEGY_PLAN_REQUIRED": "AI 未给出完整自拟策略，本轮不新增仓位。",
         "TECHNICAL_EVIDENCE_UNAVAILABLE": "已收盘 K 线不足或过期，等待有效技术面证据。",
         "NEWS_EVIDENCE_UNAVAILABLE": "模型引用的新闻无效，或未引用适用于该标的的已核验新闻；本轮未创建订单。",
@@ -118,8 +120,8 @@ def humanize_reason(reason: Any, *, stage: str | None = None) -> str:
         "GATE_CREDENTIALS_REQUIRED": "Gate TestNet 凭证未配置，无法读取远端账户事实。",
         "MARKET_DATA_UNAVAILABLE": "没有满足时效和可执行性要求的行情，本轮未调用模型。",
         "MARKET_UNIVERSE_UNAVAILABLE": "无法从 Gate 取得可交易合约候选池，本轮未调用模型。",
-        "SMART_MODEL_UNAVAILABLE": "Bonsai-2-27B 当前不可用，本轮未生成交易动作。",
-        "SMART_MODEL_NOT_INSTALLED": "Bonsai-2-27B 推理服务未就绪，本轮未生成交易动作。",
+        "SMART_MODEL_UNAVAILABLE": "Gemini 3.8 Flash 当前不可用，本轮未生成交易动作。",
+        "SMART_MODEL_NOT_INSTALLED": "Gemini 3.8 Flash 推理服务未就绪，本轮未生成交易动作。",
         "VENUE_LEVERAGE_LIMIT_UNAVAILABLE": "Gate 未返回当前合约的杠杆上限，为避免猜测实际杠杆，本轮未提交开仓单。",
         "MODEL_TIMEOUT_DISCARDED": "模型推理超过本轮有效期，结果已丢弃。",
         "AI_INPUT_BUDGET_EXCEEDED": "本轮市场上下文超过模型窗口，已在调用前安全拦截。",
@@ -238,7 +240,7 @@ def build_stage_trace(
         "NEWS_EVENTS": "记录新闻修订与事件状态；没有事件证据时保持 UNKNOWN。",
         "KLINE_CONTEXT": "保留 15m 信号与 1h 上下文的来源时间和指标快照。",
         "STRATEGY_SCAN": "使用账户交易指令，AI 自拟策略；固定风控独立执行。" if getattr(context, "decision_contract", None) == "ai_news_technical_v1" else "六策略只产生候选证据，不直接发单。",
-        "AI_MODEL": "仅允许真实 Bonsai-2-27B-PTQ1_0 返回严格 JSON 动作。",
+        "AI_MODEL": "仅允许真实 gemini-3.8-flash 返回严格 JSON 动作。",
         "RISK": "风控、授权、费用、滑点、保护计划在网关内复核。",
         "EXECUTION": "通过统一 ExecutionGateway；没有本地模拟成交冒充远端成交。",
         "RECONCILIATION": "以远端订单/成交/持仓回读作为 Gate TestNet 最终事实。",

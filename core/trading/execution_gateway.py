@@ -254,6 +254,12 @@ class OrderIntent:
         # payload conflict.  Every durable behaviour field is included.
         if isinstance(protection, dict):
             protection = {key: value for key, value in protection.items() if key != "status"}
+        selection_evidence = dict(self.selection_evidence or {})
+        # This proof is freshly derived from private Gate state during gateway
+        # preflight. It is durable audit metadata, not caller-supplied order
+        # behavior, and must not change idempotency when the same intent object
+        # is retried after a verified submission.
+        selection_evidence.pop("system_position_ownership", None)
         content = {
             "account_id": self.account_id,
             "venue": self.venue,
@@ -287,7 +293,7 @@ class OrderIntent:
             "final_order_type": self.final_order_type,
             "selection_reason_code": self.selection_reason_code,
             "selection_reason": self.selection_reason,
-            "selection_evidence": self.selection_evidence,
+            "selection_evidence": selection_evidence,
             "limit_price": _decimal_text(self.limit_price, market=True),
             "ttl_seconds": self.ttl_seconds,
             "selection_policy_version": self.selection_policy_version,
@@ -861,19 +867,416 @@ class ExecutionGateway:
                     "mark_price": str(mark),
                     "stop": str(stop),
                     "stop_loss": str(stop),
+                    "stop_price": str(stop),
+                    "take_profit": raw.get("take_profit", raw.get("take_profit_price")),
+                    "opened_at": raw.get("opened_at", raw.get("created_at", raw.get("timestamp"))),
+                    "created_at": raw.get("created_at"),
+                    "timestamp": raw.get("timestamp"),
                     "contract_size": str(contract_size),
                     "leverage": str(leverage),
                     "position_id": raw.get("position_id"),
                     "protection_status": "ACTIVE" if protected else "UNKNOWN",
                     "legacy_unverified": 0,
                     "local_mirror": False,
-                    "source": "GATE_REMOTE_PRIVATE_API",
+                    "source": raw.get("source") or truth.get("source") or "GATE_REMOTE_PRIVATE_API",
                 }
             )
         return result
 
+    def _gate_remote_position_ownership_evidence(
+        self,
+        *,
+        account_id: str,
+        mode: str,
+        environment: str,
+        instrument_id: str,
+        side: str,
+        position: Dict[str, Any],
+        truth: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Prove a Gate position is fully explained by durable system fills.
+
+        Gate exposes one net position, which may include manual activity. A
+        matching symbol alone is therefore never ownership evidence. The
+        current remote contracts and entry average must reconcile exactly to
+        system AI entry fills less previously verified system reductions.
+        """
+        mode_clean = str(mode or "").upper()
+        environment_clean = str(environment or "").upper()
+        venue_clean = "gate"
+        symbol_key = self._gate_symbol_key(instrument_id)
+        side_clean = str(side or "").upper()
+
+        def fail(code: str) -> None:
+            raise GatewayError(
+                "SYSTEM_POSITION_OWNERSHIP_UNVERIFIED",
+                f"GATE_SYSTEM_POSITION_OWNERSHIP_UNVERIFIED:{code}",
+                409,
+            )
+
+        def positive_decimal(value: Any) -> Decimal | None:
+            try:
+                result = Decimal(str(value))
+            except (InvalidOperation, TypeError, ValueError):
+                return None
+            return result if result.is_finite() and result > 0 else None
+
+        if mode_clean not in {"TESTNET", "LIVE"} or environment_clean != mode_clean:
+            fail("ACCOUNT_ENVIRONMENT_MISMATCH")
+        if str(truth.get("status") or "").upper() != "AVAILABLE":
+            fail("REMOTE_ACCOUNT_TRUTH_UNAVAILABLE")
+        truth_account = str(truth.get("account_id") or "")
+        if truth_account and truth_account != str(account_id):
+            fail("ACCOUNT_ID_MISMATCH")
+        remote_environment = str(truth.get("api_environment") or truth.get("environment") or mode_clean).upper()
+        if remote_environment != environment_clean:
+            fail("REMOTE_ENVIRONMENT_MISMATCH")
+        if str(position.get("venue") or venue_clean).lower() != venue_clean:
+            fail("EXCHANGE_MISMATCH")
+        if str(position.get("mode") or mode_clean).upper() != mode_clean:
+            fail("POSITION_MODE_MISMATCH")
+        if self._gate_symbol_key(position.get("symbol") or position.get("instrument_id")) != symbol_key:
+            fail("SYMBOL_MISMATCH")
+        if str(position.get("side") or "").upper() != side_clean:
+            fail("DIRECTION_MISMATCH")
+
+        remote_quantity = positive_decimal(position.get("contracts", position.get("remaining_contracts")))
+        remote_entry = positive_decimal(position.get("entry_price", position.get("entry")))
+        if remote_quantity is None or remote_entry is None:
+            fail("REMOTE_POSITION_IDENTITY_OR_ECONOMICS_UNKNOWN")
+
+        try:
+            with self.store._connect() as db:
+                order_columns = {str(row[1]) for row in db.execute("PRAGMA table_info(order_intents)").fetchall()}
+                fill_columns = {str(row[1]) for row in db.execute("PRAGMA table_info(trade_fills)").fetchall()}
+                if not {"selection_evidence_json", "decision_path", "control_mode"}.issubset(order_columns):
+                    fail("SYSTEM_INTENT_OWNERSHIP_SCHEMA_UNAVAILABLE")
+                required_fill_columns = {"account_id", "venue", "mode", "order_id", "symbol", "side", "quantity", "price", "payload_json", "status", "environment", "event_at", "created_at"}
+                if not required_fill_columns.issubset(fill_columns):
+                    fail("SYSTEM_FILL_LEDGER_SCHEMA_UNAVAILABLE")
+                rows = [dict(row) for row in db.execute(
+                    """SELECT intent_id,mode,environment,venue,instrument_id,side,reduce_only,status,position_id,created_at,
+                              decision_path,control_mode,execution_result_json,selection_evidence_json
+                       FROM order_intents WHERE account_id=? AND mode=? AND venue='gate'
+                       ORDER BY created_at ASC""",
+                    (account_id, mode_clean),
+                ).fetchall()]
+                fill_rows_by_order: dict[str, list[dict[str, Any]]] = {}
+                fill_rows = [dict(row) for row in db.execute(
+                    """SELECT order_id,symbol,side,quantity,price,payload_json,status,environment,event_at,created_at
+                       FROM trade_fills WHERE account_id=? AND venue='gate' AND mode=?
+                       ORDER BY event_at ASC, created_at ASC""",
+                    (account_id, mode_clean),
+                ).fetchall()]
+        except GatewayError:
+            raise
+        except Exception as exc:
+            raise GatewayError(
+                "SYSTEM_POSITION_OWNERSHIP_UNVERIFIED",
+                "GATE_SYSTEM_POSITION_OWNERSHIP_UNVERIFIED:SYSTEM_FILL_LEDGER_READ_FAILED",
+                409,
+            ) from exc
+
+        # A full-cost settlement closes the historical entry episode. It must
+        # never be reused to claim a later external reopen at the same symbol
+        # and price. Share the same exact account/environment/ID proof used by
+        # the model-facing ownership projection.
+        from .gate_trade_settlement import verified_fully_settled_entry_order_ids
+
+        settled_entry_order_ids = verified_fully_settled_entry_order_ids(
+            self.store, account_id, environment_clean,
+        )
+        if settled_entry_order_ids is None:
+            fail("FULL_COST_SETTLEMENT_HISTORY_UNVERIFIED")
+
+        for fill in fill_rows:
+            order_id = str(fill.get("order_id") or "")
+            if order_id:
+                fill_rows_by_order.setdefault(order_id, []).append(fill)
+
+        position_quantity = Decimal("0")
+        position_cost = Decimal("0")
+        entry_order_ids: list[str] = []
+        reduction_order_ids: list[str] = []
+        position_events: list[dict[str, Any]] = []
+        settled_prior_entry_seen = False
+
+        def read_owned_order_fills(row: dict[str, Any], *, is_reduction: bool) -> tuple[str, Decimal, Decimal, list[dict[str, Any]]]:
+            try:
+                receipt = json.loads(row.get("execution_result_json") or "{}")
+                evidence = json.loads(row.get("selection_evidence_json") or "{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                fail("SYSTEM_ORDER_RECEIPT_INVALID")
+            if not isinstance(receipt, dict) or not isinstance(evidence, dict):
+                fail("SYSTEM_ORDER_RECEIPT_INVALID")
+            remote_order_id = str(receipt.get("order_id") or receipt.get("id") or "")
+            if not remote_order_id.isdigit():
+                fail("SYSTEM_REMOTE_ORDER_ID_MISSING")
+            if receipt.get("intent_id") is not None and str(receipt.get("intent_id")) != str(row.get("intent_id")):
+                fail("SYSTEM_INTENT_ORDER_CHAIN_MISMATCH")
+            rows_for_order = fill_rows_by_order.get(remote_order_id) or []
+            if not rows_for_order:
+                fail("SYSTEM_FILL_RECONCILIATION_MISSING")
+            expected_trade_sides = (
+                {"SELL"} if side_clean == "LONG" else {"BUY"}
+            ) if is_reduction else (
+                {"LONG", "BUY"} if side_clean == "LONG" else {"SHORT", "SELL"}
+            )
+            total_quantity = Decimal("0")
+            total_notional = Decimal("0")
+            owned_fills: list[dict[str, Any]] = []
+            for fill in rows_for_order:
+                try:
+                    payload = json.loads(fill.get("payload_json") or "{}")
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    fail("SYSTEM_FILL_RECEIPT_INVALID")
+                if not isinstance(payload, dict):
+                    fail("SYSTEM_FILL_RECEIPT_INVALID")
+                if (
+                    self._gate_symbol_key(fill.get("symbol")) != symbol_key
+                    or str(fill.get("side") or "").upper() not in expected_trade_sides
+                    or str(fill.get("status") or "").upper() != "RECORDED"
+                    or str(fill.get("environment") or "").upper() != environment_clean
+                    or str(payload.get("order_id") or "") != remote_order_id
+                    or str(payload.get("account_id") or account_id) != str(account_id)
+                    or str(payload.get("venue") or venue_clean).lower() != venue_clean
+                    or str(payload.get("mode") or mode_clean).upper() != mode_clean
+                    or str(payload.get("environment") or environment_clean).upper() != environment_clean
+                    or bool(payload.get("reduce_only")) is not is_reduction
+                ):
+                    fail("SYSTEM_FILL_SCOPE_OR_DIRECTION_MISMATCH")
+                quantity = positive_decimal(fill.get("quantity"))
+                price = positive_decimal(fill.get("price"))
+                event_at = str(fill.get("event_at") or "")
+                created_at = str(fill.get("created_at") or "")
+                if quantity is None or price is None or not event_at or not created_at:
+                    fail("SYSTEM_FILL_ECONOMICS_UNKNOWN")
+                total_quantity += quantity
+                total_notional += quantity * price
+                owned_fills.append({
+                    "event_at": event_at,
+                    "created_at": created_at,
+                    "quantity": quantity,
+                    "price": price,
+                })
+            reported_filled = receipt.get("filled_quantity", receipt.get("filled"))
+            if reported_filled is not None:
+                reported_quantity = positive_decimal(reported_filled)
+                if reported_quantity is None or abs(reported_quantity - total_quantity) > Decimal("0.0000000001"):
+                    fail("SYSTEM_ORDER_FILL_TOTAL_MISMATCH")
+            return remote_order_id, total_quantity, total_notional, owned_fills
+
+        for row in rows:
+            row_side = str(row.get("side") or "").upper()
+            entry_order_sides = {"LONG", "BUY"} if side_clean == "LONG" else {"SHORT", "SELL"}
+            reduction_order_sides = {"SELL", side_clean} if side_clean == "LONG" else {"BUY", side_clean}
+            if (
+                self._gate_symbol_key(row.get("instrument_id")) != symbol_key
+                or str(row.get("environment") or "").upper() != environment_clean
+                or str(row.get("decision_path") or "").upper() != "AI_LED"
+                or str(row.get("control_mode") or "").upper() != "AUTONOMOUS"
+            ):
+                continue
+            is_reduction = bool(row.get("reduce_only"))
+            intent_id = str(row.get("intent_id") or "")
+            is_entry_intent = not is_reduction and intent_id.startswith("intent_ai_") and row_side in entry_order_sides
+            is_reduction_intent = is_reduction and intent_id.startswith("intent_close_") and row_side in reduction_order_sides
+            if not is_entry_intent and not is_reduction_intent:
+                continue
+
+            # Historical rejected, canceled, and still-resting intents with no
+            # fills do not contribute to the remote net position. A row that
+            # claims a fill without a matching durable fill record is instead
+            # an ownership ambiguity and must fail closed.
+            status = str(row.get("status") or "").upper()
+            try:
+                receipt = json.loads(row.get("execution_result_json") or "{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                receipt = None
+            if not isinstance(receipt, dict):
+                receipt = None
+            remote_order_id = str((receipt or {}).get("order_id") or (receipt or {}).get("id") or "")
+            if is_entry_intent and remote_order_id in settled_entry_order_ids:
+                # Exact entry IDs from a verified closed accounting episode
+                # are historical evidence, never current ownership proof.
+                settled_prior_entry_seen = True
+                continue
+            if is_reduction_intent:
+                ownership = None
+                try:
+                    ownership = json.loads(row.get("selection_evidence_json") or "{}").get(
+                        "system_position_ownership",
+                    )
+                except (TypeError, ValueError, json.JSONDecodeError, AttributeError):
+                    pass
+                proof_entries = ownership.get("entry_order_ids") if isinstance(ownership, dict) else None
+                if isinstance(proof_entries, list) and set(map(str, proof_entries)) & settled_entry_order_ids:
+                    continue
+            matching_fill_rows = fill_rows_by_order.get(remote_order_id) or []
+            receipt_filled = (receipt or {}).get("filled_quantity", (receipt or {}).get("filled"))
+            try:
+                receipt_claims_fill = receipt_filled is not None and Decimal(str(receipt_filled)) > 0
+            except (InvalidOperation, TypeError, ValueError):
+                receipt_claims_fill = True
+            receipt_fills = (receipt or {}).get("fills")
+            receipt_claims_fill = receipt_claims_fill or (isinstance(receipt_fills, list) and bool(receipt_fills))
+            status_claims_fill = status in {"FILLED", "PARTIALLY_FILLED"}
+            if not matching_fill_rows:
+                if status_claims_fill or receipt_claims_fill:
+                    fail("SYSTEM_FILL_RECONCILIATION_MISSING")
+                if status not in {"CREATED", "RISK_APPROVED", "SUBMITTING", "ACKNOWLEDGED", "CANCEL_PENDING", "CANCELED", "EXPIRED", "REJECTED"}:
+                    fail("SYSTEM_ORDER_FILL_STATE_UNKNOWN")
+                continue
+
+            if is_entry_intent:
+                remote_order_id, _quantity, _notional, owned_fills = read_owned_order_fills(row, is_reduction=False)
+                entry_order_ids.append(remote_order_id)
+                for fill in owned_fills:
+                    position_events.append({
+                        **fill,
+                        "is_reduction": False,
+                        "order_id": remote_order_id,
+                        "intent_created_at": str(row.get("created_at") or ""),
+                    })
+            elif is_reduction_intent:
+                try:
+                    ownership_record = json.loads(row.get("selection_evidence_json") or "{}").get("system_position_ownership")
+                except (TypeError, ValueError, json.JSONDecodeError, AttributeError):
+                    ownership_record = None
+                if not isinstance(ownership_record, dict) or ownership_record.get("version") != "gate_system_position_ownership_v1" or ownership_record.get("status") != "VERIFIED":
+                    # A historical reduction without the pre-trade proof
+                    # cannot be replayed safely against today's net position.
+                    fail("SYSTEM_REDUCTION_OWNERSHIP_PROOF_MISSING")
+                proof_position_id = ownership_record.get("remote_position_id")
+                intent_position_id = row.get("position_id")
+                if proof_position_id and intent_position_id and str(proof_position_id) != str(intent_position_id):
+                    fail("SYSTEM_REDUCTION_POSITION_ID_MISMATCH")
+                remote_order_id, _quantity, _notional, owned_fills = read_owned_order_fills(row, is_reduction=True)
+                reduction_order_ids.append(remote_order_id)
+                for fill in owned_fills:
+                    position_events.append({
+                        **fill,
+                        "is_reduction": True,
+                        "order_id": remote_order_id,
+                        "intent_created_at": str(row.get("created_at") or ""),
+                        "ownership_record": ownership_record,
+                    })
+
+        if not entry_order_ids:
+            fail("PRIOR_ENTRY_ALREADY_FULLY_SETTLED" if settled_prior_entry_seen else "SYSTEM_FILLED_ENTRY_NOT_FOUND")
+        if not position_events:
+            fail("SYSTEM_FILLED_ENTRY_NOT_FOUND")
+
+        def event_time(value: Any) -> datetime:
+            try:
+                parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            except (TypeError, ValueError):
+                fail("SYSTEM_FILL_EVENT_TIME_INVALID")
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc)
+
+        position_events.sort(key=lambda item: (
+            event_time(item.get("event_at")),
+            event_time(item.get("created_at")),
+            event_time(item.get("intent_created_at")),
+            str(item.get("order_id") or ""),
+        ))
+        checked_reduction_proofs: set[str] = set()
+        replayed_entry_order_ids: set[str] = set()
+        replayed_reduction_order_ids: set[str] = set()
+        for item in position_events:
+            quantity = item["quantity"]
+            price = item["price"]
+            if item["is_reduction"]:
+                order_id = str(item.get("order_id") or "")
+                if order_id not in checked_reduction_proofs:
+                    proof = item.get("ownership_record")
+                    if not isinstance(proof, dict):
+                        fail("SYSTEM_REDUCTION_OWNERSHIP_PROOF_MISSING")
+                    if (
+                        str(proof.get("account_id") or "") != str(account_id)
+                        or str(proof.get("environment") or "").upper() != environment_clean
+                        or str(proof.get("venue") or "").lower() != venue_clean
+                        or self._gate_symbol_key(proof.get("instrument_id")) != symbol_key
+                        or str(proof.get("side") or "").upper() != side_clean
+                    ):
+                        fail("SYSTEM_REDUCTION_OWNERSHIP_PROOF_SCOPE_MISMATCH")
+                    proof_entries = proof.get("entry_order_ids")
+                    proof_reductions = proof.get("reduction_order_ids")
+                    if (
+                        not isinstance(proof_entries, list)
+                        or not isinstance(proof_reductions, list)
+                        or set(str(value) for value in proof_entries) != replayed_entry_order_ids
+                        or set(str(value) for value in proof_reductions) != replayed_reduction_order_ids
+                    ):
+                        fail("SYSTEM_REDUCTION_OWNERSHIP_PROOF_CHAIN_MISMATCH")
+                    proof_quantity = positive_decimal(proof.get("owned_net_quantity"))
+                    proof_remote_quantity = positive_decimal(proof.get("remote_quantity"))
+                    proof_average = positive_decimal(proof.get("owned_average_entry_price"))
+                    proof_remote_entry = positive_decimal(proof.get("remote_entry_price"))
+                    if None in (proof_quantity, proof_remote_quantity, proof_average, proof_remote_entry):
+                        fail("SYSTEM_REDUCTION_OWNERSHIP_PROOF_INCOMPLETE")
+                    if (
+                        abs(position_quantity - proof_quantity) > Decimal("0.0000000001")
+                        or abs(position_quantity - proof_remote_quantity) > Decimal("0.0000000001")
+                        or position_quantity <= 0
+                    ):
+                        fail("SYSTEM_REDUCTION_PRETRADE_NET_MISMATCH")
+                    current_average = position_cost / position_quantity
+                    if (
+                        abs(current_average - proof_average) > max(abs(proof_average) * Decimal("0.00000001"), Decimal("0.00000001"))
+                        or abs(current_average - proof_remote_entry) > max(abs(proof_remote_entry) * Decimal("0.00000001"), Decimal("0.00000001"))
+                    ):
+                        fail("SYSTEM_REDUCTION_PRETRADE_COST_BASIS_MISMATCH")
+                    checked_reduction_proofs.add(order_id)
+                    replayed_reduction_order_ids.add(order_id)
+                if quantity > position_quantity:
+                    fail("SYSTEM_REDUCTION_EXCEEDS_REPLAYED_NET")
+                if position_quantity <= 0:
+                    fail("SYSTEM_REDUCTION_WITHOUT_OPEN_SYSTEM_POSITION")
+                average_cost = position_cost / position_quantity
+                position_quantity -= quantity
+                position_cost -= average_cost * quantity
+                if position_quantity == 0:
+                    position_cost = Decimal("0")
+            else:
+                position_quantity += quantity
+                position_cost += quantity * price
+                replayed_entry_order_ids.add(str(item.get("order_id") or ""))
+
+        owned_net_quantity = position_quantity
+        if owned_net_quantity <= 0:
+            fail("SYSTEM_OWNED_NET_QUANTITY_EMPTY")
+        if abs(owned_net_quantity - remote_quantity) > Decimal("0.0000000001"):
+            fail("REMOTE_NET_QUANTITY_MISMATCH")
+        if position_cost <= 0:
+            fail("SYSTEM_OWNED_NET_COST_BASIS_UNKNOWN")
+        owned_average_entry = position_cost / owned_net_quantity
+        if abs(owned_average_entry - remote_entry) > max(abs(remote_entry) * Decimal("0.00000001"), Decimal("0.00000001")):
+            fail("REMOTE_AVERAGE_ENTRY_MISMATCH")
+
+        evidence = {
+            "version": "gate_system_position_ownership_v1",
+            "status": "VERIFIED",
+            "account_id": str(account_id),
+            "environment": environment_clean,
+            "venue": venue_clean,
+            "instrument_id": str(instrument_id),
+            "side": side_clean,
+            "remote_position_id": str(position.get("position_id")) if position.get("position_id") is not None else None,
+            "remote_quantity": _decimal_text(remote_quantity),
+            "owned_net_quantity": _decimal_text(owned_net_quantity),
+            "remote_entry_price": _decimal_text(remote_entry),
+            "owned_average_entry_price": _decimal_text(owned_average_entry),
+            "entry_order_ids": sorted(set(entry_order_ids)),
+            "reduction_order_ids": sorted(set(reduction_order_ids)),
+            "verified_at": datetime.now(timezone.utc).isoformat(),
+        }
+        return evidence
+
     def _validate_gate_remote_reduce_only(self, intent: OrderIntent, truth: Dict[str, Any]) -> None:
-        """Validate a Gate TestNet reduction against current remote positions."""
+        """Validate Gate reductions against system-owned net fills and Gate."""
 
         side = str(intent.side or "").upper()
         target_side = "LONG" if side in {"SELL", "CLOSE"} else "SHORT" if side == "BUY" else None
@@ -912,6 +1315,47 @@ class ExecutionGateway:
             )
         if requested > available:
             raise GatewayError("REDUCE_ONLY_EXCEEDS_POSITION", "平仓张数超过 Gate 远端仓位剩余张数。", 422)
+        mode = intent_mode_value(intent.mode).upper()
+        environment = str(intent.environment or mode).upper()
+        ownership = self._gate_remote_position_ownership_evidence(
+            account_id=intent.account_id,
+            mode=mode,
+            environment=environment,
+            instrument_id=intent.instrument_id,
+            side=target_side,
+            position=matching[0],
+            truth=truth,
+        )
+        intent.selection_evidence = dict(intent.selection_evidence or {})
+        intent.selection_evidence["system_position_ownership"] = ownership
+        if hasattr(self.store, "_connect"):
+            try:
+                with self.store._connect() as db:
+                    updated = db.execute(
+                        """UPDATE order_intents SET selection_evidence_json=?, updated_at=?
+                           WHERE intent_id=? AND account_id=? AND mode=? AND venue='gate'""",
+                        (
+                            json.dumps(intent.selection_evidence, allow_nan=False),
+                            datetime.now(timezone.utc).isoformat(),
+                            intent.intent_id,
+                            intent.account_id,
+                            mode,
+                        ),
+                    )
+                    if updated.rowcount != 1:
+                        raise GatewayError(
+                            "SYSTEM_POSITION_OWNERSHIP_UNVERIFIED",
+                            "GATE_SYSTEM_POSITION_OWNERSHIP_UNVERIFIED:REDUCTION_OWNERSHIP_PROOF_NOT_PERSISTED",
+                            409,
+                        )
+            except GatewayError:
+                raise
+            except Exception as exc:
+                raise GatewayError(
+                    "SYSTEM_POSITION_OWNERSHIP_UNVERIFIED",
+                    "GATE_SYSTEM_POSITION_OWNERSHIP_UNVERIFIED:REDUCTION_OWNERSHIP_PROOF_NOT_PERSISTED",
+                    409,
+                ) from exc
 
     @staticmethod
     def _market_amount_rules(market_snapshot: Dict[str, Any]) -> tuple[Decimal, Decimal, Optional[Decimal]]:
@@ -1152,6 +1596,151 @@ class ExecutionGateway:
             },
         }
 
+    def _append_gate_protection_terminal_observation(
+        self,
+        receipt: Dict[str, Any],
+        *,
+        leg: str,
+        account_id: str,
+        environment: str,
+        symbol: str,
+        protection_order_id: str,
+        observed: Dict[str, Any],
+    ) -> bool:
+        """Append a terminal native readback only to its owned entry receipt."""
+        leg_name = str(leg or "").lower().replace("-", "_")
+        protection_id = str(protection_order_id or "").strip()
+        parent_id = str(receipt.get("order_id") or receipt.get("id") or "").strip()
+        env = str(environment or "").upper()
+        symbol_key = self._gate_symbol_key(symbol)
+        if (
+            leg_name not in {"stop_loss", "take_profit"}
+            or not protection_id.isdigit()
+            or not parent_id.isdigit()
+            or not account_id
+            or env not in {"TESTNET", "LIVE"}
+            or not symbol_key
+            or not isinstance(observed, dict)
+            or str(observed.get("order_id") or observed.get("id_string") or "") != protection_id
+            or str(observed.get("status") or "").upper() != "FINISHED"
+            or observed.get("reduce_only") is not True
+            or self._gate_symbol_key(observed.get("symbol")) != symbol_key
+        ):
+            return False
+        initial = observed.get("initial") if isinstance(observed.get("initial"), dict) else {}
+        raw = observed.get("raw") if isinstance(observed.get("raw"), dict) else {}
+        raw_initial = raw.get("initial") if isinstance(raw.get("initial"), dict) else {}
+        if not initial:
+            initial = raw_initial
+        native_reduce_values: list[bool] = []
+        for source in (initial, raw_initial):
+            for key in ("reduce_only", "is_reduce_only"):
+                if key not in source or source[key] is None:
+                    continue
+                value = source[key]
+                if isinstance(value, bool):
+                    parsed = value
+                elif isinstance(value, (int, float)) and value in (0, 1):
+                    parsed = bool(value)
+                elif isinstance(value, str) and value.strip().lower() in {"true", "1", "yes", "y", "on"}:
+                    parsed = True
+                elif isinstance(value, str) and value.strip().lower() in {"false", "0", "no", "n", "off"}:
+                    parsed = False
+                else:
+                    return False
+                native_reduce_values.append(parsed)
+        if len(set(native_reduce_values)) > 1:
+            return False
+        observed_reduce = observed.get("reduce_only")
+        if observed_reduce is not None:
+            if not isinstance(observed_reduce, bool):
+                if isinstance(observed_reduce, (int, float)) and observed_reduce in (0, 1):
+                    observed_reduce = bool(observed_reduce)
+                elif isinstance(observed_reduce, str) and observed_reduce.strip().lower() in {"true", "1", "yes", "y", "on"}:
+                    observed_reduce = True
+                elif isinstance(observed_reduce, str) and observed_reduce.strip().lower() in {"false", "0", "no", "n", "off"}:
+                    observed_reduce = False
+                else:
+                    return False
+            if observed_reduce is not True or (native_reduce_values and native_reduce_values[0] != observed_reduce):
+                return False
+        elif not native_reduce_values or native_reduce_values[0] is not True:
+            return False
+        if (
+            self._gate_symbol_key(initial.get("contract")) != symbol_key
+            or (native_reduce_values and native_reduce_values[0] is not True)
+        ):
+            return False
+
+        owned_ids: set[str] = set()
+        for item in receipt.get("protection_orders") or []:
+            if isinstance(item, dict) and str(item.get("leg") or "").lower().replace("-", "_") == leg_name:
+                owned_ids.add(str(item.get("order_id") or item.get("id") or ""))
+        for name, item in (receipt.get("protection_replacements") or {}).items():
+            if not isinstance(item, dict) or str(name or "").lower().replace("-", "_") != leg_name:
+                continue
+            for key in ("old_id", "new_id"):
+                if item.get(key) is not None:
+                    owned_ids.add(str(item[key]))
+            nested = item.get("leg")
+            if isinstance(nested, dict):
+                owned_ids.add(str(nested.get("order_id") or nested.get("id") or ""))
+        for item in receipt.get("protection_unverified_orders") or []:
+            if isinstance(item, dict) and str(item.get("leg") or "").lower().replace("-", "_") == leg_name:
+                owned_ids.add(str(item.get("order_id") or item.get("id") or ""))
+        for item in receipt.get("protection_revisions") or []:
+            if isinstance(item, dict) and str(item.get("leg") or "").lower().replace("-", "_") == leg_name:
+                for key in ("old_order_id", "order_id"):
+                    if item.get(key) is not None:
+                        owned_ids.add(str(item[key]))
+        for item in receipt.get("protection_terminal_observations") or []:
+            if isinstance(item, dict) and str(item.get("leg") or "").lower().replace("-", "_") == leg_name:
+                if item.get("protection_order_id") is not None:
+                    owned_ids.add(str(item["protection_order_id"]))
+        if protection_id not in owned_ids:
+            return False
+
+        finish_as = str(observed.get("finish_as") or "").lower() or None
+        trade_id = observed.get("trade_id")
+        triggered_id = observed.get("triggered_order_id")
+        if not triggered_id and finish_as == "succeeded" and trade_id is not None:
+            candidate = str(trade_id).strip()
+            if candidate.isdigit():
+                triggered_id = candidate
+        native_readback = dict(observed)
+        entry = {
+            "leg": leg_name,
+            "parent_order_id": parent_id,
+            "protection_order_id": protection_id,
+            "observed_at": str(observed.get("observed_at") or datetime.now(timezone.utc).isoformat()),
+            "account_id": str(account_id),
+            "environment": env,
+            "symbol": str(symbol),
+            "finish_time": observed.get("finish_time"),
+            "finish_as": finish_as,
+            "native_readback": native_readback,
+        }
+        if triggered_id and finish_as == "succeeded" and str(triggered_id).isdigit():
+            entry["triggered_order_id"] = str(triggered_id)
+        observations = receipt.setdefault("protection_terminal_observations", [])
+        if not isinstance(observations, list):
+            observations = []
+            receipt["protection_terminal_observations"] = observations
+        identity = (leg_name, parent_id, protection_id, finish_as, str(entry.get("triggered_order_id") or ""))
+        if not any(
+            isinstance(item, dict)
+            and (
+                str(item.get("leg") or "").lower().replace("-", "_"),
+                str(item.get("parent_order_id") or ""),
+                str(item.get("protection_order_id") or ""),
+                str(item.get("finish_as") or "").lower() or None,
+                str(item.get("triggered_order_id") or ""),
+            ) == identity
+            for item in observations
+        ):
+            observations.append(entry)
+        return True
+
     def update_gate_protection(
         self, *, account_id: str, instrument_id: str, position_id: str,
         new_stop_price: float | None = None, new_take_profit: float | None = None,
@@ -1176,20 +1765,28 @@ class ExecutionGateway:
         position = matching[0]
         with self._lock, self.store._connect() as db:
             rows = db.execute(
-                """SELECT intent_id,side,quantity,execution_result_json FROM order_intents
+                """SELECT intent_id,account_id,mode,environment,instrument_id,side,quantity,status,execution_result_json FROM order_intents
                    WHERE account_id=? AND instrument_id=? AND mode=? AND venue='gate'
-                     AND status='FILLED' AND reduce_only=0 AND intent_id LIKE 'intent_ai_%'
+                     AND status IN ('FILLED','CANCELED') AND reduce_only=0 AND intent_id LIKE 'intent_ai_%'
                    ORDER BY created_at DESC LIMIT 10""",
                 (account_id, instrument_id, profile_mode),
             ).fetchall()
             matched = None
             for row in rows:
                 receipt = json.loads(row["execution_result_json"] or "{}")
+                filled_value = receipt.get("filled_quantity", receipt.get("filled"))
+                try:
+                    recorded_filled = Decimal(str(filled_value)) if filled_value is not None else Decimal("0")
+                except (InvalidOperation, TypeError, ValueError):
+                    continue
+                if not recorded_filled.is_finite() or recorded_filled <= 0:
+                    continue
                 if str(row["side"] or "").upper() != str(position.get("side") or "").upper():
                     continue
-                if Decimal(str(receipt.get("filled") or 0)) != Decimal(str(position.get("contracts") or 0)):
+                if recorded_filled != Decimal(str(position.get("contracts") or 0)):
                     continue
-                if Decimal(str(receipt.get("average") or receipt.get("price") or 0)) != Decimal(str(position.get("entry_price") or 0)):
+                average_value = receipt.get("average_price", receipt.get("average", receipt.get("price")))
+                if Decimal(str(average_value or 0)) != Decimal(str(position.get("entry_price") or 0)):
                     continue
                 legs = {str(item.get("leg")): item for item in receipt.get("protection_orders") or [] if isinstance(item, dict)}
                 if all(str(legs.get(name, {}).get("order_id") or "").isdigit() for name in ("stop_loss", "take_profit")):
@@ -1221,6 +1818,11 @@ class ExecutionGateway:
                 if price is None:
                     continue
                 target = float(self.validate_finite_decimal(name, price, min_val=1e-8))
+                normalizer = getattr(trader, "normalize_protection_price", None)
+                if callable(normalizer):
+                    target = float(normalizer(instrument_id, target))
+                if not math.isfinite(target) or target <= 0:
+                    raise GatewayError("GATE_PROTECTION_PRICE_INVALID", f"{name} is not a valid Gate tick price.", 422)
                 if observed.get("trigger_price") is None:
                     raise GatewayError("GATE_PROTECTION_PRICE_UNKNOWN", f"{name} has no observed trigger price.", 409)
                 if abs(float(observed["trigger_price"]) - target) <= max(1e-12, target * 1e-9) and name not in replacements:
@@ -1250,7 +1852,22 @@ class ExecutionGateway:
                 if replacement["status"] != "OPEN" or replacement["trigger_price"] is None or not math.isclose(float(replacement["trigger_price"]), target, rel_tol=1e-9):
                     raise GatewayError("GATE_PROTECTION_REPLACEMENT_UNVERIFIED", "Replacement trigger is not open at the requested price.", 503)
                 try:
-                    trader.cancel_protection_order(order_id, instrument_id)
+                    canceled = trader.cancel_protection_order(order_id, instrument_id)
+                    terminal = (canceled.get("after") if isinstance(canceled, dict) else None)
+                    if not isinstance(terminal, dict):
+                        terminal = trader.fetch_protection_order(order_id, instrument_id)
+                    if (
+                        not isinstance(terminal, dict)
+                        or str(terminal.get("order_id") or terminal.get("id_string") or "") != order_id
+                        or str(terminal.get("status") or "").upper() != "FINISHED"
+                        or str(terminal.get("finish_as") or "").lower() not in {"cancelled", "canceled"}
+                    ):
+                        raise ValueError("GATE_PROTECTION_OLD_ORDER_NOT_TERMINAL")
+                    self._append_gate_protection_terminal_observation(
+                        receipt, leg=name, account_id=str(row["account_id"]),
+                        environment=str(row["environment"] or row["mode"]), symbol=instrument_id,
+                        protection_order_id=order_id, observed=terminal,
+                    )
                 except Exception as exc:
                     raise GatewayError("GATE_PROTECTION_REPLACE_PENDING", f"Replacement is armed but old protection cancellation is unverified: {exc}", 409) from exc
                 legs[name]["order_id"] = new_id
@@ -1286,14 +1903,16 @@ class ExecutionGateway:
         if not isinstance(positions, list) or not isinstance(pending, list):
             return []
         held = {self._gate_symbol_key(item.get("symbol")) for item in positions if isinstance(item, dict)}
-        pending_ids = {str(item.get("order_id") or "") for item in pending if isinstance(item, dict) and item.get("reduce_only") is True}
+        # Gate's ordinary pending-order list can omit futures price-triggered
+        # SL/TP orders. Their exact private price-order GET is authoritative.
+        # Requiring the ID in pending would strand a live orphan indefinitely.
         trader = build_gate_trader(self.store, account_id)
         cleaned: list[Dict[str, Any]] = []
         with self._lock, self.store._connect() as db:
             rows = db.execute(
-                """SELECT intent_id,instrument_id,execution_result_json FROM order_intents
+                """SELECT intent_id,account_id,mode,environment,instrument_id,execution_result_json FROM order_intents
                    WHERE account_id=? AND mode=? AND venue='gate'
-                     AND status IN ('FILLED','PARTIALLY_FILLED','UNKNOWN')
+                     AND status IN ('FILLED','PARTIALLY_FILLED','UNKNOWN','CANCELED')
                      AND reduce_only=0 AND intent_id LIKE 'intent_ai_%'
                    ORDER BY created_at DESC LIMIT 30""",
                 (account_id, profile_mode),
@@ -1309,10 +1928,11 @@ class ExecutionGateway:
                 managed_legs = [*legs, *uncertain]
                 for replacement in replacements.values():
                     if isinstance(replacement, dict):
-                        managed_legs.append({"leg": replacement.get("leg", {}).get("leg") if isinstance(replacement.get("leg"), dict) else None,
+                        replacement_leg = replacement.get("leg", {}).get("leg") if isinstance(replacement.get("leg"), dict) else None
+                        managed_legs.append({"leg": replacement_leg,
                                              "order_id": replacement.get("new_id"), "status": "open"})
                         if replacement.get("old_id"):
-                            managed_legs.append({"leg": "superseded", "order_id": replacement["old_id"], "status": "open"})
+                            managed_legs.append({"leg": replacement_leg, "order_id": replacement["old_id"], "status": "open"})
                 changed = False
                 processed_ids: set[str] = set()
                 for leg in managed_legs:
@@ -1325,16 +1945,41 @@ class ExecutionGateway:
                     processed_ids.add(order_id)
                     try:
                         observed = trader.fetch_protection_order(order_id, symbol)
-                        if observed.get("reduce_only") is not True:
+                        if (observed.get("reduce_only") is not True
+                                or str(observed.get("order_id") or "") != order_id
+                                or self._gate_symbol_key(observed.get("symbol")) != self._gate_symbol_key(symbol)):
                             continue
                         if observed["status"] == "OPEN":
-                            # The independently read Gate pending list must
-                            # contain this exact ID before cancellation.
-                            if order_id not in pending_ids:
+                            # The entry receipt identifies a system-created
+                            # trigger; exact-ID Gate GET verifies the order,
+                            # contract and reduce-only bit before DELETE.
+                            canceled = trader.cancel_protection_order(order_id, symbol)
+                            terminal = canceled.get("after") if isinstance(canceled, dict) else None
+                            if not isinstance(terminal, dict):
+                                terminal = trader.fetch_protection_order(order_id, symbol)
+                            if (
+                                not isinstance(terminal, dict)
+                                or str(terminal.get("order_id") or terminal.get("id_string") or "") != order_id
+                                or str(terminal.get("status") or "").upper() != "FINISHED"
+                                or str(terminal.get("finish_as") or "").lower() not in {"cancelled", "canceled"}
+                                or terminal.get("reduce_only") is not True
+                                or self._gate_symbol_key(terminal.get("symbol")) != self._gate_symbol_key(symbol)
+                            ):
                                 continue
-                            trader.cancel_protection_order(order_id, symbol)
+                            self._append_gate_protection_terminal_observation(
+                                receipt, leg=str(leg.get("leg") or ""),
+                                account_id=str(row["account_id"]),
+                                environment=str(row["environment"] or row["mode"]),
+                                symbol=symbol, protection_order_id=order_id, observed=terminal,
+                            )
                             leg["status"] = "canceled_after_position_close"
                         elif observed["status"] == "FINISHED":
+                            self._append_gate_protection_terminal_observation(
+                                receipt, leg=str(leg.get("leg") or ""),
+                                account_id=str(row["account_id"]),
+                                environment=str(row["environment"] or row["mode"]),
+                                symbol=symbol, protection_order_id=order_id, observed=observed,
+                            )
                             leg["status"] = f"finished_{observed.get('finish_as') or 'unknown'}"
                         else:
                             continue
@@ -1373,6 +2018,72 @@ class ExecutionGateway:
         elif hasattr(self.store, "_orders") and intent_id in self.store._orders:
             self.store._orders[intent_id]["status"] = status
             self.store._orders[intent_id]["execution_result"] = result
+
+    def _record_submission_failure(
+        self, intent: OrderIntent, status: str, result: Dict[str, Any],
+    ) -> None:
+        """Record a pre-acceptance failure without replacing a durable receipt.
+
+        ``submit_intent`` can fail before it reaches the idempotency lookup
+        (for example, a stale runtime fence).  Such a failure must never turn
+        an already accepted intent into REJECTED.  Match both immutable
+        request identities and only transition an unreceipted preflight row.
+        """
+        payload_hash = intent.compute_payload_hash()
+        if hasattr(self.store, "_connect"):
+            with self.store._connect() as db:
+                row = db.execute(
+                    """SELECT idempotency_key,payload_hash,status,execution_result_json
+                       FROM order_intents WHERE intent_id=?""",
+                    (intent.intent_id,),
+                ).fetchone()
+                if row is None:
+                    return
+                if (str(row["idempotency_key"] or "") != str(intent.idempotency_key)
+                        or str(row["payload_hash"] or "") != str(payload_hash)
+                        or str(row["status"] or "").upper() not in {
+                            OrderStatus.CREATED.value, OrderStatus.RISK_APPROVED.value,
+                        }):
+                    return
+                receipt_raw = row["execution_result_json"]
+                try:
+                    receipt = json.loads(receipt_raw or "{}")
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    receipt = None
+                if isinstance(receipt, dict):
+                    execution_evidence = receipt.get("execution_evidence")
+                    has_remote_identity = any((
+                        receipt.get("order_id"), receipt.get("id"),
+                        receipt.get("remote_order_id"), receipt.get("remote_order_status"),
+                        receipt.get("protection_orders"), receipt.get("protection_unverified_orders"),
+                        isinstance(execution_evidence, dict) and execution_evidence.get("remote_order_id"),
+                    ))
+                    if has_remote_identity:
+                        return
+                db.execute(
+                    """UPDATE order_intents SET status=?,execution_result_json=?,updated_at=?
+                       WHERE intent_id=? AND idempotency_key=? AND payload_hash=? AND status=?
+                         AND execution_result_json IS ?""",
+                    (status, json.dumps(result, allow_nan=False), datetime.now(timezone.utc).isoformat(),
+                     intent.intent_id, intent.idempotency_key, payload_hash, row["status"], receipt_raw),
+                )
+        elif hasattr(self.store, "_orders"):
+            row = self.store._orders.get(intent.intent_id)
+            if not isinstance(row, dict):
+                return
+            if (str(row.get("idempotency_key") or "") != str(intent.idempotency_key)
+                    or str(row.get("payload_hash") or "") != str(payload_hash)
+                    or str(row.get("status") or "").upper() not in {
+                        OrderStatus.CREATED.value, OrderStatus.RISK_APPROVED.value,
+                    }):
+                return
+            receipt = row.get("execution_result")
+            if isinstance(receipt, dict) and any((
+                receipt.get("order_id"), receipt.get("id"), receipt.get("remote_order_id"),
+                receipt.get("protection_orders"), receipt.get("protection_unverified_orders"),
+            )):
+                return
+            self._update_order(intent.intent_id, status, result)
 
     def _reserve_unknown(self, intent: OrderIntent) -> Optional[str]:
         if self.ledger is None or intent.reduce_only:
@@ -1422,15 +2133,15 @@ class ExecutionGateway:
                 now=now,
             )
         except GatewayError as exc:
-            self._update_order(
-                intent.intent_id,
+            self._record_submission_failure(
+                intent,
                 OrderStatus.REJECTED.value,
                 {"intent_id": intent.intent_id, "status": OrderStatus.REJECTED.value, "error_code": exc.code, "error": exc.message, "timestamp": datetime.now(timezone.utc).isoformat()},
             )
             raise
         except Exception as exc:
-            self._update_order(
-                intent.intent_id,
+            self._record_submission_failure(
+                intent,
                 OrderStatus.REJECTED.value,
                 {"intent_id": intent.intent_id, "status": OrderStatus.REJECTED.value, "error_code": "EXECUTION_FAILED", "error": str(exc), "timestamp": datetime.now(timezone.utc).isoformat()},
             )
@@ -1976,6 +2687,14 @@ class ExecutionGateway:
                 raise
 
             final_status = str(exec_result.get("status", OrderStatus.REJECTED.value))
+            # Durably save the adapter's exact receipt before reservation
+            # bookkeeping.  If a later ledger call fails, the outer wrapper
+            # can still preserve/reconcile/cancel an accepted remote order.
+            self._update_order(
+                intent.intent_id, final_status, exec_result,
+                reservation_id=reservation_id,
+                risk_decision=risk_decision.to_dict() if risk_decision else None,
+            )
             if reservation_id:
                 protection_status = str(exec_result.get("protection_status") or "").upper()
                 protection_verified = intent.reduce_only or protection_status == ProtectionStatus.ACTIVE.value
@@ -2765,9 +3484,69 @@ class ExecutionGateway:
                 pass
         return False, ""
 
+    def _resize_reservation_to_verified_fill(
+        self,
+        row: Dict[str, Any],
+        filled_quantity: Decimal,
+        requested_quantity: Decimal,
+        *,
+        protection_verified: bool,
+    ) -> str | None:
+        """Keep only the filled share of a reservation after remote cancel proof."""
+        reservation_id = str(row.get("reservation_id") or "")
+        account_id = str(row.get("account_id") or "")
+        if (not reservation_id or not account_id or requested_quantity <= 0 or filled_quantity <= 0
+                or self.ledger is None
+                or not callable(getattr(self.ledger, "resize_pending_risk_reservation", None))):
+            return None
+        fraction = min(Decimal("1"), filled_quantity / requested_quantity)
+        try:
+            decision = json.loads(row.get("risk_decision_json") or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            decision = {}
+        if not isinstance(decision, dict):
+            decision = {}
+        try:
+            if "risk_amount" in decision:
+                original_risk = Decimal(str(decision["risk_amount"]))
+            else:
+                original_risk = None
+            if "allocated_margin" in decision:
+                original_margin = Decimal(str(decision["allocated_margin"]))
+            else:
+                original_margin = None
+        except (InvalidOperation, TypeError, ValueError):
+            original_risk = original_margin = None
+        if original_risk is None or original_margin is None:
+            with self.store._connect() as db:
+                reservation = db.execute(
+                    "SELECT amount_risk,amount_margin FROM risk_reservations WHERE reservation_id=? AND account_id=?",
+                    (reservation_id, account_id),
+                ).fetchone()
+            if reservation is None:
+                return None
+            try:
+                original_risk = Decimal(str(reservation["amount_risk"]))
+                original_margin = Decimal(str(reservation["amount_margin"]))
+            except (InvalidOperation, TypeError, ValueError):
+                return None
+        if (not original_risk.is_finite() or original_risk < 0
+                or not original_margin.is_finite() or original_margin < 0):
+            return None
+        target_risk = original_risk * fraction
+        target_margin = original_margin * fraction
+        target_status = "COMMITTED" if protection_verified else "PENDING"
+        resized = self.ledger.resize_pending_risk_reservation(
+            account_id, reservation_id, amount_risk=target_risk,
+            amount_margin=target_margin, status=target_status,
+        )
+        if not resized:
+            return None
+        return "COMMITTED_PARTIAL" if protection_verified else "PENDING_PARTIAL"
+
     def _reconcile_gate_entry_protection(
         self, intent: OrderIntent, adapter: Any, filled_quantity: Decimal,
-        previous_receipt: Dict[str, Any],
+        previous_receipt: Dict[str, Any], *, only_legs: set[str] | None = None,
     ) -> Dict[str, Any]:
         """Cover the *cumulative* Gate fill with native, ID-verified triggers.
 
@@ -2802,6 +3581,13 @@ class ExecutionGateway:
             observed = adapter.fetch_protection_order(order_id, intent.instrument_id)
             if not isinstance(observed, dict) or str(observed.get("order_id")) != order_id:
                 raise ValueError("GATE_PROTECTION_ORDER_ID_MISMATCH")
+            if (observed.get("symbol") is not None
+                    and self._gate_symbol_key(observed.get("symbol")) != self._gate_symbol_key(intent.instrument_id)):
+                raise ValueError("GATE_PROTECTION_SYMBOL_MISMATCH")
+            native_initial = observed.get("initial") if isinstance(observed.get("initial"), dict) else {}
+            if (native_initial.get("contract") is not None
+                    and self._gate_symbol_key(native_initial.get("contract")) != self._gate_symbol_key(intent.instrument_id)):
+                raise ValueError("GATE_PROTECTION_CONTRACT_MISMATCH")
             amount = Decimal(str(observed.get("amount")))
             trigger = Decimal(str(observed.get("trigger_price")))
             if (observed.get("status") != "OPEN" or not observed.get("reduce_only")
@@ -2818,11 +3604,14 @@ class ExecutionGateway:
             for name, price in prices.items():
                 if price is None:
                     raise ValueError("GATE_PROTECTION_PLAN_INCOMPLETE")
-                target = (adapter.normalize_protection_price(intent.instrument_id, float(price))
-                          if callable(getattr(adapter, "normalize_protection_price", None))
-                          else float(price))
+                if only_legs is not None and name not in only_legs:
+                    continue
                 old = legs.get(name)
                 replacement = pending.get(name)
+                target_input = replacement.get("target_price") if isinstance(replacement, dict) and replacement.get("target_price") is not None else price
+                target = (adapter.normalize_protection_price(intent.instrument_id, float(target_input))
+                          if callable(getattr(adapter, "normalize_protection_price", None))
+                          else float(target_input))
                 uncertain = next((item for item in unverified if item.get("leg") == name), None)
                 if uncertain and not replacement:
                     # A prior create returned an ID but its readback failed.
@@ -2840,7 +3629,7 @@ class ExecutionGateway:
                     new_id = str(replacement.get("new_id") or "")
                     if not new_id.isdigit():
                         raise ValueError("GATE_PROTECTION_REPLACEMENT_ID_INVALID")
-                    readback(new_id, target)
+                    new_observed = readback(new_id, target)
                 else:
                     if old:
                         try:
@@ -2862,21 +3651,42 @@ class ExecutionGateway:
                     new_id = str(placed[0].get("order_id") or "")
                     if placed[0].get("leg") != name or not new_id.isdigit():
                         raise ValueError("GATE_PROTECTION_PLACEMENT_ID_INVALID")
-                    readback(new_id, target)
+                    new_observed = readback(new_id, target)
                     pending[name] = {"new_id": new_id, "old_id": str(old["order_id"]) if old else None,
                                      "leg": dict(placed[0])}
                     save_progress()
                 old_id = pending[name].get("old_id")
                 if old_id and old_id != new_id:
                     canceled = adapter.cancel_protection_order(str(old_id), intent.instrument_id)
-                    if not isinstance(canceled, dict) or canceled.get("status") != "CANCELED":
+                    terminal = canceled.get("after") if isinstance(canceled, dict) else None
+                    if not isinstance(terminal, dict):
+                        terminal = adapter.fetch_protection_order(str(old_id), intent.instrument_id)
+                    if (
+                        not isinstance(terminal, dict)
+                        or str(terminal.get("order_id") or terminal.get("id_string") or "") != str(old_id)
+                        or str(terminal.get("status") or "").upper() != "FINISHED"
+                        or str(terminal.get("finish_as") or "").lower() not in {"cancelled", "canceled"}
+                    ):
                         raise ValueError("GATE_PROTECTION_OLD_ORDER_NOT_CANCELED")
-                legs[name] = dict(pending[name]["leg"])
+                    self._append_gate_protection_terminal_observation(
+                        receipt, leg=name, account_id=intent.account_id,
+                        environment=intent.environment or intent_mode_value(intent.mode),
+                        symbol=intent.instrument_id, protection_order_id=str(old_id), observed=terminal,
+                    )
+                leg_value = pending[name].get("leg")
+                updated_leg = dict(leg_value) if isinstance(leg_value, dict) else {}
+                updated_leg.update({
+                    "leg": name, "order_id": new_id, "status": "open",
+                    "amount": float(filled_quantity), "trigger_price": float(new_observed["trigger_price"]),
+                    "reduce_only": True,
+                })
+                legs[name] = updated_leg
                 pending.pop(name, None)
                 save_progress()
             return {"protection_orders": list(legs.values()),
                     "protection_status": "PROTECTED", "protection_verified": True,
-                    "protection_replacements": pending}
+                    "protection_replacements": pending,
+                    "protection_terminal_observations": receipt.get("protection_terminal_observations") or []}
         except Exception as exc:
             for item in getattr(exc, "unverified_legs", []):
                 if (isinstance(item, dict) and str(item.get("order_id") or "").isdigit()
@@ -2888,6 +3698,7 @@ class ExecutionGateway:
                     "protection_status": "PROTECTION_FAILED", "protection_verified": False,
                     "protection_replacements": pending,
                     "protection_unverified_orders": unverified,
+                    "protection_terminal_observations": receipt.get("protection_terminal_observations") or [],
                     "protection_error_code": str(exc)[:96] if isinstance(exc, ValueError) else type(exc).__name__}
 
     def reconcile_in_flight_orders(self, account_id: str, mode: TradingMode, *, remote_truth: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
@@ -2916,7 +3727,17 @@ class ExecutionGateway:
         query_mode = account_scope["mode"] if account_scope else str(mode_val).upper()
         with self.store._connect() as db:
             rows = [dict(row) for row in db.execute(
-                "SELECT * FROM order_intents WHERE account_id = ? AND mode = ? AND status IN (?, ?, ?, ?, ?)",
+                """SELECT * FROM order_intents
+                   WHERE account_id = ? AND mode = ? AND (
+                     status IN (?, ?, ?, ?, ?)
+                     OR (venue='gate' AND reduce_only=0
+                         AND status IN ('FILLED','CANCELED','PROTECTION_FAILED')
+                         AND json_valid(execution_result_json)
+                         AND (
+                           COALESCE(json_extract(execution_result_json, '$.protection_replacements'), '{}') <> '{}'
+                           OR COALESCE(json_array_length(execution_result_json, '$.protection_unverified_orders'), 0) > 0
+                         ))
+                   )""",
                 (account_id, query_mode, OrderStatus.SUBMITTING.value, OrderStatus.ACKNOWLEDGED.value, OrderStatus.PARTIALLY_FILLED.value, OrderStatus.UNKNOWN.value, OrderStatus.CANCEL_PENDING.value),
             ).fetchall()]
 
@@ -3014,6 +3835,98 @@ class ExecutionGateway:
                 scoped_row["environment"] = account_scope["environment"].upper()
             scoped_intent = self._intent_from_order_row(scoped_row, fallback_mode=query_mode)
             adapter = self._resolve_scoped_trader_client(scoped_intent, None)
+
+            # Replacements and uncertain creates are durable native Gate IDs.
+            # Resume them on the next gateway pass even when the entry order
+            # itself is already FILLED or CANCELED after a verified partial
+            # remainder cancel; a model decision is not needed to finish this
+            # exchange lifecycle.
+            try:
+                prior_receipt_for_protection = json.loads(row.get("execution_result_json") or "{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                prior_receipt_for_protection = {}
+            if not isinstance(prior_receipt_for_protection, dict):
+                prior_receipt_for_protection = {}
+            replacement_names = {
+                str(name).lower().replace("-", "_")
+                for name, item in (prior_receipt_for_protection.get("protection_replacements") or {}).items()
+                if isinstance(item, dict)
+            }
+            unverified_names = {
+                str(item.get("leg") or "").lower().replace("-", "_")
+                for item in prior_receipt_for_protection.get("protection_unverified_orders") or []
+                if isinstance(item, dict)
+            }
+            pending_protection_names = (replacement_names | unverified_names) & {"stop_loss", "take_profit"}
+            terminal_parent = str(previous_status or "").upper() in {
+                OrderStatus.FILLED.value, OrderStatus.CANCELED.value, "PROTECTION_FAILED",
+            }
+            if (
+                terminal_parent and pending_protection_names
+                and not bool(row.get("reduce_only"))
+                and str(row.get("venue") or "").lower() == "gate"
+                and adapter is not None
+                and callable(getattr(adapter, "fetch_protection_order", None))
+                and callable(getattr(adapter, "place_protection_orders", None))
+            ):
+                filled_value = prior_receipt_for_protection.get(
+                    "filled_quantity", prior_receipt_for_protection.get("filled"),
+                )
+                try:
+                    protection_fill = Decimal(str(filled_value)) if filled_value is not None else Decimal("0")
+                except (InvalidOperation, TypeError, ValueError):
+                    protection_fill = Decimal("0")
+                if protection_fill.is_finite() and protection_fill > 0:
+                    protection_result = self._reconcile_gate_entry_protection(
+                        scoped_intent, adapter, protection_fill,
+                        prior_receipt_for_protection, only_legs=pending_protection_names,
+                    )
+                    resumed_receipt = dict(prior_receipt_for_protection)
+                    resumed_receipt["protection_orders"] = protection_result.get("protection_orders") or []
+                    resumed_receipt["protection_replacements"] = protection_result.get("protection_replacements") or {}
+                    resumed_receipt["protection_unverified_orders"] = protection_result.get("protection_unverified_orders") or []
+                    resumed_receipt["protection_terminal_observations"] = protection_result.get(
+                        "protection_terminal_observations",
+                        prior_receipt_for_protection.get("protection_terminal_observations") or [],
+                    )
+                    remaining_names = {
+                        str(name).lower().replace("-", "_")
+                        for name in resumed_receipt["protection_replacements"]
+                    } | {
+                        str(item.get("leg") or "").lower().replace("-", "_")
+                        for item in resumed_receipt["protection_unverified_orders"]
+                        if isinstance(item, dict)
+                    }
+                    expected_names = {"stop_loss"}
+                    if scoped_intent.protection_plan and scoped_intent.protection_plan.take_profit is not None:
+                        expected_names.add("take_profit")
+                    present_names = {
+                        str(item.get("leg") or "").lower().replace("-", "_")
+                        for item in resumed_receipt["protection_orders"]
+                        if isinstance(item, dict) and str(item.get("order_id") or "").isdigit()
+                    }
+                    fully_reconciled = (
+                        protection_result.get("protection_verified") is True
+                        and not remaining_names
+                        and expected_names.issubset(present_names)
+                    )
+                    resumed_receipt["protection_status"] = "PROTECTED" if fully_reconciled else "PENDING_VERIFICATION"
+                    if protection_result.get("protection_error_code"):
+                        resumed_receipt["protection_error_code"] = protection_result["protection_error_code"]
+                    with self.store._connect() as db:
+                        db.execute(
+                            "UPDATE order_intents SET execution_result_json=?,updated_at=? WHERE intent_id=? AND status=?",
+                            (json.dumps(resumed_receipt, allow_nan=False), now_iso, iid, previous_status),
+                        )
+                    reconciled.append({
+                        "intent_id": iid,
+                        "previous_status": previous_status,
+                        "reconciled_status": previous_status,
+                        "reconciled": fully_reconciled,
+                        "reservation_held": str(resumed_receipt.get("risk_reservation_status") or "").upper() in {"PENDING", "PENDING_PARTIAL"},
+                        "reason": None if fully_reconciled else resumed_receipt.get("protection_error_code", "PROTECTION_RESUME_PENDING"),
+                    })
+                    continue
             if adapter is None or not hasattr(adapter, "fetch_order"):
                 reconciled.append({"intent_id": iid, "previous_status": previous_status, "reconciled_status": previous_status, "reconciled": False, "reservation_held": True})
                 continue
@@ -3081,6 +3994,7 @@ class ExecutionGateway:
                         remote["protection_verified"] = protection_result["protection_verified"]
                         remote["protection_replacements"] = protection_result.get("protection_replacements") or {}
                         remote["protection_unverified_orders"] = protection_result.get("protection_unverified_orders") or []
+                        remote["protection_terminal_observations"] = protection_result.get("protection_terminal_observations") or []
                         if protection_result.get("protection_error_code"):
                             remote["protection_error_code"] = protection_result["protection_error_code"]
 
@@ -3097,20 +4011,144 @@ class ExecutionGateway:
                     if not has_concrete_local_fill:
                         reconciled.append({"intent_id": iid, "previous_status": previous_status, "reconciled_status": previous_status, "reconciled": False, "reservation_held": True, "reason": "CONCRETE_FILL_REQUIRED"})
                         continue
-                    final_status = OrderStatus.PARTIALLY_FILLED.value
                     amount_value = remote.get("amount", remote.get("quantity"))
                     try:
-                        amount = Decimal(str(amount_value)) if amount_value is not None else Decimal("0")
+                        amount = Decimal(str(amount_value)) if amount_value is not None else Decimal(str(row.get("quantity") or 0))
                     except (InvalidOperation, TypeError, ValueError):
                         amount = Decimal("0")
-                    if remote_status in {"closed", "filled"} or (amount > 0 and filled_quantity >= amount):
+                    final_status = OrderStatus.PARTIALLY_FILLED.value
+                    if amount > 0 and filled_quantity >= amount:
                         final_status = OrderStatus.FILLED.value
+                    elif remote_status in {"cancelled", "canceled"}:
+                        final_status = OrderStatus.CANCELED.value
+                    elif remote_status == "expired":
+                        final_status = OrderStatus.EXPIRED.value
+                    elif remote_status in {"rejected", "failed"}:
+                        final_status = OrderStatus.REJECTED.value
+                    elif remote_status in {"closed", "filled"}:
+                        final_status = OrderStatus.FILLED.value
+
+                    # A stale partially-filled limit is still a live order for
+                    # its unfilled remainder. Cancel that exact ID and require
+                    # a terminal GET before resizing or releasing any budget.
+                    stale_reason = None
+                    if remote_status == "open" and final_status == OrderStatus.PARTIALLY_FILLED.value:
+                        stale, stale_reason = self._resting_intent_is_stale(row, mode_val)
+                        if stale:
+                            if not callable(getattr(adapter, "cancel_order", None)):
+                                remote["remainder_cancel"] = {"status": "UNSUPPORTED", "reason": stale_reason}
+                            else:
+                                try:
+                                    cancel_result = adapter.cancel_order(remote_order_id, row["instrument_id"])
+                                    after = adapter.fetch_order(remote_order_id, row["instrument_id"])
+                                    after_id = str((after or {}).get("order_id") or (after or {}).get("id") or "")
+                                    after_status = str((after or {}).get("status") or "").lower()
+                                    after_filled_value = (after or {}).get("filled_quantity", (after or {}).get("filled"))
+                                    after_amount_value = (after or {}).get("amount", (after or {}).get("quantity"))
+                                    after_filled = Decimal(str(after_filled_value)) if after_filled_value is not None else None
+                                    after_amount = Decimal(str(after_amount_value)) if after_amount_value is not None else amount
+                                    terminal_remainder = after_status in {
+                                        "cancelled", "canceled", "expired", "rejected", "closed", "filled",
+                                    }
+                                    valid_after = (
+                                        isinstance(after, dict) and after_id == str(remote_order_id)
+                                        and after_filled is not None and after_filled.is_finite() and after_filled >= 0
+                                        and after_amount.is_finite() and after_amount > 0
+                                        and after_filled <= after_amount
+                                        and after_amount >= max(filled_quantity, after_filled)
+                                    )
+                                    if valid_after and terminal_remainder:
+                                        confirmed_filled = max(filled_quantity, after_filled)
+                                        updated_remote = {
+                                            **remote,
+                                            **{key: value for key, value in after.items() if value is not None},
+                                        }
+                                        updated_remote["filled_quantity"] = float(confirmed_filled)
+                                        updated_remote["amount"] = float(after_amount)
+                                        if confirmed_filled > filled_quantity and intent.protection_plan and not intent.reduce_only:
+                                            updated_protection = self._reconcile_gate_entry_protection(
+                                                intent, adapter, confirmed_filled, previous_receipt,
+                                            )
+                                            updated_remote["protection_orders"] = updated_protection["protection_orders"]
+                                            updated_remote["protection_status"] = updated_protection["protection_status"]
+                                            updated_remote["protection_verified"] = updated_protection["protection_verified"]
+                                            updated_remote["protection_replacements"] = updated_protection.get("protection_replacements") or {}
+                                            updated_remote["protection_unverified_orders"] = updated_protection.get("protection_unverified_orders") or []
+                                            updated_remote["protection_terminal_observations"] = updated_protection.get("protection_terminal_observations") or []
+                                            if updated_protection.get("protection_error_code"):
+                                                updated_remote["protection_error_code"] = updated_protection["protection_error_code"]
+                                        updated_reconciliation = self._record_exchange_fill_report(intent, updated_remote, None)
+                                        updated_local_quantity = Decimal("0")
+                                        can_verify_local_total = False
+                                        if self.ledger is not None and hasattr(self.ledger, "get_recorded_fill_totals"):
+                                            updated_local_quantity, _ = self.ledger.get_recorded_fill_totals(
+                                                account_id, remote_order_id, venue=intent.venue, mode=mode_val,
+                                            )
+                                            can_verify_local_total = updated_local_quantity >= confirmed_filled
+                                        else:
+                                            can_verify_local_total = bool(updated_reconciliation.get("recorded"))
+                                        if can_verify_local_total:
+                                            remote = updated_remote
+                                            reconciliation = updated_reconciliation
+                                            filled_quantity = confirmed_filled
+                                            amount = after_amount
+                                            remote_status = after_status
+                                            final_status = (
+                                                OrderStatus.FILLED.value
+                                                if confirmed_filled >= after_amount or after_status in {"closed", "filled"}
+                                                else OrderStatus.EXPIRED.value if after_status == "expired"
+                                                else OrderStatus.REJECTED.value if after_status == "rejected"
+                                                else OrderStatus.CANCELED.value
+                                            )
+                                            remote["remainder_cancel"] = {
+                                                "status": "TERMINAL_VERIFIED",
+                                                "reason": stale_reason,
+                                                "cancel_response": cancel_result if isinstance(cancel_result, dict) else str(cancel_result),
+                                                "remote_status": after_status,
+                                                "requested_quantity": _decimal_text(amount),
+                                                "filled_quantity": _decimal_text(filled_quantity),
+                                                "canceled_remainder": _decimal_text(max(Decimal("0"), amount - filled_quantity)),
+                                                "observed_at": now_iso,
+                                            }
+                                        else:
+                                            remote["remainder_cancel"] = {
+                                                "status": "FILL_RECONCILIATION_PENDING",
+                                                "reason": "TERMINAL_ORDER_HAS_UNRECORDED_FILL",
+                                                "remote_status": after_status,
+                                                "filled_quantity": _decimal_text(confirmed_filled),
+                                            }
+                                    else:
+                                        remote["remainder_cancel"] = {
+                                            "status": "TERMINAL_READBACK_UNVERIFIED",
+                                            "reason": "EXACT_ID_OR_CUMULATIVE_FILL_NOT_CONFIRMED",
+                                            "remote_status": after_status or "UNKNOWN",
+                                        }
+                                except Exception as exc:
+                                    logger.warning("Partial remainder cancel/readback failed for %s: %s", iid, exc)
+                                    remote["remainder_cancel"] = {
+                                        "status": "PENDING",
+                                        "reason": "CANCEL_OR_READBACK_FAILED",
+                                        "error_type": type(exc).__name__,
+                                    }
+
                     if (final_status == OrderStatus.FILLED.value and not intent.reduce_only
                             and intent.protection_plan is not None
                             and reconciliation.get("protection_status") != ProtectionStatus.ACTIVE.value):
                         final_status = OrderStatus.UNKNOWN.value
-                    receipt = dict(remote)
-                    receipt.update({"intent_id": iid, "reconciled": True, "execution_evidence": {"source": "execution_adapter_reconciliation", "observed_at": now_iso, "remote_order_id": remote.get("order_id") or remote.get("id") or remote_order_id}})
+                    receipt = dict(previous_receipt) if isinstance(previous_receipt, dict) else {}
+                    receipt.update({key: value for key, value in remote.items() if value is not None})
+                    receipt.update({
+                        "intent_id": iid,
+                        "filled_quantity": float(filled_quantity),
+                        "remote_order_status": remote_status,
+                        "reconciled": True,
+                        "execution_evidence": {
+                            "source": "execution_adapter_reconciliation",
+                            "observed_at": now_iso,
+                            "remote_order_id": remote.get("order_id") or remote.get("id") or remote_order_id,
+                            "remote_status": remote_status,
+                        },
+                    })
                     if reconciliation.get("ledger_record"):
                         receipt["ledger_record"] = reconciliation["ledger_record"]
                     receipt["protection_status"] = reconciliation.get("protection_status") or remote.get("protection_status")
@@ -3118,12 +4156,39 @@ class ExecutionGateway:
                         receipt["protection_orders"] = remote.get("protection_orders")
                     if reconciliation.get("economic_evidence"):
                         receipt["economic_reconciliation"] = reconciliation["economic_evidence"]
+                    protection_verified = bool(intent.reduce_only or reconciliation.get("protection_status") == ProtectionStatus.ACTIVE.value)
+                    remainder_cancel = remote.get("remainder_cancel")
+                    remainder_cancel_status = (
+                        str(remainder_cancel.get("status") or "").upper()
+                        if isinstance(remainder_cancel, dict) else ""
+                    )
+                    if final_status in {OrderStatus.CANCELED.value, OrderStatus.EXPIRED.value, OrderStatus.REJECTED.value} and filled_quantity > 0:
+                        resized_status = self._resize_reservation_to_verified_fill(
+                            row, filled_quantity, Decimal(str(row.get("quantity") or amount or filled_quantity)),
+                            protection_verified=protection_verified,
+                        )
+                        if resized_status:
+                            receipt["risk_reservation_status"] = resized_status
+                    elif final_status == OrderStatus.PARTIALLY_FILLED.value and remainder_cancel_status != "TERMINAL_VERIFIED":
+                        receipt.setdefault("risk_reservation_status", "PENDING")
                     with self.store._connect() as db:
                         db.execute("UPDATE order_intents SET status=?, execution_result_json=?, updated_at=? WHERE intent_id=?", (final_status, json.dumps(receipt, allow_nan=False), now_iso, iid))
-                    protection_verified = bool(intent.reduce_only or reconciliation.get("protection_status") == ProtectionStatus.ACTIVE.value)
                     if reservation_id and self.ledger is not None and final_status == OrderStatus.FILLED.value and protection_verified:
                         self.ledger.commit_risk(account_id, reservation_id)
-                    reconciled.append({"intent_id": iid, "previous_status": previous_status, "reconciled_status": final_status, "reconciled": True, "reservation_held": not (final_status == OrderStatus.FILLED.value and protection_verified)})
+                    reconciled.append({
+                        "intent_id": iid, "previous_status": previous_status,
+                        "reconciled_status": final_status,
+                        "reconciled": final_status != OrderStatus.PARTIALLY_FILLED.value
+                        or remainder_cancel_status == "TERMINAL_VERIFIED",
+                        "reservation_held": bool(
+                            final_status not in {OrderStatus.FILLED.value, OrderStatus.CANCELED.value,
+                                                 OrderStatus.EXPIRED.value, OrderStatus.REJECTED.value}
+                            or (final_status == OrderStatus.FILLED.value and not protection_verified)
+                            or (final_status in {OrderStatus.CANCELED.value, OrderStatus.EXPIRED.value, OrderStatus.REJECTED.value}
+                                and not protection_verified)
+                        ),
+                        "reason": stale_reason or (remote.get("remainder_cancel") or {}).get("status"),
+                    })
                     continue
 
                 if remote_status in {"cancelled", "canceled", "rejected", "expired"}:

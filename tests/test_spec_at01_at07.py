@@ -31,6 +31,7 @@ from core.trading.execution_gateway import (
     TradingMode,
     OrderStatus,
     ProtectionStatus,
+    GatewayError,
     IdempotencyConflictError,
     ParameterValidationError,
 )
@@ -473,6 +474,88 @@ def test_at06_idempotency_identical_and_conflict(temp_store):
         gateway.submit_intent(conflicting_intent)
     assert exc_info.value.status_code == 409
     assert "IDEMPOTENCY_CONFLICT" in exc_info.value.code
+
+
+def test_accepted_intent_receipt_survives_conflicts_and_is_cancellable_after_restart(temp_store):
+    trader = MagicMock()
+    trader.place_order.return_value = {
+        "status": "open", "order_id": "100101", "amount": 0.1,
+        "filled_quantity": 0,
+    }
+    trader.cancel_order.return_value = {"status": "canceled", "order_id": "100101"}
+    trader.fetch_order.return_value = {
+        "order_id": "100101", "status": "canceled", "filled": 0,
+    }
+    gateway = ExecutionGateway(temp_store, trader_client=trader)
+    original = OrderIntent(
+        intent_id="intent_durable_receipt_101", idempotency_key="idem_durable_receipt_101",
+        account_id="gateio_main", mode=TradingMode.LIVE, venue="gate", environment="LIVE",
+        instrument_id="BTCUSDT", side="LONG", order_type="limit", quantity=0.1,
+        price=68000.0, protection_plan=ProtectionPlan(stop_price=64000.0, take_profit=72000.0),
+    )
+    first = gateway.submit_intent(
+        original, market_snapshot={
+            **_fresh_paper_market("BTCUSDT", 68000.0),
+            "market": {
+                "contractSize": 1.0, "leverage_max": 100,
+                "precision": {"amount": 0.001, "price": 0.01},
+                "limits": {"amount": {"min": 0.001, "max": 1_000_000.0, "step": 0.001}},
+                "taker": 0.0005,
+            },
+        },
+    )
+    assert first["status"] == OrderStatus.ACKNOWLEDGED.value
+    with temp_store._connect() as db:
+        before = dict(db.execute(
+            "SELECT intent_id,idempotency_key,payload_hash,status,execution_result_json "
+            "FROM order_intents WHERE intent_id=?", (original.intent_id,),
+        ).fetchone())
+    assert json.loads(before["execution_result_json"])["order_id"] == "100101"
+
+    conflicting_payload = OrderIntent(
+        intent_id=original.intent_id, idempotency_key=original.idempotency_key,
+        account_id=original.account_id, mode=original.mode, venue="gate", environment="LIVE",
+        instrument_id="BTCUSDT", side="LONG", order_type="limit", quantity=0.2,
+        price=67900.0, protection_plan=ProtectionPlan(stop_price=64000.0, take_profit=72000.0),
+    )
+    with pytest.raises(IdempotencyConflictError):
+        gateway.submit_intent(conflicting_payload)
+
+    conflicting_key = OrderIntent(
+        intent_id=original.intent_id, idempotency_key="idem_different_key_101",
+        account_id=original.account_id, mode=original.mode, venue="gate", environment="LIVE",
+        instrument_id="BTCUSDT", side="LONG", order_type="limit", quantity=0.1,
+        price=68000.0, protection_plan=ProtectionPlan(stop_price=64000.0, take_profit=72000.0),
+    )
+    with pytest.raises(IdempotencyConflictError):
+        gateway.submit_intent(conflicting_key)
+
+    fenced_gateway = ExecutionGateway(
+        temp_store, trader_client=trader,
+        runtime_fence_validator=lambda _intent: False,
+    )
+    with pytest.raises(GatewayError, match="RUNTIME_LEASE_FENCED"):
+        fenced_gateway.submit_intent(original)
+    with temp_store._connect() as db:
+        after = dict(db.execute(
+            "SELECT intent_id,idempotency_key,payload_hash,status,execution_result_json "
+            "FROM order_intents WHERE intent_id=?", (original.intent_id,),
+        ).fetchone())
+    assert after == before
+    assert trader.place_order.call_count == 1
+
+    restarted_gateway = ExecutionGateway(temp_store, trader_client=trader)
+    cancelled = restarted_gateway.cancel_order(original.intent_id)
+    assert cancelled["status"] == OrderStatus.CANCELED.value
+    assert cancelled["verified_reconciled"] is True
+    assert trader.cancel_order.call_args.args == ("100101", "BTCUSDT")
+    with temp_store._connect() as db:
+        final = dict(db.execute(
+            "SELECT status,execution_result_json FROM order_intents WHERE intent_id=?",
+            (original.intent_id,),
+        ).fetchone())
+    assert final["status"] == OrderStatus.CANCELED.value
+    assert json.loads(final["execution_result_json"])["order_id"] == "100101"
 
 
 # =========================================================================

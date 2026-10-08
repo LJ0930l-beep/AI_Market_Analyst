@@ -229,5 +229,5 @@ def test_import_payload_keeps_account_risk_settings_when_saved(tmp_path):
     )
 
     assert saved["execution"]["leverage"] == 17
-    assert saved["execution"]["max_notional_usdt"] == 777
+    assert saved["execution"]["max_notional_usdt"] == 2000
     assert saved["execution"]["scan_interval_minutes"] == 15

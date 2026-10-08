@@ -90,7 +90,7 @@ describe("V2 task workspace",()=>{
   });
   it("does not invent a Bonsai ready state or decision when runtime evidence is absent", async () => {
     show("analysis");
-    const panel = await screen.findByRole("region", { name: "Bonsai trading analysis and decision records" });
+    const panel = await screen.findByRole("region", { name: "Gemini trading analysis and decision records" });
     expect(within(panel).getByText(/Latest decision · historical ledger/)).toBeInTheDocument();
     expect(within(panel).getByText("No decision record")).toBeInTheDocument();
     expect(within(panel).getByText(/No recorded decision yet/)).toBeInTheDocument();
@@ -103,15 +103,15 @@ describe("V2 task workspace",()=>{
       path.startsWith("/workspace")
         ? {
             watchlist: [{ symbol: "BTCUSDT" }], subscriptions: [], runtime: { state: "stopped" }, decisions: [], positions: [], allow_unknown_macro: false,
-            risk_cockpit: { model: { status: "UNAVAILABLE", required_model: "Bonsai-2-27B-PTQ1_0", model_id: "Bonsai-2-27B-PTQ1_0", available: false, model_available: false, checked_at: new Date().toISOString() } },
+            risk_cockpit: { model: { status: "UNAVAILABLE", required_model: "gemini-3.8-flash-high", model_id: "gemini-3.8-flash-high", available: false, model_available: false, checked_at: new Date().toISOString() } },
           }
         : path === "/accounts"
           ? { accounts: [] }
           : { watchlist: [{ symbol: "BTCUSDT" }], subscriptions: [], runtime: { state: "stopped" }, decisions: [], positions: [], allow_unknown_macro: false },
     );
     show("analysis");
-    const panel = await screen.findByRole("region", { name: "Bonsai trading analysis and decision records" });
-    expect(within(panel).getByText(/Target model: Bonsai-2-27B-PTQ1_0 · Model status: UNAVAILABLE/)).toBeInTheDocument();
+    const panel = await screen.findByRole("region", { name: "Gemini trading analysis and decision records" });
+    expect(within(panel).getByText(/Target model: gemini-3.8-flash-high · Model status: UNAVAILABLE/)).toBeInTheDocument();
     expect(within(panel).getByText("UNAVAILABLE")).toBeInTheDocument();
     expect(within(panel).queryByText(/ACTIVE|ready for the active strategy cadence/i)).not.toBeInTheDocument();
   });
@@ -120,16 +120,16 @@ describe("V2 task workspace",()=>{
       path.startsWith("/workspace")
         ? {
             watchlist: [{ symbol: "BTCUSDT" }], subscriptions: [], runtime: { state: "stopped" }, decisions: [], positions: [], allow_unknown_macro: false,
-            risk_cockpit: { model: { status: "READY", model_id: "Bonsai-2-27B-PTQ1_0", actual_model_id: "D:\\models\\Ternary-Bonsai-2-27B-PTQ1_0.gguf", model_identity_source: "verified_manifest", available: true, model_available: true, checked_at: new Date().toISOString() } },
+            risk_cockpit: { model: { status: "READY", model_id: "gemini-3.8-flash-high", actual_model_id: "gemini-3.8-flash-high", model_identity_source: "completion_probe", available: true, model_available: true, checked_at: new Date().toISOString() } },
           }
         : path === "/accounts"
           ? { accounts: [] }
           : { watchlist: [{ symbol: "BTCUSDT" }], subscriptions: [], runtime: { state: "stopped" }, decisions: [], positions: [], allow_unknown_macro: false },
     );
     show("analysis");
-    const panel = await screen.findByRole("region", { name: "Bonsai trading analysis and decision records" });
-    expect(within(panel).getByText(/Target model: Bonsai-2-27B-PTQ1_0 · Model status: READY/)).toBeInTheDocument();
-    expect(within(panel).getByText("Ternary-Bonsai-2-27B-PTQ1_0.gguf")).toBeInTheDocument();
+    const panel = await screen.findByRole("region", { name: "Gemini trading analysis and decision records" });
+    expect(within(panel).getByText(/Target model: gemini-3.8-flash-high · Model status: READY/)).toBeInTheDocument();
+    expect(within(panel).getByText("gemini-3.8-flash-high")).toBeInTheDocument();
     expect(within(panel).queryByText(/D:\\models/)).not.toBeInTheDocument();
   });
   it("downgrades a verified Bonsai identity after its runtime health receipt expires", async () => {
@@ -137,29 +137,29 @@ describe("V2 task workspace",()=>{
       path.startsWith("/workspace")
         ? {
             watchlist: [{ symbol: "BTCUSDT" }], subscriptions: [], runtime: { state: "stopped" }, decisions: [], positions: [], allow_unknown_macro: false,
-            risk_cockpit: { model: { status: "READY", model_id: "Bonsai-2-27B-PTQ1_0", actual_model_id: "Ternary-Bonsai-2-27B-PTQ1_0.gguf", model_identity_source: "verified_manifest", available: true, model_available: true, checked_at: new Date(Date.now() - 120_000).toISOString() } },
+            risk_cockpit: { model: { status: "READY", model_id: "gemini-3.8-flash-high", actual_model_id: "gemini-3.8-flash-high", model_identity_source: "completion_probe", available: true, model_available: true, checked_at: new Date(Date.now() - 120_000).toISOString() } },
           }
         : path === "/accounts"
           ? { accounts: [] }
           : { watchlist: [{ symbol: "BTCUSDT" }], subscriptions: [], runtime: { state: "stopped" }, decisions: [], positions: [], allow_unknown_macro: false },
     );
     show("analysis");
-    const panel = await screen.findByRole("region", { name: "Bonsai trading analysis and decision records" });
+    const panel = await screen.findByRole("region", { name: "Gemini trading analysis and decision records" });
     expect(within(panel).getByText(/Model status: STALE/)).toBeInTheDocument();
     expect(within(panel).getByText("Identity unverified")).toBeInTheDocument();
-    expect(within(panel).queryByText("Ternary-Bonsai-2-27B-PTQ1_0.gguf")).not.toBeInTheDocument();
+    expect(within(panel).queryByText("gemini-3.8-flash-high")).not.toBeInTheDocument();
   });
   it("does not assign a runtime model to a decision without a persisted receipt", async () => {
     window.sessionStorage.setItem("aima.trading-account", "paper_ui");
     vi.mocked(apiClient.v2).mockImplementation(async (path: string) => {
       if (path.startsWith("/workspace")) return {
         watchlist: [{ symbol: "BTCUSDT" }], subscriptions: [], runtime: { state: "stopped" }, decisions: [], positions: [], allow_unknown_macro: false,
-        risk_cockpit: { model: { status: "READY", model_id: "Bonsai-2-27B-PTQ1_0", actual_model_id: "Ternary-Bonsai-2-27B-PTQ1_0.gguf", model_identity_source: "verified_manifest", available: true, model_available: true, checked_at: new Date().toISOString() } },
+        risk_cockpit: { model: { status: "READY", model_id: "gemini-3.8-flash-high", actual_model_id: "gemini-3.8-flash-high", model_identity_source: "completion_probe", available: true, model_available: true, checked_at: new Date().toISOString() } },
       };
       if (path.startsWith("/accounts")) return { accounts: [{ account_id: "paper_ui", mode: "PAPER", venue: "simulated" }] };
       if (path.startsWith("/ai-analysis/dashboard")) return {
         status: "AVAILABLE", scope: { account_id: "paper_ui" },
-        timeline: [{ cycle_id: "blocked-cycle", action: "SYSTEM_BLOCKED", status: "BLOCKED", reason: "MODEL_RESPONSE_INVALID", scheduled_at: "2030-01-02T12:00:00Z", details: { model: null, model_receipt: { model_id: "Bonsai-2-27B-PTQ1_0", actual_model_id: "Qwen3.5-9B.gguf", verified_manifest_model_id: "Qwen3.5-9B.gguf", model_identity_source: "completion_response" }, ai_analysis: null } }],
+        timeline: [{ cycle_id: "blocked-cycle", action: "SYSTEM_BLOCKED", status: "BLOCKED", reason: "MODEL_RESPONSE_INVALID", scheduled_at: "2030-01-02T12:00:00Z", details: { model: null, model_receipt: { model_id: "gemini-3.8-flash-high", actual_model_id: "Qwen3.5-9B.gguf", verified_manifest_model_id: "Qwen3.5-9B.gguf", model_identity_source: "completion_response" }, ai_analysis: null } }],
       };
       if (path.startsWith("/ai-analysis")) return {
         account: { initial_capital_usdt: null, current_equity_usdt: null, net_pnl_usdt: null, total_roi_pct: null, margin_used_usdt: null, margin_available_usdt: null, win_rate_pct: 0, total_trades: 0, winning_trades: 0, losing_trades: 0, profit_factor: 0, max_drawdown_pct: null, avg_leverage: 0, leverage_range: "UNREPORTED" },
@@ -169,26 +169,26 @@ describe("V2 task workspace",()=>{
       return { watchlist: [{ symbol: "BTCUSDT" }], subscriptions: [], runtime: { state: "stopped" }, decisions: [], positions: [], allow_unknown_macro: false };
     });
     show("analysis");
-    const panel = await screen.findByRole("region", { name: "Bonsai trading analysis and decision records" });
-    expect(within(panel).getByText(/Target model: Bonsai-2-27B-PTQ1_0 · Model status: READY/)).toBeInTheDocument();
+    const panel = await screen.findByRole("region", { name: "Gemini trading analysis and decision records" });
+    expect(within(panel).getByText(/Target model: gemini-3.8-flash-high · Model status: READY/)).toBeInTheDocument();
     expect(within(panel).getByText(/SYSTEM_BLOCKED · BLOCKED/)).toBeInTheDocument();
     expect(within(panel).getByText(/Latest decision · historical ledger/)).toBeInTheDocument();
     expect(within(panel).getByText(/【Decision model not reported Market Thesis】/)).toBeInTheDocument();
-    expect(within(panel).queryByText(/Bonsai-2-27B-PTQ1_0 Market Thesis/)).not.toBeInTheDocument();
+    expect(within(panel).queryByText(/gemini-3.8-flash-high Market Thesis/)).not.toBeInTheDocument();
   });
   it("does not treat a configured Bonsai name as verified runtime identity", async () => {
     vi.mocked(apiClient.v2).mockImplementation(async (path: string) =>
       path.startsWith("/workspace")
         ? {
             watchlist: [{ symbol: "BTCUSDT" }], subscriptions: [], runtime: { state: "stopped" }, decisions: [], positions: [], allow_unknown_macro: false,
-            risk_cockpit: { model: { status: "READY", model_id: "Bonsai-2-27B-PTQ1_0", available: true, model_available: true, checked_at: new Date().toISOString() } },
+            risk_cockpit: { model: { status: "READY", model_id: "gemini-3.8-flash-high", available: true, model_available: true, checked_at: new Date().toISOString() } },
           }
         : path === "/accounts"
           ? { accounts: [] }
           : { watchlist: [{ symbol: "BTCUSDT" }], subscriptions: [], runtime: { state: "stopped" }, decisions: [], positions: [], allow_unknown_macro: false },
     );
     show("analysis");
-    const panel = await screen.findByRole("region", { name: "Bonsai trading analysis and decision records" });
+    const panel = await screen.findByRole("region", { name: "Gemini trading analysis and decision records" });
     expect(within(panel).getByText(/Model status: IDENTITY_UNVERIFIED/)).toBeInTheDocument();
     expect(within(panel).getByText("Identity unverified")).toBeInTheDocument();
   });
@@ -320,7 +320,7 @@ describe("V2 task workspace",()=>{
     });
     show("analysis");
     expect(await screen.findByText(/OPEN_LONG · MODEL_DECISION/)).toBeInTheDocument();
-    expect(screen.getByText(/Target model: Bonsai-2-27B-PTQ1_0/)).toBeInTheDocument();
+    expect(screen.getByText(/Target model: gemini-3.8-flash-high/)).toBeInTheDocument();
     expect(screen.getByText(/【Bonsai-2-27B-PTQ1_0 Market Thesis】/)).toBeInTheDocument();
     fireEvent.click(await screen.findByText(/Open compatibility tables and ledger details/));
     expect(await screen.findByText("fill-ui-1")).toBeInTheDocument();

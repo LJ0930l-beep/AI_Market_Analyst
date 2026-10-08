@@ -157,7 +157,7 @@ def model_weight_digest(
     """Read a target model's adapter-provided weight digest.
 
     A provider may have a fast model as its default (the Ollama adapter does),
-    while an AI-led cycle is required to use the verified Bonsai 2 27B model. Do not reuse
+    while an AI-led cycle is required to use the verified Gemini 3.8 Flash model. Do not reuse
     an unlabelled digest from a different default model; ask providers that
     support it for a health manifest for the requested target instead.
     """

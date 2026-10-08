@@ -232,6 +232,72 @@ class GateTestnetE2EService:
         selected = max(after_items, key=lambda item: cls._position_contracts(item) or Decimal("0"))
         return {**selected, "contracts": str(delta), "new_contracts": str(delta), "observed_contracts": str(after_total)}
 
+    @staticmethod
+    def _cancel_owned_protections(trader: Any, symbol: str, protection_orders: Any) -> list[dict[str, Any]]:
+        """Cancel only receipt-owned native legs and require exact terminal GETs."""
+        legs = protection_orders if isinstance(protection_orders, list) else []
+        if not legs:
+            raise GateE2EError("PROTECTION_CLEANUP_FAILED", "Gate TestNet 未返回可核验的原生保护 ID，不能确认清理完成。")
+        fetcher = getattr(trader, "fetch_protection_order", None)
+        canceler = getattr(trader, "cancel_protection_order", None)
+        if not callable(fetcher) or not callable(canceler):
+            raise GateE2EError("PROTECTION_CLEANUP_UNSUPPORTED", "Gate TestNet 原生保护查询或取消接口不可用，清理尚未完成。")
+        results: list[dict[str, Any]] = []
+        for leg in legs:
+            if not isinstance(leg, dict):
+                raise GateE2EError("PROTECTION_CLEANUP_FAILED", "Gate TestNet 原生保护回执格式无效。")
+            order_id = str(leg.get("order_id") or leg.get("id") or "")
+            if not order_id.isdigit():
+                raise GateE2EError("PROTECTION_CLEANUP_FAILED", "Gate TestNet 原生保护回执缺少可验证 ID。")
+            try:
+                observed = fetcher(order_id, symbol)
+                initial = observed.get("initial") if isinstance(observed, dict) and isinstance(observed.get("initial"), dict) else {}
+                if (
+                    not isinstance(observed, dict)
+                    or str(observed.get("order_id") or observed.get("id_string") or "") != order_id
+                    or _symbol(observed.get("symbol")) != _symbol(symbol)
+                    or _symbol(initial.get("contract")) != _symbol(symbol)
+                    or observed.get("reduce_only") is not True
+                    or initial.get("reduce_only") is not True
+                ):
+                    raise ValueError("PROTECTION_ID_SCOPE_MISMATCH")
+                state = str(observed.get("status") or "").upper()
+                if state == "OPEN":
+                    canceled = canceler(order_id, symbol)
+                    terminal = canceled.get("after") if isinstance(canceled, dict) else None
+                    if not isinstance(terminal, dict):
+                        terminal = fetcher(order_id, symbol)
+                else:
+                    terminal = observed
+                terminal_initial = terminal.get("initial") if isinstance(terminal, dict) and isinstance(terminal.get("initial"), dict) else {}
+                finish_as = str((terminal or {}).get("finish_as") or "").lower()
+                if (
+                    not isinstance(terminal, dict)
+                    or str(terminal.get("order_id") or terminal.get("id_string") or "") != order_id
+                    or _symbol(terminal.get("symbol")) != _symbol(symbol)
+                    or _symbol(terminal_initial.get("contract")) != _symbol(symbol)
+                    or terminal.get("reduce_only") is not True
+                    or terminal_initial.get("reduce_only") is not True
+                    or str(terminal.get("status") or "").upper() != "FINISHED"
+                    or not finish_as
+                ):
+                    raise ValueError("PROTECTION_TERMINAL_READBACK_UNVERIFIED")
+                results.append({
+                    "leg": str(leg.get("leg") or "").lower(),
+                    "order_id": order_id,
+                    "status": "FINISHED",
+                    "finish_as": finish_as,
+                    "observed_at": terminal.get("observed_at"),
+                })
+            except GateE2EError:
+                raise
+            except Exception as exc:
+                raise GateE2EError(
+                    "PROTECTION_CLEANUP_FAILED",
+                    f"Gate TestNet 原生保护 {order_id} 尚未通过确切终态复核（{type(exc).__name__}）。",
+                ) from exc
+        return results
+
     def run(self, request: Dict[str, Any], trader: Any) -> Dict[str, Any]:
         from .gate_accounts import GATE_TESTNET_ACCOUNT_TYPE, get_gate_account_profile
 
@@ -436,6 +502,12 @@ class GateTestnetE2EService:
                     raise GateE2EError("CLEANUP_ORDER_FAILED", "Gate TestNet reduce-only 清理订单未被确认。")
                 post_cleanup = trader.get_account_truth(include_trades=True)
                 result["post_cleanup_truth"] = {key: _safe_json(post_cleanup.get(key)) for key in ("status", "observed_at", "equity", "available_margin", "positions", "pending_orders", "fills")}
+                if (
+                    not isinstance(post_cleanup, dict)
+                    or str(post_cleanup.get("status") or "").upper() != "AVAILABLE"
+                    or not isinstance(post_cleanup.get("positions"), list)
+                ):
+                    raise GateE2EError("CLEANUP_TRUTH_UNAVAILABLE", "Gate TestNet 清理后账户/持仓复核不可用。")
                 remaining = self._remote_position(post_cleanup, symbol, side) if isinstance(post_cleanup, dict) else None
                 baseline_contracts = self._position_contracts(baseline_position)
                 remaining_contracts = self._position_contracts(remaining)
@@ -445,9 +517,9 @@ class GateTestnetE2EService:
                     and (baseline_contracts is None or remaining_contracts > baseline_contracts)
                 ):
                     raise GateE2EError("CLEANUP_NOT_RECONCILED", "Gate TestNet 清理后仍有远端持仓，必须人工继续对账。")
-                for leg in receipt.get("protection_orders") or []:
-                    if isinstance(leg, dict) and leg.get("order_id") and callable(getattr(trader, "cancel_order", None)):
-                        trader.cancel_order(str(leg["order_id"]), symbol)
+                result["protection_cleanup"] = self._cancel_owned_protections(
+                    trader, symbol, receipt.get("protection_orders"),
+                )
                 result["stages"].append(self._stage("CLEANUP", "COMPLETED", message_zh="Gate TestNet reduce-only 清理已完成并复核无剩余持仓。", evidence={"cleanup_status": cleanup_status}))
             else:
                 result["stages"].append(self._stage("CLEANUP", "SKIPPED", message_zh="调用方选择保留 TestNet 持仓；请勿把本次验收当作已清仓。", evidence={"cleanup": False}))

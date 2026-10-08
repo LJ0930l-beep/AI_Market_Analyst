@@ -892,6 +892,10 @@ class GateLiveTrader:
             "market_type": "perpetual",
             "contract_type": "perpetual",
             "contractSize": contract_size,
+            "contract_size": contract_size,
+            "quanto_multiplier": _optional_float(raw_info.get("quanto_multiplier")) or contract_size,
+            "size_step": amount_step,
+            "settle": str(market.get("settle") or "").upper() or None,
             "precision": {"amount": amount_step, "price": price_tick},
             "limits": {
                 "amount": {"step": amount_step, "min": amount_min, "max": amount_max},
@@ -1139,6 +1143,126 @@ class GateLiveTrader:
             self.last_trades_status = "UNAVAILABLE"
             self.last_trades_error_code = mapped["code"]
             return []
+
+    def get_trade_history_page(
+        self,
+        symbol: str,
+        *,
+        from_ms: int,
+        to_ms: int,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """Read one bounded Gate native futures trade-history page.
+
+        The returned records retain Gate's ``info`` payload, including signed
+        ``size``/``close_size``, fees, role, order ID, and native timestamps.
+        Callers must persist the page and coverage before advancing offset.
+        """
+        if not self.is_configured:
+            raise ValueError("GATE_CREDENTIALS_REQUIRED")
+        page_size = max(1, min(int(limit), 100))
+        page_offset = max(0, int(offset))
+        ex = self._get_exchange()
+        exchange_symbol = self._exchange_symbol(ex, symbol)
+        metadata = self.get_market_metadata(symbol)
+        fetch = getattr(ex, "fetch_my_trades", None)
+        if not callable(fetch):
+            raise ValueError("GATE_PRIVATE_TRADE_HISTORY_UNSUPPORTED")
+        rows = _execute_with_retry(
+            lambda: fetch(
+                exchange_symbol,
+                since=int(from_ms),
+                limit=page_size,
+                params={"until": int(to_ms), "offset": page_offset},
+            )
+        )
+        if not isinstance(rows, list):
+            raise ValueError("GATE_PRIVATE_TRADE_HISTORY_SCHEMA_INVALID")
+        records: list[dict[str, Any]] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                records.append({"invalid_native_row": str(type(row).__name__)})
+                continue
+            info = row.get("info")
+            records.append(dict(info) if isinstance(info, dict) else dict(row))
+        return {
+            "records": records,
+            "contract": metadata.get("native_symbol"),
+            "from_ms": int(from_ms),
+            "to_ms": int(to_ms),
+            "offset": page_offset,
+            "next_offset": page_offset + len(records),
+            "page_size": page_size,
+            "has_more": len(records) >= page_size,
+            "source": "GATE_NATIVE_FUTURES_MY_TRADES",
+        }
+
+    def get_position_close_history_page(
+        self,
+        symbol: str,
+        *,
+        from_ms: int,
+        to_ms: int,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """Read one bounded Gate native position-close history page."""
+        if not self.is_configured:
+            raise ValueError("GATE_CREDENTIALS_REQUIRED")
+        page_size = max(1, min(int(limit), 100))
+        page_offset = max(0, int(offset))
+        ex = self._get_exchange()
+        exchange_symbol = self._exchange_symbol(ex, symbol)
+        metadata = self.get_market_metadata(symbol)
+        fetch = getattr(ex, "fetch_positions_history", None)
+        if not callable(fetch):
+            raise ValueError("GATE_PRIVATE_POSITION_CLOSE_HISTORY_UNSUPPORTED")
+        rows = _execute_with_retry(
+            lambda: fetch(
+                [exchange_symbol],
+                since=int(from_ms),
+                limit=page_size,
+                params={"until": int(to_ms), "offset": page_offset},
+            )
+        )
+        if not isinstance(rows, list):
+            raise ValueError("GATE_PRIVATE_POSITION_CLOSE_HISTORY_SCHEMA_INVALID")
+        records: list[dict[str, Any]] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                records.append({"invalid_native_row": str(type(row).__name__)})
+                continue
+            info = row.get("info")
+            records.append(dict(info) if isinstance(info, dict) else dict(row))
+        return {
+            "records": records,
+            "contract": metadata.get("native_symbol"),
+            "from_ms": int(from_ms),
+            "to_ms": int(to_ms),
+            "offset": page_offset,
+            "next_offset": page_offset + len(records),
+            "page_size": page_size,
+            "has_more": len(records) >= page_size,
+            "source": "GATE_NATIVE_FUTURES_POSITION_CLOSES",
+        }
+
+    def get_order_readback(self, order_id: str, symbol: str) -> Dict[str, Any]:
+        """Read the exact native order flags needed to classify a closing fill."""
+        if not self.is_configured:
+            raise ValueError("GATE_CREDENTIALS_REQUIRED")
+        ex = self._get_exchange()
+        exchange_symbol = self._exchange_symbol(ex, symbol)
+        fetch = getattr(ex, "fetch_order", None)
+        if not callable(fetch):
+            raise ValueError("GATE_ORDER_READBACK_UNSUPPORTED")
+        row = _execute_with_retry(lambda: fetch(str(order_id), exchange_symbol))
+        if not isinstance(row, dict):
+            raise ValueError("GATE_ORDER_READBACK_SCHEMA_INVALID")
+        info = row.get("info")
+        native = dict(info) if isinstance(info, dict) else dict(row)
+        native.setdefault("order_id", str(order_id))
+        return native
 
     def set_leverage(self, symbol: str, leverage: Optional[int] = None) -> Dict[str, Any]:
         """Set position leverage on Gate.io futures."""
@@ -1622,13 +1746,63 @@ class GateLiveTrader:
         trigger = raw.get("trigger") if isinstance(raw.get("trigger"), dict) else {}
         if _symbol_compact(initial.get("contract")) != _symbol_compact(symbol):
             raise ValueError("GATE_PROTECTION_SYMBOL_MISMATCH")
-        reduced = bool(initial.get("reduce_only") or initial.get("is_reduce_only") or initial.get("is_close") or "close-" in str(raw.get("order_type") or ""))
+        native_reduce_values = []
+        for key in ("reduce_only", "is_reduce_only"):
+            if key in initial and initial[key] is not None:
+                parsed = _optional_bool(initial[key])
+                if parsed is None:
+                    raise ValueError("GATE_PROTECTION_REDUCE_ONLY_UNVERIFIED")
+                native_reduce_values.append(parsed)
+        if len(set(native_reduce_values)) > 1:
+            raise ValueError("GATE_PROTECTION_REDUCE_ONLY_CONFLICT")
+        if native_reduce_values and native_reduce_values[0] is not True:
+            raise ValueError("GATE_PROTECTION_NOT_REDUCE_ONLY")
+        reduced = bool(
+            (native_reduce_values and native_reduce_values[0] is True)
+            or _optional_bool(initial.get("is_close")) is True
+            or "close-" in str(raw.get("order_type") or "")
+        )
         if not reduced:
             raise ValueError("GATE_PROTECTION_NOT_REDUCE_ONLY")
+        raw_status = str(raw.get("status") or "UNKNOWN").upper()
+        finish_as = str(raw.get("finish_as") or "").lower() or None
+        trade_id = raw.get("trade_id")
+        # Gate price_order.trade_id is the ordinary execution order created
+        # after this conditional order triggers.  It is not a fill/trade ID.
+        # Only expose it as an actor link after a successful terminal trigger
+        # and only when its full string identity is present.
+        triggered_order_id = None
+        if raw_status == "FINISHED" and finish_as == "succeeded" and trade_id is not None:
+            candidate = str(trade_id).strip()
+            if candidate.isdigit():
+                triggered_order_id = candidate
+
+        sensitive_keys = {"api_key", "apikey", "api_secret", "secret", "password", "authorization", "token", "signature"}
+
+        def safe_native(value: Any) -> Any:
+            if isinstance(value, dict):
+                return {
+                    str(key): safe_native(item)
+                    for key, item in value.items()
+                    if str(key).strip().lower() not in sensitive_keys
+                }
+            if isinstance(value, list):
+                return [safe_native(item) for item in value]
+            return value
+
+        native_initial = safe_native(initial)
+        safe_raw = safe_native(raw)
         return {
             "order_id": str(order_id), "symbol": _symbol_compact(symbol),
-            "status": str(raw.get("status") or "UNKNOWN").upper(),
-            "finish_as": str(raw.get("finish_as") or "").lower() or None,
+            "id_string": str(raw.get("id_string") or order_id),
+            "status": raw_status,
+            "finish_time": raw.get("finish_time"),
+            "finish_as": finish_as,
+            "trade_id": str(trade_id) if trade_id is not None else None,
+            "me_order_id": str(raw.get("me_order_id")) if raw.get("me_order_id") is not None else None,
+            "triggered_order_id": triggered_order_id,
+            "initial": native_initial,
+            "raw": safe_raw,
             "amount": abs(_optional_float(initial.get("size"))) if _optional_float(initial.get("size")) is not None else None,
             "trigger_price": _optional_float(trigger.get("price")),
             "price_type": trigger.get("price_type"),

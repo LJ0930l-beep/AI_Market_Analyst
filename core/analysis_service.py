@@ -15,7 +15,7 @@ from .context import MarketContext
 from .events import EventIntelligenceResult, EventIntelligenceService, NewsEventProviderAdapter
 from .instruments import Instrument
 from .memory import MarketMemoryContext, MarketMemoryService
-from .model_routing import DEFAULT_MODEL, is_verified_bonsai_receipt
+from .model_routing import DEFAULT_MODEL, is_verified_model_receipt
 from .news_engine import NewsFetchResult, RSSNewsProvider
 from .providers import FixtureNewsProvider, ProviderError, ProviderChain, Quote
 from .providers.runtime import MarketDataBundle, ProviderSnapshot, build_default_provider, fetch_market_data
@@ -464,13 +464,13 @@ class AnalysisService:
         if source_type in {"live", "replay"} and self.llm_provider is not None:
             if type(self.llm_provider) is not OllamaProvider:
                 raise AnalysisError(
-                    "production analysis requires the pinned Bonsai provider; use demo or mock_replay for injected models",
+                    "production analysis requires the pinned Gemini provider; use demo or mock_replay for injected models",
                     code="MODEL_PROVIDER_NOT_ALLOWED",
                     provider=str(getattr(self.llm_provider, "provider_name", self.llm_provider.__class__.__name__.lower())),
                 )
             if self.llm_provider.model_name != DEFAULT_MODEL or self.llm_provider._route_error(DEFAULT_MODEL):
                 raise AnalysisError(
-                    "production analysis provider is not configured for the pinned Bonsai route",
+                    "production analysis provider is not configured for the pinned Gemini route",
                     code="MODEL_ROUTE_NOT_ALLOWED",
                     provider=self.llm_provider.provider_name,
                 )
@@ -544,9 +544,9 @@ class AnalysisService:
                 model_policy = SignalPolicy.from_context(context)
                 response, metadata = analyze_with_repair(self.llm_provider, context, model_policy)  # type: ignore[arg-type]
                 model_receipt = metadata.to_dict()
-                if source_type in {"live", "replay"} and not is_verified_bonsai_receipt(model_receipt):
+                if source_type in {"live", "replay"} and not is_verified_model_receipt(model_receipt):
                     raise AnalysisError(
-                        "production model output did not include a verified Bonsai inference receipt",
+                        "production model output did not include a verified Gemini inference receipt",
                         code="MODEL_RECEIPT_UNVERIFIED",
                         provider=provider_name,
                     )

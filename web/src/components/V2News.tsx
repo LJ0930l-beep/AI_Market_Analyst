@@ -128,7 +128,7 @@ export function V2News({
       <div className="v2-news-footer">
         {zh && !translated && (
           <button className="v2-btn-inline v2-btn-inline--translate" disabled={busy} onClick={() => void translate()}>
-            {busy ? "翻译中…" : "Bonsai-2-27B 翻译"}
+            {busy ? "翻译中…" : "Gemini 3.8 Flash 翻译"}
           </button>
         )}
         {typeof event.url === "string" && event.url.startsWith("https://") && (

@@ -21,7 +21,7 @@ DEFAULT_SECTIONS = {
 # use these values to choose a setup, while the execution gateway continues to
 # enforce the account's hard limits.  Keeping the profile versioned makes a
 # later replay explain which rules were active for a decision.
-STRATEGY_PROFILE_VERSION = "ai_strategy_pack_2026_09_v8_nofx_prompts"
+STRATEGY_PROFILE_VERSION = "ai_strategy_pack_2026_10_v10_fixed_2000"
 
 
 def _profile(**values):
@@ -69,9 +69,16 @@ TEMPLATES = [
       "2. 市价用于触发完成度 ≥70%、收盘确认且盘口成本合格的即时反转；止损必须位于结构失效点外。\n"
       "3. 【新闻背景】：无重大反向利空利好，中性新闻为常规环境。",
       "decision_process": "核查已核验的资金费率、OI、VWAP、已收盘 15m 结构、1h 背景与新闻风险；缺失的衍生品数据标 UNKNOWN，不得当作共振。三项可核验证据、结构失效位及净盈亏比均成立时优先挂被动限价；否则 WAIT 并列明缺口，输出可审计 JSON。"}},
+    {"id": "price_action_structure", "name": "价格结构 · 15m PA", "style": "PRICE_ACTION", "scan_interval_minutes": 15, "order_preference": "AUTO",
+     "execution_defaults": {"universe_mode": "ALL", "symbols": [], "risk_per_trade_pct": 0.15, "leverage": 100, "max_positions": 2, "max_margin_pct": 12.0, "max_notional_usdt": 1500.0, "min_confidence": 70, "min_net_rr": 2.0, "cooldown_minutes": 15, "order_preference": "AUTO", "scan_interval_minutes": 15, "atr_adaptive_sizing": True, "consecutive_loss_lock_enabled": True, "us_open_defense_enabled": False},
+     "profile": _profile(version="price_action_structure_v1", strategy_id="price_action_structure", family="PRICE_ACTION_STRUCTURE", candidate_strategy_ids=[], signal_timeframe="15m", context_timeframes=["1h"], minimum_net_rr=2.0, target_r_multiples=[2.0, 3.0], order_preference="AUTO", limit_priority=True, limit_ttl_seconds=900, max_limit_distance_pct=0.95, allow_market_entry=True, allow_future_limit=True, atr_stop_multiple=2.0, major_stop_floor_pct=1.8, alt_stop_floor_pct=2.8, max_entries_per_hour=2, cooldown_minutes=15, news_mode="RISK_FILTER_WITH_SYMBOL_CATALYST"),
+     "sections": {**DEFAULT_SECTIONS, "role": "你是 Gate 合约账户的双向价格行为交易员；根据本轮已收盘价格结构、账户与交易条件，自主判断是否有值得执行的机会。", "frequency": "由系统每 15 分钟评估；信号周期为已收盘 15m，1h 只提供结构背景。每轮先管理已有仓位与本系统委托，再比较允许标的。",
+      "entry_standards": "关注已确认的 swing high/low、当前收盘前的区间、收盘突破结构位（BOS）、扫流动性后回收，以及突破后的回测。技术摘要只呈现按时间可见的证据；这些结构是供 AI 判断的参考，不是必须同时出现的条件、分数或自动开仓信号。多空对称评估；价格结构清晰时可独立判断，不要求新闻必须存在。",
+      "decision_process": "先保护本系统持仓与委托，再比较 15m 触发证据和 1h 背景。AI 自主判断方向、入场方式、USDT 名义金额、杠杆、止损和止盈；止损围绕观点失效位，目标结合费用、滑点和真实账户保证金决定。可用价格行为证据不足、现价位置不合适或账户条件不允许时说明原因并 WAIT；所有提案经同一 Gate 网关核验。",
+      "custom_prompt": "technical_context.timeframes.*.price_action 是已收盘K线的有限结构摘要；as_of 是本轮证据截断。pivot_at 是拐点收盘，confirmation_bar_at 是右侧确认收盘；confirmed_at=max(右侧确认收盘,来源实际可用时间)。事件 bar_at 是事件K线收盘；晚到历史数据不得说成当时已知。prior_range 排除最新收盘K线。结构证据不是代码入场门槛；缺少新闻不否决技术机会。"}},
 ]
 
-# One common decision/execution route, four distinct market hypotheses.  The
+# One common decision/execution route, five distinct market hypotheses.  The
 # older percentage-score, compulsory ATR/RR and market-entry prose conflicted
 # with the model-led Gate route.  Keep the cadence and equity/margin settings
 # while replacing only that obsolete instruction text.
@@ -116,16 +123,145 @@ _NOFX_STYLE_BRIEFS = {
         "只有方向、失效价和扣费后目标可解释时在关键位挂被动限价；否则列出缺口与下一触发价。"
         "减少横盘中反复试单，对本系统失效委托先撤单核验，再考虑新方案。"
     ),
+    "price_action_structure": (
+        "价格结构 · 15m 双向策略：以已确认 swing high/low、收盘 BOS、扫流动性回收和突破回测为证据，"
+        "结合 1h 背景、实际报价与账户事实。形态只供 AI 自主比较，不设置形态分数或必备组合；"
+        "可在无相关新闻时依据充分的技术证据决策，AI 自主选择金额、杠杆、入场及保护价。"
+    ),
 }
+# Match exact prior built-in text when reading existing saved strategies.
+# Execution amounts, margin settings and operator-authored supplements stay intact.
+_V8_NOFX_STYLE_BRIEFS = dict(_NOFX_STYLE_BRIEFS)
+_NOFX_STYLE_BRIEFS = {
+    "aggressive_impulse": (
+        "NoFX 激进风格 / Gemini High · 5m 动量：比较已收盘突破延续、趋势再加速与扫荡回收，选最清晰的一类，"
+        "不把 EMA20 回踩、新闻存在或背景同向当作必备组合。用 15m/1h 解释空间与反证；辨别启动与涨跌末端，"
+        "关键位优先预挂限价，不等触价后才申请。价格已启动且即时成交的净收益空间优于等待时可市价；"
+        "延续证据不足、追价使目标空间耗尽或账户容量不足时等待，并注明具体触发价/条件。"
+    ),
+    "aggressive_breakout": (
+        "NoFX 激进风格 / Gemini High · 15m 扩张：识别已收盘区间突破、首次回测与趋势延续；"
+        "比较突破方向的成交证据和假突破反证，1h/BTC 是背景而非机械同向门槛。首次回测优先限价；"
+        "收盘确认且价位、流动性与扣费后空间仍合理时可市价。不能反复交易已失效的旧突破；"
+        "有系统挂单时先判断保留或撤销，未核验撤单成功前不把其保证金视为可用。"
+    ),
+    "conservative_pullback": (
+        "NoFX 保守风格 / Gemini High · 15m 顺势回踩：依据 1h 已收盘结构判断趋势，"
+        "比较支撑阻力、EMA 或 VWAP 回踩后的拒绝/重新接受与趋势破坏证据。优先关键位限价，"
+        "明确失效位与扣费后目标空间，再按账户资金配置金额和杠杆。不要为高胜率假设牺牲亏盈结构；"
+        "短时噪声不自动触发平仓，新的结构证据才支持调整保护或退出。新闻空白不单独否决技术机会。"
+    ),
+    "conservative_defense": (
+        "NoFX 保守风格 / Gemini High · 15m 防守反转：先管理系统持仓，比较区间边缘拒绝、"
+        "VWAP 偏离回归与拥挤仓位失效。区分逆势猜顶底与已收盘的扫荡回收/吸收证据；"
+        "OI、资金费率、CVD 只有真实且新鲜时才辅助确认，缺失保持未知，可凭充分价格结构判断。"
+        "避免横盘重复试单；关键位限价优先，失效位或扣费后空间不清楚时列明缺口和下一触发条件。"
+    ),
+    "price_action_structure": (
+        "价格行为 / Gemini High · 15m 价格结构：比较已确认 swing high/low、收盘 BOS、"
+        "扫流动性回收与突破回测；1h 提供背景，不设置形态分数或必备组合。"
+        "所有证据必须在 as_of 时已知，区间参考排除最新收盘；无相关新闻时也可依充分技术证据判断。"
+        "给出支持观点的结构和最强反证，自主配置金额、杠杆、入场及保护价；"
+        "不能把未确认拐点、正在形成的K线或晚到历史数据当成已知触发。"
+    ),
+}
+
+# Retain the exact old default for read-only migration of built-in saved rows.
+# Operator-authored text is never replaced by similarity or a version guess.
+_V10_NOFX_STYLE_BRIEFS = dict(_NOFX_STYLE_BRIEFS)
+_NOFX_STYLE_BRIEFS["price_action_structure"] = (
+    "价格行为 / Gemini High：先核查可见新闻是否有新事件、相对预期异动或标的催化，核对来源、发布时间/可用时间和价格反应；"
+    "旧闻/重复报道不算新催化，无新闻或档案缺失标UNKNOWN而非没有异动，不因新闻空白自动否决技术机会。"
+    "再用多根已收盘4h和1h的swing高低点、BOS、区间与突破后跟随证据判断"
+    "趋势、震荡或过渡；在timeframe_analysis分别解释4h/1h，matched_conditions写明环境、交易类型与最强反证。"
+    "4h看主结构，1h看当前推进/回调；冲突时解释层级，不机械要求同向。15m用连续K线选择入场，15分钟是扫描间隔而非单根K线决策。"
+    "震荡：核验上下边界多次拒绝与区间仍有效，下沿拒绝/扫荡收回做多，上沿拒绝/扫荡收回做空；"
+    "区间中部不机械高空低多，收盘突破后持续接受或边界失效则停止旧区间反向交易。"
+    "趋势：高低点抬升优先多，降低优先空；结合突破后收盘跟随、回调深度与关键位保持判断强弱，"
+    "选择顺势回踩或突破回测，已确认延续且成本/位置合理可市价，不为等待完美回测错失全部机会；"
+    "不能把涨跌末端追价或逆势猜顶底当顺势。过渡：区分突破接受与假突破回收；证据不明才WAIT并明确触发/失效条件。"
+    "止损在观点失效位，止盈依据区间对侧或下一结构位；有效趋势允许随新结构调整保护并延续利润，"
+    "不微利抢平、不拖亏，不为了净盈亏比虚构目标。未知证据不得冒充确认；形态不自动保证盈利。"
+)
+
+# Preserve the exact v32 default for read-only migration; custom text stays intact.
+_V32_NOFX_STYLE_BRIEFS = dict(_NOFX_STYLE_BRIEFS)
+_NOFX_STYLE_BRIEFS["price_action_structure"] = (
+    "价格行为 / Gemini High：先核查新闻新事件、相对预期异动、来源可用时间及价格反应；"
+    "旧闻不算新催化，新闻档案缺失标UNKNOWN，不因新闻空白自动否决技术机会。"
+    "15m是主要交易周期：用多根已收盘K线、已确认swing高低点、BOS、区间和突破跟随判断趋势、震荡或过渡；"
+    "1h/4h只提供背景方向、重要支撑阻力与目标空间，不替代15m判断，不机械要求同向。"
+    "5m是入场周期：在15m交易位置和方向成立后，用连续已收盘5m的拒绝、扫荡收回、突破接受或回测确认选择入场；"
+    "单根5m涨跌不改变15m环境，不把15分钟扫描间隔当单根K线分析。"
+    "震荡：核验15m上下边界反复拒绝，下沿5m拒绝/扫荡收回做多，上沿对应做空；"
+    "区间中部不机械入场，突破持续接受则停止旧区间反向交易。"
+    "趋势：15m高低点抬升优先多，降低优先空；结合跟随强弱、回调深度和关键位保持，"
+    "用5m顺势回踩或突破回测入场，已确认延续且成本/位置合理可市价，不强等完美回测或追涨跌末端。"
+    "过渡：区分有效突破与假突破回收，证据不明才WAIT并明确下一触发/失效。"
+    "止损依据交易观点失效，5m触发的噪声不能冒充15m结构失效；止盈依据15m结构目标并参考1h/4h空间。"
+    "结构有效允许调整保护延续利润，不微利抢平、不拖亏，不虚构远端目标。"
+    "timeframe_analysis分别解释15m环境、5m入场及1h/4h背景，matched_conditions说明交易类型与最强反证。"
+    "未知证据不冒充确认；形态不保证盈利。"
+)
+
+# Experimental PA seed authored by the verified Gemini review of the complete
+# v25 optimization ledger, supplemented by the operator's explicit regime
+# framework. Independent profitability remains unproven.
+_PA_RESEARCH_SEED_INSTRUCTION = (
+    "BOS回测与扫荡收回分别评估；bar_at及OHLC触位且收在突破方向仅证明基础回测发生，不能说成未触价或完整入场确认。"
+    "WAIT须明确缺口和前置触发，不无依据移动目标。费用后空间不足时不编造远端目标。"
+    "每笔固定2000USDT名义目标、AUTO订单，AI选杠杆受Gate、账户及保证金限制；"
+    "基础回测不是完整入场信号，不触价盲入、不静默缩仓。"
+    "结构失效及时撤单或退出；结构有效时留出利润空间，不微利抢平、不拖亏、不强行开仓。"
+)
+
 for _template_item in TEMPLATES:
+    if _template_item["id"] == "price_action_structure":
+        _template_item["profile"].update(
+            version="price_action_structure_v3_main15_entry5", signal_timeframe="15m",
+            entry_timeframe="5m", context_timeframes=["1h", "4h"],
+        )
+    _template_item["profile"]["prompt_version"] = STRATEGY_PROFILE_VERSION
+    _template_item["execution_defaults"].update(
+        sizing_mode="FIXED_NOTIONAL", fixed_notional_usdt=2000.0,
+        max_notional_usdt=2000.0, leverage_mode="VENUE_LIMIT",
+    )
     _brief = _NOFX_STYLE_BRIEFS[_template_item["id"]]
+    _custom_prompt = (
+        "as_of 是本轮证据截断。confirmed_swings.pivot_at 是拐点收盘，confirmation_bar_at 是右侧确认收盘；available_at 为来源最晚可用点，"
+        "若与 confirmed_at 相同可省略；confirmed_at=max(确认收盘,可用点)。prior_range 排除最新收盘。事件 bar_at 是事件K线收盘，"
+        "confirmed_at 是实际可知点；晚到数据不得说成当时已知。引用事实不可晚于 as_of。"
+        if _template_item["id"] == "price_action_structure" else
+        "不要把某个固定指标或置信分数当作唯一开仓门槛。仅引用本轮可核验的已收盘 K 线、盘口、持仓和新闻；数据缺失保持未知。只管理本系统能核对订单 ID 的挂单。"
+    )
+    _decision_process = (
+        "先核对账户事实和系统持仓/挂单，再比较本轮候选的机会及最强反证，只输出一项动作。"
+        "先定失效价和扣费后目标，每笔开仓名义价值固定2000 USDT；根据权益、可用保证金、总占用和交易所上限自主选杠杆。"
+        "挂单、提案不等于成交；撤单成功以回读为准。持仓必须带止盈止损，有新证据可动态调整。"
+        "WAIT说明具体缺口与下一触发价/条件；不重复旧理由、不把置信分数当胜率，不强行交易。"
+    )
+    if _template_item["id"] == "price_action_structure":
+        _decision_process = (
+            "先核对账户、系统持仓/挂单，再查新闻新事件/预期异动及价格反应；"
+            "随后用多根已收盘15m判断主要趋势/震荡/过渡，1h/4h只评估背景与空间，再用5m确认入场，解释最强反证。"
+            "新闻未知不伪造，无异动技术机会仍可交易。每轮只输出一项动作。"
+            "止损按观点失效，目标按真实结构和扣费后空间，不微利抢平、不拖亏。"
+            "每笔固定2000 USDT名义目标；AI杠杆受账户保证金及Gate约束，资金不足明确拒绝。"
+            "WAIT写明缺口/下一触发；已有结构仍有效可持有或更新保护，失效撤单/退出，回执才证明执行。"
+        )
     _template_item["sections"] = {
-        "role": "你是 Gate 合约账户的自主交易员；从真实行情、已有持仓、委托与新闻中选一笔最有依据的机会。",
+        "role": "你是 Gemini High 驱动的 Gate 双向自主交易员；目标是扣费后净收益和回撤质量，判断只基于本轮可核验证据。",
         "frequency": f"每 {_template_item['scan_interval_minutes']} 分钟扫描一次；先管理已有持仓，再比较允许标的。",
         "entry_standards": _brief,
-        "decision_process": "按 NoFX 的决策顺序：先看近期已平仓表现（有记录才用），再检查本系统持仓和挂单，最后比较新机会并只选一项动作。自主决定继续持有、调整保护、撤销失效挂单、开多、开空或等待。开仓填写限价/市价、USDT 名义金额、杠杆、入场、止损与止盈；限价优先，成交紧迫时可市价。以扣费后净收益及回撤质量为目标，不为了增加单数强行成交。程序只复核账户事实、交易所合约规则与保证金上限；等待需列出可验证缺口及下一触发价。",
-        "custom_prompt": "不要把某个固定指标或置信分数当作唯一开仓门槛。仅引用本轮可核验的已收盘 K 线、盘口、持仓和新闻；数据缺失保持未知。只管理本系统能核对订单 ID 的挂单。",
+        "decision_process": _decision_process,
+        "custom_prompt": _custom_prompt,
     }
+
+
+# Legacy definitions remain for reading immutable historical experiments only.
+# New production selection and defaults expose the operator's single PA strategy.
+ACTIVE_TEMPLATE_IDS = ("price_action_structure",)
+ACTIVE_TEMPLATES = [item for item in TEMPLATES if item["id"] in ACTIVE_TEMPLATE_IDS]
 
 
 class AIStrategyBook:
@@ -159,7 +295,7 @@ class AIStrategyBook:
             for template in TEMPLATES:
                 if template["name"] == str(name).strip():
                     return template
-        return TEMPLATES[2]
+        return ACTIVE_TEMPLATES[0]
 
     @staticmethod
     def _json_object(value: object, fallback: dict) -> dict:
@@ -280,6 +416,9 @@ class AIStrategyBook:
         if str(normalized.get("entry_standards") or "") in {
             _PREVIOUS_NOFX_STYLE_BRIEFS.get(template_id),
             _V7_NOFX_STYLE_BRIEFS.get(template_id),
+            _V8_NOFX_STYLE_BRIEFS.get(template_id),
+            _V10_NOFX_STYLE_BRIEFS.get(template_id),
+            _V32_NOFX_STYLE_BRIEFS.get(template_id),
         }:
             # Upgrade only the unmodified built-in brief.  User-authored
             # strategy prose remains authoritative and never gets replaced
@@ -305,7 +444,7 @@ class AIStrategyBook:
     def active(self, account_id: str) -> dict:
         with self.store._connect() as db:
             row = db.execute("SELECT * FROM ai_strategy_instructions WHERE account_id=? ORDER BY revision DESC LIMIT 1", (account_id,)).fetchone()
-        default_template = TEMPLATES[2]
+        default_template = ACTIVE_TEMPLATES[0]
         result = {
             "account_id": account_id,
             "revision": 0,
@@ -362,6 +501,14 @@ class AIStrategyBook:
                     "signal_timeframe": runtime["signal_timeframe"],
                     "context_timeframes": list(runtime["context_timeframes"]),
                 }
+                if result["template_id"] == "price_action_structure":
+                    frames = list(dict.fromkeys([
+                        *[tf for tf in runtime["context_timeframes"] if tf not in {"5m", "15m"}], "1h", "4h",
+                    ]))
+                    result["nofx_runtime"] = {**runtime, "signal_timeframe": "15m", "context_timeframes": ["5m", *frames]}
+                    result["profile"]["signal_timeframe"] = "15m"
+                    result["profile"]["entry_timeframe"] = "5m"
+                    result["profile"]["context_timeframes"] = frames
         raw_execution = self._json_object(row["execution_json"], {}) if row else None
         if row is None:
             raw_execution = {
@@ -381,6 +528,10 @@ class AIStrategyBook:
                 # The NoFX prompt update must not reset the operator's saved
                 # leverage, symbol universe, or margin ceiling on Gate Live.
                 raw_execution = {**deepcopy(template.get("execution_defaults") or {}), **raw_execution}
+            if is_builtin_template and stored_profile.get("prompt_version") != STRATEGY_PROFILE_VERSION:
+                # Explicit operator update; retain the saved margin budget.
+                raw_execution.update(sizing_mode="FIXED_NOTIONAL", fixed_notional_usdt=2000.0,
+                                     max_notional_usdt=2000.0, leverage_mode="VENUE_LIMIT")
         profile_interval = self._profile_signal_interval(result.get("profile"))
         if profile_interval is not None:
             # The selected template owns cadence.  Keep the persisted
@@ -390,6 +541,19 @@ class AIStrategyBook:
         if runtime_interval is not None:
             raw_execution["scan_interval_minutes"] = runtime_interval
         result["execution"] = normalize_execution(raw_execution)
+        if result['template_id'] not in ACTIVE_TEMPLATE_IDS:
+            # Explicit operator specialization: preserve stored revision and
+            # account limits, but do not execute retired instructions/runtime.
+            # No live DB rewrite or session start occurs in this read path.
+            result['retired_template_id'] = result['template_id']
+            result['specialization_status'] = 'PRICE_ACTION_EFFECTIVE_PROJECTION_NOT_DB_REWRITE'
+            result.update(template_id=default_template['id'], name=default_template['name'],
+                          style=default_template['style'], profile=deepcopy(default_template['profile']),
+                          sections=deepcopy(default_template['sections']), nofx_runtime=None)
+            result['execution'].update(scan_interval_minutes=15, order_preference='AUTO',
+                                       sizing_mode='FIXED_NOTIONAL', fixed_notional_usdt=2000.0,
+                                       max_notional_usdt=2000.0, leverage_mode='VENUE_LIMIT')
+            result['execution'] = normalize_execution(result['execution'])
         result["digest"] = hashlib.sha256(json.dumps(result, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
         return result
 
@@ -412,6 +576,8 @@ class AIStrategyBook:
         current = self.active(account_id)
         runtime = self._normalize_nofx_runtime(nofx_runtime) if replace_nofx_runtime else current.get("nofx_runtime")
         template = self._template(template_id or current.get("template_id"), name=name)
+        if template['id'] not in ACTIVE_TEMPLATE_IDS:
+            raise ValueError("STRATEGY_TEMPLATE_RETIRED")
         if template_id is not None and template["id"] != str(template_id).strip():
             raise ValueError("STRATEGY_TEMPLATE_INVALID")
         sections = self._sections_for_template(template, sections)
@@ -423,6 +589,8 @@ class AIStrategyBook:
                 "order_preference": template["order_preference"],
             }
         execution = normalize_execution(execution)
+        execution.update(sizing_mode='FIXED_NOTIONAL', fixed_notional_usdt=2000.0,
+                         max_notional_usdt=2000.0, leverage_mode='VENUE_LIMIT')
         profile = deepcopy(template["profile"])
         profile_preference = str(profile.get("order_preference") or "AUTO").upper()
         if bool(profile.get("limit_priority")):
@@ -483,4 +651,4 @@ class AIStrategyBook:
             }
             if str(account_id).lower() in {"gate_testnet", "gate_live"} else dict(POLICY)
         )
-        return {"active": active, "templates": TEMPLATES, "fixed_policy": policy}
+        return {"active": active, "templates": ACTIVE_TEMPLATES, "fixed_policy": policy}

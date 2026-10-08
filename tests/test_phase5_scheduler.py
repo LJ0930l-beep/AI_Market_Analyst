@@ -178,55 +178,12 @@ class SchedulerCoreTests(unittest.TestCase):
         self.assertEqual(unavailable.capability, "probe_unavailable")
         self.assertEqual(unavailable.reason, "gpu_probe_unavailable")
 
-    def _probe_with_managed_bonsai(self, process_rows: str, *, managed_pid: int = 123) -> ResourceProbeResult:
-        with tempfile.TemporaryDirectory() as directory:
-            pid_file = Path(directory) / "bonsai_server.pid"
-            pid_file.write_text(str(managed_pid), encoding="utf-8")
-            executable = Path(r"D:\app\runtime\llama-server.exe")
-            return LocalResourceProbe(
-                command_runner=NvidiaSmiRunner(process_rows),
-                managed_bonsai_pid_file=pid_file,
-                managed_bonsai_executable_path=executable,
-            ).probe()
-
-    def test_local_resource_probe_only_exempts_bonsai_when_pid_and_exact_path_match(self):
-        managed = self._probe_with_managed_bonsai(
-            r"123, D:\app\runtime\llama-server.exe, [N/A]" + "\n"
-        )
-        self.assertTrue(managed.available)
-
-        for process_rows in (
-            # Matching executable path but a PID different from the runner's PID file.
-            r"456, D:\app\runtime\llama-server.exe, [N/A]" + "\n",
-            # Matching PID but another llama-server binary must remain a competitor.
-            r"123, D:\other\llama-server.exe, [N/A]" + "\n",
-            # A basename-only row cannot prove executable ownership.
-            "123, llama-server.exe, [N/A]\n",
-            # Ollama is a competing GPU process too; it is not implicitly trusted.
-            "789, C:\\Program Files\\Ollama\\ollama.exe, [N/A]\n",
-        ):
-            with self.subTest(process_rows=process_rows):
-                result = self._probe_with_managed_bonsai(process_rows)
-                self.assertFalse(result.available)
-                self.assertEqual(result.reason, "gpu_competition")
-
-    def test_managed_bonsai_paths_follow_runner_pid_file_and_only_read_binary_dir_config(self):
-        with tempfile.TemporaryDirectory() as directory:
-            project_root = Path(directory)
-            config_file = project_root / "infra" / "bonsai" / "config.env"
-            config_file.parent.mkdir(parents=True)
-            config_file.write_text(
-                "SOME_CREDENTIAL=must-not-be-loaded\nBONSAI_BIN_DIR=infra\\bonsai\\bin\n",
-                encoding="utf-8",
-            )
-            with patch.dict(os.environ):
-                os.environ.pop("BONSAI_BIN_DIR", None)
-                pid_file, executable = LocalResourceProbe._managed_bonsai_paths(project_root)
-            self.assertEqual(pid_file, project_root / "logs" / "bonsai_server.pid")
-            self.assertEqual(
-                executable,
-                (project_root / "infra" / "bonsai" / "bin" / "llama-server.exe").resolve(),
-            )
+    def test_remote_inference_resource_probe_does_not_require_gpu(self):
+        from core.scheduler import RemoteInferenceResourceProbe
+        result = RemoteInferenceResourceProbe().probe()
+        self.assertTrue(result.available)
+        self.assertEqual(result.capability, "remote_inference")
+        self.assertFalse(result.details["provider_availability_verified_here"])
 
     def test_session_policy_handles_dst_weekend_close_crypto_and_explicit_always(self):
         equity = instrument_for("AAPL")

@@ -30,6 +30,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--instance-id", default=f"standalone-{os.getpid()}-{uuid4().hex[:12]}")
     parser.add_argument("--ownership-token", default=uuid4().hex)
     parser.add_argument("--owner-pid", type=int, default=0)
+    parser.add_argument("--no-auto-resume", action="store_true",
+                        help="Recover the API without restarting monitoring or autonomous trading")
     args = parser.parse_args(argv)
     if args.host not in {"127.0.0.1", "localhost", "::1"}:
         parser.error("the packaged sidecar binds only to loopback")
@@ -40,6 +42,8 @@ def main(argv: list[str] | None = None) -> int:
     os.environ["AIMA_OWNERSHIP_TOKEN"] = args.ownership_token
     os.environ["AIMA_SIDECAR_BOUND_PORT"] = str(args.port)
     os.environ.setdefault("AIMA_PUBLIC_HYDRATION", "1")
+    if args.no_auto_resume:
+        os.environ["AIMA_DISABLE_AUTO_RESUME"] = "1"
     # Import only after the session environment is fixed so FastAPI's global
     # app is constructed with the packaged-sidecar lifecycle boundary.
     from apps.api.main import app

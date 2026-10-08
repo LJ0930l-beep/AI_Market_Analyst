@@ -7,7 +7,7 @@ type Sections = Record<string, string>;
 export interface ExecutionSettings {
   symbols: string[]; universe_mode: string; scan_interval_minutes: number; direction: string; sizing_mode: string; fixed_notional_usdt: number;
   equity_notional_pct: number; max_notional_usdt: number; risk_per_trade_pct: number;
-  leverage: number; max_positions: number; max_margin_pct: number; margin_cap_mode: 'PERCENT' | 'FIXED_USDT'; max_margin_usdt: number; min_confidence: number;
+  leverage: number; leverage_mode?: 'STRATEGY_LIMIT' | 'VENUE_LIMIT'; max_positions: number; max_margin_pct: number; margin_cap_mode: 'PERCENT' | 'FIXED_USDT'; max_margin_usdt: number; min_confidence: number;
   min_net_rr: number; cooldown_minutes: number; order_preference: string;
   atr_adaptive_sizing: boolean; consecutive_loss_lock_enabled: boolean; us_open_defense_enabled: boolean;
 }
@@ -47,6 +47,13 @@ const nofxConfigMaxBytes = 200_000;
 const tabs = ['资金与风控', '交易范围', 'AI 决策指令', '配置预览'];
 const money = (value: number | null) => value === null ? '等待账户同步' : `${value.toLocaleString('zh-CN', { maximumFractionDigits: 2 })} USDT`;
 const orderLabel = (value: string) => value.toUpperCase() === 'LIMIT' ? '限价单' : value.toUpperCase() === 'MARKET' ? '市价单' : '自动选择';
+const templateStyleLabel = (style: string) => {
+  const normalized = style.trim().toUpperCase();
+  if (normalized === 'AGGRESSIVE') return '激进策略';
+  if (normalized === 'CONSERVATIVE') return '保守策略';
+  if (normalized === 'PRICE_ACTION') return '价格行为 / 自主';
+  return `自定义风格 · ${style.trim() || '未分类'}`;
+};
 const pythonTextSlice = (value: string, limit: number) => Array.from(value).slice(0, limit).join('');
 const nofxIndicatorLabels: Record<string, string> = {
   raw_klines: 'K 线', ema: 'EMA', macd: 'MACD', rsi: 'RSI', atr: 'ATR',
@@ -98,7 +105,7 @@ function StrategyRuntimeCard({ strategy }: { strategy: Strategy }) {
       <span>{runtime ? 'NOFX 参数映射 · 本地执行' : '本地策略档案'}</span>
     </header>
     <p className="ai-runtime-card__explanation">{runtime
-      ? '此策略包含从 NOFX 导入的运行参数；候选筛选、Bonsai 决策与 Gate 委托仍由本项目链路处理，不代表运行 NOFX 原生策略引擎。'
+      ? '此策略包含从 NOFX 导入的运行参数；候选筛选、Gemini 决策与 Gate 委托仍由本项目链路处理，不代表运行 NOFX 原生策略引擎。'
       : '当前策略按本地 profile 与 Gate 配置运行；未附带 NOFX runtime 元数据，因此这里不宣称使用 NOFX 原生策略引擎。'}</p>
     <div className="ai-runtime-card__summary">
       <div><small>AI 评估节奏</small><strong>{strategy.execution.scan_interval_minutes} 分钟</strong></div>
@@ -348,7 +355,7 @@ export function AIStrategyLibrary({ accountId }: { accountId: string }) {
     : '当前策略段为空；后端不会附加自定义策略块。';
   const numeric = (key: keyof ExecutionSettings, label: string, min: number, max: number, step = 1, hint = '') => <label>{label}<input type="number" min={min} max={max} step={step} required value={Number.isFinite(execution?.[key]) ? execution?.[key] as number : ''} onChange={event => setSetting(key, event.target.value === '' ? NaN : Number(event.target.value))} /><small>{hint}</small></label>;
   return <section className="ai-strategy-library" data-no-translate>
-    <header className="ai-strategy-intro"><div><span className="ai-strategy-eyebrow">STRATEGY STUDIO / BONSAI 2 27B</span><h2>让策略驱动 AI 找机会。</h2><p>全市场候选先按流动性、上涨动量、下跌动量与波动率分层，再由 AI 结合新闻和多周期 K 线择优。{aiAuthoredGate ? 'AI 自定仓位与订单方式；交易网关核验保证金和 Gate 合约规则。' : '仓位与风控仍由代码执行。'}</p></div><Link to="/">交易指挥舱 →</Link></header>
+    <header className="ai-strategy-intro"><div><span className="ai-strategy-eyebrow">STRATEGY STUDIO / GEMINI 3.8 FLASH HIGH</span><h2>让策略驱动 AI 找机会。</h2><p>全市场候选先按流动性、上涨动量、下跌动量与波动率分层，再由 AI 结合新闻和多周期 K 线择优。{aiAuthoredGate ? '固定名义价值开仓，AI 自选杠杆与订单方式；交易网关核验保证金和 Gate 合约规则。' : '仓位与风控仍由代码执行。'}</p></div><Link to="/">交易指挥舱 →</Link></header>
     <ol className="ai-strategy-flow"><li>配置与指令</li><li>新闻 + {draft?.execution.scan_interval_minutes === 5 ? '5m / 15m / 1h' : '15m / 1h'}</li><li>AI 方案与金额</li><li>{aiAuthoredGate ? '保证金核验 → Gate 挂单 → 成交回报' : '风控 → 下单 → 回执'}</li></ol>
     <p className="ai-strategy-scope">账户 <strong>{accountId || '尚未选择'}</strong> · 生效版本 {library?.active.revision ?? '—'} · 每次决策保留配置快照</p>
     <section className="ai-opportunity-engine" aria-label="机会捕捉流程">
@@ -358,7 +365,7 @@ export function AIStrategyLibrary({ accountId }: { accountId: string }) {
       <div><span>04 / RANGE</span><strong>波动候选</strong><small>捕捉突破与回归</small></div>
       <div><span>05 / ROTATION</span><strong>全市场轮换</strong><small>避免只盯 BTC</small></div>
     </section>
-    {library && draft && execution ? <div className="ai-strategy-layout"><aside><h3>策略模板</h3><p>2 套激进 · 2 套保守。模板带入扫描节奏、限价优先规则、金额、杠杆和风险基线，保存前仍可调整。</p><p className="ai-memory-scope">账户级 AI 经验池 · {memories === null ? '读取状态不可用' : `${memoryCount} 条决策记录`}；策略归属来自决策时保存的模板版本。</p>{library.templates.map(template => {
+    {library && draft && execution ? <div className="ai-strategy-layout"><aside><h3>策略模板</h3><p>模板会带入对应的扫描节奏、订单偏好和参数基线；每个账户仅运行当前选中的一套，保存前仍可调整。</p><p className="ai-memory-scope">账户级 AI 经验池 · {memories === null ? '读取状态不可用' : `${memoryCount} 条决策记录`}；策略归属来自决策时保存的模板版本。</p>{library.templates.map(template => {
         const isActive = library.active.template_id === template.id;
         const isDraft = draft.template_id === template.id;
         const profileExecution = { ...draft.execution, ...(template.execution_defaults || {}) };
@@ -369,18 +376,18 @@ export function AIStrategyLibrary({ accountId }: { accountId: string }) {
           ? isActive ? '当前生效 · 已选中' : '草稿已载入 · 尚未生效'
           : isActive ? '当前已生效' : '点击载入';
         return <button key={template.id} disabled={busy} aria-pressed={isDraft} onClick={() => { setDraft({ ...draft, template_id: template.id, style: template.style, profile: template.profile, nofx_runtime: undefined, name: template.name, sections: { ...template.sections }, execution: { ...draft.execution, ...(template.execution_defaults || {}), scan_interval_minutes: template.scan_interval_minutes, order_preference: (template.order_preference || (template.profile?.order_preference as string) || draft.execution.order_preference) } }); setMessage('模板已载入，保存后生效。'); }} className="ai-template-card" data-style={template.style} data-active={isActive} data-draft={isDraft && !isActive}>
-          <small>{template.style === 'AGGRESSIVE' ? '激进策略' : '保守策略'} · {template.scan_interval_minutes} 分钟 · {templateOrderLabel}</small>
+          <small>{templateStyleLabel(template.style)} · {template.scan_interval_minutes} 分钟 · {templateOrderLabel}</small>
           <strong>{template.name}</strong>
           <em className="ai-template-memory">AI 经验池 · {memories === null ? '暂不可读' : `${memoriesForStrategy(template.id).length} 条策略决策${memoriesForStrategy(template.id).some(item => item.outcome_status) ? ` · ${memoriesForStrategy(template.id).filter(item => item.outcome_status).length} 条已复盘` : ''}`}</em>
           <span className="ai-template-card__state">{stateLabel}</span>
           <em>{aiAuthoredGate ? `总保证金上限 ≤ ${profileExecution.margin_cap_mode === 'FIXED_USDT' ? `${profileExecution.max_margin_usdt} USDT` : `${profileExecution.max_margin_pct}% 权益`} · 目标杠杆 ${profileExecution.leverage}×，受 Gate 合约上限约束 · 全仓` : `单笔风险 ≤ ${profileExecution.risk_per_trade_pct}% · 名义金额 ≤ ${profileExecution.max_notional_usdt} USDT · 用户杠杆 ≤ ${profileExecution.leverage}×`}</em>
         </button>;
-      })}<StrategyRuntimeCard strategy={draft} /><div className="ai-strategy-risk"><h3>当前配置</h3><dl><dt>策略模板</dt><dd>{draft.template_id || 'custom'}</dd><dt>扫描周期</dt><dd>{execution.scan_interval_minutes} 分钟</dd><dt>交易范围</dt><dd>{execution.universe_mode === 'ALL' ? '交易所全品种' : `${execution.symbols.length} 个自选`}</dd><dt>订单路径</dt><dd>{draft.profile?.limit_priority ? '限价优先 / 市价确认' : orderLabel(execution.order_preference)}</dd>{aiAuthoredGate ? <><dt>开仓金额</dt><dd>AI 提案</dd><dt>杠杆 / 模式</dt><dd>目标 {execution.leverage}× · 全仓 · Gate 合约上限约束</dd><dt>保证金占用上限</dt><dd>≤ {execution.margin_cap_mode === 'FIXED_USDT' ? `${execution.max_margin_usdt} USDT` : `${execution.max_margin_pct}% 权益`}</dd></> : <><dt>用户杠杆上限</dt><dd>{execution.leverage}×</dd><dt>单笔风险</dt><dd>≤ {execution.risk_per_trade_pct}%</dd><dt>组合风险硬上限</dt><dd>1%</dd><dt>日亏损熔断</dt><dd>1.5%</dd></>}{!aiAuthoredGate && <><dt>仓位金额上限</dt><dd>{execution.max_notional_usdt} USDT</dd><dt>同时持仓</dt><dd>≤ {execution.max_positions}</dd></>}</dl><p>限价单提交后如未触价，会显示“已提交待成交”；只有 Gate 回报成交才计入持仓。</p></div></aside>
+      })}<StrategyRuntimeCard strategy={draft} /><div className="ai-strategy-risk"><h3>当前配置</h3><dl><dt>策略模板</dt><dd>{draft.template_id || 'custom'}</dd><dt>扫描周期</dt><dd>{execution.scan_interval_minutes} 分钟</dd><dt>交易范围</dt><dd>{execution.universe_mode === 'ALL' ? '交易所全品种' : `${execution.symbols.length} 个自选`}</dd><dt>订单路径</dt><dd>{draft.profile?.limit_priority ? '限价优先 / 市价确认' : orderLabel(execution.order_preference)}</dd>{aiAuthoredGate ? <><dt>开仓名义价值</dt><dd>{execution.fixed_notional_usdt} USDT</dd><dt>杠杆 / 模式</dt><dd>{execution.leverage_mode === 'VENUE_LIMIT' ? 'AI 自选 · Gate 合约上限' : `AI 自选 · 用户上限 ${execution.leverage}×`} · 全仓</dd><dt>保证金占用上限</dt><dd>≤ {execution.margin_cap_mode === 'FIXED_USDT' ? `${execution.max_margin_usdt} USDT` : `${execution.max_margin_pct}% 权益`}</dd></> : <><dt>用户杠杆上限</dt><dd>{execution.leverage}×</dd><dt>单笔风险</dt><dd>≤ {execution.risk_per_trade_pct}%</dd><dt>组合风险硬上限</dt><dd>1%</dd><dt>日亏损熔断</dt><dd>1.5%</dd></>}{!aiAuthoredGate && <><dt>仓位金额上限</dt><dd>{execution.max_notional_usdt} USDT</dd><dt>同时持仓</dt><dd>≤ {execution.max_positions}</dd></>}</dl><p>限价单提交后如未触价，会显示“已提交待成交”；只有 Gate 回报成交才计入持仓。</p></div></aside>
       <form onSubmit={event => { event.preventDefault(); void save(); }}><fieldset disabled={busy} className="ai-studio-fields"><label>策略名称<input value={draft.name} maxLength={80} required onChange={event => setDraft({ ...draft, name: event.target.value })} /></label>
         <section className="ai-config-rehearsal" aria-labelledby={`${tabIdPrefix}-nofx-import-title`}>
           <header><div><small>NOFX STRATEGY MIGRATION</small><h3 id={`${tabIdPrefix}-nofx-import-title`}>导入 NOFX 策略 JSON</h3></div><span>配置迁移</span></header>
           <p>选择 NOFX 导出的策略配置 JSON。兼容的策略文本、5m/15m 节奏、多周期、指标开关和排除项会进入当前策略；原始文件不会留存。</p>
-          <p>每轮本地扫描器计算 K 线指标并生成候选，Bonsai 结合新闻、技术面和仓位独立决定开仓或等待；风险检查与 Gate 委托仍由本项目处理，不运行 NOFX 原生执行器。</p>
+          <p>每轮本地扫描器计算 K 线指标并生成候选，Gemini 结合新闻、技术面和仓位独立决定开仓或等待；风险检查与 Gate 委托仍由本项目处理，不运行 NOFX 原生执行器。</p>
           <p>NOFX 外部选币源会明确标为未映射；策略使用 Gate 活跃 USDT 永续合约池并轮换分析。杠杆、金额和其他风控继续取当前账户配置及 Gate 合约规则。</p>
           <input ref={nofxFileInput} type="file" accept=".json,application/json" aria-label="选择 NOFX 策略 JSON 文件" hidden onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; void importNofxJson(file); }} />
           <button type="button" disabled={busy} onClick={() => nofxFileInput.current?.click()}>{busyAction === 'import' ? '正在导入…' : '选择 JSON 并导入'}</button>
@@ -405,7 +412,7 @@ export function AIStrategyLibrary({ accountId }: { accountId: string }) {
           tabButtons[nextIndex]?.focus();
         }}>{value}</button>)}</div>
         <div id={`${tabIdPrefix}-panel`} role="tabpanel" aria-labelledby={`${tabIdPrefix}-tab-${tabs.indexOf(tab)}`} tabIndex={0}>
-        {tab === '资金与风控' && (aiAuthoredGate ? <div className="ai-studio-grid"><p>AI 自行选择开仓金额与委托方式；实际杠杆采用策略目标值，并以 Gate 合约上限为界。新开仓明确请求全仓。持仓及挂单预占都计入总保证金上限。</p>{numeric('leverage', '目标杠杆（倍，受 Gate 合约上限约束）', 1, 100, 1)}<label>保证金上限方式<select value={execution.margin_cap_mode || 'PERCENT'} onChange={event => setSetting('margin_cap_mode', event.target.value as ExecutionSettings['margin_cap_mode'])}><option value="PERCENT">账户权益比例</option><option value="FIXED_USDT">固定 USDT 金额</option></select></label>{execution.margin_cap_mode === 'FIXED_USDT' ? numeric('max_margin_usdt', '总保证金上限（USDT）', 1, 100000000, 1) : numeric('max_margin_pct', '总保证金占用上限（%）', 1, 80)}<div className="ai-sizing-preview"><h3>账户保证金</h3><p>权益：{money(equity)} · 当前可用：{capital?.available_margin == null ? '等待账户同步' : money(Number(capital.available_margin))} · 按策略上限剩余：{money(marginRoom)}</p></div></div> : <><div className="ai-studio-grid"><label>仓位计算方式<select value={execution.sizing_mode} onChange={event => setSetting('sizing_mode', event.target.value)}><option value="RISK_BASED">按止损风险计算</option><option value="FIXED_NOTIONAL">固定 USDT 名义金额</option><option value="EQUITY_PERCENT">账户权益比例</option></select><small>最终仓位同时受止损风险、金额上限与保证金约束。</small></label>
+        {tab === '资金与风控' && (aiAuthoredGate ? <div className="ai-studio-grid"><p>每笔开仓按配置的固定名义价值提交，数量按 Gate 精度向下取整；保证金不足时明确拦截，不自动缩成小仓。AI 自主选择委托方式和止盈止损，新开仓使用全仓；持仓及挂单预占都计入保证金上限。</p>{numeric('fixed_notional_usdt', '每笔名义价值（USDT）', 10, execution.max_notional_usdt, 10, '合约价值，不是保证金；五套策略默认 2000 USDT。')}<label>杠杆选择<select value={execution.leverage_mode || 'STRATEGY_LIMIT'} onChange={event => setSetting('leverage_mode', event.target.value as ExecutionSettings['leverage_mode'])}><option value="VENUE_LIMIT">AI 自选，以 Gate 合约上限为界</option><option value="STRATEGY_LIMIT">AI 自选，另设用户上限</option></select></label>{execution.leverage_mode !== 'VENUE_LIMIT' && numeric('leverage', '用户允许的杠杆上限（倍）', 1, 100, 1)}<label>保证金上限方式<select value={execution.margin_cap_mode || 'PERCENT'} onChange={event => setSetting('margin_cap_mode', event.target.value as ExecutionSettings['margin_cap_mode'])}><option value="PERCENT">账户权益比例</option><option value="FIXED_USDT">固定 USDT 金额</option></select></label>{execution.margin_cap_mode === 'FIXED_USDT' ? numeric('max_margin_usdt', '总保证金上限（USDT）', 1, 100000000, 1) : numeric('max_margin_pct', '总保证金占用上限（%）', 1, 80)}<div className="ai-sizing-preview"><h3>账户保证金</h3><p>权益：{money(equity)} · 当前可用：{capital?.available_margin == null ? '等待账户同步' : money(Number(capital.available_margin))} · 按策略上限剩余：{money(marginRoom)}</p></div></div> : <><div className="ai-studio-grid"><label>仓位计算方式<select value={execution.sizing_mode} onChange={event => setSetting('sizing_mode', event.target.value)}><option value="RISK_BASED">按止损风险计算</option><option value="FIXED_NOTIONAL">固定 USDT 名义金额</option><option value="EQUITY_PERCENT">账户权益比例</option></select><small>最终仓位同时受止损风险、金额上限与保证金约束。</small></label>
         {execution.sizing_mode === 'FIXED_NOTIONAL' && numeric('fixed_notional_usdt', '每笔名义金额（USDT）', 10, execution.max_notional_usdt, 10, '是合约价值，不是投入保证金。')}
         {execution.sizing_mode === 'EQUITY_PERCENT' && numeric('equity_notional_pct', '每笔名义金额 / 权益（%）', .1, 100, .1)}
         {numeric('leverage', '用户允许的杠杆上限（倍）', 1, 100, 1, '实际杠杆取 AI 请求、此上限、Gate 合约上限和止损距离风控上限中的最低值。')}
@@ -447,7 +454,7 @@ export function AIStrategyLibrary({ accountId }: { accountId: string }) {
               <header><div><small>STRATEGY INSTRUCTION / LOCAL PREVIEW</small><h3>本地策略片段预览</h3></div><span>草稿即时预览</span></header>
               <p>按后端模板回退、频率冲突修复及字符截取规则显示用户策略部分；不会包含本轮行情证据，也不是完整运行时模型请求。</p>
               <pre>{strategyPromptPreview}</pre>
-              <div className="ai-server-preview-action"><button type="button" disabled={serverPreviewBusy} onClick={() => void requestServerPreview()}>{serverPreviewBusy ? '生成后端静态预览…' : '生成后端静态预览'}</button><small>只读接口 · 不调用 Bonsai · 不读取行情 · 不下单</small></div>
+              <div className="ai-server-preview-action"><button type="button" disabled={serverPreviewBusy} onClick={() => void requestServerPreview()}>{serverPreviewBusy ? '生成后端静态预览…' : '生成后端静态预览'}</button><small>只读接口 · 不调用 Gemini · 不读取行情 · 不下单</small></div>
               {currentServerPreview?.error && <p className="ai-server-preview-error" role="alert">后端预览失败：{currentServerPreview.error}</p>}
               {currentServerPreview?.data && <div className="ai-production-preview">
                 <header role="status" aria-live="polite" aria-atomic="true"><strong>{currentServerPreview.data.valid ? '后端配置校验通过' : '后端发现配置问题'}</strong><span>{currentServerPreview.data.preview_kind}</span></header>
@@ -462,7 +469,7 @@ export function AIStrategyLibrary({ accountId }: { accountId: string }) {
               <header><div><small>DRY RUN / NO ORDERS</small><h3>配置安全演练</h3></div><span>本地检查</span></header>
               <p>只校验策略草稿字段完整度，不调用 AI、不读取实时行情、不访问 Gate，也不会下单。</p>
               <button type="button" onClick={() => setLocalCheckState({ fingerprint: draftFingerprint, result: inspectStrategyDraft(draft, aiAuthoredGate) })}>运行本地配置检查</button>
-              {currentLocalCheck && <div className="ai-config-check-result" role="status" data-ok={currentLocalCheck.blockers.length === 0}><strong>{currentLocalCheck.blockers.length === 0 ? '配置字段检查通过' : `发现 ${currentLocalCheck.blockers.length} 项需修正`}</strong><ul>{(currentLocalCheck.blockers.length ? currentLocalCheck.blockers : currentLocalCheck.passed).map(item => <li key={item}>{item}</li>)}</ul><small>此结果不代表 Bonsai、行情、新闻或交易所连接已就绪。</small></div>}
+              {currentLocalCheck && <div className="ai-config-check-result" role="status" data-ok={currentLocalCheck.blockers.length === 0}><strong>{currentLocalCheck.blockers.length === 0 ? '配置字段检查通过' : `发现 ${currentLocalCheck.blockers.length} 项需修正`}</strong><ul>{(currentLocalCheck.blockers.length ? currentLocalCheck.blockers : currentLocalCheck.passed).map(item => <li key={item}>{item}</li>)}</ul><small>此结果不代表 Gemini、行情、新闻或交易所连接已就绪。</small></div>}
             </section>
           </aside>
         </div>}

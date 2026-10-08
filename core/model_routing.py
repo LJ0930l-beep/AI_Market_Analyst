@@ -1,9 +1,7 @@
-"""Single-model routing for the local Bonsai 2 27B runtime.
+"""Pinned Gemini routing plus explicit validators for historical Bonsai receipts.
 
-The model never chooses its own tier. Fast and Smart are workload labels only;
-both resolve to the one verified Bonsai model. Legacy environment overrides
-are rejected and exposed as configuration warnings, never used to substitute
-another installed model.
+Fast and Smart are workload labels for the same Gemini release. Remote model
+identity is reported by the relay, not verified with a local model weight hash.
 """
 
 from __future__ import annotations
@@ -13,9 +11,10 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 
-MODEL_ROUTING_VERSION = "bonsai_route_v2"
-DEFAULT_FAST_MODEL = "Bonsai-2-27B-PTQ1_0"
-DEFAULT_SMART_MODEL = "Bonsai-2-27B-PTQ1_0"
+MODEL_ROUTING_VERSION = "gemini_antigravity_route_v1"
+LEGACY_BONSAI_MODEL = "Bonsai-2-27B-PTQ1_0"
+DEFAULT_FAST_MODEL = "gemini-3.8-flash-high"
+DEFAULT_SMART_MODEL = "gemini-3.8-flash-high"
 DEFAULT_MODEL = DEFAULT_SMART_MODEL
 
 
@@ -34,16 +33,16 @@ def is_bonsai_model_identity(value: object) -> bool:
         basename = basename[:-5]
     if basename.lower().startswith("ternary-"):
         basename = basename[len("ternary-"):]
-    return basename.casefold() == DEFAULT_MODEL.casefold()
+    return basename.casefold() == LEGACY_BONSAI_MODEL.casefold()
 
 
-def bonsai_manifest_entry_matches(model: dict[str, object], *, requested_model: str = DEFAULT_MODEL) -> bool:
+def bonsai_manifest_entry_matches(model: dict[str, object], *, requested_model: str = LEGACY_BONSAI_MODEL) -> bool:
     """Accept a manifest row only when its identity fields resolve exactly.
 
     If a row has a primary id/name/model that contradicts Bonsai, a matching
     alias cannot hide that contradiction.
     """
-    if requested_model != DEFAULT_MODEL or not isinstance(model, dict):
+    if requested_model != LEGACY_BONSAI_MODEL or not isinstance(model, dict):
         return False
     primary = [
         str(model.get(field)).strip()
@@ -64,7 +63,7 @@ def _bonsai_artifact_identity(value: object) -> str | None:
     basename = value.strip().replace("\\", "/").rsplit("/", 1)[-1]
     if basename.lower().endswith(".gguf"):
         basename = basename[:-5]
-    if basename.casefold() == DEFAULT_MODEL.casefold():
+    if basename.casefold() == LEGACY_BONSAI_MODEL.casefold():
         return None
     if basename.lower().startswith("ternary-"):
         basename = basename[len("ternary-"):]
@@ -83,7 +82,7 @@ def is_verified_bonsai_receipt(
     artifact. Trading callers additionally supply the prompt and input hash so
     a stale, incomplete, or unrelated receipt cannot authorize a decision.
     """
-    if not isinstance(receipt, dict) or receipt.get("model_id") != DEFAULT_MODEL:
+    if not isinstance(receipt, dict) or receipt.get("model_id") != LEGACY_BONSAI_MODEL:
         return False
     source = receipt.get("model_identity_source")
     if source not in ("completion_response", "request_bound_to_verified_manifest"):
@@ -121,11 +120,11 @@ def is_verified_bonsai_receipt(
     return True
 
 
-def is_trusted_bonsai_provider(provider: object) -> bool:
-    """Allow only the application's unmodified Bonsai adapter on its pinned route.
+def is_trusted_model_provider(provider: object) -> bool:
+    """Allow only the application's unmodified Gemini adapter on its pinned route.
 
     The exact type check intentionally rejects test doubles, wrappers, and
-    third-party providers that can simply return Bonsai-looking metadata.
+    third-party providers that can simply return configured-model-looking metadata.
     """
     if provider is None:
         return False
@@ -139,6 +138,49 @@ def is_trusted_bonsai_provider(provider: object) -> bool:
     if getattr(getattr(provider, "generate_json", None), "__func__", None) is not OllamaProvider.generate_json:
         return False
     return provider._route_error(DEFAULT_MODEL) is None
+
+
+def is_configured_model_identity(value: object) -> bool:
+    """Accept only this Gemini release and its documented relay variants."""
+    return isinstance(value, str) and value.strip() in {DEFAULT_MODEL, "gemini-3.8-flash-control"}
+
+
+def is_trusted_bonsai_provider(provider: object) -> bool:
+    """Legacy import spelling; trust is bound to the current configured model."""
+    return is_trusted_model_provider(provider)
+
+
+def configured_manifest_entry_matches(model: dict[str, object], *, requested_model: str = DEFAULT_MODEL) -> bool:
+    if requested_model != DEFAULT_MODEL or not isinstance(model, dict):
+        return False
+    primary = [model[k] for k in ("id", "name", "model") if isinstance(model.get(k), str) and model[k].strip()]
+    return bool(primary) and all(v.strip() == requested_model for v in primary)
+
+
+def is_verified_model_receipt(receipt: object, *, expected_prompt_version: str | None = None,
+                              expected_input_hash: str | None = None) -> bool:
+    """Remote identity is reported by the relay; never claim a local weight hash."""
+    if not isinstance(receipt, dict) or receipt.get("model_id") != DEFAULT_MODEL:
+        return False
+    if receipt.get("model_identity_source") != "completion_response":
+        return False
+    if not is_configured_model_identity(receipt.get("actual_model_id")):
+        return False
+    if not is_configured_model_identity(receipt.get("verified_manifest_model_id")):
+        return False
+    if receipt.get("model_version") is not None and not is_configured_model_identity(receipt["model_version"]):
+        return False
+    if (expected_prompt_version is None) != (expected_input_hash is None):
+        return False
+    if expected_prompt_version is not None:
+        return (isinstance(expected_prompt_version, str) and bool(expected_prompt_version.strip())
+                and receipt.get("prompt_version") == expected_prompt_version
+                and isinstance(expected_input_hash, str)
+                and re.fullmatch(r"[0-9a-f]{64}", expected_input_hash) is not None
+                and receipt.get("input_hash") == expected_input_hash
+                and receipt.get("parse_status") == "valid"
+                and isinstance(receipt.get("model_version"), str))
+    return True
 
 
 class ModelTier(str, Enum):
@@ -183,7 +225,7 @@ class ModelRoutingConfig:
 
     def __post_init__(self) -> None:
         if self.fast_model != DEFAULT_FAST_MODEL or self.smart_model != DEFAULT_SMART_MODEL:
-            raise ValueError("AI model routing is pinned to Bonsai-2-27B-PTQ1_0")
+            raise ValueError("AI model routing is pinned to gemini-3.8-flash-high")
 
     @classmethod
     def from_env(cls) -> "ModelRoutingConfig":

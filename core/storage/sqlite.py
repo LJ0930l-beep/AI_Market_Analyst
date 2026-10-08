@@ -3859,6 +3859,22 @@ class SQLiteStore(V2Store):
             raise ValueError("Gate bootstrap symbol and native_symbol are required")
         provider = str(bootstrap.get("provider") or "gate").strip().lower()
         environment = str(bootstrap.get("environment") or "LIVE_PUBLIC").strip().upper()
+        quality_value = bootstrap.get("quality")
+        if quality_value is None:
+            quality = {}
+        elif isinstance(quality_value, dict):
+            quality = quality_value
+        else:
+            raise ValueError("GATE_BOOTSTRAP_QUALITY_INVALID")
+        if "synthetic" in quality:
+            synthetic_flag = quality["synthetic"]
+            if type(synthetic_flag) is not bool:
+                raise ValueError("GATE_BOOTSTRAP_SYNTHETIC_FLAG_INVALID")
+            if synthetic_flag:
+                # Reject before the bootstrap audit row or any derived market
+                # evidence is written. The caller marks this symbol degraded
+                # and cannot reuse the payload for strategy analysis.
+                raise ValueError("GATE_BOOTSTRAP_SYNTHETIC_DATA_REJECTED")
         quote = bootstrap.get("quote") if isinstance(bootstrap.get("quote"), dict) else {}
         completed = self._utc_timestamp(now)
         stable = {
@@ -3877,7 +3893,6 @@ class SQLiteStore(V2Store):
         }
         source_hash = self._gate_event_hash(stable)
         bootstrap_id = f"gate_bootstrap_{source_hash[:24]}"
-        quality = bootstrap.get("quality") if isinstance(bootstrap.get("quality"), dict) else {}
         with self._connect() as db:
             db.execute(
                 """INSERT OR IGNORE INTO gate_bootstrap_runs(

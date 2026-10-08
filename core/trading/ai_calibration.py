@@ -2,7 +2,7 @@
 
 Calibration is a lifecycle prerequisite, not a cosmetic status label.  It
 uses only closed 15m bars available at the replay as-of time, makes one
-operation-profile call to the configured local Bonsai route, and fails closed
+operation-profile call to the configured local Gemini route, and fails closed
 when the sample or a real model digest is unavailable.
 """
 
@@ -17,7 +17,7 @@ from typing import Any, Callable
 
 from ..evidence import model_weight_digest
 from ..instruments import read_trading_bars
-from ..model_routing import DEFAULT_SMART_MODEL, is_verified_bonsai_receipt
+from ..model_routing import DEFAULT_SMART_MODEL, is_verified_model_receipt
 from .institutional_schema import ensure_institutional_trader_schema
 from .model_schemas import CALIBRATION_PROFILE_SCHEMA
 
@@ -233,7 +233,7 @@ class AICalibrationService:
             )
             decoded = response[0] if isinstance(response, tuple) else response
             metadata = response[2] if isinstance(response, tuple) and len(response) >= 3 and isinstance(response[2], dict) else {}
-            if not is_verified_bonsai_receipt(metadata):
+            if not is_verified_model_receipt(metadata):
                 raise ValueError("MODEL_RECEIPT_INVALID")
             raw_response = str(response[1])[:12000] if isinstance(response, tuple) and len(response) >= 2 and response[1] is not None else str(metadata.get("raw_response") or "")[:12000] or None
             latency_ms = float(metadata.get("latency_ms")) if metadata.get("latency_ms") is not None else max(0.0, (datetime.now(timezone.utc) - started_call).total_seconds() * 1000.0)

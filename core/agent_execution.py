@@ -12,8 +12,8 @@ from decimal import ROUND_DOWN, Decimal
 
 from .model_routing import (
     DEFAULT_SMART_MODEL,
-    is_trusted_bonsai_provider,
-    is_verified_bonsai_receipt,
+    is_trusted_model_provider,
+    is_verified_model_receipt,
 )
 from .trading.execution_gateway import (
     ControlMode,
@@ -357,11 +357,11 @@ class AgentDecisionService:
         self.store = store
         self.model_trust_error = (
             "MODEL_PROVIDER_NOT_TRUSTED"
-            if model is not None and not is_trusted_bonsai_provider(model)
+            if model is not None and not is_trusted_model_provider(model)
             else None
         )
         # Do not retain or call injected adapters. They can claim any model id
-        # or fabricate a receipt, so only the exact pinned Bonsai provider may
+        # or fabricate a receipt, so only the exact pinned Gemini provider may
         # enter the trading decision path.
         self.model = model if self.model_trust_error is None else None
         self.gateway = gateway or ExecutionGateway(store)
@@ -467,7 +467,7 @@ class AgentDecisionService:
                 raise ValueError("MODEL_RESPONSE_CONTRACT_INVALID") from None
             if decoded_response != verdict:
                 raise ValueError("MODEL_RESPONSE_CONTRACT_INVALID")
-            if not is_verified_bonsai_receipt(
+            if not is_verified_model_receipt(
                 receipt,
                 expected_prompt_version="agent_v2",
                 expected_input_hash=input_hash,
