@@ -234,6 +234,11 @@ def _failed_breakout_candidate(
         "expires_at": _a3_stamp(expires_at),
         "maximum_age_seconds": A3_MAX_SIGNAL_AGE_SECONDS,
     }
+    if signal_available_at < reentry.end:
+        return _a3_no_candidate(
+            "FAILED_BREAKOUT_SIGNAL_AVAILABILITY_PRECEDES_CONFIRMATION",
+            signal=signal_detail,
+        )
     if context.decision_time >= expires_at:
         return _a3_no_candidate(
             "FAILED_BREAKOUT_SIGNAL_EXPIRED",

@@ -14,6 +14,7 @@ def test_a3_signal_freshness_contract_is_frozen_and_explicit():
     assert policy["provenance"]["frozen_before_new_outcome_analysis"] is True
     assert policy["signal"]["confirmation_time"] == "reentry_5m_bar_end_after_full_bar_close"
     assert policy["signal"]["signal_available_time"] == "reentry_5m_bar_available_at"
+    assert policy["signal"]["signal_available_at_must_not_precede_confirmation_time"] is True
     assert policy["signal"]["maximum_age_seconds"] == 600
     assert "greater_than_or_equal_to" in policy["signal"]["expiration_condition"]
     assert policy["execution"]["maximum_quote_age_seconds"] == 60

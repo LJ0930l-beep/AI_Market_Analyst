@@ -10,6 +10,7 @@
     "breakout_time": "outside_5m_bar_end",
     "confirmation_time": "reentry_5m_bar_end_after_full_bar_close",
     "signal_available_time": "reentry_5m_bar_available_at",
+    "signal_available_at_must_not_precede_confirmation_time": true,
     "maximum_age_seconds": 600,
     "expiration_condition": "decision_time_greater_than_or_equal_to_signal_available_time_plus_maximum_age",
     "invalidation_conditions": [

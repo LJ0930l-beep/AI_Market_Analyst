@@ -665,6 +665,21 @@ def test_a3_expiration_is_inclusive_at_the_frozen_ten_minute_boundary(research_f
     assert a3["candidate"]["signal"]["expires_at"] == expires_at.isoformat().replace("+00:00", "Z")
 
 
+def test_a3_rejects_signal_availability_before_confirmation(research_fixture):
+    frames = research_fixture["failed_breakout_frames"]()
+    confirmation_time = datetime.fromisoformat(frames["5m"][-1]["bar_end"])
+    frames["5m"][-1]["available_at"] = (confirmation_time - timedelta(seconds=1)).isoformat()
+    point = research_fixture["point"](input_bars=frames)
+
+    result = run_study([point])
+    a3 = result["decision_records"][0]["experiments"]["A3"]
+
+    assert a3["status"] == "NO_CANDIDATE"
+    assert a3["candidate"]["reason_code"] == (
+        "FAILED_BREAKOUT_SIGNAL_AVAILABILITY_PRECEDES_CONFIRMATION"
+    )
+
+
 @pytest.mark.parametrize("invalidation", ["rebreakout_close", "target_touch"])
 def test_a3_invalidates_signal_when_a_later_closed_bar_breaks_the_setup(
     research_fixture, invalidation,

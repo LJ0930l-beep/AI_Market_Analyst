@@ -11,7 +11,7 @@ A3_POLICY_PATH = (
     Path(__file__).resolve().parents[3]
     / "configs" / "research" / "rules" / "a3-failed-breakout-freshness-v2.json"
 )
-A3_POLICY_SHA256 = "21b62ed5881dd86b7763be59016492008b1080ad787463a7861a204ef288f055"
+A3_POLICY_SHA256 = "6d88b00b8fe6e37bb51efc7aa820542db7cc8c9f753837ebf4416707af8736e1"
 
 
 def _canonical_sha256(value: Any) -> str:
