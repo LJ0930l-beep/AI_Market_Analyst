@@ -44,6 +44,13 @@ The requested long-term product contract is documented in `docs/plans/AI-Market-
 - Obtain separate explicit authorization for exact Gemini model, spend/token cap, sample set, prompt/schema versions, and stopping conditions.
 - Keep production Gate and all order routes isolated; no V38 evidence authorizes TestNet, Live, or account access.
 
-## Next action
+## Review and publication status
 
-Complete the independent diff/security review, then publish an independent PR against `codex/v37.1-research-fixes`. Do not merge it automatically. Include the inherited failure status, product-contract supplement, and offline-only acceptance boundary in the PR description.
+- Independent scope review confirmed the change is addition-only against `codex/v37.1-research-fixes`; no existing production, risk, Gate, account, or UI file is changed. The V38 package has no production import path and no model/exchange/order submission integration.
+- Independent PR: [#6 — V38 research readiness and multi-asset product roadmap](https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/6), head `codex/v38-research-readiness`, base `codex/v37.1-research-fixes`.
+- GitHub reports the PR `OPEN`, merge state `CLEAN`, and `autoMergeRequest: null`. No GitHub checks were reported at review time; this is not represented as CI success. The PR has not been merged.
+- Commit: `f2e73180d325d6aa52da3f3f46a2f0d8b391bd09`. The documented pre-commit bypass is disclosed in its subject and PR description because both frozen baseline and final full-suite runs retain the same 100 inherited failures.
+
+## Remaining follow-up
+
+Human review and disposition of the inherited test failures remain open. V42 still requires independent data/schema review, a verified provider retry/idempotency policy, and separate explicit authorization for any model and budget. Nothing in this PR authorizes exchange access, Live mode, or orders.
