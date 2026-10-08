@@ -10,7 +10,7 @@ This file records execution against the plan without replacing the user's source
 - No LIVE or TestNet session, private exchange request, order, Gemini request, or large archive download was made.
 - `reports/` is ignored. Research datasets and test-census evidence remain local and are not part of the PR.
 - V25 A0 remains unrecovered: `0/100` exact decisions. New archive contexts are not backfilled into V25.
-- No test was deleted or weakened. The frozen baseline had 100 inherited failures; the latest V41 comparison resolves 73 nodes and still records 27 inherited failures in the current node register. The earlier 53-failure addendum remains a historical checkpoint.
+- No test was deleted or weakened. The frozen baseline had 100 inherited failures; the latest V41 comparison resolves all 100 nodes. The earlier 53- and 27-failure reports remain immutable historical checkpoints.
 - The product-contract supplement is recorded separately in `AI-Market-Analyst-Product-Contract-V1.md` and `Multi-Asset-Trader-Terminal-Roadmap.md`. These are future architecture/design deliverables; they do not alter the current V38–V42 order, scope, or production behavior.
 - Multi-asset metadata, broader trader adapters, memory governance, and terminal consolidation remain sequenced after the active research and verification work. No early UI or execution expansion was made.
 
@@ -23,7 +23,7 @@ This file records execution against the plan without replacing the user's source
 | V38.2 — frozen sample plan and archive reconstruction | `DONE` | Data-preparation scope only: 180 contexts selected; 120 optimization/validation payloads and 60 hash-only untouched-test rows. No outcomes or labels. Availability remains an assumed proxy. |
 | V39 — transport reliability | `PARTIAL` | 91 focused tests pass. Loopback and deterministic fixtures cover parsing, bounded streams, deadlines, and timeout provenance. No real provider call or remote exactly-once guarantee. |
 | V40 — simulation economics | `PARTIAL` | 95 focused tests pass; one known inherited template-runner assertion fails identically to the frozen baseline. No production economics code changed. |
-| V41 — legacy full-suite census | `PARTIAL` | Latest exact baseline 64a5c42 comparison: 73 baseline failures now pass, 27 remain, with no new failure nodes or phase changes; all 25 new test nodes pass. V13 lease-loss cancellation, V2 simulation permission/revocation, and current response-identity behavior have focused offline coverage. The current node register is `docs/audits/V41-node-remediation-register.json`; the 53-failure addendum remains a historical checkpoint and `V41-provider-identity-followup.md` records the latest run. |
+| V41 — legacy full-suite census | `DONE (local full-suite gate)` | Latest exact baseline 64a5c42 comparison: 2,349 passed, 1 skipped, 0 failed; all 100 baseline failure nodes pass, all 26 new nodes pass, with no missing nodes, new failures, or phase changes. V13 lease-loss cancellation, V2 simulation permission/revocation, and response-identity behavior have focused offline coverage. The current node register is `docs/audits/V41-node-remediation-register.json`; historical 53- and 27-failure checkpoints remain preserved. Local results do not verify remote provider, exchange, or production behavior. |
 | V42 — unattended model/research operation | `NOT_STARTED` | Gated on V38–V41 review, a separate explicit model/budget authorization, provider retry/idempotency policy, and approved operational stop conditions. No unattended call path is enabled. |
 
 ## V38 data capacity
@@ -37,11 +37,11 @@ This file records execution against the plan without replacing the user's source
 
 ## V41 acceptance result
 
-The exact full-suite baseline was rerun at `64a5c4206a5073e0c44e9d5cc4178705ffa24664` in the same environment as the latest V41 run. The comparator reports `PASS_NO_NEW_FAILURES`: no missing baseline tests, no new failure nodes, no phase changes, and all 25 new test nodes passed. The current run is 2,321 passed, 27 failed, and 1 skipped across 2,349 collected tests; 73 of the 100 baseline failures no longer fail. Focused offline tests cover lease-loss cancellation, simulation authorization revocation, and response-identity verification. Gate 5 remains partial because 27 inherited failures remain and remote provider behavior is not verified. See `docs/audits/V41-provider-identity-followup.md`, the prior checkpoint in `docs/audits/V41-gate5-node-audit-addendum.md`, and the current 100-node register.
+The exact full-suite baseline was rerun at `64a5c4206a5073e0c44e9d5cc4178705ffa24664` in the same environment as the latest V41 run. The comparator reports `PASS_NO_NEW_FAILURES`: no missing baseline tests, no new failure nodes, no phase changes, and all 26 new test nodes passed. The current run is 2,349 passed, 0 failed, and 1 skipped across 2,350 collected tests; all 100 baseline failure nodes pass. Gate 5's local full-suite census is complete. Remote provider behavior, exchange capability, and production execution remain unverified. See `docs/audits/V41-gate5-legacy-repair-followup.md`, the prior identity checkpoint in `V41-provider-identity-followup.md`, the historical 53-failure addendum, and the refreshed 100-node register.
 
 ## V42 entry conditions
 
-V42 may be planned only after the post-change full-suite comparison is complete, the remaining legacy failures have an explicit disposition, V38 data and schema boundaries pass review, and a separate user authorization defines the Gemini model and budget. Provider retry behavior must not be described as exactly-once until an idempotency mechanism or an explicit duplicate-cost policy is verified. No condition here authorizes exchange access or orders.
+V42 may be planned only after the post-change full-suite comparison and the independent V38 data/schema review are complete, and a separate user authorization defines the Gemini model and budget. Provider retry behavior must not be described as exactly-once until an idempotency mechanism or an explicit duplicate-cost policy is verified. No condition here authorizes exchange access or orders.
 
 ## Product-contract supplement
 
