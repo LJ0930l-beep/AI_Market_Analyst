@@ -12,6 +12,7 @@ from scripts.audit_v38_dataset_integrity import (
     _verify_document_source_binding,
     count_partition_scoped_components,
     summarize_global_overlap,
+    summarize_partition_overlap,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -49,6 +50,13 @@ def test_global_overlap_summary_counts_cross_partition_pairs_and_components():
     }
     assert result["independent_sample_count_claimed"] is False
     assert count_partition_scoped_components(points) == 6
+    partition_summary = summarize_partition_overlap(points)
+    assert partition_summary["BTCUSDT:validation"] == {
+        "row_count": 2,
+        "component_count": 2,
+        "component_sizes_descending": [1, 1],
+        "independent_sample_count_claimed": False,
+    }
 
 
 def test_global_overlap_summary_rejects_unhashable_partition_label():

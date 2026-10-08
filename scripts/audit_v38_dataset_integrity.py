@@ -174,6 +174,9 @@ def summarize_global_overlap(points: list[dict[str, Any]]) -> dict[str, Any]:
             components[root].append(row["decision_id"])
             component_symbols[root] = symbol
     components_by_symbol = Counter(component_symbols.values())
+    component_sizes_by_symbol: dict[str, list[int]] = defaultdict(list)
+    for root, decision_ids in components.items():
+        component_sizes_by_symbol[component_symbols[root]].append(len(decision_ids))
     partitions_by_component: dict[str, set[str]] = defaultdict(set)
     for symbol, rows in grouped.items():
         for row in rows:
@@ -188,6 +191,10 @@ def summarize_global_overlap(points: list[dict[str, Any]]) -> dict[str, Any]:
         "component_scope": "GLOBAL_PER_SYMBOL_ACROSS_ALL_PARTITIONS",
         "global_overlap_component_count": len(components),
         "global_overlap_component_count_by_symbol": dict(sorted(components_by_symbol.items())),
+        "global_overlap_component_sizes_by_symbol": {
+            symbol: sorted(sizes, reverse=True)
+            for symbol, sizes in sorted(component_sizes_by_symbol.items())
+        },
         "components_spanning_multiple_partitions": spanning,
         "cross_partition_overlapping_pair_count": len(cross_partition_pairs),
         "cross_partition_pair_counts": dict(sorted(by_partition_pair.items())),
@@ -200,8 +207,7 @@ def summarize_global_overlap(points: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def count_partition_scoped_components(points: list[dict[str, Any]]) -> int:
-    """Recompute the legacy overlap count within each symbol/partition group."""
+def _group_partition_points(points: list[dict[str, Any]]) -> dict[tuple[str, str], list[dict[str, Any]]]:
     grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in points:
         if not isinstance(row, dict):
@@ -212,10 +218,32 @@ def count_partition_scoped_components(points: list[dict[str, Any]]) -> int:
         if not isinstance(partition, str) or partition not in PARTITION_ORDER:
             raise DatasetBuildError("V38_OVERLAP_PARTITION_INVALID")
         grouped[(symbol, partition)].append(row)
+    return grouped
+
+
+def count_partition_scoped_components(points: list[dict[str, Any]]) -> int:
+    """Recompute the legacy overlap count within each symbol/partition group."""
+    grouped = _group_partition_points(points)
     return sum(
         summarize_global_overlap(group)["global_overlap_component_count"]
         for group in grouped.values()
     )
+
+
+def summarize_partition_overlap(points: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Return row counts and window-connected component sizes per symbol/partition."""
+    grouped = _group_partition_points(points)
+    result: dict[str, dict[str, Any]] = {}
+    for (symbol, partition), rows in sorted(grouped.items()):
+        overlap = summarize_global_overlap(rows)
+        sizes = overlap["global_overlap_component_sizes_by_symbol"].get(symbol, [])
+        result[f"{symbol}:{partition}"] = {
+            "row_count": len(rows),
+            "component_count": overlap["global_overlap_component_count"],
+            "component_sizes_descending": sizes,
+            "independent_sample_count_claimed": False,
+        }
+    return result
 
 
 def _verify_raw_archives(
@@ -527,6 +555,7 @@ def audit_v38_dataset(
             "stored_manifest_cluster_count_scope": "PER_SYMBOL_AND_PARTITION",
             "stored_manifest_cluster_count": manifest.get("overlap_cluster_count"),
             "recomputed_partition_scoped_component_count": scoped_overlap_count,
+            "partition_group_breakdown": summarize_partition_overlap(points),
             **overlap,
         },
         "deterministic_rebuild": rebuild_evidence,
