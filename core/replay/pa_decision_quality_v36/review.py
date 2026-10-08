@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from .schema import ERROR_CATEGORIES
+from .validation import compare_model_identity, validate_study_analysis
 
 EXPERIMENT_IDS = ("A0", "A1", "A2", "A3")
 
@@ -100,6 +101,34 @@ def _refs_for(record: dict[str, Any]) -> set[str]:
     }
 
 
+def _analysis_validation(record: dict[str, Any], experiment_id: str,
+                         item: dict[str, Any]) -> dict[str, Any]:
+    analysis = item.get("analysis")
+    valid_refs = item.get("validation_evidence_refs") if experiment_id == "A0" else None
+    if not isinstance(valid_refs, list):
+        valid_refs = sorted(_refs_for(record))
+    state = item.get("validation_state_snapshot")
+    if not isinstance(state, dict):
+        state = record.get("validation_state_snapshot")
+    return validate_study_analysis(
+        experiment_id, analysis,
+        valid_evidence_refs={ref for ref in valid_refs if isinstance(ref, str)},
+        declared_schema_version=item.get("analysis_schema_version"),
+        state_snapshot=state if isinstance(state, dict) else None,
+    )
+
+
+def _requested_model_id(item: dict[str, Any]) -> Any:
+    requested = item.get("requested_model_id")
+    if isinstance(requested, str) and requested.strip():
+        return requested
+    identity = item.get("cache_identity")
+    if not isinstance(identity, dict):
+        provenance = item.get("cached_provenance")
+        identity = provenance.get("identity") if isinstance(provenance, dict) else None
+    return identity.get("model_id") if isinstance(identity, dict) else None
+
+
 def summarize(records: list[dict[str, Any]], outcomes: list[dict[str, Any]] | None = None,
               reviews: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Summarize exact experiment/decision joins without mutating any inputs.
@@ -153,6 +182,7 @@ def summarize(records: list[dict[str, Any]], outcomes: list[dict[str, Any]] | No
         market_groups: dict[str, Counter] = defaultdict(Counter)
         attribution = Counter()
         wait_review = Counter()
+        model_identity_counts = Counter()
         eligible_outcome_count = 0
 
         for record in records:
@@ -164,23 +194,63 @@ def summarize(records: list[dict[str, Any]], outcomes: list[dict[str, Any]] | No
             counts["scans"] += 1
             counts[f"status:{item.get('status', 'MISSING')}"] += 1
             analysis = item.get("analysis")
+            validation: dict[str, Any] | None = None
+            identity_status = "UNVERIFIED"
+            valid_analysis = False
+            valid_model_decision = False
+            counts["cache_matches"] += item.get("status") == "CACHE_MATCH"
+            if item.get("status") == "CACHE_MATCH" and not isinstance(analysis, dict):
+                counts["invalid_cache_analyses"] += 1
+            identity_status = compare_model_identity(
+                item.get("actual_model_id"), _requested_model_id(item),
+            )
+            if (item.get("status") in {
+                "COMPLETED", "CACHE_MATCH", "MODEL_ID_MISMATCH", "MODEL_ID_UNVERIFIED",
+                "MODEL_ERROR", "MODEL_TIMEOUT",
+            } or "actual_model_id" in item):
+                model_identity_counts[identity_status] += 1
             if isinstance(analysis, dict):
                 action = str(analysis.get("action") or "INVALID").upper()
                 raw_actions[action] += 1
-                counts["valid_model_decisions"] += item.get("status") == "COMPLETED"
-                context = analysis.get("context")
-                market = context.get("market_regime") if isinstance(context, dict) else None
-                market_groups[str(market or "UNKNOWN")][action] += 1
-                counts["open_proposals"] += action in {"LONG", "SHORT", "OPEN_LONG", "OPEN_SHORT"}
-                counts["wait_decisions"] += action == "WAIT"
-                counts["hold_decisions"] += action == "HOLD"
+                validation = _analysis_validation(record, experiment_id, item)
+                analysis_result_status = item.get("status") in {
+                    "COMPLETED", "CACHE_MATCH", "MODEL_ID_MISMATCH", "MODEL_ID_UNVERIFIED",
+                }
+                valid_analysis = validation["valid"] and analysis_result_status
+                valid_model_decision = valid_analysis and identity_status == "MATCHED"
+                counts["valid_analyses"] += valid_analysis
+                counts["valid_model_decisions"] += valid_model_decision
+                counts["valid_cache_analyses"] += (
+                    item.get("status") == "CACHE_MATCH" and valid_analysis
+                )
+                counts["verified_cache_model_decisions"] += (
+                    item.get("status") == "CACHE_MATCH" and valid_model_decision
+                )
+                counts["invalid_cache_analyses"] += (
+                    item.get("status") == "CACHE_MATCH" and not valid_analysis
+                )
+                counts["schema_version_mismatches"] += (
+                    validation["status"] == "INVALID"
+                    and "ANALYSIS_SCHEMA_VERSION_MISMATCH" in validation["errors"]
+                )
+                if valid_model_decision:
+                    context = analysis.get("context")
+                    market = context.get("market_regime") if isinstance(context, dict) else None
+                    market_groups[str(market or "UNKNOWN")][action] += 1
+                    counts["open_proposals"] += action in {"LONG", "SHORT", "OPEN_LONG", "OPEN_SHORT"}
+                    counts["wait_decisions"] += action == "WAIT"
+                    counts["hold_decisions"] += action == "HOLD"
             candidate = item.get("candidate")
             counts["research_candidates"] += (
                 experiment_id == "A3" and isinstance(candidate, dict)
                 and candidate.get("status") == "RESEARCH_CANDIDATE"
             )
             preflight = item.get("risk_preflight")
-            if isinstance(preflight, dict):
+            is_deterministic_candidate = (
+                experiment_id == "A3" and isinstance(candidate, dict)
+                and candidate.get("status") == "RESEARCH_CANDIDATE"
+            )
+            if isinstance(preflight, dict) and (valid_model_decision or is_deterministic_candidate):
                 counts["risk_rejected_proposals"] += preflight.get("status") == "REJECTED"
                 counts["risk_blocked_proposals"] += preflight.get("status") == "BLOCKED"
             lifecycle = item.get("lifecycle")
@@ -217,6 +287,14 @@ def summarize(records: list[dict[str, Any]], outcomes: list[dict[str, Any]] | No
                 result = evaluate_wait(analysis, assessment if isinstance(assessment, dict) else {}, valid_refs)
                 wait_review[result["assessment"]] += 1
 
+            outcome_decision_valid = (
+                is_deterministic_candidate if experiment_id == "A3" else valid_model_decision
+            )
+            if not outcome_decision_valid:
+                counts["outcomes_skipped_invalid_decision"] += sum(
+                    row.get("complete_close") is True for row in outcomes_by_key.get(key, [])
+                )
+                continue
             decision_time = _utc(record.get("decision_time"))
             for outcome in outcomes_by_key.get(key, []):
                 closed_at = _utc(outcome.get("closed_at"))
@@ -261,8 +339,17 @@ def summarize(records: list[dict[str, Any]], outcomes: list[dict[str, Any]] | No
                 for key, value in counts.items() if key.startswith("status:")
             },
             "valid_model_decisions": counts["valid_model_decisions"],
+            "valid_analyses": counts["valid_analyses"],
+            "cache_matches": counts["cache_matches"],
+            "valid_cache_analyses": counts["valid_cache_analyses"],
+            "verified_cache_model_decisions": counts["verified_cache_model_decisions"],
+            "invalid_cache_analyses": counts["invalid_cache_analyses"],
+            "schema_version_mismatches": counts["schema_version_mismatches"],
+            "model_identity_counts": dict(sorted(model_identity_counts.items())),
             "raw_action_counts": dict(sorted(raw_actions.items())),
             "open_proposals": counts["open_proposals"],
+            "wait_decisions": counts["wait_decisions"],
+            "hold_decisions": counts["hold_decisions"],
             "research_candidates": counts["research_candidates"],
             "management_proposals": counts["management_proposals"],
             "risk_rejected_proposals": counts["risk_rejected_proposals"],
@@ -302,6 +389,7 @@ def summarize(records: list[dict[str, Any]], outcomes: list[dict[str, Any]] | No
             "error_attribution_counts": dict(sorted(attribution.items())),
             "wait_assessment_counts": dict(sorted(wait_review.items())),
             "joined_complete_outcomes": eligible_outcome_count,
+            "outcomes_skipped_invalid_decision": counts["outcomes_skipped_invalid_decision"],
         }
 
     return {

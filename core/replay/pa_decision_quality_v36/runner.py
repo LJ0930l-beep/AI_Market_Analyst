@@ -22,7 +22,13 @@ from .experiments import (
     prompt_sha256,
     safe_state_snapshot,
 )
-from .schema import SCHEMA_VERSION, validate_analysis
+from .schema import SCHEMA_VERSION
+from .validation import (
+    collect_evidence_refs,
+    compare_model_identity,
+    validate_study_analysis,
+    validation_state_snapshot,
+)
 
 
 class StudyError(ValueError):
@@ -195,18 +201,37 @@ def _response_record(response: Any, *, experiment_id: str, context: CausalContex
                      state_sha: str | None, requested_model_id: str,
                      state_snapshot: dict[str, Any] | None) -> dict[str, Any]:
     if not isinstance(response, dict):
-        return {"status": "INVALID_MODEL_RESPONSE", "error_code": "MODEL_RESPONSE_NOT_OBJECT"}
+        requested_id = requested_model_id.strip() if isinstance(requested_model_id, str) else ""
+        return {
+            "status": "INVALID_MODEL_RESPONSE",
+            "error_code": "MODEL_RESPONSE_NOT_OBJECT",
+            "model_id": None,
+            "actual_model_id": None,
+            "requested_model_id": requested_id,
+            "model_identity_status": "UNVERIFIED",
+            "analysis_schema_version": EXPERIMENTS[experiment_id]["analysis_schema_version"],
+        }
+    actual_model_id = response.get("model_id")
+    identity_status = compare_model_identity(actual_model_id, requested_model_id)
+    actual_id = actual_model_id.strip() if isinstance(actual_model_id, str) and actual_model_id.strip() else None
+    requested_id = requested_model_id.strip() if isinstance(requested_model_id, str) else ""
+    schema_version = EXPERIMENTS[experiment_id]["analysis_schema_version"]
     if response.get("error_code"):
         code = str(response["error_code"])
         status = "MODEL_TIMEOUT" if "TIMEOUT" in code.upper() else "MODEL_ERROR"
         return {"status": status, "error_code": code,
                 "error_type": response.get("error_type"),
-                "model_id": response.get("model_id") or requested_model_id,
+                "model_id": actual_id,
+                "actual_model_id": actual_id,
+                "requested_model_id": requested_id,
+                "model_identity_status": identity_status,
+                "analysis_schema_version": schema_version,
                 "prompt_version": EXPERIMENTS[experiment_id]["prompt_version"],
                 "state_sha256": state_sha}
     analysis = response.get("analysis")
-    errors = validate_analysis(
-        analysis, context.evidence_refs, state_snapshot=state_snapshot,
+    validation = validate_study_analysis(
+        experiment_id, analysis, valid_evidence_refs=context.evidence_refs,
+        declared_schema_version=schema_version, state_snapshot=state_snapshot,
     )
     try:
         json.dumps(analysis, ensure_ascii=False, allow_nan=False)
@@ -214,19 +239,24 @@ def _response_record(response: Any, *, experiment_id: str, context: CausalContex
     except (TypeError, ValueError):
         serializable_analysis = None
     raw_response = response.get("raw_model_response")
-    actual_model_id = response.get("model_id")
-    model_id_mismatch = (
-        isinstance(actual_model_id, str) and actual_model_id.strip()
-        and actual_model_id.strip() != requested_model_id
-    )
+    identity_error = {
+        "MATCHED": [],
+        "MISMATCH": ["MODEL_ID_MISMATCH"],
+        "UNVERIFIED": ["MODEL_ID_UNVERIFIED"],
+    }[identity_status]
+    validation_errors = sorted(set(validation["errors"] + identity_error))
     return {
-        "status": "MODEL_ID_MISMATCH" if model_id_mismatch else (
-            "COMPLETED" if not errors else "INVALID_MODEL_OUTPUT"
-        ),
+        "status": ("MODEL_ID_MISMATCH" if identity_status == "MISMATCH" else
+                   "MODEL_ID_UNVERIFIED" if identity_status == "UNVERIFIED" else
+                   "COMPLETED" if validation["valid"] else "INVALID_MODEL_OUTPUT"),
         "analysis": serializable_analysis,
-        "validation_errors": sorted(set(errors + (["MODEL_ID_MISMATCH"] if model_id_mismatch else []))),
-        "model_id": actual_model_id.strip() if isinstance(actual_model_id, str) and actual_model_id.strip()
-        else requested_model_id,
+        "analysis_schema_version": schema_version,
+        "analysis_validation": validation,
+        "validation_errors": validation_errors,
+        "model_id": actual_id,
+        "actual_model_id": actual_id,
+        "requested_model_id": requested_id,
+        "model_identity_status": identity_status,
         "prompt_version": EXPERIMENTS[experiment_id]["prompt_version"],
         "raw_model_response": raw_response if isinstance(raw_response, str) else None,
         "raw_model_response_sha256": (
@@ -312,6 +342,10 @@ def run_study(decision_points: list[dict[str, Any]], *, cache_rows: list[dict[st
     validate_model_call_gate(run=run, max_decisions=max_decisions)
     if not isinstance(decision_points, list):
         raise StudyError("DECISION_POINTS_INVALID")
+    if model_id is not None:
+        if not isinstance(model_id, str) or not model_id.strip():
+            raise StudyError("MODEL_ID_INVALID")
+        model_id = model_id.strip()
     if run and model_caller is None:
         raise StudyError("MODEL_CALLER_NOT_CONFIGURED")
     if run and (not isinstance(model_id, str) or not model_id.strip()):
@@ -332,6 +366,7 @@ def run_study(decision_points: list[dict[str, Any]], *, cache_rows: list[dict[st
             "data_as_of_by_timeframe": context.record()["data_as_of_by_timeframe"],
             "input_sha256": context.input_sha256,
             "state_sha256": state_sha,
+            "validation_state_snapshot": validation_state_snapshot(state),
             "context": context.record(),
             "experiments": {},
             "lifecycle": {"proposal": "NOT_OBSERVED", "gateway_acceptance": "NOT_OBSERVED",
@@ -372,12 +407,41 @@ def run_study(decision_points: list[dict[str, Any]], *, cache_rows: list[dict[st
                 row = find_exact_cache(cache_rows, expected) if expected else None
                 if row:
                     analysis = deepcopy(row.get("analysis"))
-                    risk, lifecycle = _proposal_risk_preflight(analysis, point)
+                    source = point.get("a0_original") if isinstance(point.get("a0_original"), dict) else {}
+                    original_state = safe_state_snapshot(source.get("state_snapshot"))
+                    original_refs = collect_evidence_refs(source.get("model_input"))
+                    declared_schema = row.get("analysis_schema_version")
+                    if declared_schema is None and isinstance(row.get("identity"), dict):
+                        declared_schema = row["identity"].get("analysis_schema_version")
+                    validation = validate_study_analysis(
+                        "A0", analysis, valid_evidence_refs=original_refs,
+                        declared_schema_version=declared_schema,
+                        state_snapshot=original_state,
+                    )
+                    actual_model_id = row.get("actual_model_id")
+                    requested_model_id = expected["model_id"]
+                    identity_status = compare_model_identity(actual_model_id, requested_model_id)
+                    if validation["valid"] and identity_status == "MATCHED":
+                        risk, lifecycle = _proposal_risk_preflight(analysis, point)
+                    else:
+                        risk = None
+                        lifecycle = {"proposal": "NOT_OBSERVED", "management_proposal": "NOT_OBSERVED",
+                                     "gateway_acceptance": "NOT_OBSERVED", "venue_fill": "NOT_OBSERVED",
+                                     "complete_close": "NOT_OBSERVED"}
                     cached = {
                         "status": "CACHE_MATCH", "prompt_version": spec["prompt_version"],
                         "analysis": analysis,
+                        "analysis_schema_version": declared_schema,
+                        "analysis_validation": validation,
+                        "validation_evidence_refs": sorted(original_refs),
+                        "validation_state_snapshot": validation_state_snapshot(original_state),
+                        "model_id": actual_model_id,
+                        "actual_model_id": actual_model_id,
+                        "requested_model_id": requested_model_id,
+                        "model_identity_status": identity_status,
                         "cached_provenance": {"identity": deepcopy(row.get("identity")),
-                                              "analysis_present": isinstance(analysis, dict)},
+                                              "analysis_present": isinstance(analysis, dict),
+                                              "cached_response_status": row.get("status")},
                         "new_model_calls": 0, "lifecycle": lifecycle,
                     }
                     if risk is not None:
@@ -393,22 +457,45 @@ def run_study(decision_points: list[dict[str, Any]], *, cache_rows: list[dict[st
             risk_mode = str(point.get("risk_mode") or "FIXED_NOTIONAL")
             payload = experiment_prompt(experiment_id, context, state, risk_inputs, risk_mode)
             identity = exact_cache_identity(
-                experiment_id=experiment_id, model_id=str(model_id or "UNKNOWN"),
+                experiment_id=experiment_id, model_id=model_id or "UNKNOWN",
                 prompt_sha=prompt_sha256(
                     experiment_id, context, state, risk_inputs, risk_mode,
                 ), data_sha=context.input_sha256,
                 decision_time=when, state_sha=state_sha or "MISSING",
                 prompt_version=spec["prompt_version"],
+                analysis_schema_version=spec["analysis_schema_version"],
             )
             cached = find_exact_cache(cache_rows, identity)
             if cached is not None:
                 analysis = deepcopy(cached.get("analysis"))
-                risk, lifecycle = _proposal_risk_preflight(analysis, point)
+                declared_schema = cached.get("analysis_schema_version")
+                if declared_schema is None and isinstance(cached.get("identity"), dict):
+                    declared_schema = cached["identity"].get("analysis_schema_version")
+                validation = validate_study_analysis(
+                    experiment_id, analysis, valid_evidence_refs=context.evidence_refs,
+                    declared_schema_version=declared_schema, state_snapshot=state,
+                )
+                actual_model_id = cached.get("actual_model_id")
+                identity_status = compare_model_identity(actual_model_id, identity["model_id"])
+                if validation["valid"] and identity_status == "MATCHED":
+                    risk, lifecycle = _proposal_risk_preflight(analysis, point)
+                else:
+                    risk = None
+                    lifecycle = {"proposal": "NOT_OBSERVED", "management_proposal": "NOT_OBSERVED",
+                                 "gateway_acceptance": "NOT_OBSERVED", "venue_fill": "NOT_OBSERVED",
+                                 "complete_close": "NOT_OBSERVED"}
                 record["experiments"][experiment_id] = {
                     "status": "CACHE_MATCH", "prompt_version": spec["prompt_version"],
                     "analysis": analysis,
+                    "analysis_schema_version": declared_schema,
+                    "analysis_validation": validation,
+                    "model_id": actual_model_id,
+                    "actual_model_id": actual_model_id,
+                    "requested_model_id": identity["model_id"],
+                    "model_identity_status": identity_status,
                     "cached_provenance": {"identity": deepcopy(cached.get("identity")),
                                           "analysis_present": isinstance(analysis, dict),
+                                          "cached_response_status": cached.get("status"),
                                           "raw_model_response_sha256": (
                                               hashlib.sha256(cached["raw_model_response"].encode("utf-8")).hexdigest()
                                               if isinstance(cached.get("raw_model_response"), str) else None
@@ -448,7 +535,13 @@ def run_study(decision_points: list[dict[str, Any]], *, cache_rows: list[dict[st
                                                 context=context, state_sha=state_sha,
                                                 requested_model_id=str(model_id),
                                                 state_snapshot=state)
-                risk, lifecycle = _proposal_risk_preflight(model_record.get("analysis"), point)
+                if model_record.get("status") == "COMPLETED":
+                    risk, lifecycle = _proposal_risk_preflight(model_record.get("analysis"), point)
+                else:
+                    risk = None
+                    lifecycle = {"proposal": "NOT_OBSERVED", "management_proposal": "NOT_OBSERVED",
+                                 "gateway_acceptance": "NOT_OBSERVED", "venue_fill": "NOT_OBSERVED",
+                                 "complete_close": "NOT_OBSERVED"}
                 model_record["lifecycle"] = lifecycle
                 if risk is not None:
                     model_record["risk_preflight"] = risk
@@ -461,7 +554,9 @@ def run_study(decision_points: list[dict[str, Any]], *, cache_rows: list[dict[st
     return {
         "schema_version": SCHEMA_VERSION,
         "run_manifest": {"mode": "EXPLICIT_MODEL_RUN" if run else "OFFLINE_DEFAULT",
-                         "model_id": model_id, "model_call_budget": max_decisions if run else 0,
+                         "model_id": model_id,
+                         "model_id_role": "MODEL_CALL_REQUEST" if run else "CACHE_MATCH_METADATA",
+                         "model_call_budget": max_decisions if run else 0,
                          "model_calls_used": request_count, "experiment_ids": list(EXPERIMENTS),
                          "outcomes_included": False},
         "decision_records": records,

@@ -48,8 +48,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.input.resolve() == args.output.resolve():
             raise ValueError("INPUT_AND_OUTPUT_MUST_DIFFER")
         validate_model_call_gate(run=args.run, max_decisions=args.max_decisions)
-        if not args.run and (args.caller or args.model_id):
-            raise StudyError("CALLER_AND_MODEL_ID_REQUIRE_RUN_FLAG")
+        if not args.run and args.caller:
+            raise StudyError("MODEL_CALLER_REQUIRES_RUN_FLAG")
         if args.run and not args.caller:
             raise StudyError("MODEL_CALLER_NOT_CONFIGURED")
         if args.run and not args.model_id:

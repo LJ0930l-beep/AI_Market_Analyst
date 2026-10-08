@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from .context import CausalContext, _canonical_sha, _stamp, _utc
+from .validation import schema_version_for_experiment
 
 EXPERIMENTS: dict[str, dict[str, Any]] = {
     "A0": {
@@ -15,6 +16,7 @@ EXPERIMENTS: dict[str, dict[str, Any]] = {
         "kind": "EXACT_CACHE_REPLAY_ONLY",
         "requires_exact_cache": True,
         "calls_model": False,
+        "analysis_schema_version": schema_version_for_experiment("A0"),
     },
     "A1": {
         "name": "context_location_signal",
@@ -22,6 +24,7 @@ EXPERIMENTS: dict[str, dict[str, Any]] = {
         "kind": "STRUCTURED_PRICE_ACTION_ANALYSIS",
         "requires_exact_cache": False,
         "calls_model": True,
+        "analysis_schema_version": schema_version_for_experiment("A1"),
     },
     "A2": {
         "name": "A1_target_space_and_counter_evidence",
@@ -29,6 +32,7 @@ EXPERIMENTS: dict[str, dict[str, Any]] = {
         "kind": "STRUCTURED_ANALYSIS_WITH_TARGET_EVIDENCE",
         "requires_exact_cache": False,
         "calls_model": True,
+        "analysis_schema_version": schema_version_for_experiment("A2"),
     },
     "A3": {
         "name": "fixed_failed_breakout_rule_baseline",
@@ -36,6 +40,7 @@ EXPERIMENTS: dict[str, dict[str, Any]] = {
         "kind": "DETERMINISTIC_RESEARCH_ONLY",
         "requires_exact_cache": False,
         "calls_model": False,
+        "analysis_schema_version": None,
     },
 }
 
@@ -65,6 +70,7 @@ def experiment_prompt(experiment_id: str, context: CausalContext,
     payload = {
         "experiment_id": key,
         "prompt_version": EXPERIMENTS[key]["prompt_version"],
+        "analysis_schema_version": EXPERIMENTS[key]["analysis_schema_version"],
         "analysis_instructions": instructions,
         "causal_context": context.prompt_payload(),
         "state_snapshot": safe_state_snapshot(state_snapshot),
@@ -228,11 +234,15 @@ def a0_cache_identity(point: dict[str, Any]) -> dict[str, str] | None:
     state = safe_state_snapshot(source.get("state_snapshot"))
     model_id = source.get("model_id")
     prompt_version = source.get("prompt_version")
+    analysis_schema_version = source.get("analysis_schema_version")
+    expected_schema_version = schema_version_for_experiment("A0")
     point_time = _utc(point.get("decision_time"))
     if (not isinstance(prompt, str) or not prompt or not isinstance(model_input, dict)
             or state is None or point_time is None):
         return None
     if not isinstance(model_id, str) or not model_id.strip() or not isinstance(prompt_version, str) or not prompt_version.strip():
+        return None
+    if analysis_schema_version != expected_schema_version:
         return None
     forbidden_fragments = (
         "outcome", "review", "error_label", "pnl", "realized",
@@ -264,6 +274,7 @@ def a0_cache_identity(point: dict[str, Any]) -> dict[str, str] | None:
         "decision_time": _stamp(point_time),
         "state_sha256": state_hash,
         "prompt_version": prompt_version.strip(),
+        "analysis_schema_version": expected_schema_version,
     }
 
 
@@ -277,7 +288,8 @@ def prompt_sha256(experiment_id: str, context: CausalContext,
 
 def exact_cache_identity(*, experiment_id: str, model_id: str,
                          prompt_sha: str, data_sha: str, decision_time: str,
-                         state_sha: str, prompt_version: str) -> dict[str, str]:
+                         state_sha: str, prompt_version: str,
+                         analysis_schema_version: str) -> dict[str, str]:
     return {
         "experiment_id": str(experiment_id),
         "model_id": str(model_id),
@@ -286,6 +298,7 @@ def exact_cache_identity(*, experiment_id: str, model_id: str,
         "decision_time": str(decision_time),
         "state_sha256": str(state_sha),
         "prompt_version": str(prompt_version),
+        "analysis_schema_version": str(analysis_schema_version),
     }
 
 
