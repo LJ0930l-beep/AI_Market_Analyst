@@ -63,3 +63,14 @@ The requested long-term product contract is documented in `docs/plans/AI-Market-
 ## Remaining follow-up
 
 Human review of the V41 evidence remains open. V42 still requires independent data/schema review, a verified provider retry/idempotency policy, and separate explicit authorization for any model and budget. Nothing in this PR authorizes exchange access, Live mode, or orders.
+
+
+## Gate 2 blind-evaluation follow-up — 2026-10-09
+
+The addition-only V3 primary sample uses a hash-frozen seeded monthly/temporal-stratum selector and partition-purged 8-day windows. It contains 72 paired BTC/ETH contexts: 36 optimization, 18 validation, and 18 untouched-test hash-only; the 54 visible inputs were independently rebuilt and the audit found zero same-symbol or cross-partition overlaps. The V3 manifest SHA-256 is `1f9e157bad2df4c32f863c2ae7a779b7d9ed573ad09d37f49ca44590eca4352a`. Original V1 (180 contexts, 10 cross-partition overlaps) and V2 fixed-grid (80 contexts, no overlap) remain intact and are separately reported; they are not pooled with V3.
+
+Blind reference-label protocol V2 is frozen at canonical SHA-256 `14827250890d37e33fc0b25121ca0414065e9e835c6beef830c95ed2a3fda64c`. It accepts only the V3 primary dataset and binds its 54 visible decision IDs to exact causal-input hashes; two independent blinded raters, UNKNOWN, disagreement preservation, exact manifest/input binding, and metric denominators are specified. Labels remain 0. Protocol V1 was superseded before any annotation. A1/A2 provider/model identities and spend are unselected/unauthorized; A3 has no historical point-in-time bid/ask; B0 is omitted; V25 A0 remains 0/100.
+
+V3 focused selection tests and independent source/data audit are reported in `V38-gate2-blind-evaluation-preregistration.md`. The final local full-suite evidence-recorded run completed with **2,399 passed, 1 skipped, 0 failed**; the exact baseline comparison resolved all 100 baseline failure nodes/phases, passed all 76 added nodes, and found no new failures, missing baseline nodes, or phase changes. All research outcomes remain null or `NOT_RUN`; zero close samples cannot support a strategy-quality or profitability claim.
+
+The previously noted Codex `gpt-5.6-sol` capability probe may have initiated an inference request before interruption. It returned neither a response nor usage receipt, so service/quota status is unverified. Gemini research calls for V38 remain zero; the incident is kept distinct.

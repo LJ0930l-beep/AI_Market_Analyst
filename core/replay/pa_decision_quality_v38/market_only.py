@@ -537,3 +537,12 @@ def _valid_stored_input(request: dict[str, Any]) -> bool:
         return request.get("market_input_sha256") == _canonical_sha(without_digest)
     except (MarketOnlyError, TypeError, ValueError):
         return False
+
+
+def validate_stored_market_only_input(request: Any) -> bool:
+    """Check a persisted V38 input's schema, immutable digest, partition and cutoff."""
+    return (
+        isinstance(request, dict)
+        and request.get("schema_version") == INPUT_SCHEMA_VERSION
+        and _valid_stored_input(request)
+    )
