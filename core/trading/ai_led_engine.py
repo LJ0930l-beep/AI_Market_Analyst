@@ -12,7 +12,7 @@ Fulfills N08 & AT31–AT35 requirements:
 from __future__ import annotations
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone, timedelta
-from decimal import Decimal, ROUND_DOWN, ROUND_UP
+from decimal import Decimal
 import enum
 import hashlib
 import json
@@ -950,6 +950,15 @@ class AILedDecisionEngine:
                     # precision and exchange constraints before submission.
                     # All four strategy templates share this same path.
                     side = "LONG" if output.action == "OPEN_LONG" else "SHORT"
+                    from .entry_economics import (
+                        EntryEconomicsError,
+                        effective_min_net_rr,
+                        evaluate_gate_entry_economics,
+                        market_amount_step,
+                        market_price_tick,
+                        quantize_gate_prices,
+                        quantity_for_notional,
+                    )
                     strategy_exec = (context.strategy_instructions or {}).get("execution") or {}
                     if not isinstance(strategy_exec, dict):
                         strategy_exec = {}
@@ -967,10 +976,11 @@ class AILedDecisionEngine:
                         market_info = market_snap.get("market") or market_snap.get("metadata") or {}
                         contract_size = Decimal(str(market_info.get("contractSize", market_info.get("contract_size", market_snap.get("contractSize")))))
                         amount_rules = (market_info.get("limits") or {}).get("amount") or {}
-                        amount_step = Decimal(str((market_info.get("precision") or {}).get("amount") or amount_rules.get("step")))
+                        amount_step = market_amount_step(market_snap, market_info)
+                        price_tick = market_price_tick(market_snap, market_info)
                         min_amount = Decimal(str(amount_rules.get("min")))
                         max_amount = Decimal(str(amount_rules.get("max")))
-                        if not all(value.is_finite() and value > 0 for value in (notional, stop, target, quote, contract_size, amount_step, min_amount, max_amount)) or configured_leverage < 1:
+                        if not all(value.is_finite() and value > 0 for value in (notional, stop, target, quote, contract_size, amount_step, price_tick, min_amount, max_amount)) or configured_leverage < 1:
                             raise ValueError("non-positive or missing trading economics")
                         from .strategy_execution import venue_leverage_limit
                         venue_max_leverage = venue_leverage_limit(market_info)
@@ -1047,25 +1057,59 @@ class AILedDecisionEngine:
                                 "reason": "STRATEGY_NOTIONAL_CAP" if single_cap <= affordable else limiting_budget,
                             }
                             notional = effective_cap
-                        if any(str(position.get("side") or "").upper() == side for position in existing_positions):
-                            return finish(output, "BLOCKED", "NOFX_SAME_SIDE_POSITION_EXISTS")
                         preference = str(output.order_preference or "").upper()
                         if preference not in {"LIMIT", "MARKET"}:
                             return finish(output, "REJECTED", "AI_ORDER_TYPE_REQUIRED")
-                        if preference == "LIMIT":
-                            price_tick = Decimal(str(((market_info.get("limits") or {}).get("price") or {}).get("step") or (market_info.get("precision") or {}).get("price") or market_snap.get("price_tick")))
-                            if not price_tick.is_finite() or price_tick <= 0:
-                                return finish(output, "BLOCKED", "GATE_PRICE_TICK_UNAVAILABLE")
-                            raw_entry = Decimal(str(output.limit_price or output.entry_price))
-                            rounding = ROUND_DOWN if side == "LONG" else ROUND_UP
-                            entry = (raw_entry / price_tick).to_integral_value(rounding=rounding) * price_tick
-                        else:
-                            entry = quote
-                        if entry <= 0 or (side == "LONG" and not (stop < entry < target)) or (side == "SHORT" and not (target < entry < stop)):
-                            return finish(output, "REJECTED", "NOFX_PROTECTION_GEOMETRY_INVALID")
-                        quantity = (notional / (entry * contract_size) / amount_step).to_integral_value(rounding=ROUND_DOWN) * amount_step
+                        if output.entry_price is None:
+                            return finish(output, "REJECTED", "AI_ENTRY_PRICE_REQUIRED")
+                        if (preference == "LIMIT" and output.limit_price is not None
+                                and Decimal(str(output.limit_price)) != Decimal(str(output.entry_price))):
+                            return finish(output, "REJECTED", "AI_LIMIT_ENTRY_PRICE_CONFLICT")
+                        raw_entry = output.limit_price if preference == "LIMIT" and output.limit_price is not None else output.entry_price
+                        entry, stop, target = quantize_gate_prices(
+                            side=side, order_type=preference.lower(), quote=quote,
+                            entry_price=raw_entry, stop_price=stop, target_price=target,
+                            price_tick=price_tick,
+                        )
+                        slippage_raw = market_snap.get("slippage")
+                        if slippage_raw is None:
+                            slippage_raw = market_snap.get("slippage_rate")
+                        if slippage_raw is None:
+                            return finish(output, "BLOCKED", "GATE_SLIPPAGE_UNAVAILABLE")
+                        equity_raw = truth.get("equity")
+                        if equity_raw is None:
+                            return finish(output, "BLOCKED", "REMOTE_ACCOUNT_EQUITY_UNAVAILABLE")
+                        risk_per_trade_pct = strategy_exec.get("risk_per_trade_pct")
+                        min_net_rr = strategy_exec.get("min_net_rr")
+                        if risk_per_trade_pct is None or min_net_rr is None:
+                            return finish(output, "BLOCKED", "ACTIVE_STRATEGY_RISK_POLICY_UNAVAILABLE")
+                        min_net_rr = effective_min_net_rr(
+                            (context.strategy_instructions or {}).get("template_id"), min_net_rr,
+                        )
+                        quantity = quantity_for_notional(
+                            notional_usdt=notional, entry_price=entry,
+                            order_type=preference.lower(), side=side,
+                            contract_size=contract_size, amount_step=amount_step,
+                            slippage_rate=slippage_raw,
+                        )
                         if quantity < min_amount or quantity > max_amount:
                             return finish(output, "REJECTED", "GATE_AMOUNT_OUTSIDE_CONTRACT_LIMITS")
+                        economics = evaluate_gate_entry_economics(
+                            side=side, order_type=preference.lower(), quote=quote,
+                            entry_price=entry, stop_price=stop, target_price=target,
+                            quantity=quantity, contract_size=contract_size,
+                            price_tick=price_tick, amount_step=amount_step,
+                            taker_fee_rate=fee_raw, slippage_rate=slippage_raw,
+                            equity=equity_raw, risk_per_trade_pct=risk_per_trade_pct,
+                            min_net_rr=min_net_rr,
+                        )
+                        entry, stop, target = economics.entry_price, economics.stop_price, economics.target_price
+                        quantity = economics.quantity
+                        output.extra_fields["entry_economics"] = economics.audit_dict()
+                        if any(str(position.get("side") or "").upper() == side for position in existing_positions):
+                            return finish(output, "BLOCKED", "NOFX_SAME_SIDE_POSITION_EXISTS")
+                    except EntryEconomicsError as exc:
+                        return finish(output, "REJECTED", exc.code)
                     except (TypeError, ValueError, ArithmeticError) as exc:
                         return finish(output, "REJECTED", f"NOFX_ORDER_ECONOMICS_INVALID: {exc}")
 
@@ -1093,7 +1137,7 @@ class AILedDecisionEngine:
                         closed_15m_bar=output.closed_15m_bar, order_preference=preference,
                         final_order_type=preference.lower(), selection_reason_code="AI_SELECTED",
                         selection_reason=f"NoFx-style AI-authored Gate {mode_scope.upper()} order",
-                        selection_evidence={"requested_notional_usdt": output.position_size_usdt, "target_notional_usdt": str(notional), "sizing_mode": "FIXED_NOTIONAL" if fixed_notional else "MODEL_NOTIONAL", "rounding_quantum_usdt": str(entry * contract_size * amount_step), "submitted_notional_usdt": str(quantity * entry * contract_size), "model_evidence_refs": list(output.evidence_refs)},
+                        selection_evidence={"requested_notional_usdt": output.position_size_usdt, "target_notional_usdt": str(notional), "sizing_mode": "FIXED_NOTIONAL" if fixed_notional else "MODEL_NOTIONAL", "rounding_quantum_usdt": str(entry * contract_size * amount_step), "submitted_notional_usdt": str(quantity * entry * contract_size), "entry_economics": economics.audit_dict(), "model_evidence_refs": list(output.evidence_refs)},
                         limit_price=float(entry) if preference == "LIMIT" else None,
                         ttl_seconds=output.ttl_seconds or DEFAULT_LIMIT_TTL_SECONDS,
                         selection_policy_version="nofx_gate_v2_model_leverage",

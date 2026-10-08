@@ -759,6 +759,9 @@ class AccountLedger:
         reservation_id: str,
         amount_margin: Decimal,
         *,
+        amount_risk: Decimal | None = None,
+        risk_per_trade_pct: Decimal | None = None,
+        min_net_rr: Decimal | None = None,
         max_margin_pct: Decimal,
         margin_cap_mode: str = "PERCENT",
         max_margin_usdt: Decimal | None = None,
@@ -766,20 +769,29 @@ class AccountLedger:
         expires_at: datetime,
         now: Optional[datetime] = None,
     ) -> bool:
-        """Atomically reserve only the active Gate TestNet strategy's margin cap.
+        """Atomically reserve Gate AI margin and stop-loss risk.
 
-        The caller's percentage is never trusted: this transaction loads the
-        currently active strategy again, alongside fresh private Gate equity.
-        Standard loss-based reservations remain unchanged.
+        The caller's risk and margin percentages are never trusted: this
+        transaction reloads the active strategy and the latest private Gate
+        equity. A MARGIN_ONLY intent without finite stop-risk evidence is
+        rejected; margin availability is not a substitute for loss-at-stop.
         """
         now = now or datetime.now(timezone.utc)
         now = now.replace(tzinfo=timezone.utc) if now.tzinfo is None else now.astimezone(timezone.utc)
         account_id = self._canonical_account_id(account_id)
         margin = Decimal(str(amount_margin))
+        risk = Decimal(str(amount_risk)) if amount_risk is not None else None
         requested_pct = Decimal(str(max_margin_pct))
         requested_mode = str(margin_cap_mode).upper()
         requested_fixed = Decimal(str(max_margin_usdt)) if max_margin_usdt is not None else None
-        if (not margin.is_finite() or margin <= 0 or not requested_pct.is_finite()
+        requested_risk_pct = Decimal(str(risk_per_trade_pct)) if risk_per_trade_pct is not None else None
+        requested_min_rr = Decimal(str(min_net_rr)) if min_net_rr is not None else None
+        if (not margin.is_finite() or margin <= 0 or risk is None or not risk.is_finite() or risk <= 0
+                or requested_risk_pct is None or not requested_risk_pct.is_finite()
+                or not Decimal("0") < requested_risk_pct <= Decimal("0.25")
+                or requested_min_rr is None or not requested_min_rr.is_finite()
+                or not Decimal("1.5") <= requested_min_rr <= Decimal("10")
+                or not requested_pct.is_finite()
                 or requested_mode not in {"PERCENT", "FIXED_USDT"}
                 or (requested_mode == "PERCENT" and requested_pct <= 0)
                 or (requested_mode == "FIXED_USDT" and (requested_fixed is None or not requested_fixed.is_finite() or requested_fixed <= 0))):
@@ -802,7 +814,7 @@ class AccountLedger:
                     conn.rollback()
                     return False
                 strategy_row = conn.execute(
-                    "SELECT execution_json FROM ai_strategy_instructions WHERE account_id=? ORDER BY revision DESC LIMIT 1",
+                    "SELECT execution_json,template_id FROM ai_strategy_instructions WHERE account_id=? ORDER BY revision DESC LIMIT 1",
                     (account_id,),
                 ).fetchone()
                 if strategy_row is None:
@@ -813,10 +825,20 @@ class AccountLedger:
                     active_pct = Decimal(str(strategy["max_margin_pct"]))
                     active_mode = str(strategy.get("margin_cap_mode") or "PERCENT").upper()
                     active_fixed = Decimal(str(strategy.get("max_margin_usdt"))) if active_mode == "FIXED_USDT" else None
+                    active_risk_pct = Decimal(str(strategy["risk_per_trade_pct"]))
+                    from .ai_strategy_book import ACTIVE_TEMPLATE_IDS
+                    active_template_id = str(strategy_row["template_id"] or "")
+                    if active_template_id not in ACTIVE_TEMPLATE_IDS:
+                        active_template_id = "price_action_structure"
+                    from .entry_economics import effective_min_net_rr
+                    active_min_rr = effective_min_net_rr(active_template_id, strategy["min_net_rr"])
                 except (KeyError, TypeError, ValueError, InvalidOperation, json.JSONDecodeError):
                     conn.rollback()
                     return False
                 if (active_pct != requested_pct or active_mode != requested_mode
+                        or active_risk_pct != requested_risk_pct or active_min_rr != requested_min_rr
+                        or not Decimal("0") < active_risk_pct <= Decimal("0.25")
+                        or not Decimal("1.5") <= active_min_rr <= Decimal("10")
                         or (active_mode == "PERCENT" and not Decimal("0") < active_pct <= Decimal("80"))
                         or (active_mode == "FIXED_USDT" and (active_fixed is None or active_fixed != requested_fixed or active_fixed <= 0))):
                     conn.rollback()
@@ -853,13 +875,18 @@ class AccountLedger:
                 if equity is None or available is None or used is None or equity <= 0 or available < 0 or used < 0:
                     conn.rollback()
                     return False
+                if risk > equity * active_risk_pct / Decimal("100"):
+                    conn.rollback()
+                    return False
                 existing = conn.execute(
-                    "SELECT account_id,amount_margin,status FROM risk_reservations WHERE reservation_id=?",
+                    "SELECT account_id,amount_risk,amount_margin,status FROM risk_reservations WHERE reservation_id=?",
                     (reservation_id,),
                 ).fetchone()
                 if existing is not None:
                     conn.commit()
-                    return bool(existing["account_id"] == account_id and existing["status"] == "PENDING" and Decimal(str(existing["amount_margin"])) == margin)
+                    return bool(existing["account_id"] == account_id and existing["status"] == "PENDING"
+                                and Decimal(str(existing["amount_risk"])) == risk
+                                and Decimal(str(existing["amount_margin"])) == margin)
                 conn.execute("UPDATE risk_reservations SET status='EXPIRED' WHERE status='PENDING' AND expires_at < ?", (now.isoformat(),))
                 reserved = conn.execute(
                     "SELECT COALESCE(SUM(CAST(amount_margin AS REAL)),0) FROM risk_reservations WHERE account_id=? AND status='PENDING'",
@@ -875,8 +902,8 @@ class AccountLedger:
                 conn.execute(
                     """INSERT INTO risk_reservations
                        (reservation_id,account_id,amount_risk,amount_margin,status,expires_at,created_at,instrument_id,venue,mode)
-                       VALUES (?,?,'0',?,'PENDING',?,?,?,'gate',?)""",
-                    (reservation_id, account_id, str(margin), expires_at.isoformat(), now.isoformat(), instrument_id, account_mode),
+                       VALUES (?,?,?,?,'PENDING',?,?,?,'gate',?)""",
+                    (reservation_id, account_id, str(risk), str(margin), expires_at.isoformat(), now.isoformat(), instrument_id, account_mode),
                 )
                 conn.commit()
                 return True

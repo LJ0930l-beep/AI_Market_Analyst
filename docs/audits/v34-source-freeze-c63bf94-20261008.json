@@ -1,0 +1,133 @@
+{
+  "experiment_id": "gemini-year-research-v34-risk-rr-2000-20261008",
+  "verification_kind": "OFFLINE_FROZEN_CONTRACT_AND_REGRESSION_VERIFICATION",
+  "created_at_utc": "2026-10-08T06:13:26.203019+00:00",
+  "base_commit": "c63bf94f6f1db8db96f18e3b8af260a25a82e93b",
+  "base_commit_expected": "c63bf94f6f1db8db96f18e3b8af260a25a82e93b",
+  "active_strategy": {
+    "template_id": "price_action_structure",
+    "fixed_notional_usdt": 2000,
+    "sizing_mode": "FIXED_NOTIONAL",
+    "max_notional_usdt": 2000,
+    "leverage_mode": "VENUE_LIMIT",
+    "risk_per_trade_pct": 0.15,
+    "risk_policy": "MARGIN_ONLY_RESERVATION_PLUS_SEPARATE_STOP_RISK_CAP",
+    "min_net_rr_configured": 2.0,
+    "min_net_rr_hard_floor": 2.0,
+    "scan_interval_minutes": 15
+  },
+  "execution_scope": {
+    "new_gemini_calls": 0,
+    "private_exchange_calls": 0,
+    "real_gate_orders": 0,
+    "live_auto_enable": false,
+    "old_reports_modified": false,
+    "v33_errors_retried_or_removed": false
+  },
+  "frozen_runtime_source_file_count": 31,
+  "frozen_runtime_source_files": {
+    "core/replay/ai_template_runner.py": "be5ec3b5d429ec1ea55b0eaa0f7c53ec9850ea26ffbc3e5a39852c1e0e2108a6",
+    "core/replay/ai_history.py": "cb092f0df35163bac4405c66fa640c115b17d872769d2a0e1126522ba975765b",
+    "core/replay/ai_simulation.py": "6aa62d8d85fd24d4c373e80a9242812bda484bb5e3db85451c08bfbe5aa58c96",
+    "core/replay/gemini_research.py": "288f58f051cadee5e15dbd2fd85d28f4c6cd54f1f8224d8c759850bb89a0901f",
+    "core/config.py": "54eb9d764fe82bb3f184d60f2f570b7e70854db6c2d0695f8ea24cfb81ddba90",
+    "core/replay/relay_policy.py": "82db586cd1622281b64c21be55dedec83429288ea07fea087b67fffe033cd024",
+    "core/ai/transport_diagnostics.py": "32698010a97a82a5fd30b2acd9cd91f00a2eeed9ebe539925ca2a52b1974af57",
+    "core/replay/settled_funding.py": "9443855d84a95a406df555f3da065e1b0b15b01239b164e834763461726d0335",
+    "scripts/run_gemini_year_research.py": "f4ab14ce8feced1062d74dc50b386302dc8b670d4515f63355b9fdb2413b3747",
+    "scripts/verify_ai_template_replay.py": "b367eb325dddaf2148da213aeff3bbacf1686857fb2b5ebad8bff4fd86292155",
+    "scripts/run_gemini_heldout_research.py": "b359dfbe9395f0a0c341f3405d7acc2da47d9a37602b5e4fdd1475433c7f2739",
+    "scripts/analyze_gemini_research.py": "7cadcbdcf388bd3b9c78c76086fba37e4bd11cc868e4ca4aa86eb35c0845f77a",
+    "scripts/export_gemini_response_files.py": "bb126c51adaff3e361330a5fef128d9c5fa6ac42106152198781a4f34c6ebb27",
+    "core/trading/ai_session_coordinator.py": "fa4997f5cfdf05485d7020aa9abd2d04e7e82ff9b5965c593fa05e75858c0c25",
+    "core/trading/autonomous_strategy.py": "131ddefc87b13282a5e7db281f82aa932e6110a027037b04d42919df5d4705fd",
+    "core/trading/model_schemas.py": "b1e75d9cad7c0576c502858544d07fdcd7d7cf116de8326034894611b6753eed",
+    "core/trading/ai_led_engine.py": "7b2a217fd76e00ae74f74049cd8b6d94e1b2f7cb553c49409308f4e189805e0e",
+    "core/trading/ai_strategy_book.py": "17f28ec5f06ab2b37ac47d909f8d200e55ccb22910485811b163e18143ba1329",
+    "core/trading/price_action_structure.py": "bc7d9ca059815f88ea9e94d2df4e2dc31bdde36794c2f9f38484326436fc2221",
+    "core/trading/strategy_execution.py": "dd2671c03c45f22449721f55b1a2a98392e2159f3d1b989b08d365d9fb3be194",
+    "core/trading/execution_gateway.py": "45f6825d9c542c769b243f7a1d2d871ebe67c5162ade49cb0f1530911367c2b8",
+    "core/trading/entry_economics.py": "91e133d5da0580a0977253a51c5a3ae9286977fe875df01f1d904791babb597a",
+    "core/trading/order_selection.py": "6104c3f100ccb8a7b864d8bdc904f0fe45da8101cdd3196fd928ef0ebb542367",
+    "core/trading/fin_dataset_collector.py": "8e26978b42d05481c5171c306b81852a7af3c93b9ad152e94e29750e619c5605",
+    "core/trading/candidate_scanner.py": "6b13fc3334e5ab925275253e4f0ee644f954598ee0081611a225793fc9b4b3ed",
+    "core/trading/nofx_strategy_adapter.py": "037344bc517649c0fab36309198c40f0116d1c7af866eddc5e1458e1e17c20de",
+    "core/strategy_monitoring.py": "03d2ec69db742bd70998188d51b09d8fba7554c03b4da0a4b686b98e7e3a529a",
+    "core/ai/ollama.py": "f738aa22e1f8ba7d57324e0fd2bab912485fdad2f99ce17de3215806ce930b5f",
+    "core/model_client.py": "a68b3a565fe63bf58c8c6cf5b2701224d1099a5e12352e380aad5d0b074c9f3d",
+    "core/model_routing.py": "7108c2be0e222cbc07e34cce34d905ba12e04c3238f7b70689010e44fe9b55c4",
+    "core/completion_stream.py": "8970c49a9ca65aa8898fe112fc692a43ec3fea1c82e578e37157691bf3cbbf5f"
+  },
+  "frozen_runtime_source_manifest_sha256": "a539292b0d69db75ce6ade3e3a8063dd87b1e20a0c05aa342ac8c03e1bbb2cc5",
+  "changed_source_files": {
+    "core/replay/ai_template_runner.py": "be5ec3b5d429ec1ea55b0eaa0f7c53ec9850ea26ffbc3e5a39852c1e0e2108a6",
+    "core/trading/ai_led_engine.py": "7b2a217fd76e00ae74f74049cd8b6d94e1b2f7cb553c49409308f4e189805e0e",
+    "core/trading/ai_strategy_book.py": "17f28ec5f06ab2b37ac47d909f8d200e55ccb22910485811b163e18143ba1329",
+    "core/trading/execution_gateway.py": "45f6825d9c542c769b243f7a1d2d871ebe67c5162ade49cb0f1530911367c2b8",
+    "core/trading/ledger.py": "12c6a5f5393abeae6647635752c25e85e1afceda7e8c04b75877efadccfed3d2",
+    "core/trading/entry_economics.py": "91e133d5da0580a0977253a51c5a3ae9286977fe875df01f1d904791babb597a"
+  },
+  "regression_test_files": {
+    "tests/test_ai_template_runner.py": "d8930665a83a43016c8568d137e036e06844bf2caf48f1f85b6907ff58f7a74e",
+    "tests/test_fixed_notional_ai_execution.py": "4407e64d7bd17b21225a3f4133c0b2315f69d79be30dc450ae82c7a60a9abb7b",
+    "tests/test_gemini_closed_cost_review.py": "fe7f5feb2ae275e906b34ad1104053b322aa93b9619d6aa6c6b6ee4ec368eaf4",
+    "tests/test_gate_entry_economics.py": "5a28911d27e49239ab394bfe29d3e2d6541f7ffac4c741412e2f6d7f9545b97f",
+    "tests/test_nofx_gate_route.py": "6dfdf27ac84eea31c27742657d1883ec2df8bb193f290d9dfdd7fc23e33efbc2",
+    "tests/test_prepared_price_action_swing_context.py": "5095b824ce715a7c6e3e99278c136c052c2831695632eeee223194819f38c635",
+    "tests/test_price_action_specialization.py": "44b26ae4736ce033f1f84656b23cf31e0766dace591f1527e477ffb5d77d7d99"
+  },
+  "regression_test_manifest_sha256": "442e9c3e7429c64ae6dad4417604e384aa5b928f7cf5d2ca2d4f6612510fd444",
+  "bound_artifacts": {
+    "prior_v25_sanitized_sample_sha256": "4193956555d7576a3a754fbeb80198ad5b4828079b574dedf71eb347a13353cb",
+    "v33_timeout_diagnostic_sha256": "0203873589f13b64397d8796fcbab5662447494b516ce7bfe3dbccd1e6c2f72a",
+    "baseline_triage_review_sha256": "c3a7912fccec3796efcf38f1bda4f8e253b8e7363e0ead9806148f0298233a11",
+    "pytest_postrepair_comparison_sha256": "ed6d1b3d350536127f55f22aa8ffaa071d1cc246c6be4dffdc158d520ab56a8a",
+    "audit_report_sha256": "a5a205be48c2a09ed5abfa595ec48efe149f357a9fdfbe28618cd42340e47a39",
+    "v25_sample_sha256": "4193956555d7576a3a754fbeb80198ad5b4828079b574dedf71eb347a13353cb",
+    "pytest_comparison_sha256": "ed6d1b3d350536127f55f22aa8ffaa071d1cc246c6be4dffdc158d520ab56a8a",
+    "verification_report_sha256": "4be2af7b747d53c295fca7265b5e15d8ae655da076d819ceca191745636d4581"
+  },
+  "verification": {
+    "targeted_gate_policy": {
+      "command": "pytest -q tests/test_gate_entry_economics.py tests/test_nofx_gate_route.py tests/test_price_action_specialization.py tests/test_ai_strategy_book.py --tb=short",
+      "result": "87 passed"
+    },
+    "targeted_replay": {
+      "command": "pytest -q tests/test_gate_entry_economics.py::test_replay_execution_sink_rechecks_risk_and_rr_before_simulated_fill --tb=short",
+      "result": "2 passed"
+    },
+    "ruff_new_economics_and_policy_tests": "PASS",
+    "compileall_changed_sources_and_tests": "PASS",
+    "full_suite": {
+      "command": "pytest -q --tb=no --junitxml=docs/audits/pytest-v34-candidate-c63bf94-20261008.xml",
+      "failed": 100,
+      "passed": 2116,
+      "skipped": 1,
+      "warnings": 1,
+      "duration_seconds": 377.748,
+      "new_failure_nodeids": 0,
+      "inherited_failure_nodeids": 100,
+      "cleared_baseline_failure_nodeids": 3,
+      "junit_xml_sha256": "32db81fa3f54de7349ac938bee1d23e45b8c8c97ae96a224f9ef82ad1287db63",
+      "comparison_json_sha256": "71434784e7447a563486059dbd1671fcc73292a99bf865c031489149df35f6f2"
+    },
+    "profit_acceptance": "NOT_TESTED",
+    "gemini_protocol_acceptance": "NOT_TESTED",
+    "frozen_hashes_match_at_final_review": true,
+    "whole_project_green": false,
+    "offline_gate_contracts": "PASS"
+  },
+  "acceptance_status": "OFFLINE_CONTRACT_VERIFICATION_COMPLETE_NOT_PROFIT_ACCEPTANCE",
+  "final_review_at_utc": "2026-10-08T06:17:42.225783+00:00",
+  "published_artifacts": {
+    "prior_v25_sanitized_sample_sha256": "docs/research/v25-price-action-sample-20261008.json",
+    "v33_timeout_diagnostic_sha256": "docs/audits/gemini-v33-transport-timeout-c63bf94-20261008.json",
+    "baseline_triage_review_sha256": "docs/audits/pytest-baseline-triage-review-c63bf94-20261008.json",
+    "pytest_postrepair_comparison_sha256": "docs/audits/pytest-postrepair-comparison-c63bf94-20261008.json",
+    "audit_report_sha256": "docs/audits/audit-c63bf94-risk-rr-repair-20261008.md",
+    "v25_sample_sha256": "docs/research/v25-price-action-sample-20261008.json",
+    "pytest_comparison_sha256": "docs/audits/pytest-postrepair-comparison-c63bf94-20261008.json",
+    "verification_report_sha256": "docs/audits/v34-offline-contract-verification-20261008.md"
+  },
+  "public_artifact_status": "SANITIZED_AUDIT_SUMMARIES_AND_V25_SAMPLE_ONLY; raw databases, raw pytest capture, and JUnit XML remain local"
+}

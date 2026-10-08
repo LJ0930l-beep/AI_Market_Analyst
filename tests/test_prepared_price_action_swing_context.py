@@ -250,7 +250,8 @@ def test_real_coordinator_repair_and_simulated_execution_keep_prepared_swing_fac
     provider = Provider()
     database = tmp_path / "prepared-synthetic.sqlite3"
     result = runner.run_ai_template_replay(ReplayHistory(source), db_path=database, model_provider=provider,
-        priority_guard=lambda: None, max_decisions=1, template_ids=("price_action_structure",))
+        priority_guard=lambda: None, max_decisions=1, template_ids=("price_action_structure",),
+        initial_equity=200_000.0)
     assert result["errors"] == []
     assert result["decision_source"] == "TEST_PROVIDER" and result["comparison_eligible"] is False
     assert len(provider.payloads) == 2

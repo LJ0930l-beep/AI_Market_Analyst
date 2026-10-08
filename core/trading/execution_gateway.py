@@ -2150,14 +2150,21 @@ class ExecutionGateway:
     def _reserve_margin_only_ai_intent(
         self, intent: OrderIntent, market_snapshot: Dict[str, Any], clock: datetime,
     ):
-        """Reserve a Gate TestNet AI order against the active strategy margin cap.
+        """Reserve a Gate AI order against both margin and stop-risk caps.
 
-        This does not choose a position or resize the model's order.  Contract
-        units and venue fees are mechanical exchange economics; the ledger
-        rechecks fresh private equity and the current strategy atomically.
+        This does not choose or resize a position. Contract precision, fees,
+        slippage, net reward/risk, and stop loss are recomputed here; the ledger
+        then rechecks fresh private equity and the active strategy atomically.
         """
         from .risk_engine import RiskDecision
         from .strategy_execution import venue_leverage_limit
+        from .entry_economics import (
+            EntryEconomicsError,
+            effective_min_net_rr,
+            evaluate_gate_entry_economics,
+            market_amount_step,
+            market_price_tick,
+        )
 
         market = market_snapshot.get("market") or market_snapshot.get("metadata") or {}
         ceiling = venue_leverage_limit(market)
@@ -2168,22 +2175,26 @@ class ExecutionGateway:
             quote = Decimal(str(market_snapshot.get("price")))
             entry = Decimal(str(intent.price)) if intent.order_type.lower() == "limit" else quote
             # Gate's contract metadata may explicitly contain ``taker: None``
-            # while the same observed contract-universe snapshot supplies a
-            # verified top-level fee_rate.  dict.get(default) does not handle
-            # that case; use the same precedence as remote preflight.
+            # while the observed contract-universe snapshot supplies a fee.
             observed_fee = market.get("taker")
             if observed_fee is None:
                 observed_fee = market_snapshot.get("fee_rate")
             if observed_fee is None:
                 observed_fee = market_snapshot.get("taker_fee")
+            if observed_fee is None:
+                raise GatewayError("GATE_FEE_UNAVAILABLE", "Gate opening requires an observed taker fee.", 422)
             fee = Decimal(str(observed_fee))
             raw_slippage = market_snapshot.get("slippage")
             if raw_slippage is None:
-                if intent.order_type.lower() != "limit":
-                    raise GatewayError("MARKET_SLIPPAGE_UNAVAILABLE", "Market opening requires observed order-book slippage.", 422)
-                raw_slippage = 0
+                raw_slippage = market_snapshot.get("slippage_rate")
+            if raw_slippage is None:
+                raise GatewayError("GATE_SLIPPAGE_UNAVAILABLE", "Gate opening requires an observed adverse-slippage estimate.", 422)
             slippage = Decimal(str(raw_slippage))
-        except (TypeError, ValueError, InvalidOperation) as exc:
+            price_tick = market_price_tick(market_snapshot, market)
+            amount_step = market_amount_step(market_snapshot, market)
+        except GatewayError:
+            raise
+        except (TypeError, ValueError, InvalidOperation, EntryEconomicsError) as exc:
             raise GatewayError("MARKET_RULES_UNAVAILABLE", "Gate order economics are incomplete.", 422) from exc
         if (
             ceiling is None or leverage < 1 or leverage > ceiling
@@ -2191,13 +2202,9 @@ class ExecutionGateway:
             or min(quantity, contract_size, quote, entry) <= 0 or fee < 0 or slippage < 0
         ):
             raise GatewayError("GATE_ORDER_ECONOMICS_INVALID", "AI order exceeds Gate leverage or has invalid venue economics.", 422)
-        if intent.order_type.lower() == "market":
-            entry *= Decimal("1") + slippage
-        notional = quantity * contract_size * entry
-        margin = notional / Decimal(leverage) + notional * fee * Decimal("2")
         with self.store._connect() as db:
             row = db.execute(
-                "SELECT execution_json FROM ai_strategy_instructions WHERE account_id=? ORDER BY revision DESC LIMIT 1",
+                "SELECT execution_json,template_id FROM ai_strategy_instructions WHERE account_id=? ORDER BY revision DESC LIMIT 1",
                 (intent.account_id,),
             ).fetchone()
         if row is None:
@@ -2210,23 +2217,60 @@ class ExecutionGateway:
                 Decimal(str(strategy_cap["max_margin_usdt"]))
                 if margin_cap_mode == "FIXED_USDT" else None
             )
+            risk_per_trade_pct = Decimal(str(strategy_cap["risk_per_trade_pct"]))
+            from .ai_strategy_book import ACTIVE_TEMPLATE_IDS
+            active_template_id = str(row["template_id"] or "")
+            if active_template_id not in ACTIVE_TEMPLATE_IDS:
+                # The strategy book projects retired saved rows onto its only
+                # active PA profile without rewriting historical storage.
+                active_template_id = "price_action_structure"
+            min_net_rr = effective_min_net_rr(active_template_id, strategy_cap["min_net_rr"])
         except (KeyError, TypeError, ValueError, InvalidOperation, json.JSONDecodeError) as exc:
-            raise GatewayError("ACTIVE_STRATEGY_INVALID", "Active strategy has no valid margin cap.", 422) from exc
+            raise GatewayError("ACTIVE_STRATEGY_INVALID", "Active strategy has no valid margin and stop-risk policy.", 422) from exc
+        protection = intent.protection_plan
+        if protection is None or protection.take_profit is None:
+            raise GatewayError("AI_PROTECTION_PLAN_INCOMPLETE", "Gate AI opening requires both a stop and target.", 422)
+        try:
+            economics = evaluate_gate_entry_economics(
+                side=intent.side, order_type=intent.order_type.lower(), quote=quote,
+                entry_price=entry, stop_price=protection.stop_price,
+                target_price=protection.take_profit, quantity=quantity,
+                contract_size=contract_size, price_tick=price_tick,
+                amount_step=amount_step, taker_fee_rate=fee,
+                slippage_rate=slippage,
+                # Equity is checked from the latest private Gate snapshot by
+                # reserve_margin_only while holding the write transaction.
+                equity=None, risk_per_trade_pct=risk_per_trade_pct,
+                min_net_rr=min_net_rr,
+            )
+        except EntryEconomicsError as exc:
+            raise GatewayError(exc.code, str(exc), 422) from exc
+        # The gateway is a boundary, not a price-rewriting layer. The AI route
+        # must submit already tick-aligned values so the payload/hash, intent,
+        # stop protection, and risk calculation all describe one order.
+        if (economics.entry_price != Decimal(str(intent.price))
+                or economics.stop_price != Decimal(str(protection.stop_price))
+                or economics.target_price != Decimal(str(protection.take_profit))):
+            raise GatewayError("GATE_PRICE_PRECISION_INVALID", "Entry and protection prices must be aligned to the Gate tick.", 422)
+        notional = economics.notional_usdt
+        margin = notional / Decimal(leverage) + notional * fee * Decimal("2")
         reservation_id = f"res_{intent.intent_id}"
         expires_at = clock + timedelta(minutes=15)
         if self.ledger is None or not self.ledger.reserve_margin_only(
             intent.account_id, reservation_id, margin, max_margin_pct=max_margin_pct,
             margin_cap_mode=margin_cap_mode, max_margin_usdt=max_margin_usdt,
+            amount_risk=economics.estimated_stop_risk_usdt,
+            risk_per_trade_pct=risk_per_trade_pct, min_net_rr=min_net_rr,
             instrument_id=intent.instrument_id, expires_at=expires_at, now=clock,
         ):
-            raise GatewayError("MARGIN_CAP_OR_ACCOUNT_TRUTH_BLOCKED", "Gate TestNet available margin or active strategy margin cap does not permit this order.", 422)
+            raise GatewayError("MARGIN_OR_STOP_RISK_CAP_BLOCKED", "Fresh Gate equity, stop-risk cap, or active strategy margin cap does not permit this order.", 422)
         return RiskDecision(
             decision_id=f"margin_{intent.intent_id}", approved=True,
-            reason_code="MARGIN_ONLY_APPROVED", contracts=quantity, notional=notional,
-            risk_amount=Decimal("0"), allocated_margin=margin,
+            reason_code="MARGIN_AND_STOP_RISK_APPROVED", contracts=quantity, notional=notional,
+            risk_amount=economics.estimated_stop_risk_usdt, allocated_margin=margin,
             leverage=Decimal(leverage), entry_price=entry,
-            stop_price=Decimal(str(intent.protection_plan.stop_price)) if intent.protection_plan else Decimal("0"),
-            targets=[Decimal(str(intent.protection_plan.take_profit))] if intent.protection_plan and intent.protection_plan.take_profit is not None else [],
+            stop_price=economics.stop_price,
+            targets=[economics.target_price],
             expires_at=expires_at, reservation_id=reservation_id,
         )
 

@@ -22,6 +22,28 @@ def book(cases):
     return {'case_count':len(cases),'cases':cases}
 
 
+def expand_shared_text(value, shared_text):
+    """Reconstruct the compact prompt table before asserting exact decimals."""
+    if isinstance(value, dict):
+        if set(value) == {'t'}:
+            index = value['t']
+            assert type(index) is int and 0 <= index < len(shared_text)
+            return shared_text[index]
+        return {key: expand_shared_text(item, shared_text) for key, item in value.items()}
+    if isinstance(value, list):
+        return [expand_shared_text(item, shared_text) for item in value]
+    return value
+
+
+def restore_table_rows(payload, table_key):
+    rows = expand_shared_text(payload[table_key], payload.get('shared_text', []))
+    template_ids = payload.get('template_ids', [])
+    for row in rows:
+        if row and type(row[0]) is int:
+            row[0] = template_ids[row[0]]
+    return rows
+
+
 def test_costs_preserve_exact_decimals_and_separate_gross_losses_fee_flips_and_zero_samples():
     source=book([case(1,'-2','3'),case(2,'1','2'),case(3,'-1','1','4')])
     before=deepcopy(source)
@@ -67,7 +89,8 @@ def test_full_candidate_request_preserves_all_cost_rows_and_refuses_tampering():
     payload=json.loads(messages[1]['content'])
     assert len(payload['closed_cost_rows'])==5
     assert payload['closed_cost_columns']==costs['columns']
-    assert all(actual[1:]==expected[1:] for actual,expected in zip(payload['closed_cost_rows'],costs['rows']))
+    restored = restore_table_rows(payload, 'closed_cost_rows')
+    assert restored == costs['rows']
     assert sum(_estimate_tokens(m['content']) for m in messages)+OUTPUT_TOKENS+256<=8192
     costs['rows'][0][6]='0'
     with pytest.raises(ValueError,match='CLOSED_COST_BINDING'):
@@ -86,4 +109,5 @@ def test_cost_review_with_long_decimal_amounts_fits_without_silent_rounding():
     costs=summarize_closed_costs(cases,[s['template_id'] for s in evidence['styles']])
     messages,_=review_request(evidence,cases,waits,costs)
     data=json.loads(messages[1]['content'])
-    assert all(actual[1:]==expected[1:] for actual,expected in zip(data['closed_cost_rows'],costs['rows']))
+    restored = restore_table_rows(data, 'closed_cost_rows')
+    assert restored == costs['rows']

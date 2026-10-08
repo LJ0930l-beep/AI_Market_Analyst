@@ -1,0 +1,42 @@
+{
+  "source_commit": "c63bf94f6f1db8db96f18e3b8af260a25a82e93b",
+  "baseline": {
+    "command": "pytest -q --tb=no",
+    "failed": 103,
+    "passed": 2090,
+    "skipped": 1,
+    "warnings": 1,
+    "duration_seconds": 379.76
+  },
+  "postrepair": {
+    "command": "pytest -q --tb=no --junitxml=docs/audits/pytest-v34-candidate-c63bf94-20261008.xml",
+    "failed": 100,
+    "passed": 2116,
+    "skipped": 1,
+    "warnings": 1,
+    "duration_seconds": 377.748,
+    "total_tests": 2217,
+    "junit_artifact": "docs/audits/pytest-v34-candidate-c63bf94-20261008.xml",
+    "junit_artifact_storage": "LOCAL_ONLY_NOT_PUBLISHED; only the SHA-256 and compact node-ID comparison are shared."
+  },
+  "nodeid_comparison": {
+    "baseline_failed_nodeids": 103,
+    "postrepair_failed_nodeids": 100,
+    "inherited_failure_nodeids": 100,
+    "new_failure_nodeids": 0,
+    "cleared_failure_nodeids": 3,
+    "cleared": [
+      "tests/test_gemini_closed_cost_review.py::test_cost_review_with_long_decimal_amounts_fits_without_silent_rounding",
+      "tests/test_nofx_gate_route.py::test_unified_gateway_submits_gate_order_without_legacy_risk_engine[gate_live-LIVE-GATE_LIVE]",
+      "tests/test_nofx_gate_route.py::test_unified_gateway_submits_gate_order_without_legacy_risk_engine[gate_testnet-TESTNET-GATE_TESTNET]"
+    ],
+    "new": []
+  },
+  "remaining_failures_by_corrected_category": {
+    "RETIRED_OLD_MODEL_OR_CONTRACT": 90,
+    "ENVIRONMENT_DEPENDENCY": 10
+  },
+  "baseline_triage_review_sha256": "fdce30b1fce86c4f66906fad93558f1423d9244f035264eec8d1ecfec949ad85",
+  "classification_policy": "No nodeid was removed or ignored. Baseline product/audit questions remain distinct from retired provider contracts and environment-dependent failures.",
+  "status": "NO_NEW_FULL_SUITE_FAILURES; 3 BASELINE FAILURES CLEARED; 100 INHERITED FAILURES REMAIN"
+}

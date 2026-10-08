@@ -317,15 +317,15 @@ def test_gate_native_trigger_rejects_undercovered_partial_fill():
 
 
 @pytest.mark.parametrize("requested_leverage,expected_leverage,expected_quantity,cap_mode,cap_usdt,equity,used,available,requested_notional", [
-    (5, 5, 6, "PERCENT", 1000, 1000, 50, 500, 1000),
-    (25, 20, 10, "PERCENT", 1000, 1000, 50, 500, 1000),
-    (5, 5, 2, "FIXED_USDT", 100, 1000, 50, 500, 1000),
+    (5, 5, 6, "PERCENT", 1000, 100000, 50, 130, 1000),
+    (25, 20, 10, "PERCENT", 1000, 100000, 50, 500, 1000),
+    (5, 5, 2, "FIXED_USDT", 100, 100000, 50, 500, 1000),
     (5, 5, 25, "PERCENT", 1000, 100000, 0, 50000, 10000),
 ])
 def test_gate_model_open_uses_ai_leverage_and_account_margin_without_old_risk_engine(requested_leverage, expected_leverage, expected_quantity, cap_mode, cap_usdt, equity, used, available, requested_notional):
     now = datetime.now(timezone.utc)
     model_file = DEFAULT_SMART_MODEL
-    template = TEMPLATES[0]
+    template = next(item for item in TEMPLATES if item["id"] == "price_action_structure")
     strategy = {
         "template_id": template["id"], "revision": 65,
         "execution": {**template["execution_defaults"], "sizing_mode": "RISK_BASED", "leverage_mode": "STRATEGY_LIMIT", "max_notional_usdt": 2500,
@@ -356,7 +356,7 @@ def test_gate_model_open_uses_ai_leverage_and_account_margin_without_old_risk_en
     )
     proposal = AIActionOutput(
         action="OPEN_LONG", instrument_id="BTCUSDT", reason="已收盘突破与量能支持",
-        entry_price=99.9, stop_price=95, take_profit=110,
+        entry_price=99.9, stop_price=95, take_profit=112,
         position_size_usdt=requested_notional, requested_leverage=requested_leverage,
         order_preference="LIMIT", evidence_refs=("market_snapshot:BTCUSDT:observed",),
     )
@@ -383,10 +383,80 @@ def test_gate_model_open_uses_ai_leverage_and_account_margin_without_old_risk_en
     assert proposal.extra_fields["leverage_selection"]["model_requested"] == requested_leverage
 
 
+@pytest.mark.parametrize("mode,account_type", [(TradingMode.TESTNET, "GATE_TESTNET"), (TradingMode.LIVE, "GATE_LIVE")])
+@pytest.mark.parametrize("failure,target,equity,entry,limit,expected_reason", [
+    ("RR", 110, 1000000, 100, 100, "AI_NET_REWARD_RISK_TOO_LOW"),
+    ("LOWERED_PA_RR", 110, 1000000, 100, 100, "AI_NET_REWARD_RISK_TOO_LOW"),
+    ("RISK", 113, 10000, 100, 100, "STOP_RISK_LIMIT_EXCEEDED"),
+    ("MISSING_ENTRY", 113, 1000000, None, 100, "AI_ENTRY_PRICE_REQUIRED"),
+    ("CONFLICTING_ENTRY", 113, 1000000, 100, 100.1, "AI_LIMIT_ENTRY_PRICE_CONFLICT"),
+])
+def test_gate_ai_rejects_invalid_economics_before_gateway(mode, account_type, failure, target, equity, entry, limit, expected_reason):
+    now = datetime.now(timezone.utc)
+    template = next(item for item in TEMPLATES if item["id"] == "price_action_structure")
+    execution = {
+        **template["execution_defaults"], "sizing_mode": "FIXED_NOTIONAL",
+        "fixed_notional_usdt": 2000, "max_notional_usdt": 2500,
+        "leverage_mode": "VENUE_LIMIT",
+    }
+    if failure == "LOWERED_PA_RR":
+        execution["min_net_rr"] = 1.5
+    model_id = DEFAULT_SMART_MODEL
+    context = AICycleContext(
+        cycle_id=f"risk-check-{failure}-{mode.value}", account_id="managed-gate", generation=1,
+        started_at=now.isoformat(), expires_at=(now + timedelta(minutes=4)).isoformat(),
+        allowed_instruments=("BTCUSDT",), decision_contract=CONTRACT,
+        mode=mode, venue="gate", environment=mode.value,
+        model_id=model_id, model_version=model_id, model_call_attempted=True, model_call_completed=True,
+        model_inference_settings={"actual_model_id": model_id, "verified_manifest_model_id": model_id,
+                                 "model_identity_source": "completion_response"},
+        market_snapshots={"BTCUSDT": {
+            "price": 100, "slippage": 0.001, "fee_rate": 0.00075,
+            "data_as_of": now.isoformat(),
+            "market": {"contractSize": 1, "taker": 0.00075, "leverage_max": 20,
+                       "precision": {"amount": 1, "price": 0.1},
+                       "limits": {"amount": {"min": 1, "max": 10000}, "price": {"step": 0.1}}},
+        }},
+        account_truth={"status": "AVAILABLE", "equity": str(equity), "available_margin": str(equity),
+                       "used_margin": "0", "positions": [], "pending_orders": []},
+        strategy_instructions={"template_id": template["id"], "revision": 1, "execution": execution},
+    )
+    proposal = AIActionOutput(
+        action="OPEN_LONG", instrument_id="BTCUSDT", reason="fixture proposal",
+        entry_price=entry, limit_price=limit, stop_price=95, take_profit=target,
+        position_size_usdt=2000, requested_leverage=5, order_preference="LIMIT",
+        evidence_refs=("market_snapshot:BTCUSDT:fixture",), extra_fields={"confidence": 80},
+    )
+    submitted = []
+
+    class Gateway:
+        def submit_intent(self, intent, **kwargs):
+            submitted.append(intent)
+            return {"status": "ACKNOWLEDGED"}
+
+    engine = object.__new__(AILedDecisionEngine)
+    engine.gateway = Gateway()
+    engine.ledger = SimpleNamespace(get_open_positions=lambda *args, **kwargs: [])
+    engine.risk_engine = SimpleNamespace(evaluate_intent=lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("legacy risk engine called")))
+    engine.agent_policy_id = "fixture-policy"
+    engine._persist_cycle = lambda *args, **kwargs: None
+    engine._live_execution_quote = lambda *args, **kwargs: None
+
+    result = engine.execute_cycle(context, now=now, model_output=proposal)
+    assert result.status in {"REJECTED", "BLOCKED"}
+    assert expected_reason in result.reason
+    assert submitted == []
+    if failure == "RISK":
+        # Stop-risk failure must reject the unchanged 2,000-USDT proposal;
+        # it must not be silently resized to manufacture an approval.
+        assert proposal.position_size_usdt == 2000
+        assert "notional_adjustment" not in proposal.extra_fields
+
+
 def test_gate_live_model_open_uses_scoped_margin_only_gateway_without_order_side_effects():
     now = datetime.now(timezone.utc)
     model_file = DEFAULT_SMART_MODEL
-    template = TEMPLATES[0]
+    template = next(item for item in TEMPLATES if item["id"] == "price_action_structure")
     context = AICycleContext(
         cycle_id="live-fixture-cycle", account_id="gate_live", generation=1,
         started_at=now.isoformat(), expires_at=(now + timedelta(minutes=4)).isoformat(),
@@ -405,13 +475,13 @@ def test_gate_live_model_open_uses_scoped_margin_only_gateway_without_order_side
                        "precision": {"amount": 1, "price": 0.1},
                        "limits": {"amount": {"min": 1, "max": 1000}, "price": {"step": 0.1}}},
         }},
-        account_truth={"status": "AVAILABLE", "available_margin": "500", "positions": []},
+        account_truth={"status": "AVAILABLE", "equity": "100000", "available_margin": "50000", "used_margin": "0", "positions": []},
         strategy_instructions={"template_id": template["id"], "revision": 2,
                                "execution": template["execution_defaults"]},
     )
     proposal = AIActionOutput(
         action="OPEN_LONG", instrument_id="BTCUSDT", reason="已收盘突破与量能支持",
-        entry_price=99.9, stop_price=95, take_profit=110,
+        entry_price=99.9, stop_price=95, take_profit=112,
         position_size_usdt=1000, requested_leverage=5,
         order_preference="LIMIT", evidence_refs=("market_snapshot:BTCUSDT:observed",),
     )
@@ -461,6 +531,7 @@ def test_gate_live_margin_reservation_uses_only_live_remote_equity(tmp_path):
     now = datetime.now(timezone.utc)
     approved = ledger.reserve_margin_only(
         "gate_live", "live-reservation", Decimal("70"),
+        amount_risk=Decimal("1"), risk_per_trade_pct=Decimal("0.15"), min_net_rr=Decimal("2.0"),
         max_margin_pct=Decimal(str(active["execution"]["max_margin_pct"])),
         instrument_id="BTCUSDT", expires_at=now + timedelta(minutes=10), now=now,
     )
@@ -528,11 +599,51 @@ def test_margin_only_reservation_uses_active_strategy_and_remote_equity(tmp_path
     expiry = now + timedelta(minutes=10)
     assert ledger.reserve_margin_only(
         "gate_testnet", "first", Decimal("70"), max_margin_pct=Decimal("18"),
+        amount_risk=Decimal("1"), risk_per_trade_pct=Decimal("0.15"), min_net_rr=Decimal("2.0"),
         instrument_id="BTCUSDT", expires_at=expiry, now=now,
     )
     assert not ledger.reserve_margin_only(
         "gate_testnet", "second", Decimal("20"), max_margin_pct=Decimal("18"),
+        amount_risk=Decimal("1"), risk_per_trade_pct=Decimal("0.15"), min_net_rr=Decimal("2.0"),
         instrument_id="ETHUSDT", expires_at=expiry, now=now,
+    )
+
+
+def test_margin_only_ledger_rejects_a_lowered_persisted_pa_rr_policy(tmp_path):
+    store = SQLiteStore(tmp_path / "margin-only-pa-rr-floor.sqlite3")
+    store.initialize()
+    ledger = AccountLedger(store)
+    ledger.create_account("gate_testnet", "PAPER", config={
+        "account_type": "GATE_TESTNET", "provider": "gate", "execution_mode": "TESTNET",
+    })
+    book = AIStrategyBook(store)
+    active = book.active("gate_testnet")
+    saved = book.save("gate_testnet", name=active["name"], sections=active["sections"],
+                      expected_revision=active["revision"], execution=active["execution"])
+    assert saved["execution"]["min_net_rr"] == 2.0
+    with store._connect() as db:
+        row = db.execute(
+            "SELECT revision,execution_json FROM ai_strategy_instructions WHERE account_id=? ORDER BY revision DESC LIMIT 1",
+            ("gate_testnet",),
+        ).fetchone()
+        config = json.loads(row["execution_json"])
+        config["min_net_rr"] = 1.5
+        db.execute("UPDATE ai_strategy_instructions SET execution_json=? WHERE account_id=? AND revision=?",
+                   (json.dumps(config), "gate_testnet", row["revision"]))
+    GateAccountTruthService(store).refresh(
+        "gate_testnet", SimpleNamespace(get_account_truth=lambda **_: {
+            "status": "AVAILABLE", "api_environment": "TESTNET", "equity": "100000",
+            "available_margin": "90000", "used_margin": "10000",
+            "positions_status": "AVAILABLE", "pending_orders_status": "AVAILABLE",
+            "positions": [], "pending_orders": [],
+        }),
+    )
+    now = datetime.now(timezone.utc)
+    assert not ledger.reserve_margin_only(
+        "gate_testnet", "lowered-pa-rr", Decimal("70"),
+        amount_risk=Decimal("1"), risk_per_trade_pct=Decimal("0.15"), min_net_rr=Decimal("1.5"),
+        max_margin_pct=Decimal(str(saved["execution"]["max_margin_pct"])),
+        instrument_id="BTCUSDT", expires_at=now + timedelta(minutes=10), now=now,
     )
 
 
@@ -557,6 +668,7 @@ def test_margin_only_blocks_new_open_when_existing_entry_order_margin_is_unknown
     now = datetime.now(timezone.utc)
     assert not ledger.reserve_margin_only(
         "gate_testnet", "new-open", Decimal("10"), max_margin_pct=Decimal("12"),
+        amount_risk=Decimal("1"), risk_per_trade_pct=Decimal("0.15"), min_net_rr=Decimal("2.0"),
         instrument_id="ETHUSDT", expires_at=now + timedelta(minutes=10), now=now,
     )
 
@@ -584,6 +696,7 @@ def test_fixed_usdt_margin_cap_is_enforced_against_remote_position_margin(tmp_pa
     }))
     now = datetime.now(timezone.utc)
     kwargs = dict(max_margin_pct=Decimal(str(active["execution"]["max_margin_pct"])),
+                  amount_risk=Decimal("1"), risk_per_trade_pct=Decimal("0.15"), min_net_rr=Decimal("2.0"),
                   margin_cap_mode="FIXED_USDT", max_margin_usdt=Decimal("150"),
                   instrument_id="ETHUSDT", expires_at=now + timedelta(minutes=10), now=now)
     assert ledger.reserve_margin_only("gate_testnet", "first-fixed", Decimal("40"), **kwargs)
@@ -859,11 +972,13 @@ def test_gateway_margin_reservation_preserves_ai_leverage(tmp_path):
         intent_id="fixture-ai-open", idempotency_key="fixture-ai-open", account_id="gate_testnet",
         mode=TradingMode.TESTNET, venue="gate", instrument_id="BTCUSDT", side="LONG",
         order_type="limit", quantity=10, price=100, leverage=5,
-        protection_plan=ProtectionPlan(stop_price=95, take_profit=110), risk_policy="MARGIN_ONLY",
+        protection_plan=ProtectionPlan(stop_price=95, take_profit=112), risk_policy="MARGIN_ONLY",
     )
     decision = gateway._reserve_margin_only_ai_intent(intent, {
         "price": 100, "slippage": 0.001,
-        "market": {"contractSize": 1, "taker": 0.0005, "leverage_max": 20},
+        "market": {"contractSize": 1, "taker": 0.0005, "leverage_max": 20,
+                   "precision": {"amount": 1, "price": 0.1},
+                   "limits": {"price": {"step": 0.1}}},
     }, datetime.now(timezone.utc))
     assert decision.approved
     assert decision.leverage == Decimal("5")
@@ -886,14 +1001,55 @@ def test_gateway_margin_reservation_uses_observed_fee_when_gate_market_taker_is_
         intent_id="observed-fee-open", idempotency_key="observed-fee-open", account_id="gate_testnet",
         mode=TradingMode.TESTNET, venue="gate", instrument_id="ETHUSDT", side="SHORT",
         order_type="limit", quantity=10, price=100, leverage=5,
-        protection_plan=ProtectionPlan(stop_price=105, take_profit=90), risk_policy="MARGIN_ONLY",
+        protection_plan=ProtectionPlan(stop_price=105, take_profit=88), risk_policy="MARGIN_ONLY",
     )
     decision = gateway._reserve_margin_only_ai_intent(intent, {
-        "price": 100, "slippage": None, "fee_rate": 0.0005,
-        "market": {"contractSize": 1, "taker": None, "leverage_max": 20},
+        "price": 100, "slippage": 0.001, "fee_rate": 0.0005,
+        "market": {"contractSize": 1, "taker": None, "leverage_max": 20,
+                   "precision": {"amount": 1, "price": 0.1},
+                   "limits": {"price": {"step": 0.1}}},
     }, datetime.now(timezone.utc))
     assert decision.approved
     assert decision.allocated_margin == Decimal("201.0000")
+
+
+def test_gateway_rejects_low_net_rr_before_atomic_reservation(tmp_path):
+    store = SQLiteStore(tmp_path / "gateway-low-rr.sqlite3")
+    store.initialize()
+    book = AIStrategyBook(store)
+    current = book.active("gate_testnet")
+    book.save("gate_testnet", name=current["name"], sections=current["sections"],
+              expected_revision=current["revision"], execution=current["execution"])
+    # Simulate an old or directly edited persisted row that tries to lower the
+    # PA strategy floor; the gateway must still apply the registered 2.0.
+    with store._connect() as db:
+        row = db.execute(
+            "SELECT revision,execution_json FROM ai_strategy_instructions WHERE account_id=? ORDER BY revision DESC LIMIT 1",
+            ("gate_testnet",),
+        ).fetchone()
+        execution = json.loads(row["execution_json"])
+        execution["min_net_rr"] = 1.5
+        db.execute("UPDATE ai_strategy_instructions SET execution_json=? WHERE account_id=? AND revision=?",
+                   (json.dumps(execution), "gate_testnet", row["revision"]))
+    gateway = object.__new__(ExecutionGateway)
+    gateway.store = store
+    gateway.ledger = SimpleNamespace(
+        reserve_margin_only=lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("low RR reached ledger")))
+    intent = OrderIntent(
+        intent_id="gateway-low-rr", idempotency_key="gateway-low-rr", account_id="gate_testnet",
+        mode=TradingMode.TESTNET, venue="gate", instrument_id="BTCUSDT", side="LONG",
+        order_type="limit", quantity=20, price=100, leverage=5,
+        protection_plan=ProtectionPlan(stop_price=95, take_profit=110), risk_policy="MARGIN_ONLY",
+    )
+    market = {
+        "price": 100, "slippage": 0.001,
+        "market": {"contractSize": 1, "taker": 0.00075, "leverage_max": 20,
+                   "precision": {"amount": 1, "price": 0.1},
+                   "limits": {"price": {"step": 0.1}}},
+    }
+    with pytest.raises(GatewayError) as caught:
+        gateway._reserve_margin_only_ai_intent(intent, market, datetime.now(timezone.utc))
+    assert caught.value.code == "AI_NET_REWARD_RISK_TOO_LOW"
 
 
 @pytest.mark.parametrize("account_id,mode,account_type", [
@@ -910,7 +1066,7 @@ def test_unified_gateway_submits_gate_order_without_legacy_risk_engine(tmp_path,
         "account_type": account_type, "provider": "gate", "execution_mode": mode.value,
     })
     book = AIStrategyBook(store)
-    template = TEMPLATES[0]
+    template = next(item for item in TEMPLATES if item["id"] == "price_action_structure")
     book.save(account_id, name=template["name"], sections=template["sections"],
               expected_revision=0, template_id=template["id"], execution=template["execution_defaults"])
 
@@ -920,8 +1076,8 @@ def test_unified_gateway_submits_gate_order_without_legacy_risk_engine(tmp_path,
 
         def get_account_truth(self, **kwargs):
             return {
-                "status": "AVAILABLE", "api_environment": mode.value, "equity": "1000",
-                "available_margin": "1000", "used_margin": "0",
+                "status": "AVAILABLE", "api_environment": mode.value, "equity": "100000",
+                "available_margin": "100000", "used_margin": "0",
                 "positions_status": "AVAILABLE", "pending_orders_status": "AVAILABLE",
                 "positions": [], "pending_orders": [],
             }
@@ -940,14 +1096,14 @@ def test_unified_gateway_submits_gate_order_without_legacy_risk_engine(tmp_path,
         intent_id="integrated-ai-open", idempotency_key="integrated-ai-open",
         account_id=account_id, mode=mode, venue="gate", environment=mode.value,
         instrument_id="BTCUSDT", side="LONG", order_type="limit", quantity=5,
-        price=100, leverage=5, protection_plan=ProtectionPlan(stop_price=95, take_profit=110),
+        price=100, leverage=5, protection_plan=ProtectionPlan(stop_price=95, take_profit=112),
         risk_policy="MARGIN_ONLY", control_mode=ControlMode.AUTONOMOUS,
         decision_path=DecisionPath.AI_LED,
     )
     market = {
         "symbol": "BTCUSDT", "price": 100, "fresh": True,
         "data_as_of": now.isoformat(), "received_at": now.isoformat(),
-        "slippage": None if mode == TradingMode.LIVE else 0.001,
+        "slippage": 0.001,
         "fee_rate": 0.0005,
         "market": {
             "contractSize": 1, "taker": None if mode == TradingMode.LIVE else 0.0005, "leverage_max": 20,
@@ -962,7 +1118,80 @@ def test_unified_gateway_submits_gate_order_without_legacy_risk_engine(tmp_path,
     assert fake.orders[0]["leverage"] == 5
     with store._connect() as db:
         row = db.execute("SELECT risk_decision_json FROM order_intents WHERE intent_id=?", (intent.intent_id,)).fetchone()
-    assert "MARGIN_ONLY_APPROVED" in row["risk_decision_json"]
+        reservation = db.execute(
+            "SELECT amount_risk,amount_margin FROM risk_reservations WHERE account_id=? AND status='PENDING'",
+            (account_id,),
+        ).fetchone()
+    assert "MARGIN_AND_STOP_RISK_APPROVED" in row["risk_decision_json"]
+    assert Decimal(reservation["amount_risk"]) > 0
+    assert Decimal(reservation["amount_risk"]) <= Decimal("150")  # 0.15% of the fresh 100,000-USDT equity
+
+
+@pytest.mark.parametrize("account_id,mode,account_type", [
+    ("gate_testnet", TradingMode.TESTNET, "GATE_TESTNET"),
+    ("gate_live", TradingMode.LIVE, "GATE_LIVE"),
+])
+def test_gate_gateway_atomic_stop_risk_cap_blocks_testnet_and_live_before_order(
+    tmp_path, monkeypatch, account_id, mode, account_type,
+):
+    import core.trading.gate_accounts as gate_accounts
+
+    store = SQLiteStore(tmp_path / f"atomic-risk-{mode.value.lower()}.sqlite3")
+    store.initialize()
+    ledger = AccountLedger(store)
+    ledger.create_account(account_id, mode.value, config={
+        "account_type": account_type, "provider": "gate", "execution_mode": mode.value,
+    })
+    template = next(item for item in TEMPLATES if item["id"] == "price_action_structure")
+    book = AIStrategyBook(store)
+    book.save(account_id, name=template["name"], sections=template["sections"], expected_revision=0,
+              template_id=template["id"], execution={**template["execution_defaults"], "max_margin_pct": 80})
+
+    class FakeGate:
+        def __init__(self):
+            self.orders = []
+
+        def get_account_truth(self, **_kwargs):
+            return {
+                "status": "AVAILABLE", "api_environment": mode.value, "equity": "1000",
+                "available_margin": "1000", "used_margin": "0",
+                "positions_status": "AVAILABLE", "pending_orders_status": "AVAILABLE",
+                "positions": [], "pending_orders": [],
+            }
+
+        def place_order(self, **kwargs):
+            self.orders.append(kwargs)
+            return {"status": "open", "order_id": "must-not-be-used", "amount": kwargs["amount"], "filled": 0}
+
+    fake = FakeGate()
+    monkeypatch.setattr(gate_accounts, "is_managed_gate_account", lambda *_args: True)
+    monkeypatch.setattr(gate_accounts, "build_gate_trader", lambda *_args: fake)
+    gateway = ExecutionGateway(store, ledger=ledger)
+    now = datetime.now(timezone.utc)
+    intent = OrderIntent(
+        intent_id=f"atomic-risk-{mode.value.lower()}", idempotency_key=f"atomic-risk-{mode.value.lower()}",
+        account_id=account_id, mode=mode, venue="gate", environment=mode.value,
+        instrument_id="BTCUSDT", side="LONG", order_type="limit", quantity=20,
+        price=100, leverage=5, protection_plan=ProtectionPlan(stop_price=95, take_profit=113),
+        risk_policy="MARGIN_ONLY", control_mode=ControlMode.AUTONOMOUS,
+        decision_path=DecisionPath.AI_LED,
+    )
+    market = {
+        "symbol": "BTCUSDT", "price": 100, "fresh": True,
+        "data_as_of": now.isoformat(), "received_at": now.isoformat(),
+        "slippage": 0.001, "fee_rate": 0.0005,
+        "market": {
+            "contractSize": 1, "taker": 0.0005, "leverage_max": 20,
+            "precision": {"amount": 1, "price": 0.1},
+            "limits": {"amount": {"min": 1, "max": 1000}, "price": {"step": 0.1}},
+        },
+    }
+    with pytest.raises(GatewayError) as caught:
+        gateway.submit_intent(intent, market_snapshot=market, now=now)
+    assert caught.value.code == "MARGIN_OR_STOP_RISK_CAP_BLOCKED"
+    assert fake.orders == []
+    with store._connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM risk_reservations").fetchone()[0] == 0
 
 
 def test_remote_market_open_without_order_book_slippage_is_explicitly_blocked():

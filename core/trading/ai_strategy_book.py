@@ -1,12 +1,13 @@
 """Versioned, account-scoped trading instructions. Execution limits stay in code."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from copy import deepcopy
+from datetime import datetime, timezone
 import hashlib
 import json
 
-from .autonomous_strategy import POLICY, NOFX_GATE_POLICY
+from .autonomous_strategy import NOFX_GATE_POLICY, POLICY
+from .entry_economics import effective_min_net_rr
 from .strategy_execution import normalize_execution
 
 DEFAULT_SECTIONS = {
@@ -554,6 +555,9 @@ class AIStrategyBook:
                                        sizing_mode='FIXED_NOTIONAL', fixed_notional_usdt=2000.0,
                                        max_notional_usdt=2000.0, leverage_mode='VENUE_LIMIT')
             result['execution'] = normalize_execution(result['execution'])
+        result["execution"]["min_net_rr"] = float(effective_min_net_rr(
+            result.get("template_id"), result["execution"].get("min_net_rr"),
+        ))
         result["digest"] = hashlib.sha256(json.dumps(result, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
         return result
 
@@ -592,6 +596,9 @@ class AIStrategyBook:
         execution.update(sizing_mode='FIXED_NOTIONAL', fixed_notional_usdt=2000.0,
                          max_notional_usdt=2000.0, leverage_mode='VENUE_LIMIT')
         profile = deepcopy(template["profile"])
+        execution["min_net_rr"] = float(effective_min_net_rr(
+            template["id"], execution.get("min_net_rr"),
+        ))
         profile_preference = str(profile.get("order_preference") or "AUTO").upper()
         if bool(profile.get("limit_priority")):
             # Limit-first profiles use AUTO so the deterministic selector may

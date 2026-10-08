@@ -1,17 +1,17 @@
 """Single-strategy operator contract; fixtures do not prove returns."""
-from copy import deepcopy
 import json
+
 import pytest
 
-from core.storage import SQLiteStore
-from core.trading.ai_strategy_book import AIStrategyBook, ACTIVE_TEMPLATES, TEMPLATES
 from core.replay.ai_template_runner import frozen_templates, run_ai_template_replay
-from scripts.run_gemini_heldout_research import heldout_plan
-from scripts.audit_gemini_phase_outcomes import summarize_strategy
-from tests.test_ai_template_runner import history, wait
-from tests.test_gemini_year_research import fixture_archive
-from tests.test_gemini_phase_outcomes import trade, account
 from core.replay.gemini_research import research_plan
+from core.storage import SQLiteStore
+from core.trading.ai_strategy_book import ACTIVE_TEMPLATES, TEMPLATES, AIStrategyBook
+from scripts.audit_gemini_phase_outcomes import summarize_strategy
+from scripts.run_gemini_heldout_research import heldout_plan
+from tests.test_ai_template_runner import history, wait
+from tests.test_gemini_phase_outcomes import account, trade
+from tests.test_gemini_year_research import fixture_archive
 
 PA = 'price_action_structure'
 
@@ -60,13 +60,28 @@ def test_retired_saved_row_projects_pa_without_db_write_or_limit_reset(tmp_path)
 
 
 def test_pa_save_enforces_fixed_budget_preserving_margin(tmp_path):
-    strategy, _ = book(tmp_path)
+    strategy, result_store = book(tmp_path)
     result = strategy.save('gate_live', name='PA', sections=ACTIVE_TEMPLATES[0]['sections'],
         expected_revision=0, template_id=PA,
         execution={**ACTIVE_TEMPLATES[0]['execution_defaults'], 'fixed_notional_usdt': 500,
-                   'max_notional_usdt': 500, 'max_margin_pct': 8})
+                   'max_notional_usdt': 500, 'max_margin_pct': 8, 'min_net_rr': 1.5})
     assert result['execution']['fixed_notional_usdt'] == result['execution']['max_notional_usdt'] == 2000
     assert result['execution']['max_margin_pct'] == 8
+    assert result['execution']['min_net_rr'] == 2.0
+
+    # Even a legacy/directly edited stored row is projected back to the PA
+    # floor for prompts and UI without rewriting old history in the read path.
+    with result_store._connect() as db:
+        row = db.execute(
+            'SELECT revision,execution_json FROM ai_strategy_instructions WHERE account_id=? ORDER BY revision DESC LIMIT 1',
+            ('gate_live',),
+        ).fetchone()
+        execution = json.loads(row['execution_json'])
+        execution['min_net_rr'] = 1.5
+        db.execute('UPDATE ai_strategy_instructions SET execution_json=? WHERE account_id=? AND revision=?',
+                   (json.dumps(execution), 'gate_live', row['revision']))
+    projected = strategy.active('gate_live')
+    assert projected['execution']['min_net_rr'] == 2.0
 
 
 def test_replay_has_only_pa_and_rejects_resume_with_different_selection(tmp_path):

@@ -31,16 +31,21 @@ def test_fixed_value_venue_leverage_and_no_silent_budget_resize(template, ai_lev
         model_inference_settings={"actual_model_id": DEFAULT_SMART_MODEL,
             "verified_manifest_model_id": DEFAULT_SMART_MODEL, "model_identity_source": "completion_response"},
         market_snapshots={"BTCUSDT": {"price": 100, "data_as_of": now.isoformat(),
+            "slippage": 0.001,
             "market": {"contractSize": .01, "leverage_max": venue_max, "taker": .0005,
                 "precision": {"amount": 1, "price": .1},
                 "limits": {"amount": {"min": 1, "max": 100000}, "price": {"step": .1}}}}},
-        account_truth={"status": "AVAILABLE", "equity": "10000", "available_margin": str(available),
+        # The stop-risk cap is equity-based: retain the fixed 2,000 notional,
+        # but use enough equity for this deliberately wide fixture stop.
+        account_truth={"status": "AVAILABLE", "equity": "1000000", "available_margin": str(available),
                        "used_margin": "0", "positions": []},
         strategy_instructions={"template_id": template["id"], "execution": template["execution_defaults"]},
     )
     # AI amount drift cannot change the operator's fixed value.
+    rr_floor = Decimal(str(template["execution_defaults"]["min_net_rr"]))
+    target = 113 if rr_floor > Decimal("2") else 112 if rr_floor == Decimal("2") else 110
     proposal = AIActionOutput(action="OPEN_LONG", instrument_id="BTCUSDT", reason="历史结构支持",
-        entry_price=99.9, stop_price=95, take_profit=110,
+        entry_price=99.9, stop_price=95, take_profit=target,
         position_size_usdt=600, requested_leverage=ai_leverage, order_preference="LIMIT")
     submissions = []
     engine = object.__new__(AILedDecisionEngine)
@@ -62,7 +67,8 @@ def test_fixed_value_venue_leverage_and_no_silent_budget_resize(template, ai_lev
         assert Decimal("2000") - Decimal(".999") < actual <= Decimal("2000")
         assert intent.selection_evidence["target_notional_usdt"] == "2000.0"
         assert intent.protection_plan.stop_price == 95
-        assert intent.protection_plan.take_profit == 110
+        assert intent.protection_plan.take_profit == target
+        assert Decimal(intent.selection_evidence["entry_economics"]["estimated_stop_risk_usdt"]) <= Decimal("1500")
 
 
 def test_research_and_new_accounts_share_all_five_fixed_templates(tmp_path):

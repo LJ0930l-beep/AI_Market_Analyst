@@ -1,0 +1,79 @@
+{
+  "title": "Redacted V33 Gemini transport timeout diagnostic",
+  "source_experiment": "gemini-year-research-v33-main15-entry5-2000-20261008",
+  "source_commit": "c63bf94f6f1db8db96f18e3b8af260a25a82e93b",
+  "pilot_window": "pilot-1",
+  "terminal_rows": {
+    "COMPLETED": 47,
+    "ERROR": 3
+  },
+  "full_execution_status": "FAIL",
+  "failed_scan_indices": [
+    16,
+    22,
+    37
+  ],
+  "errors": [
+    {
+      "scan_index": 16,
+      "status": "PROVIDER_ERROR",
+      "failed_phase": "READING_RESPONSE_BODY",
+      "http_status": 200,
+      "transport_mode": "SSE",
+      "loopback_relay": true,
+      "relay_port": 8045,
+      "headers_wait_ms": 4531.0,
+      "first_content_ms": 9703.0,
+      "first_stream_event_ms": 4547.0,
+      "stream_event_count": 722,
+      "request_bytes_written": 24968,
+      "elapsed_ms": 161922.0,
+      "error_type": "TimeoutError"
+    },
+    {
+      "scan_index": 22,
+      "status": "PROVIDER_ERROR",
+      "failed_phase": "READING_RESPONSE_BODY",
+      "http_status": 200,
+      "transport_mode": "SSE",
+      "loopback_relay": true,
+      "relay_port": 8045,
+      "headers_wait_ms": 4125.0,
+      "first_content_ms": 6703.0,
+      "first_stream_event_ms": 4140.0,
+      "stream_event_count": 688,
+      "request_bytes_written": 25008,
+      "elapsed_ms": 161922.0,
+      "error_type": "TimeoutError"
+    },
+    {
+      "scan_index": 37,
+      "status": "PROVIDER_ERROR",
+      "failed_phase": "READING_RESPONSE_BODY",
+      "http_status": 200,
+      "transport_mode": "SSE",
+      "loopback_relay": true,
+      "relay_port": 8045,
+      "headers_wait_ms": 4312.0,
+      "first_content_ms": 4469.0,
+      "first_stream_event_ms": 4328.0,
+      "stream_event_count": 698,
+      "request_bytes_written": 25015,
+      "elapsed_ms": 161907.0,
+      "error_type": "TimeoutError"
+    }
+  ],
+  "cause": "UNKNOWN_PROVIDER_RELAY_OR_CLIENT_BODY_READ_STALL",
+  "interpretation": "HTTP 200 and early SSE events establish that each request reached the loopback relay and streaming began; the body-read timeout does not distinguish a provider stall, relay buffering/stall, or client-side consumption issue.",
+  "denominator": "All three ERROR scans remain in the 50-scan denominator. No retry/replay was issued and no V33 artifact was edited.",
+  "evidence_sha256": {
+    "full_execution_check.json": "cace04bd5c42d6da0e8809a31de022540ad0121a098c9d5847b65ef84efe0cfc",
+    "gemini_json_manifest.json": "53a9497d6b6a5c42ff440107be880241d3924495e0a5d1e841a8902a4f3cd4eb",
+    "scan16_initial_receipt.json": "703a5d69bf78927044b9ec2669ad7ba9a1e615bfd29db51f690b23dda6cf750a",
+    "scan22_initial_receipt.json": "c87cc5cf8db925547d6577eebec451950d04cc4c90bf1e8af0ca654a8562c9b4",
+    "scan37_initial_receipt.json": "1652718f79e67c67545f4b50c9fb4ef278f5de3cfc49c0434d0c49c73d2aa137"
+  },
+  "redaction": "No correlation IDs, raw responses, prompts, credentials, account IDs, exchange order IDs, or private exchange payloads included.",
+  "registered_plan_scans": 576,
+  "bounded_checkpoint_scans": 50
+}

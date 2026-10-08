@@ -14,6 +14,7 @@ from core.trading.ai_led_engine import AIActionOutput
 
 
 START = datetime(2026, 10, 2, tzinfo=timezone.utc)
+RISK_CAP_COMPATIBLE_EQUITY = 1_000_000.0
 
 
 def history(minutes=30, future_price=None):
@@ -227,7 +228,8 @@ def test_production_prompt_schema_receipt_and_engine_route_are_isolated(tmp_path
     monkeypatch.setattr(ai_session_coordinator, "_load_market_radar_snapshot", lambda *args: pytest.fail("present-day radar must not be read"))
     provider = FixtureProvider()
     path = tmp_path / "replay.sqlite3"
-    result = runner.run_ai_template_replay(history(5), db_path=path, model_provider=provider, priority_guard=lambda: None)
+    result = runner.run_ai_template_replay(history(5), db_path=path, model_provider=provider,
+        priority_guard=lambda: None, initial_equity=RISK_CAP_COMPATIBLE_EQUITY)
     assert result["status"] == "COMPLETED" and result["errors"] == []
     assert result["decision_source"] == "TEST_PROVIDER" and result["comparison_eligible"] is False
     assert len(provider.payloads) == 5
@@ -247,7 +249,7 @@ def test_production_prompt_schema_receipt_and_engine_route_are_isolated(tmp_path
         assert db.execute("SELECT COUNT(*) FROM ai_led_cycles").fetchone()[0] == 5
         assert db.execute("SELECT COUNT(*) FROM ai_cycle_stages").fetchone()[0] >= 5
     for summary in result["results"]:
-        assert summary["ending_equity"] < 1000  # Entry slippage and fee persist in the continuous account.
+        assert summary["ending_equity"] < RISK_CAP_COMPATIBLE_EQUITY  # Entry slippage and fee persist in the continuous account.
         assert summary["fills"] == 1 and summary["closed_trade_count"] == 0 and summary["win_rate"] is None
 
 
@@ -314,12 +316,12 @@ def test_production_prompt_manages_positions_across_scans(tmp_path, monkeypatch)
 
     provider = ManagingProvider()
     result = runner.run_ai_template_replay(history(45, future_price=110), db_path=tmp_path / "replay.sqlite3",
-        model_provider=provider, priority_guard=lambda: None)
+        model_provider=provider, priority_guard=lambda: None, initial_equity=RISK_CAP_COMPATIBLE_EQUITY)
     assert result["errors"] == []
     assert provider.actions == {"UPDATE_PROTECTION": 5, "CLOSE_POSITION": 5}
     for item in result["results"]:
         assert item["closed_trade_count"] == 1 and item["win_rate"] == 1
-        assert item["ending_equity"] > 1000 and item["fees"] > 0
+        assert item["ending_equity"] > RISK_CAP_COMPATIBLE_EQUITY and item["fees"] > 0
 
 
 def test_production_prompt_manages_pending_entry_and_cancels_it(tmp_path, monkeypatch):
@@ -340,7 +342,8 @@ def test_production_prompt_manages_pending_entry_and_cancels_it(tmp_path, monkey
             return decision, json.dumps(decision), metadata
 
     result = runner.run_ai_template_replay(history(20), db_path=tmp_path / "replay.sqlite3",
-        model_provider=CancelingProvider(), priority_guard=lambda: None)
+        model_provider=CancelingProvider(), priority_guard=lambda: None,
+        initial_equity=RISK_CAP_COMPATIBLE_EQUITY)
     assert result["errors"] == []
     assert all(item["action_counts"].get("CANCEL_ORDER", 0) >= 1 for item in result["results"])
     assert all(item["fills"] == 0 and item["win_rate"] is None for item in result["results"])
@@ -403,7 +406,8 @@ def test_complete_model_wall_latency_cannot_backfill_the_thinking_minute(tmp_pat
 
     data = _changed_history(history(5), cross_only_before_submit)
     path = tmp_path / "replay.sqlite3"
-    result = runner.run_ai_template_replay(data, db_path=path, model_provider=LimitProvider(), priority_guard=lambda: None)
+    result = runner.run_ai_template_replay(data, db_path=path, model_provider=LimitProvider(), priority_guard=lambda: None,
+        initial_equity=RISK_CAP_COMPATIBLE_EQUITY)
     assert result["errors"] == []
     assert all(item["fills"] == 0 and item["pending_order_count"] == 1 for item in result["results"])
     for row in rows(path):
@@ -487,7 +491,8 @@ def test_stale_model_management_cannot_update_protection_that_already_closed(tmp
     path = tmp_path / "replay.sqlite3"
     provider = ProtectionProvider()
     result = runner.run_ai_template_replay(_changed_history(history(20), cross_at_second_scan), db_path=path,
-                                         model_provider=provider, priority_guard=lambda: None)
+                                         model_provider=provider, priority_guard=lambda: None,
+                                         initial_equity=RISK_CAP_COMPATIBLE_EQUITY)
     management = [json.loads(row["result_json"]) for row in rows(path)
                   if json.loads(row["decision_json"] or "{}").get("action") == "UPDATE_PROTECTION"]
     assert len(management) >= 5 and len(provider.seen_positions) >= 5

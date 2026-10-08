@@ -11,6 +11,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import asdict, fields
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 import errno
 import hashlib
 import json
@@ -41,6 +42,7 @@ SCHEMA_VERSION = "ai_template_account_replay_v2_gemini"
 TEMPLATE_IDS = tuple(str(item["id"]) for item in TEMPLATES)
 MAKER_FEE_RATE = 0.0002
 TAKER_FEE_RATE = 0.00075
+SLIPPAGE_BPS = 2.0
 SOURCE_FILES = (
     "core/replay/ai_template_runner.py", "core/replay/ai_history.py", "core/replay/ai_simulation.py",
     "core/replay/gemini_research.py", "core/config.py",
@@ -51,7 +53,8 @@ SOURCE_FILES = (
     "core/trading/ai_session_coordinator.py", "core/trading/autonomous_strategy.py",
     "core/trading/model_schemas.py", "core/trading/ai_led_engine.py", "core/trading/ai_strategy_book.py",
     "core/trading/price_action_structure.py",
-    "core/trading/strategy_execution.py", "core/trading/execution_gateway.py", "core/trading/order_selection.py",
+    "core/trading/strategy_execution.py", "core/trading/execution_gateway.py", "core/trading/entry_economics.py",
+    "core/trading/order_selection.py",
     "core/trading/fin_dataset_collector.py",
     "core/trading/candidate_scanner.py", "core/trading/nofx_strategy_adapter.py", "core/strategy_monitoring.py",
     "core/ai/ollama.py", "core/model_client.py", "core/model_routing.py", "core/completion_stream.py",
@@ -246,6 +249,8 @@ def _market_snapshot(history: Any, symbol: str, point: datetime) -> dict[str, An
     snapshot["historical_settled_funding"] = settled["rates"][symbol]
     snapshot["fee_rate"] = TAKER_FEE_RATE
     snapshot["fee_assumption"] = "COMMON_RESEARCH_FEES_NOT_PRIVATE_ACCOUNT_TIER"
+    snapshot["slippage"] = SLIPPAGE_BPS / 10000
+    snapshot["slippage_assumption"] = "COMMON_RESEARCH_SLIPPAGE_NOT_PRIVATE_ORDER_BOOK"
     for key in ("market", "metadata", "contract_rules"):
         if isinstance(snapshot.get(key), dict):
             snapshot[key].update({"maker": MAKER_FEE_RATE, "taker": TAKER_FEE_RATE,
@@ -350,10 +355,11 @@ class _ReplayLedger:
 class _ReplayGateway:
     """A deliberately small execution sink with no exchange client or imports."""
 
-    def __init__(self, account: Any, history: Any, strategy: dict[str, Any]):
+    def __init__(self, account: Any, history: Any, strategy: dict[str, Any], *, prices: dict[str, float] | None = None):
         self.account = account
         self.history = history
         self.strategy = strategy
+        self.prices = dict(prices or {})
         self.as_of: datetime | None = None
         self.current_decision: dict[str, Any] = {}
         self.events: list[dict[str, Any]] = []
@@ -381,12 +387,56 @@ class _ReplayGateway:
             decision["quantity"] = float(intent.quantity)
             decision["ttl_seconds"] = intent.ttl_seconds or DEFAULT_LIMIT_TTL_SECONDS
         else:
+            from core.trading.entry_economics import (
+                EntryEconomicsError,
+                effective_min_net_rr,
+                evaluate_gate_entry_economics,
+                market_amount_step,
+                market_price_tick,
+            )
+
+            execution = self.strategy.get("execution") if isinstance(self.strategy, dict) else {}
+            execution = execution if isinstance(execution, dict) else {}
+            market = market_snapshot.get("market") or market_snapshot.get("metadata") or {}
+            truth = self.account.account_truth(self.prices, self.as_of)
+            observed_fee = market.get("taker")
+            if observed_fee is None:
+                observed_fee = market_snapshot.get("fee_rate", market_snapshot.get("taker_fee"))
+            slippage = market_snapshot.get("slippage", market_snapshot.get("slippage_rate"))
+            if observed_fee is None or slippage is None:
+                raise GatewayError("GATE_ENTRY_COSTS_UNAVAILABLE", "Replay requires explicit fee and slippage assumptions.")
+            try:
+                economics = evaluate_gate_entry_economics(
+                    side=intent.side, order_type=str(intent.order_type).lower(),
+                    quote=market_snapshot.get("price"), entry_price=intent.price,
+                    stop_price=intent.protection_plan.stop_price,
+                    target_price=intent.protection_plan.take_profit,
+                    quantity=intent.quantity,
+                    contract_size=market.get("contractSize", market.get("contract_size", market_snapshot.get("contractSize"))),
+                    price_tick=market_price_tick(market_snapshot, market),
+                    amount_step=market_amount_step(market_snapshot, market),
+                    taker_fee_rate=observed_fee, slippage_rate=slippage,
+                    equity=truth.get("equity"),
+                    risk_per_trade_pct=execution.get("risk_per_trade_pct"),
+                    min_net_rr=effective_min_net_rr(
+                        self.strategy.get("template_id"), execution.get("min_net_rr"),
+                    ),
+                )
+            except EntryEconomicsError as exc:
+                raise GatewayError(exc.code, str(exc)) from exc
+            if (economics.entry_price != Decimal(str(intent.price))
+                    or economics.stop_price != Decimal(str(intent.protection_plan.stop_price))
+                    or economics.target_price != Decimal(str(intent.protection_plan.take_profit))):
+                raise GatewayError("GATE_PRICE_PRECISION_INVALID", "Replay intent prices must align to the frozen contract tick.")
+            decision["entry_economics"] = economics.audit_dict()
             decision.update({"quantity": float(intent.quantity), "requested_leverage": int(intent.leverage),
                              "entry_price": float(intent.price), "order_preference": str(intent.order_type).upper(),
                              "limit_price": intent.limit_price, "ttl_seconds": intent.ttl_seconds,
                              "stop_price": intent.protection_plan.stop_price,
                              "take_profit": intent.protection_plan.take_profit})
         event = self._apply(decision, market_snapshot)
+        if not intent.reduce_only and isinstance(event, dict):
+            event["entry_economics"] = economics.audit_dict()
         return {**event, "status": OrderStatus.ACKNOWLEDGED.value, "source": "HISTORICAL_SIMULATION",
                 "simulation_event": event, "exchange_fill_verified": False}
 
@@ -663,7 +713,8 @@ def run_ai_template_replay(
         for strategy in templates:
             account = ReplayAccount(initial_equity=initial_equity, account_id=f"research:{run_id}:{strategy['template_id']}",
                                     margin_cap_pct=float(strategy["execution"]["max_margin_pct"]),
-                                    maker_fee_rate=MAKER_FEE_RATE, taker_fee_rate=TAKER_FEE_RATE)
+                                    maker_fee_rate=MAKER_FEE_RATE, taker_fee_rate=TAKER_FEE_RATE,
+                                    slippage_bps=SLIPPAGE_BPS)
             accounts[strategy["template_id"]] = account.to_dict()
         checkpoint = {"point_index": 0, "template_index": 0, "accounts": accounts, "decision_count": 0, "errors": []}
         with sql._connect() as db:
@@ -852,7 +903,7 @@ def run_ai_template_replay(
                 "research_clock_quantization": "CEIL_MINUTE_AFTER_COMPLETE_MODEL_WALL_ELAPSED"}
             ledger = _ReplayLedger(account)
             ledger.prices, ledger.as_of = execution_prices, submission_at
-            gateway = _ReplayGateway(account, history, strategy)
+            gateway = _ReplayGateway(account, history, strategy, prices=execution_prices)
             gateway.as_of, gateway.current_decision = submission_at, decision
             engine = _ReplayEngine(store=store, execution_gateway=gateway, risk_engine=SimpleNamespace(),
                                    ledger=ledger, guardian=SimpleNamespace(), agent_policy_id=AI_PROMPT_VERSION)
@@ -946,7 +997,7 @@ def run_ai_template_replay(
               "evaluated_through": final_time.isoformat(), "decision_count": checkpoint["decision_count"],
               "errors": checkpoint["errors"], "results": results, "assumptions": history.payload.get("assumptions", []),
               "cost_assumptions": {"maker_fee_rate": MAKER_FEE_RATE, "taker_fee_rate": TAKER_FEE_RATE,
-                                   "slippage_bps": 2.0, "source": "COMMON_RESEARCH_ASSUMPTION_NOT_PRIVATE_ACCOUNT_TIER"},
+                                   "slippage_bps": SLIPPAGE_BPS, "source": "COMMON_RESEARCH_ASSUMPTION_NOT_PRIVATE_ACCOUNT_TIER"},
               "result_db": str(output_path), "private_exchange_calls": 0,
               "production_sft_writes": 0,
               "model_weights_trained": False,

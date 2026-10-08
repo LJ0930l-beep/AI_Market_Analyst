@@ -1,0 +1,46 @@
+{
+  "source_commit": "c63bf94f6f1db8db96f18e3b8af260a25a82e93b",
+  "baseline_command": "pytest -q --tb=no",
+  "baseline_result": {
+    "failed": 103,
+    "passed": 2090,
+    "skipped": 1,
+    "warnings": 1,
+    "duration_seconds": 379.76
+  },
+  "original_triage_artifact": "docs/audits/pytest-baseline-triage-c63bf94-20261008.json",
+  "original_triage_artifact_preserved": true,
+  "corrected_classification": {
+    "RETIRED_OLD_MODEL_OR_CONTRACT": 92,
+    "ENVIRONMENT_DEPENDENCY": 10,
+    "TEST_EXPECTATION_OR_HELPER_DEFECT": 1,
+    "CONFIRMED_PRODUCT_REGRESSION": 0
+  },
+  "reclassification": {
+    "nodeid": "tests/test_gemini_closed_cost_review.py::test_cost_review_with_long_decimal_amounts_fits_without_silent_rounding",
+    "from": "REAL_REGRESSION",
+    "to": "TEST_EXPECTATION_OR_HELPER_DEFECT",
+    "reason": "The failure compared the pre-compaction projection and did not expand the compact shared-text/template references. The exact long-decimal text was preserved. The assertion helper now expands references before comparing; no compaction contract or precision validation was weakened."
+  },
+  "environment_failure_breakdown": {
+    "MODEL_ENDPOINT_NOT_ALLOWED": 8,
+    "AI_INPUT_BUDGET_EXCEEDED": 1,
+    "MOCK_PROVIDER_NOT_ENTERED_IN_FLIGHT_GENERATION": 1
+  },
+  "postrepair_comparison": {
+    "result_artifact": "docs/audits/pytest-postrepair-comparison-c63bf94-20261008.json",
+    "expected_remaining_failures": {
+      "RETIRED_OLD_MODEL_OR_CONTRACT": 90,
+      "ENVIRONMENT_DEPENDENCY": 10,
+      "new_failure_nodeids": 0
+    },
+    "no_tests_deleted_or_validation_weakened": true
+  },
+  "notes": [
+    "The baseline count classifies failures, not a license to delete or relax tests.",
+    "Independent code audit did find a production defect not isolated by the old failure list: Gate MARGIN_ONLY opening bypassed the shared fee-adjusted net-RR and stop-risk boundary. New regressions now cover it across TestNet, Live gateway validation and historical replay.",
+    "The two NoFx gateway variants that failed at baseline now pass after the route repair; the compact-payload test helper defect also passes after lossless expansion.",
+    "The full raw baseline failure capture and the large JUnit XML remain local diagnostics; the committed summaries contain only classifications, test node IDs, counts, and sanitized evidence."
+  ],
+  "original_triage_artifact_storage": "LOCAL_ONLY_NOT_PUBLISHED; raw exception output kept out of the GitHub commit."
+}
