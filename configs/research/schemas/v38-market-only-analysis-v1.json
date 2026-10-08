@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-market-analyst.local/schemas/v38-market-only-analysis-v1.json",
+  "title": "V38 Market-only Analysis",
+  "description": "A market opinion with no order, account, position, risk-pass, or net-RR authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "action", "market_view"],
+  "properties": {
+    "schema_version": {"const": "pa-market-only-v38/analysis-1"},
+    "action": {"enum": ["OBSERVE", "WAIT"]},
+    "market_view": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "market_regime", "higher_timeframe_bias", "location", "signal", "indicative_bias",
+        "candidate_setup", "target_structure", "counter_evidence", "decision_rationale",
+        "evidence_refs", "wait_reason"
+      ],
+      "properties": {
+        "market_regime": {"enum": ["BULL_TREND", "BEAR_TREND", "TRADING_RANGE", "BREAKOUT_TRANSITION", "UNCERTAIN"]},
+        "higher_timeframe_bias": {"enum": ["BULLISH", "BEARISH", "NEUTRAL", "UNCERTAIN"]},
+        "location": {"enum": ["TREND_PULLBACK", "RANGE_UPPER", "RANGE_LOWER", "RANGE_MIDDLE", "STRUCTURE_LEVEL", "BREAKOUT_RETEST", "EXTENDED", "OTHER", "UNKNOWN"]},
+        "signal": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["setup", "quality"],
+          "properties": {
+            "setup": {"enum": ["H1", "H2", "L1", "L2", "BREAKOUT", "BREAKOUT_PULLBACK", "FAILED_BREAKOUT", "REVERSAL", "WEDGE", "TRADING_RANGE_REVERSAL", "NONE", "OTHER", "UNKNOWN"]},
+            "quality": {"enum": ["STRONG", "CONDITIONAL", "WEAK", "NO_SIGNAL", "UNKNOWN"]}
+          }
+        },
+        "indicative_bias": {"enum": ["LONG", "SHORT", "NEUTRAL", "UNKNOWN"]},
+        "candidate_setup": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "description", "evidence_refs"],
+          "properties": {
+            "kind": {"enum": ["NONE", "CONDITIONAL", "UNASSESSED"]},
+            "description": {"type": "string", "minLength": 1},
+            "evidence_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}
+          }
+        },
+        "target_structure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "rationale", "evidence_refs"],
+          "properties": {
+            "kind": {"enum": ["PRIOR_SWING", "RANGE_EXTREME", "TREND_MEASURED_MOVE", "NONE", "UNKNOWN"]},
+            "rationale": {"type": "string", "minLength": 1},
+            "evidence_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}
+          }
+        },
+        "counter_evidence": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "decision_rationale": {"type": "string", "minLength": 1},
+        "evidence_refs": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}},
+        "wait_reason": {"type": ["string", "null"], "enum": ["UNCERTAIN_CONTEXT", "NO_CONFIRMED_SETUP", "COUNTER_EVIDENCE_DOMINATES", "DATA_INSUFFICIENT", "NOT_ASSESSED_BY_STUB", null]}
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"action": {"const": "WAIT"}}, "required": ["action"]},
+      "then": {"properties": {"market_view": {"properties": {"wait_reason": {"type": "string"}}}}}
+    },
+    {
+      "if": {"properties": {"action": {"const": "OBSERVE"}}, "required": ["action"]},
+      "then": {"properties": {"market_view": {"properties": {"wait_reason": {"const": null}}}}}
+    }
+  ]
+}
