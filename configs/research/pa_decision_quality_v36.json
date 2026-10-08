@@ -1,0 +1,59 @@
+{
+  "schema_version": "pa-decision-quality-v36/config-1",
+  "research_only": true,
+  "production_integration": false,
+  "live_orders_enabled": false,
+  "model_calls": {
+    "enabled": false,
+    "provider": null,
+    "max_decisions": 0,
+    "requires_injected_caller": true,
+    "requires_explicit_positive_budget": true
+  },
+  "input_contract": {
+    "required_timeframes": ["15m", "5m", "1h", "4h"],
+    "bars_must_be_closed_and_available_strictly_before_decision": true,
+    "minimum_bars_per_timeframe": 32,
+    "maximum_bars_per_timeframe": 240,
+    "require_source_quality_geometry_and_continuity": true,
+    "require_point_in_time_state_for_model_studies": true
+  },
+  "experiments": {
+    "A0": {
+      "prompt_version": "v35-as-recorded",
+      "mode": "EXACT_CACHE_ONLY",
+      "new_model_calls": false
+    },
+    "A1": {
+      "prompt_version": "pa_decision_quality_v36-A1.1",
+      "mode": "MODEL_INTERPRETS_CAUSAL_CONTEXT_LOCATION_SIGNAL",
+      "new_model_calls": false
+    },
+    "A2": {
+      "prompt_version": "pa_decision_quality_v36-A2.1",
+      "mode": "A1_PLUS_TARGET_SPACE_AND_COUNTER_EVIDENCE",
+      "new_model_calls": false
+    },
+    "A3": {
+      "prompt_version": "pa_decision_quality_v36-A3.1",
+      "mode": "FIXED_FAILED_BREAKOUT_RESEARCH_RULE",
+      "new_model_calls": false,
+      "production_authority": false
+    }
+  },
+  "economics": {
+    "shared_calculator": "core.trading.trade_feasibility.diagnose_trade_proposal",
+    "fixed_notional_usdt": "2000",
+    "risk_budgeted_notional_is_research_only": true,
+    "minimum_net_reward_risk": "2.0",
+    "maximum_single_trade_stop_risk_pct": "0.25",
+    "resize_proposals_to_force_eligibility": false
+  },
+  "outcomes": {
+    "included_in_model_prompt": false,
+    "joined_after_decision_record": true,
+    "join_key": ["experiment_id", "decision_id"],
+    "require_complete_close_for_trade_metrics": true,
+    "unqualified_lifecycle_events_inferred": false
+  }
+}
