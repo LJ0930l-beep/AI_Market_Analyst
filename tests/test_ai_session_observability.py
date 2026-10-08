@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from apps.api.v2 import router_for
 from core.storage import SQLiteStore
 from core.trading.ai_session_coordinator import AISessionCoordinator
-from core.trading.ai_strategy_book import TEMPLATES, AIStrategyBook
+from core.trading.ai_strategy_book import AIStrategyBook
 from core.trading.execution_gateway import TradingMode
 from core.trading.institutional_schema import ensure_institutional_trader_schema
 from core.trading.ledger import AccountLedger
@@ -78,15 +78,7 @@ def test_status_reports_active_strategy_cadence_and_labels_constructor_interval_
     store.initialize()
     book = AIStrategyBook(store)
     active = book.active("test-account")
-    strategy = next(item for item in TEMPLATES if item["id"] == "aggressive_impulse")
-    book.save(
-        "test-account",
-        name=strategy["name"],
-        sections=strategy["sections"],
-        expected_revision=active["revision"],
-        template_id=strategy["id"],
-        execution=strategy["execution_defaults"],
-    )
+    assert active["template_id"] == "price_action_structure"
 
     coordinator = object.__new__(AISessionCoordinator)
     coordinator.store = store
@@ -111,16 +103,16 @@ def test_status_reports_active_strategy_cadence_and_labels_constructor_interval_
     coordinator._last_duration_ms = None
     coordinator._next_scan_at = None
     coordinator._candidate_count = 0
-    coordinator.cycle_interval_seconds = 900  # legacy constructor value
+    coordinator.cycle_interval_seconds = 300  # legacy constructor value cannot override active cadence
     coordinator.model_budget_seconds = 30
     coordinator.session_manager = SimpleNamespace(status=dict)
     coordinator._health = lambda: {"status": "UNAVAILABLE"}
 
     status = coordinator.status()
 
-    assert status["schedule"]["interval_minutes"] == 5
-    assert status["cycle_interval_seconds"] == 300
-    assert status["scan_interval_seconds"] == 300
-    assert status["legacy_cycle_interval_seconds"] == 900
+    assert status["schedule"]["interval_minutes"] == 15
+    assert status["cycle_interval_seconds"] == 900
+    assert status["scan_interval_seconds"] == 900
+    assert status["legacy_cycle_interval_seconds"] == 300
     assert status["cycle_interval_source"] == "active_strategy_schedule"
-    assert status["schedule"]["alignment"] == "minute % 5 == 0"
+    assert status["schedule"]["alignment"] == "minute % 15 == 0"

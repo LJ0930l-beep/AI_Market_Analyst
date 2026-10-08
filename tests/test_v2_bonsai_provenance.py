@@ -36,25 +36,23 @@ def _payload() -> dict[str, Any]:
 
 
 def _verified_health(**_kwargs: object) -> dict[str, object]:
-    manifest_id = "Ternary-Bonsai-2-27B-PTQ1_0.gguf"
     return {
         "available": True,
         "model_available": True,
         "model_id": DEFAULT_FAST_MODEL,
-        "actual_model_id": manifest_id,
-        "model_identity_source": "verified_manifest",
-        "models": [manifest_id],
+        "actual_model_id": DEFAULT_FAST_MODEL,
+        "model_identity_source": "completion_probe",
+        "models": [DEFAULT_FAST_MODEL],
     }
 
 
 def _receipt(kwargs: dict[str, object]) -> dict[str, object]:
-    manifest_id = "Ternary-Bonsai-2-27B-PTQ1_0.gguf"
     return {
         "model_id": DEFAULT_FAST_MODEL,
-        "model_version": manifest_id,
-        "actual_model_id": manifest_id,
-        "model_identity_source": "request_bound_to_verified_manifest",
-        "verified_manifest_model_id": manifest_id,
+        "model_version": DEFAULT_FAST_MODEL,
+        "actual_model_id": DEFAULT_FAST_MODEL,
+        "model_identity_source": "completion_response",
+        "verified_manifest_model_id": DEFAULT_FAST_MODEL,
         "prompt_version": kwargs["prompt_version"],
         "input_hash": kwargs["input_hash"],
         "latency_ms": 1.0,
@@ -176,5 +174,5 @@ def test_macro_event_persists_bonsai_label_only_with_verified_receipt(tmp_path, 
     assert event["directive"] == "FORBID_LONG"
     assert event["model_id"] == DEFAULT_FAST_MODEL
     assert event["model_metadata"]["input_hash"] == calls[0]["input_hash"]
-    assert event["model_metadata"]["model_identity_source"] == "request_bound_to_verified_manifest"
+    assert event["model_metadata"]["model_identity_source"] == "completion_response"
     assert store.v2_records("macro_events")[0]["model_id"] == DEFAULT_FAST_MODEL

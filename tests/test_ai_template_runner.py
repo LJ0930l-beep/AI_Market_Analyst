@@ -320,8 +320,24 @@ def test_production_prompt_manages_positions_across_scans(tmp_path, monkeypatch)
     assert result["errors"] == []
     assert provider.actions == {"UPDATE_PROTECTION": 5, "CLOSE_POSITION": 5}
     for item in result["results"]:
+        if item["template_id"] == "price_action_structure":
+            assert item["closed_trade_count"] == 0
+            assert item["execution_counts"].get("BLOCKED") == 1
+            continue
         assert item["closed_trade_count"] == 1 and item["win_rate"] == 1
         assert item["ending_equity"] > RISK_CAP_COMPATIBLE_EQUITY and item["fees"] > 0
+
+    with sqlite3.connect(tmp_path / "replay.sqlite3") as db:
+        close_row = db.execute(
+            "SELECT status, result_json FROM ai_template_replay_decisions "
+            "WHERE run_id=? AND template_id='price_action_structure' AND decision_json LIKE '%CLOSE_POSITION%'",
+            (result["run_id"],),
+        ).fetchone()
+    assert close_row is not None
+    assert close_row[0] == "COMPLETED"
+    close_result = json.loads(close_row[1])
+    assert close_result["status"] == "BLOCKED"
+    assert close_result["reason"] == "MODEL_EXIT_RECEIPT_UNVERIFIED"
 
 
 def test_production_prompt_manages_pending_entry_and_cancels_it(tmp_path, monkeypatch):

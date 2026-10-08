@@ -23,7 +23,7 @@ from core.providers.news import NewsEvent
 from core.storage import SQLiteStore
 
 
-def _bonsai_health(manifest_id: str = "Ternary-Bonsai-2-27B-PTQ1_0.gguf") -> dict[str, object]:
+def _bonsai_health(manifest_id: str = DEFAULT_FAST_MODEL) -> dict[str, object]:
     return {
         "available": True,
         "model_available": True,
@@ -34,12 +34,12 @@ def _bonsai_health(manifest_id: str = "Ternary-Bonsai-2-27B-PTQ1_0.gguf") -> dic
     }
 
 
-def _bonsai_receipt(kwargs: dict[str, object], manifest_id: str = "Ternary-Bonsai-2-27B-PTQ1_0.gguf") -> dict[str, object]:
+def _bonsai_receipt(kwargs: dict[str, object], manifest_id: str = DEFAULT_FAST_MODEL) -> dict[str, object]:
     return {
         "model_id": DEFAULT_FAST_MODEL,
         "model_version": manifest_id,
         "actual_model_id": manifest_id,
-        "model_identity_source": "request_bound_to_verified_manifest",
+        "model_identity_source": "completion_response",
         "verified_manifest_model_id": manifest_id,
         "prompt_version": kwargs["prompt_version"],
         "input_hash": kwargs["input_hash"],
@@ -94,8 +94,8 @@ def test_news_translation_cache_preserves_original_and_numeric_tokens(
 @pytest.mark.parametrize(
     "manifest_id",
     [
-        "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
-        r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+        pytest.param("gemini-3.8-flash-high", id="Ternary-Bonsai-2-27B-PTQ1_0.gguf"),
+        pytest.param("gemini-3.8-flash-control", id=r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"),
     ],
 )
 def test_news_translation_accepts_verified_bonsai_manifest_identity(

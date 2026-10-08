@@ -10,6 +10,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_INPUT_SCHEMA = "pa-decision-quality-v37.1/decision-points-1"
+sys.path.insert(0, str(ROOT))
 
 from core.replay.pa_decision_quality_v38.market_only import run_offline_stub
 

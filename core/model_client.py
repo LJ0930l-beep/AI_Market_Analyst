@@ -5,7 +5,7 @@ Provides:
 - OpenAI-compatible /v1/chat/completions protocol
 - Mode A (ANALYSIS, thinking enabled) vs Mode B (FAST, thinking disabled)
 - Tool calling roundtrips
-- Robust retries with exponential backoff
+- Single-attempt requests; retries are rejected until provider idempotency is verified
 - JSON output validation and repair
 - Token usage tracking and latency metrics
 """
@@ -64,7 +64,7 @@ class ModelClient:
         base_url: str | None = None,
         model_name: str | None = None,
         timeout_sec: float | None = None,
-        retries: int = 2,
+        retries: int = 0,
     ) -> None:
         self.base_url = (base_url or config.base_url).rstrip("/")
         self.model_name = model_name or config.model_name
@@ -191,6 +191,8 @@ class ModelClient:
         request_retries = self.retries if retries is None else retries
         if isinstance(request_retries, bool) or not isinstance(request_retries, int) or request_retries < 0:
             raise ModelClientError("MODEL_RETRIES_INVALID")
+        if request_retries != 0:
+            raise ModelClientError("MODEL_RETRY_UNSAFE_WITHOUT_IDEMPOTENCY")
         
         last_exception = None
         for attempt in range(request_retries + 1):

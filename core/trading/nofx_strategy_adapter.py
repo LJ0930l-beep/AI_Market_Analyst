@@ -234,9 +234,12 @@ def adapt_nofx_strategy_config(
     klines = _object(indicators.get("klines"))
     timeframe = str(klines.get("primary_timeframe") or "").strip().lower()
     if timeframe:
-        if timeframe not in {"5m", "15m"}:
+        # The current production profile has a 15m decision cadence with a
+        # 5m entry-confirmation frame. A NOFX 5m primary timeframe cannot be
+        # mapped to an active template without changing that contract.
+        if timeframe != "15m":
             raise ValueError("NOFX_TIMEFRAME_UNSUPPORTED")
-        interval = 5 if timeframe == "5m" else 15
+        interval = 15
         imported_fields.append("signal_timeframe")
     else:
         current_profile = _object(current_strategy.get("profile"))

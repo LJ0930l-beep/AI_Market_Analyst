@@ -744,30 +744,42 @@ def test_ai_strategy_api_get_and_put(tmp_path):
     data = response.json()
     assert "active" in data
     assert "templates" in data
-    assert len(data["templates"]) == 5
+    assert len(data["templates"]) == 1
     template_ids = [t["id"] for t in data["templates"]]
-    assert "aggressive_impulse" in template_ids
-    assert "aggressive_breakout" in template_ids
-    assert "conservative_pullback" in template_ids
-    assert "conservative_defense" in template_ids
-    assert "price_action_structure" in template_ids
+    assert template_ids == ["price_action_structure"]
 
-    # 2. PUT update strategy
+    # Retired profiles fail closed and preserve the active revision.
     active = data["active"]
-    put_res = client.put(
+    retired = client.put(
         "/v2/ai-strategy?account_id=gate_testnet",
         json={
             "name": active["name"],
             "sections": active["sections"],
-            "execution": {**active["execution"], "leverage": 5},
+            "execution": active["execution"],
             "template_id": "aggressive_breakout",
+            "expected_revision": active["revision"],
+        },
+    )
+    assert retired.status_code == 400
+    assert retired.json()["detail"] == "STRATEGY_TEMPLATE_RETIRED"
+
+    sections = dict(active["sections"])
+    sections["custom_prompt"] = "Use closed market evidence and preserve independent risk review."
+    put_res = client.put(
+        "/v2/ai-strategy?account_id=gate_testnet",
+        json={
+            "name": active["name"],
+            "sections": sections,
+            "execution": active["execution"],
+            "template_id": active["template_id"],
             "expected_revision": active["revision"],
         },
     )
     assert put_res.status_code == 200
     updated = put_res.json()["active"]
     assert updated["revision"] == active["revision"] + 1
-    assert updated["execution"]["leverage"] == 5
+    assert updated["execution"] == active["execution"]
+    assert updated["sections"]["custom_prompt"] == sections["custom_prompt"]
 
 
 def test_ai_decision_memory_api_exposes_only_saved_strategy_attribution(tmp_path):

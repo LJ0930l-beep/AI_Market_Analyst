@@ -105,7 +105,9 @@ def test_capacity_fixture_uses_real_candidate_section_without_activating_or_chan
     strategy = frozen_templates(template_ids=("price_action_structure",))[0]
     original = _compact_gate_system_prompt(build_nofx_gate_system_prompt(strategy), strategy)
     fitted, metadata = capacity_fixture_system(original, 500)
-    expected = frozen_templates({"price_action_structure": "容" * 500}, ("price_action_structure",))[0]
+    candidate = frozen_templates({"price_action_structure": "容" * 500}, ("price_action_structure",))[0]
+    expected = frozen_templates(template_ids=("price_action_structure",))[0]
+    expected["sections"]["custom_prompt"] = candidate["sections"]["custom_prompt"]
     assert fitted == _compact_gate_system_prompt(build_nofx_gate_system_prompt(expected), expected)
     assert "研究候选：" + "容" * 500 in fitted
     assert metadata["candidate_enabled"] is False
@@ -123,7 +125,9 @@ def test_activated_seed_and_future_candidate_survive_real_production_prompt_with
     from core.trading.ai_session_coordinator import _compact_gate_system_prompt
     strategy = frozen_templates({'price_action_structure': '容' * 500}, ('price_action_structure',))[0]
     system = _compact_gate_system_prompt(build_nofx_gate_system_prompt(strategy), strategy)
-    assert _PA_RESEARCH_SEED_INSTRUCTION in system
+    # A candidate-bearing replay template must not also receive the seed that
+    # was used to create the experiment; this node name is frozen by baseline.
+    assert _PA_RESEARCH_SEED_INSTRUCTION not in system
     assert '研究候选：' + '容' * 500 in system
     assert 'confirmed_at=max' in system
     assert strategy['execution']['fixed_notional_usdt'] == 2000

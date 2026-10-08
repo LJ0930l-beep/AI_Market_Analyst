@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 from core.replay.pa_decision_quality_v38.dataset import DatasetBuildError, build_v38_dataset
 
