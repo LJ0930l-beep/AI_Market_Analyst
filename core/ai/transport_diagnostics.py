@@ -15,7 +15,8 @@ PHASES = {'BUILD_REQUEST','AWAITING_RESPONSE_HEADERS','READING_RESPONSE_BODY',
           'CONNECTING_TRANSPORT','WRITING_REQUEST',
           'VALIDATING_RESPONSE','HTTP_STATUS_REJECTED','COMPLETED','FAILED'}
 ERRORS = {'TimeoutError','URLError','HTTPError','JSONDecodeError','UnicodeDecodeError',
-          'ModelClientError','ModelSchemaError','OSError','ConnectionError'}
+          'ModelClientError','ModelSchemaError','OSError','ConnectionError',
+          'ConnectionResetError','ConnectionAbortedError','BrokenPipeError','RemoteDisconnected'}
 
 
 def safe_transport_trace(raw):
@@ -25,6 +26,16 @@ def safe_transport_trace(raw):
             or not re.fullmatch('[0-9a-f]{64}', str(raw.get('wire_messages_sha256') or ''))):
         return None
     result = {k:raw[k] for k in ('version','correlation_id','wire_messages_sha256')}
+    request_id = raw.get('request_id')
+    if request_id is not None:
+        if not re.fullmatch('[0-9a-f]{32}', str(request_id)) or request_id != raw.get('correlation_id'):
+            return None
+        result['request_id'] = request_id
+    attempt_id = raw.get('attempt_id')
+    if attempt_id is not None:
+        if not re.fullmatch('[0-9a-f]{32}', str(attempt_id)):
+            return None
+        result['attempt_id'] = attempt_id
     for key in ('phase','failed_phase'):
         if isinstance(raw.get(key),str) and raw[key] in PHASES:
             result[key] = raw[key]
@@ -45,6 +56,9 @@ def safe_transport_trace(raw):
         result['http_status'] = status
     if isinstance(raw.get('error_type'),str) and raw['error_type']:
         result['error_type'] = raw['error_type'] if raw['error_type'] in ERRORS else 'OTHER_ERROR'
+    failure_code = raw.get('failure_code')
+    if isinstance(failure_code, str) and re.fullmatch(r'MODEL_[A-Z0-9_]{1,96}', failure_code):
+        result['failure_code'] = failure_code
     if raw.get('transport_mode') in ('JSON', 'SSE'):
         result['transport_mode'] = raw['transport_mode']
     if type(raw.get('stream_done')) is bool:
@@ -55,13 +69,17 @@ def safe_transport_trace(raw):
 
 
 class CompletionTransportTrace:
-    def __init__(self, messages, attempt, timeout_seconds, *, clock=time.monotonic):
+    def __init__(self, messages, attempt, timeout_seconds, *, request_id=None, clock=time.monotonic):
         self.clock = clock
         self.started = clock()
         self.headers_started = self.started
         self.body_started = None
         self.connect_started = None
-        self.data = {'version':'gemini_transport_trace_v1','correlation_id':uuid.uuid4().hex,
+        request_id = request_id or uuid.uuid4().hex
+        if not re.fullmatch('[0-9a-f]{32}', str(request_id)):
+            raise ValueError('TRANSPORT_REQUEST_ID_INVALID')
+        self.data = {'version':'gemini_transport_trace_v1','correlation_id':request_id,
+            'request_id':request_id,'attempt_id':uuid.uuid4().hex,
             'wire_messages_sha256':hashlib.sha256(json.dumps({'messages':messages},sort_keys=True,
                 separators=(',',':')).encode()).hexdigest(),
             'attempt':attempt,'configured_timeout_seconds':timeout_seconds,'phase':'BUILD_REQUEST'}
@@ -103,6 +121,14 @@ class CompletionTransportTrace:
         self.data.update(body_read_ms=round(max(0,now-self.body_started)*1000,3),response_bytes=size,
                          phase='VALIDATING_RESPONSE')
 
+    def body_progress(self, size):
+        if type(size) is not int or size < 0:
+            return
+        now = self.clock()
+        self.data['response_bytes'] = self.data.get('response_bytes', 0) + size
+        if self.body_started is not None:
+            self.data['body_read_ms'] = round(max(0,now-self.body_started)*1000,3)
+
     def completed(self):
         self.data['phase'] = 'COMPLETED'
 
@@ -115,6 +141,16 @@ class CompletionTransportTrace:
 
     def failed(self, error):
         self.data.update(failed_phase=self.data['phase'],phase='FAILED',error_type=type(error).__name__)
+        message = getattr(error, 'code', None)
+        if not isinstance(message, str):
+            message = str(error)
+        if re.fullmatch(r'MODEL_[A-Z0-9_]{1,96}', message):
+            self.data['failure_code'] = message
+        elif type(error).__name__ in {'TimeoutError', 'socket.timeout'}:
+            self.data['failure_code'] = 'MODEL_TRANSPORT_TIMEOUT'
+        elif type(error).__name__ in {'ConnectionResetError', 'ConnectionAbortedError',
+                                      'BrokenPipeError', 'RemoteDisconnected'}:
+            self.data['failure_code'] = 'MODEL_TRANSPORT_DISCONNECTED'
         status = getattr(error,'code',None)
         if type(status) is int:
             self.data['http_status'] = status

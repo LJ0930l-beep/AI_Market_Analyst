@@ -154,12 +154,16 @@ def _remaining_timeout(response, deadline, clock):
 def collect_completion_stream(response, *, deadline: float,
                               identity_check: Callable[[object], bool], trace=None,
                               clock=time.monotonic, bounded_ttl_text=False):
+    if trace is not None:
+        trace.data["stream_done"] = False
     if not str(getattr(response, "headers", {}).get("Content-Type", "")).lower().startswith("text/event-stream"):
         raise CompletionStreamError("MODEL_STREAM_CONTENT_TYPE_INVALID")
     if not callable(getattr(response, "read1", None)):
         raise CompletionStreamError("MODEL_STREAM_READER_UNSUPPORTED")
     pending = bytearray()
     data_lines = []
+    event_id = None
+    seen_event_frames = set()
     event_bytes = 0
     total_bytes = 0
     events = 0
@@ -185,6 +189,14 @@ def collect_completion_stream(response, *, deadline: float,
             return
         if done:
             raise CompletionStreamError("MODEL_STREAM_DATA_AFTER_DONE")
+        # The client never resumes a stream, but a relay can still replay a
+        # frame inside one response. Reject only an exact replay with the same
+        # explicit SSE id; identical deltas without IDs can be legitimate.
+        if event_id not in (None, b""):
+            identity = (event_id, data)
+            if identity in seen_event_frames:
+                raise CompletionStreamError("MODEL_STREAM_DUPLICATE_EVENT")
+            seen_event_frames.add(identity)
         events += 1
         if events > MAX_STREAM_EVENTS:
             raise CompletionStreamError("MODEL_STREAM_EVENT_LIMIT")
@@ -253,6 +265,8 @@ def collect_completion_stream(response, *, deadline: float,
         total_bytes += len(chunk)
         if total_bytes > MAX_STREAM_BYTES:
             raise CompletionStreamError("MODEL_STREAM_SIZE_LIMIT")
+        if trace is not None:
+            trace.body_progress(len(chunk))
         pending.extend(chunk)
         while b"\n" in pending:
             line, _, remaining = pending.partition(b"\n")
@@ -273,7 +287,17 @@ def collect_completion_stream(response, *, deadline: float,
                 if event_bytes > MAX_EVENT_BYTES:
                     raise CompletionStreamError("MODEL_STREAM_EVENT_SIZE_LIMIT")
                 data_lines.append(value)
-            # SSE comments and standard id/event/retry fields carry no content.
+            elif line.startswith(b"id:") or line == b"id":
+                value = bytes(line[3:]) if line.startswith(b"id:") else b""
+                if value.startswith(b" "):
+                    value = value[1:]
+                # SSE ignores IDs containing NUL and an empty ID resets the
+                # reconnect cursor. Neither is a usable duplicate-frame key.
+                if b"\x00" not in value:
+                    event_id = value
+            # SSE event/retry fields and comments carry no response content.
+            if not line and not done:
+                event_id = None
         if len(pending) + event_bytes > MAX_EVENT_BYTES:
             raise CompletionStreamError("MODEL_STREAM_EVENT_SIZE_LIMIT")
     _remaining_timeout(response, deadline, clock)

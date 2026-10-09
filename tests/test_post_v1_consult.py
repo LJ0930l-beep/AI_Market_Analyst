@@ -25,6 +25,7 @@ from core.consult import (
     parse_consult_request,
 )
 from core.instruments import instrument_for
+from core.model_client import ModelClientError
 from core.model_routing import DEFAULT_MODEL
 from core.providers import FixtureProvider
 from core.quant import build_quant_snapshot
@@ -369,6 +370,38 @@ class QwenConsultApiTests(unittest.TestCase):
         self.assertEqual(fake_client.call["max_tokens"], consult_config().max_output_tokens)
         self.assertEqual(transport.model_receipt["actual_model_id"], DEFAULT_MODEL)  # type: ignore[index]
         self.assertEqual(transport.model_receipt["model_identity_source"], "completion_response")  # type: ignore[index]
+
+    def test_incomplete_model_stream_never_emits_consult_done_or_receipt(self) -> None:
+        class FakeModelClient:
+            base_url = consult_config().base_url
+            last_response_model = None
+
+            def _configuration_error(self, _model):
+                return None
+
+            def is_healthy(self, **_kwargs):
+                return True
+
+            def list_models(self, **_kwargs):
+                return [{"id": DEFAULT_MODEL}]
+
+            def chat_completion_stream(self, _messages, **_kwargs):
+                self.last_response_model = DEFAULT_MODEL
+                yield {"choices": [{"delta": {"content": "partial"}}]}
+                raise ModelClientError("MODEL_STREAM_EOF_BEFORE_DONE")
+
+        transport = OllamaConsultTransport(consult_config())
+        transport.model_client = FakeModelClient()  # type: ignore[assignment]
+        client, _service = self.client(transport)
+
+        events = ndjson_events(client.post(
+            "/consult/stream",
+            json={"language": "en", "messages": [{"role": "user", "content": "hello"}]},
+        ))
+
+        self.assertEqual([event["type"] for event in events], ["meta", "delta", "error"])
+        self.assertEqual(events[-1]["error"]["code"], "QWEN_UNAVAILABLE")  # type: ignore[index]
+        self.assertIsNone(transport.model_receipt)
 
     def test_modelclient_transport_marks_missing_completion_identity_unverified(self) -> None:
         class FakeModelClient:

@@ -33,6 +33,29 @@ def test_trace_is_bounded_metadata_with_monotonic_phase_timings_and_no_prompt():
     assert 'secret fixture' not in json.dumps(result)
 
 
+def test_request_and_attempt_ids_are_distinct_and_attempts_share_only_the_request_id():
+    request_id = 'a' * 32
+    first = CompletionTransportTrace([{'role':'user','content':'fixture'}],1,5,request_id=request_id)
+    second = CompletionTransportTrace([{'role':'user','content':'fixture'}],2,5,request_id=request_id)
+    first_trace, second_trace = first.snapshot(), second.snapshot()
+    assert first_trace['request_id'] == second_trace['request_id'] == request_id
+    assert first_trace['correlation_id'] == request_id
+    assert first_trace['attempt_id'] != second_trace['attempt_id']
+    assert first_trace['attempt'] == 1 and second_trace['attempt'] == 2
+
+
+def test_failed_stream_progress_retains_only_bounded_bytes_phase_and_safe_error_code():
+    obj = trace()
+    obj.headers_received(200)
+    obj.body_progress(19)
+    obj.failed(ValueError('MODEL_STREAM_EVENT_INVALID'))
+    result = obj.snapshot()
+    assert result['http_status'] == 200
+    assert result['failed_phase'] == 'READING_RESPONSE_BODY'
+    assert result['response_bytes'] == 19 and result['body_read_ms'] >= 0
+    assert result['failure_code'] == 'MODEL_STREAM_EVENT_INVALID'
+
+
 def test_header_and_body_timeout_are_distinguishable_without_claiming_an_upstream_cause():
     first, second = trace(), trace()
     first.awaiting_headers()
@@ -55,6 +78,14 @@ def test_safe_trace_drops_arbitrary_headers_response_account_and_nonfinite_field
     assert 'fixture-secret' not in json.dumps(result) and 'fixture-account' not in json.dumps(result)
     assert 'elapsed_ms' not in result and 'response_bytes' not in result and 'phase' not in result
     assert result['error_type']=='OTHER_ERROR'
+
+
+def test_safe_trace_rejects_unbound_or_malformed_request_and_attempt_ids():
+    original = trace().snapshot()
+    assert safe_transport_trace({**original,'request_id':'b'*32}) is None
+    assert safe_transport_trace({**original,'attempt_id':'private-id'}) is None
+    sanitized = safe_transport_trace({**original,'failure_code':'MODEL_ERROR secret'})
+    assert sanitized is not None and 'failure_code' not in sanitized
 
 
 def test_malformed_metadata_cannot_crash_the_bounded_audit_or_smuggle_objects():
