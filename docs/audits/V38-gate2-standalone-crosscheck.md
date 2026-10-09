@@ -41,3 +41,20 @@ The verifier reads only the frozen plan and the three existing dataset artifacts
 - The paired contexts and separated windows are not IID trades. The human blind-label and controlled Gemini evaluation gates remain unfulfilled; untouched-test data remain sealed.
 
 No Gemini/provider call, exchange request, TestNet/Live session, production risk change, or order occurred.
+
+## Gate 2 source archive byte cross-check — 2026-10-09
+
+The standalone verifier now has a separate source-archive mode. It reads a supplied local bundle using Python's standard library, compares the manifest and opaque SQLite bytes to the frozen hashes, validates the exact monthly archive manifest coverage, and rehashes each cached archive against both its record and checksum sidecar. Provenance sidecars are rebound to the corresponding frozen manifest fields. The report destination must resolve outside the source directory and is created exclusively; the source is never written, the database is never opened, and there is no network path.
+
+- Source manifest SHA-256: expected and observed `2f348e6a190690e173f0237b5f5614102bebeb8e0573a1266014c04f5b25012a`.
+- Source SQLite byte SHA-256: expected and observed `c04d69fa13b68efd5e9e64e02442524961589a2d805354017f773f46169ff4d2`.
+- Archives: **50/50** verified (26 klines and 24 funding-rate); **48,627,283** archive bytes rehashed.
+- Cached official-checksum sidecars: **50/50** matched. Provenance sidecars: **50/50** matched. Exact raw-cache file count: **150**.
+- Local machine report: `reports/v38+/verification/v38-source-archive-byte-audit-20261009-v3.json` (Git-ignored); canonical `report_sha256`: `5b1b86e5cb04284938aa67a233f618b8e16c97ae2c78386dbaac510d10958347`.
+- The report binds auditor source SHA-256 `65f9d5c7c4326aa54c9a3d94b1086e3b0f5436a05f311b62f7eb36ffe8183ee1` and contains no source-root path. It records `network_calls=0`, `model_calls=0`, `orders_created=0`, `database_opened=false`, `archives_extracted=false`, and `source_writes=0`.
+
+The rehashed bytes match the frozen local manifest and cached sidecars; this does not freshly authenticate Binance or prove historical download/receipt times. The SQLite file was hashed as opaque bytes. This follow-up did not inspect its tables or independently rebuild V36 feature frames, `market_input_sha256`, or `evidence_ref_count`. The primary dataset cross-check was rerun after the code change: V6 remains `PASS_WITH_EVIDENCE_LIMITS`, with report SHA-256 `c6b326634ef7f9aa89503b8df4784831e06d1393512bc857dd90dec007e2b21b`.
+
+The eleven new synthetic-fixture/CLI tests cover a complete valid bundle, changed/missing/extra bytes, checksum and provenance mismatch, frozen manifest mismatch, malformed and incomplete record lists, unavailable source, report-path containment, redaction, and exclusive output. Focused run including the existing standalone verifier suite: **19 passed**. No archive or dataset payload is committed.
+
+The resulting Gate 2 boundary is unchanged: archive-byte integrity is now independently reproducible, but historical Gate availability remains a proxy, blind annotations and Gemini-scored decisions remain **0**, and Gate-executable samples/fills/completed closes remain **0**. V25 A0 remains unrecoverable at **0/100**.
