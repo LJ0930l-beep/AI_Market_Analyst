@@ -483,6 +483,24 @@ interface GateAccountProfileResponse {
   };
 }
 
+const GATE_TESTNET_ACCOUNT_ID = "gate_testnet";
+
+function isGateTestnetProfile(
+  profile: GateAccountProfileResponse | undefined,
+): profile is GateAccountProfileResponse {
+  return Boolean(
+      profile &&
+      profile.account_id === GATE_TESTNET_ACCOUNT_ID &&
+      typeof profile.venue === "string" &&
+      profile.venue.toLowerCase() === "gate" &&
+      typeof profile.mode === "string" &&
+      profile.mode.toUpperCase() === "TESTNET" &&
+      typeof profile.api_environment === "string" &&
+      profile.api_environment.toUpperCase() === "TESTNET" &&
+      profile.credentials?.testnet === true,
+  );
+}
+
 function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error) return error.message || fallback;
   if (error && typeof error === "object" && "message" in error) {
@@ -777,14 +795,16 @@ export function V2WorkspacePage({
   const [gateApiKeyInput, setGateApiKeyInput] = useState("");
   const [gateApiSecretInput, setGateApiSecretInput] = useState("");
   const [gateDryRunMode, setGateDryRunMode] = useState(true);
-  const [, setGateNotice] = useState<{ msg: string; type: "ok" | "err" } | null>(null);
+  const [gateNotice, setGateNotice] = useState<{ msg: string; type: "ok" | "err" } | null>(null);
   const [gateVerification, setGateVerification] = useState<GateCredentialValidation | null>(null);
   const [gateConnectionTest, setGateConnectionTest] = useState<GateConnectionTestResponse | null>(null);
   const [gateVerificationBusy, setGateVerificationBusy] = useState(false);
   const [gateRefreshBusy, setGateRefreshBusy] = useState(false);
   const [marketSearch, setMarketSearch] = useState("");
   const [tradingAccounts, setTradingAccounts] = useState<TradingAccountSummary[]>([]);
-  const [selectedTradingAccount, setSelectedTradingAccount] = useState(readTradingAccount);
+  const [selectedTradingAccount, setSelectedTradingAccount] = useState(() =>
+    surface === "gate-live" ? GATE_TESTNET_ACCOUNT_ID : readTradingAccount(),
+  );
   useEffect(() => { rememberTradingAccount(selectedTradingAccount); }, [selectedTradingAccount]);
   const accountScopedPath = (path: string) =>
     selectedTradingAccount
@@ -819,6 +839,15 @@ export function V2WorkspacePage({
 
   // Three-Sector Gate API Tab state
   const [apiSubTab, setApiSubTab] = useState<"mock" | "live_readonly" | "live_trade">("mock");
+  useEffect(() => {
+    if (
+      surface === "gate-live" &&
+      apiSubTab === "mock" &&
+      selectedTradingAccount !== GATE_TESTNET_ACCOUNT_ID
+    ) {
+      setSelectedTradingAccount(GATE_TESTNET_ACCOUNT_ID);
+    }
+  }, [apiSubTab, selectedTradingAccount, surface]);
 
   // Read-only Market Data & K-lines state
   const [readonlyCategory, setReadonlyCategory] = useState<"crypto" | "stock">("crypto");
@@ -1159,26 +1188,30 @@ export function V2WorkspacePage({
 
   const fetchGateData = useCallback(async (signal?: AbortSignal) => {
     try {
+      const gateDataAccountId =
+        surface === "gate-live" && apiSubTab === "mock"
+          ? GATE_TESTNET_ACCOUNT_ID
+          : selectedTradingAccount;
       const [cfg, acc, trd, mkt, accountResponse, profileResponse] = await Promise.all([
         apiClient.v2<GateConfigResponse>(
-          selectedTradingAccount
-            ? `/gate/config?account_id=${encodeURIComponent(selectedTradingAccount)}`
+          gateDataAccountId
+            ? `/gate/config?account_id=${encodeURIComponent(gateDataAccountId)}`
             : "/gate/config",
           "GET",
           undefined,
           signal,
         ).catch(() => null),
         apiClient.v2<GateAccountResponse>(
-          selectedTradingAccount
-            ? `/gate/account?account_id=${encodeURIComponent(selectedTradingAccount)}`
+          gateDataAccountId
+            ? `/gate/account?account_id=${encodeURIComponent(gateDataAccountId)}`
             : "/gate/account",
           "GET",
           undefined,
           signal,
         ).catch(() => null),
         apiClient.v2<GateTradesResponse>(
-          selectedTradingAccount
-            ? `/gate/trades?account_id=${encodeURIComponent(selectedTradingAccount)}`
+          gateDataAccountId
+            ? `/gate/trades?account_id=${encodeURIComponent(gateDataAccountId)}`
             : "/gate/trades",
           "GET",
           undefined,
@@ -1204,14 +1237,18 @@ export function V2WorkspacePage({
         ? accountResponse.accounts.filter((item) => item && typeof item.account_id === "string")
         : [];
       setTradingAccounts(nextAccounts);
-      if (!nextAccounts.some((item) => item.account_id === selectedTradingAccount)) {
+      if (surface === "gate-live" && apiSubTab === "mock") {
+        if (selectedTradingAccount !== GATE_TESTNET_ACCOUNT_ID) {
+          setSelectedTradingAccount(GATE_TESTNET_ACCOUNT_ID);
+        }
+      } else if (!nextAccounts.some((item) => item.account_id === selectedTradingAccount)) {
         const preferred = nextAccounts.find((item) => item.mode === (cfg?.testnet ? "TESTNET" : "LIVE")) || nextAccounts[0];
         setSelectedTradingAccount(preferred?.account_id || "");
       }
     } catch (e) {
       if (!signal?.aborted) console.error("Failed to load Gate data", e);
     }
-  }, [selectedTradingAccount]);
+  }, [apiSubTab, selectedTradingAccount, surface]);
 
   const handleProvisionGateAccounts = async () => {
     await action(async () => {
@@ -1231,7 +1268,10 @@ export function V2WorkspacePage({
     setGateNotice(null);
     setGateVerification(null);
     setGateConnectionTest(null);
-    let selectedProfile = gateProfiles.find((item) => item.account_id === selectedTradingAccount);
+    const testnetCredentialFlow = surface === "gate-live" && apiSubTab === "mock";
+    const targetAccountId = testnetCredentialFlow ? GATE_TESTNET_ACCOUNT_ID : selectedTradingAccount;
+    let selectedProfile = gateProfiles.find((item) => item.account_id === targetAccountId);
+    if (testnetCredentialFlow && !isGateTestnetProfile(selectedProfile)) selectedProfile = undefined;
     if (!gateApiKeyInput.trim() || !gateApiSecretInput.trim()) {
       setGateNotice({
         msg: zh ? "请输入 API Key 和 API Secret 后再验证。" : "Enter both API Key and API Secret before verification.",
@@ -1250,8 +1290,10 @@ export function V2WorkspacePage({
         const provisionedProfiles = Array.isArray(provisioned.accounts)
           ? provisioned.accounts.filter((item) => item && typeof item.account_id === "string")
           : [];
-        selectedProfile = provisionedProfiles.find((item) => item.account_id === selectedTradingAccount)
-          ?? (!selectedTradingAccount
+        selectedProfile = provisionedProfiles.find((item) =>
+          item.account_id === targetAccountId && (!testnetCredentialFlow || isGateTestnetProfile(item)),
+        )
+          ?? (!targetAccountId
             ? provisionedProfiles.find((item) => item.api_environment === "TESTNET")
             : undefined);
         if (!selectedProfile) {
@@ -1274,6 +1316,14 @@ export function V2WorkspacePage({
           api_secret: gateApiSecretInput.trim(),
         },
       );
+      if (
+        testnetCredentialFlow &&
+        (!isGateTestnetProfile(res.account) ||
+          res.validation.account_id !== GATE_TESTNET_ACCOUNT_ID ||
+          res.validation.api_environment?.toUpperCase() !== "TESTNET")
+      ) {
+        throw new Error("TESTNET_SCOPE_MISMATCH: credential verification did not confirm the Gate TestNet account.");
+      }
       setGateVerification(res.validation);
       const credentials = res.account.credentials;
       setGateConfig({
@@ -1331,10 +1381,15 @@ export function V2WorkspacePage({
     setGateNotice(null);
     setGateVerification(null);
     setGateConnectionTest(null);
-    const selectedProfile = gateProfiles.find((item) => item.account_id === selectedTradingAccount);
+    const testnetCredentialFlow = surface === "gate-live" && apiSubTab === "mock";
+    const targetAccountId = testnetCredentialFlow ? GATE_TESTNET_ACCOUNT_ID : selectedTradingAccount;
+    let selectedProfile = gateProfiles.find((item) => item.account_id === targetAccountId);
+    if (testnetCredentialFlow && !isGateTestnetProfile(selectedProfile)) selectedProfile = undefined;
     if (!selectedProfile) {
       setGateNotice({
-        msg: zh ? "请先登记并选择 Gate 账户；只读连接测试不会使用全局凭证。" : "Register and select a Gate account first; the read-only test never uses a global credential slot.",
+        msg: testnetCredentialFlow
+          ? (zh ? "未找到有效的 Gate TestNet 模拟账户；请先登记默认账户。" : "A valid Gate TestNet account was not found; register the default account first.")
+          : (zh ? "请先登记并选择 Gate 账户；只读连接测试不会使用全局凭证。" : "Register and select a Gate account first; the read-only test never uses a global credential slot."),
         type: "err",
       });
       return;
@@ -1353,6 +1408,17 @@ export function V2WorkspacePage({
         "POST",
         { api_key: gateApiKeyInput.trim(), api_secret: gateApiSecretInput.trim() },
       );
+      if (
+        testnetCredentialFlow &&
+        (result.account_id !== GATE_TESTNET_ACCOUNT_ID ||
+          result.api_environment?.toUpperCase() !== "TESTNET" ||
+          result.read_only !== true ||
+          result.orders_sent !== 0 ||
+          result.model_called !== false ||
+          result.authorization_created !== false)
+      ) {
+        throw new Error("TESTNET_SCOPE_MISMATCH: connection test returned an incomplete or unsafe TestNet receipt.");
+      }
       setGateConnectionTest(result);
       setGateNotice({
         msg: result.valid
@@ -3478,13 +3544,35 @@ export function V2WorkspacePage({
                     <select
                       aria-label={zh ? "执行账户" : "Execution account"}
                       value={selectedTradingAccount}
-                      onChange={(event) => setSelectedTradingAccount(event.target.value)}
+                      onChange={(event) => {
+                        const nextAccountId = event.target.value;
+                        if (nextAccountId === GATE_TESTNET_ACCOUNT_ID) setSelectedTradingAccount(nextAccountId);
+                      }}
                     >
-                      {tradingAccounts.map((account) => (
+                      {tradingAccounts
+                        .filter((account) =>
+                          account.account_id === GATE_TESTNET_ACCOUNT_ID &&
+                          typeof account.venue === "string" &&
+                          account.venue.toLowerCase() === "gate" &&
+                          typeof account.mode === "string" &&
+                          account.mode.toUpperCase() === "TESTNET",
+                        )
+                        .map((account) => (
                         <option key={account.account_id} value={account.account_id}>
                           {account.account_id} · {account.mode}
                         </option>
                       ))}
+                      {!tradingAccounts.some((account) =>
+                        account.account_id === GATE_TESTNET_ACCOUNT_ID &&
+                        typeof account.venue === "string" &&
+                        account.venue.toLowerCase() === "gate" &&
+                        typeof account.mode === "string" &&
+                        account.mode.toUpperCase() === "TESTNET",
+                      ) && (
+                        <option value={GATE_TESTNET_ACCOUNT_ID}>
+                          {GATE_TESTNET_ACCOUNT_ID} · TESTNET ({zh ? "未登记" : "not registered"})
+                        </option>
+                      )}
                     </select>
                   </label>
                   <button
@@ -3672,6 +3760,16 @@ export function V2WorkspacePage({
                         🧪 {zh ? "只读连接测试（不保存）" : "Read-only connection test (no save)"}
                       </button>
                     </div>
+
+                    {gateNotice && (
+                      <div
+                        className={`v2-gate-verification-result ${gateNotice.type === "ok" ? "v2-gate-verification-result--ok" : "v2-gate-verification-result--err"}`}
+                        role={gateNotice.type === "err" ? "alert" : "status"}
+                        data-testid="gate-credential-notice"
+                      >
+                        {gateNotice.msg}
+                      </div>
+                    )}
 
                     {gateVerification && (
                       <div

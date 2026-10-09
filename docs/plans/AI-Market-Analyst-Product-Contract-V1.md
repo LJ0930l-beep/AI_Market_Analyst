@@ -20,6 +20,8 @@ The product exposes distinct, auditable modes:
 
 Live is disabled by default. A model cannot change operating mode, permissions, credentials, risk limits, or emergency-stop state. The UI must show the effective account, venue, mode, permission state, capability status, and any lock reason. A global emergency stop and independent trading circuit breaker must be available and their state must be durable and visible.
 
+Before project acceptance, all automated tests and exchange-integration checks use offline simulation or Gate TestNet only; Live credentials, Live endpoints, and Live orders are excluded from test execution. Live connectivity is a post-completion stage and still requires a separate, explicit human authorization after the project acceptance gates pass.
+
 ## 3. Instrument identity and capability contract (P0)
 
 `InstrumentSpec` is the canonical identity and rule snapshot for an executable product. Two products with the same underlying remain separate instruments: for example, spot BTC, a Gate BTC perpetual, a CFD on BTC, and a tokenized equity are not interchangeable.
