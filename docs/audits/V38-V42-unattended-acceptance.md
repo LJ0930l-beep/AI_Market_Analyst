@@ -65,6 +65,29 @@ The requested long-term product contract is documented in `docs/plans/AI-Market-
 Human review of the V41 evidence remains open. V42 still requires independent data/schema review, a verified provider retry/idempotency policy, and separate explicit authorization for any model and budget. Nothing in this PR authorizes exchange access, Live mode, or orders.
 
 
+## Latest additive verification snapshot — 2026-10-09
+
+This section supersedes the earlier full-suite count above for the current V39/V40 research chain; the earlier counts and their machine reports are retained as historical checkpoints.
+
+- V39 progressive consultation follow-up: focused Gate 3 suite **154 passed**. Incomplete SSE can stream partial deltas but must end in an error, never a completion event or receipt.
+- V40 duplicate-bar replay follow-up: focused V35/V40 economics suite **97 passed**. A bar that already filled an order is idempotent when redelivered to the original simulator or restored checkpoint.
+- Latest full suite with frozen evidence: **2,419 passed, 1 skipped, 0 failed** across 2,420 collected nodes. Exact same-environment comparison to V37.1 baseline `64a5c4206a5073e0c44e9d5cc4178705ffa24664` is `PASS_NO_NEW_FAILURES`: all 100 inherited failure nodes remain resolved, all 96 post-baseline nodes pass, and there are no missing baseline tests, new failures, or phase changes. Local machine evidence is Git-ignored under `reports/v38+/verification/`.
+- PR #9 remains open, clean, and without auto-merge. This V40 replay test is an additive change on the V39 branch and does not modify the simulation engine or production execution path.
+- Gate 4 evidence proves local OHLCV replay behavior only. It does not establish venue fill idempotency, Gate market data or margins, profitability, or live readiness. No model/provider call, exchange request, order, or production setting change occurred.
+
+Overall status remains **PARTIAL**. Gate 2 has zero blind labels and zero scored Gemini decisions; V42 remains gated on independent review, provider semantics and a separate model/budget authorization. Research success and deployment success are not established.
+
+### Distance to the final success criteria
+
+| Criterion | Current evidence | Status | Remaining gap |
+| --- | --- | --- | --- |
+| Engineering (S1) | Local deterministic replay, causal-input, transport, identity, and risk tests; 2,419 passed / 1 skipped; exact baseline comparison has zero new failures. | **PARTIAL** | Stacked PRs remain open; no CI result or live provider/venue integration evidence. Venue event idempotency, protective-order failure recovery, and a sustained operational run are not proven. |
+| Research (S2) | V38 V3 has 72 paired market contexts; historical availability is an assumed proxy. V25 A0 remains 0/100; current blind labels, scored Gemini decisions, verified executable samples, and complete closes are 0. | **NOT ESTABLISHED** | Requires independent labels, separately authorized model/budget, point-in-time execution evidence, and at least 30 independent complete closes per evaluated strategy plus preregistered economics/uncertainty criteria. |
+| Deployment (S3) | No shadow window, TestNet/Live session, or order was run. | **NOT AUTHORIZED** | Requires a separately approved real-time shadow protocol and observation window, operational/error/stop drills, verified venue/product/account rules, then explicit human deployment approval. |
+
+These gaps are requirements, not predicted outcomes. None of the current tests or reconstructed Binance samples proves positive expected value or authorizes trading.
+
+
 ## Gate 2 blind-evaluation follow-up — 2026-10-09
 
 The addition-only V3 primary sample uses a hash-frozen seeded monthly/temporal-stratum selector and partition-purged 8-day windows. It contains 72 paired BTC/ETH contexts: 36 optimization, 18 validation, and 18 untouched-test hash-only; the 54 visible inputs were independently rebuilt and the audit found zero same-symbol or cross-partition overlaps. The V3 manifest SHA-256 is `1f9e157bad2df4c32f863c2ae7a779b7d9ed573ad09d37f49ca44590eca4352a`. Original V1 (180 contexts, 10 cross-partition overlaps) and V2 fixed-grid (80 contexts, no overlap) remain intact and are separately reported; they are not pooled with V3.
