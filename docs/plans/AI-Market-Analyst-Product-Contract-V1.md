@@ -53,6 +53,8 @@ An expected, pending, estimated, or unverified rebate is excluded from available
 
 The existing **2,000 USDT fixed notional remains the production behavior** until a separate, explicit production-change approval. The independent research sizing design may calculate a risk-budgeted maximum notional, but must not silently shrink a model proposal to manufacture a pass. Small-account controls must additionally bound per-trade stop loss, total gross/net exposure, concentration, correlated exposure, margin use, liquidation distance, and fees/slippage. Dynamic leverage may support margin efficiency but can never reduce measured stop risk or bypass a risk limit.
 
+Reject an unchanged proposal when verified equity or free margin cannot cover the required margin, existing and reserved exposure, conservative fees/slippage, and policy buffer, or when a portfolio/concentration/correlation limit would be exceeded. The rejection records explicit reason codes and the exact inputs used. Neither the risk service nor an execution adapter may automatically resize the notional, alter leverage, or rely on an expected rebate to turn that proposal into a pass; a revised size requires a new model decision and a fresh risk review.
+
 ## 5. Independent portfolio and execution risk
 
 Before execution, the risk plane evaluates the exact product rules and the account's latest verified state. It must account for trading sessions and holidays; earnings and halts; bid/ask liquidity and conservative slippage; last/mark/index divergence; funding and overnight charges; contract restrictions and liquidation; existing positions and pending orders; concentration and cross-asset correlation; total account risk; and jurisdiction/product eligibility.
