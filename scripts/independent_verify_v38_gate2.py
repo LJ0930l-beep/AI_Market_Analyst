@@ -1,9 +1,10 @@
-"""Standalone structural and causal cross-check for the frozen V38 primary sample.
+"""Standalone structural, causal, and source-archive cross-check for frozen V38 data.
 
 This verifier intentionally imports no project code. It validates the frozen plan,
 dataset manifests, raw visible OHLCV rows, deterministic strata, partition labels,
-pairing, and declared input windows with Python's standard library only. It does
-not reconstruct the derived V36 feature frames or rehash the original Binance files.
+pairing, declared input windows, and (in source archive mode) frozen local source
+bytes with Python's standard library only. It does not reconstruct the derived V36
+feature frames.
 """
 from __future__ import annotations
 
@@ -11,11 +12,14 @@ import argparse
 import hashlib
 import json
 import math
+import re
+import stat
 from collections import Counter, defaultdict
 from datetime import UTC, date, datetime, time, timedelta
 from itertools import pairwise
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PLAN = ROOT / "configs/research/datasets/v38-stratified-purged-sample-plan-v1.json"
@@ -33,6 +37,24 @@ SYMBOLS = ("BTCUSDT", "ETHUSDT")
 TIMEFRAME_SECONDS = {"15m": 900, "5m": 300, "1h": 3600, "4h": 14400}
 EXPECTED_BAR_COUNTS = {"15m": 48, "5m": 48, "1h": 48, "4h": 47}
 HASH_CHARS = frozenset("0123456789abcdef")
+SOURCE_ARCHIVE_MANIFEST_SHA256 = SOURCE_MANIFEST_SHA256
+SOURCE_ARCHIVE_DATABASE_SHA256 = SOURCE_DATABASE_SHA256
+SOURCE_ARCHIVE_COUNT = 50
+SOURCE_ARCHIVE_KIND_COUNTS = {"klines": 26, "fundingRate": 24}
+SOURCE_MANIFEST_SCHEMA = "binance_um_research_history_v1"
+SOURCE_MANIFEST_FIELDS = frozenset({
+    "analysis_type", "archived_files", "complete_data", "coverage", "dataset_sha256",
+    "exchange", "frozen_at", "historical_availability_assumption", "not_gate_data",
+    "research_only", "schema_version", "source_type", "symbols", "warmup_days",
+    "warmup_start", "window_end", "window_start",
+})
+SOURCE_ARCHIVE_RECORD_FIELDS = frozenset({
+    "bytes", "checksum_url", "fetched_at", "kind", "month", "official_checksum_verified",
+    "sha256", "symbol", "url",
+})
+SOURCE_PROVENANCE_FIELDS = frozenset({
+    "bytes", "checksum_url", "fetched_at", "official_checksum_verified", "sha256", "url",
+})
 
 MANIFEST_FIELDS = frozenset({
     "availability_delay_seconds", "availability_evidence_grade", "base_commit",
@@ -111,6 +133,343 @@ def _file_sha(path: Path) -> str:
     except OSError as exc:
         raise IndependentAuditError("FROZEN_FILE_UNAVAILABLE") from exc
     return digest.hexdigest()
+
+
+def _source_finding(code: str, relative_path: str, **details: Any) -> dict[str, Any]:
+    return {"code": code, "path": relative_path, **details}
+
+
+def _source_regular_file(root: Path, relative_path: str, findings: list[dict[str, Any]]) -> Path | None:
+    path = root / relative_path
+    try:
+        mode = path.lstat().st_mode
+    except FileNotFoundError:
+        findings.append(_source_finding("SOURCE_FILE_MISSING", relative_path))
+        return None
+    except OSError:
+        findings.append(_source_finding("SOURCE_FILE_UNREADABLE", relative_path))
+        return None
+    if stat.S_ISLNK(mode):
+        findings.append(_source_finding("SOURCE_SYMLINK_REJECTED", relative_path))
+        return None
+    if not stat.S_ISREG(mode):
+        findings.append(_source_finding("SOURCE_NONREGULAR_FILE_REJECTED", relative_path))
+        return None
+    return path
+
+
+def _source_digest(path: Path, relative_path: str, findings: list[dict[str, Any]]) -> str | None:
+    try:
+        return _file_sha(path)
+    except (OSError, IndependentAuditError):
+        findings.append(_source_finding("SOURCE_FILE_UNREADABLE", relative_path))
+        return None
+
+
+def _month_sequence(start: str, count: int) -> list[str]:
+    year, month = map(int, start.split("-"))
+    result = []
+    for _ in range(count):
+        result.append(f"{year:04d}-{month:02d}")
+        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+    return result
+
+
+def _expected_source_record_keys() -> set[tuple[str, str, str]]:
+    return {
+        ("klines", symbol, month)
+        for symbol in SYMBOLS
+        for month in _month_sequence("2025-09", 13)
+    } | {
+        ("fundingRate", symbol, month)
+        for symbol in SYMBOLS
+        for month in _month_sequence("2025-10", 12)
+    }
+
+
+def _source_archive_filename(kind: str, symbol: str, month: str) -> str:
+    suffix = f"1m-{month}" if kind == "klines" else f"fundingRate-{month}"
+    return f"{symbol}-{suffix}.zip"
+
+
+def _source_record_valid(record: Any) -> tuple[bool, str | None]:
+    if not isinstance(record, dict) or set(record) != SOURCE_ARCHIVE_RECORD_FIELDS:
+        return False, None
+    kind, symbol, month = record.get("kind"), record.get("symbol"), record.get("month")
+    if (not isinstance(kind, str) or kind not in SOURCE_ARCHIVE_KIND_COUNTS
+            or not isinstance(symbol, str) or symbol not in SYMBOLS):
+        return False, None
+    if not isinstance(month, str) or not re.fullmatch(r"\d{4}-\d{2}", month):
+        return False, None
+    try:
+        date.fromisoformat(f"{month}-01")
+    except ValueError:
+        return False, None
+    size, expected_sha = record.get("bytes"), record.get("sha256")
+    if isinstance(size, bool) or not isinstance(size, int) or size <= 0 or not _is_sha(expected_sha):
+        return False, None
+    if record.get("official_checksum_verified") is not True:
+        return False, None
+    try:
+        _utc(record.get("fetched_at"), "SOURCE_FETCH_TIME_INVALID")
+    except IndependentAuditError:
+        return False, None
+    filename = _source_archive_filename(kind, symbol, month)
+    if kind == "klines":
+        relative_url_path = f"/data/futures/um/monthly/klines/{symbol}/1m/{filename}"
+    else:
+        relative_url_path = f"/data/futures/um/monthly/fundingRate/{symbol}/{filename}"
+    url, checksum_url = record.get("url"), record.get("checksum_url")
+    if not isinstance(url, str) or not isinstance(checksum_url, str):
+        return False, None
+    try:
+        parsed_url, parsed_checksum = urlsplit(url), urlsplit(checksum_url)
+    except ValueError:
+        return False, None
+    if (parsed_url.scheme != "https" or parsed_url.netloc != "data.binance.vision"
+            or parsed_url.path != relative_url_path or parsed_url.query or parsed_url.fragment
+            or checksum_url != f"{url}.CHECKSUM"
+            or parsed_checksum.scheme != "https" or parsed_checksum.netloc != "data.binance.vision"):
+        return False, None
+    return True, filename
+
+
+def audit_source_archive_directory(source_directory: Path) -> dict[str, Any]:
+    """Rehash the frozen local archive bundle without opening SQLite or using network I/O."""
+    checked_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    findings: list[dict[str, Any]] = []
+    observed_hashes: dict[str, str | None] = {
+        "manifest_sha256": None,
+        "database_sha256": None,
+    }
+    counts = {
+        "manifest_files_verified": 0,
+        "source_databases_verified": 0,
+        "archive_records_declared": 0,
+        "archive_records_by_kind": {kind: 0 for kind in SOURCE_ARCHIVE_KIND_COUNTS},
+        "archives_verified": 0,
+        "archive_bytes_rehashed": 0,
+        "checksum_sidecars_matched": 0,
+        "provenance_sidecars_matched": 0,
+        "raw_cache_files_found": 0,
+    }
+    try:
+        supplied_root = Path(source_directory)
+        if supplied_root.is_symlink():
+            findings.append(_source_finding("SOURCE_ROOT_SYMLINK_REJECTED", "."))
+            status = "FAILED_WITH_EVIDENCE"
+            root = None
+        else:
+            root = supplied_root.resolve(strict=True)
+            if not root.is_dir():
+                findings.append(_source_finding("SOURCE_ROOT_NOT_DIRECTORY", "."))
+                status, root = "FAILED_WITH_EVIDENCE", None
+            else:
+                status = "VERIFIED"
+    except (OSError, RuntimeError):
+        findings.append(_source_finding("SOURCE_ROOT_UNAVAILABLE", "."))
+        status, root = "BLOCKED_WITH_EVIDENCE", None
+
+    if root is not None:
+        manifest_path = _source_regular_file(root, "manifest.json", findings)
+        database_path = _source_regular_file(root, "research.sqlite3", findings)
+        manifest: Any = None
+        if manifest_path is not None:
+            try:
+                manifest_size = manifest_path.stat().st_size
+                if manifest_size > 2_000_000:
+                    findings.append(_source_finding("SOURCE_MANIFEST_TOO_LARGE", "manifest.json"))
+                else:
+                    manifest_bytes = manifest_path.read_bytes()
+                    manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
+                    observed_hashes["manifest_sha256"] = manifest_sha
+                    if manifest_sha != SOURCE_ARCHIVE_MANIFEST_SHA256:
+                        findings.append(_source_finding("SOURCE_MANIFEST_SHA256_MISMATCH", "manifest.json"))
+                    else:
+                        counts["manifest_files_verified"] = 1
+                        manifest = json.loads(manifest_bytes)
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                findings.append(_source_finding("SOURCE_MANIFEST_UNREADABLE_OR_INVALID", "manifest.json"))
+
+        if database_path is not None:
+            database_sha = _source_digest(database_path, "research.sqlite3", findings)
+            observed_hashes["database_sha256"] = database_sha
+            if database_sha == SOURCE_ARCHIVE_DATABASE_SHA256:
+                counts["source_databases_verified"] = 1
+            elif database_sha is not None:
+                findings.append(_source_finding("SOURCE_DATABASE_SHA256_MISMATCH", "research.sqlite3"))
+
+        if manifest is not None:
+            if not isinstance(manifest, dict) or set(manifest) != SOURCE_MANIFEST_FIELDS:
+                findings.append(_source_finding("SOURCE_MANIFEST_FIELDS_INVALID", "manifest.json"))
+                manifest = None
+            elif (manifest.get("schema_version") != SOURCE_MANIFEST_SCHEMA
+                  or manifest.get("exchange") != "BINANCE_UM"
+                  or manifest.get("source_type") != "OFFICIAL_MONTHLY_PUBLIC_ARCHIVES"
+                  or manifest.get("analysis_type") != "TECHNICAL_RULE_PROXY_NOT_REAL_AI_OR_GATE"
+                  or manifest.get("symbols") != list(SYMBOLS)
+                  or manifest.get("complete_data") is not True
+                  or manifest.get("research_only") is not True
+                  or manifest.get("not_gate_data") is not True
+                  or manifest.get("dataset_sha256") != SOURCE_ARCHIVE_DATABASE_SHA256):
+                findings.append(_source_finding("SOURCE_MANIFEST_IDENTITY_OR_DATABASE_BINDING_INVALID", "manifest.json"))
+                manifest = None
+
+        if manifest is not None:
+            records = manifest.get("archived_files")
+            if not isinstance(records, list):
+                findings.append(_source_finding("SOURCE_ARCHIVE_RECORD_COUNT_INVALID", "manifest.json"))
+                records = []
+            elif len(records) != SOURCE_ARCHIVE_COUNT:
+                findings.append(_source_finding("SOURCE_ARCHIVE_RECORD_COUNT_INVALID", "manifest.json"))
+            counts["archive_records_declared"] = len(records)
+            if len(records) > SOURCE_ARCHIVE_COUNT:
+                records = records[:SOURCE_ARCHIVE_COUNT]
+            record_keys: set[tuple[str, str, str]] = set()
+            valid_records: list[tuple[dict[str, Any], str]] = []
+            for index, record in enumerate(records):
+                valid, filename = _source_record_valid(record)
+                if not valid or filename is None:
+                    findings.append(_source_finding("SOURCE_ARCHIVE_RECORD_INVALID", f"manifest.json:archived_files[{index}]"))
+                    continue
+                key = (record["kind"], record["symbol"], record["month"])
+                if key in record_keys:
+                    findings.append(_source_finding("SOURCE_ARCHIVE_RECORD_DUPLICATE", f"manifest.json:archived_files[{index}]"))
+                    continue
+                record_keys.add(key)
+                valid_records.append((record, filename))
+            if Counter(record["kind"] for record, _ in valid_records) != Counter(SOURCE_ARCHIVE_KIND_COUNTS):
+                findings.append(_source_finding("SOURCE_ARCHIVE_KIND_COVERAGE_INVALID", "manifest.json:archived_files"))
+            record_kind_counts = Counter(record["kind"] for record, _ in valid_records)
+            counts["archive_records_by_kind"] = {
+                kind: record_kind_counts.get(kind, 0) for kind in sorted(SOURCE_ARCHIVE_KIND_COUNTS)
+            }
+            if record_keys != _expected_source_record_keys():
+                findings.append(_source_finding("SOURCE_ARCHIVE_MONTH_COVERAGE_INVALID", "manifest.json:archived_files"))
+
+            expected_cache_files = {
+                name
+                for _, filename in valid_records
+                for name in (filename, f"{filename}.CHECKSUM", f"{filename}.provenance.json")
+            }
+            raw_cache = root / "raw_cache"
+            try:
+                cache_mode = raw_cache.lstat().st_mode
+                if stat.S_ISLNK(cache_mode) or not stat.S_ISDIR(cache_mode):
+                    findings.append(_source_finding("RAW_CACHE_DIRECTORY_INVALID", "raw_cache"))
+                    raw_entries: list[Path] = []
+                else:
+                    raw_entries = list(raw_cache.iterdir())
+            except OSError:
+                findings.append(_source_finding("RAW_CACHE_UNAVAILABLE", "raw_cache"))
+                raw_entries = []
+            actual_names = {entry.name for entry in raw_entries}
+            counts["raw_cache_files_found"] = len(raw_entries)
+            missing_names = sorted(expected_cache_files - actual_names)
+            extra_names = sorted(actual_names - expected_cache_files)
+            if missing_names or extra_names:
+                findings.append(_source_finding(
+                    "RAW_CACHE_FILESET_MISMATCH", "raw_cache",
+                    missing_files=missing_names, unexpected_files=extra_names,
+                ))
+
+            for record, filename in valid_records:
+                archive_relative = f"raw_cache/{filename}"
+                archive_path = _source_regular_file(root, archive_relative, findings)
+                if archive_path is None:
+                    continue
+                try:
+                    archive_size = archive_path.stat().st_size
+                except OSError:
+                    findings.append(_source_finding("SOURCE_FILE_UNREADABLE", archive_relative))
+                    continue
+                archive_sha = _source_digest(archive_path, archive_relative, findings)
+                if archive_sha is None:
+                    continue
+                counts["archive_bytes_rehashed"] += archive_size
+                archive_matches = archive_size == record["bytes"] and archive_sha == record["sha256"].lower()
+                if archive_matches:
+                    counts["archives_verified"] += 1
+                else:
+                    findings.append(_source_finding("SOURCE_ARCHIVE_SHA256_OR_LENGTH_MISMATCH", archive_relative))
+
+                checksum_relative = f"{archive_relative}.CHECKSUM"
+                checksum_path = _source_regular_file(root, checksum_relative, findings)
+                if checksum_path is not None:
+                    try:
+                        if checksum_path.stat().st_size > 65_536:
+                            raise ValueError
+                        checksum_lines = checksum_path.read_text(encoding="ascii").splitlines()
+                        checksum_fields = [line.split() for line in checksum_lines if line.strip()]
+                        checksum_matches = (len(checksum_fields) == 1 and len(checksum_fields[0]) == 2
+                                            and checksum_fields[0][0].lower() == record["sha256"].lower()
+                                            and checksum_fields[0][1] == filename
+                                            and archive_sha == record["sha256"].lower())
+                        if checksum_matches:
+                            counts["checksum_sidecars_matched"] += 1
+                        else:
+                            findings.append(_source_finding("SOURCE_CHECKSUM_SIDECAR_MISMATCH", checksum_relative))
+                    except (OSError, UnicodeError, ValueError):
+                        findings.append(_source_finding("SOURCE_CHECKSUM_SIDECAR_INVALID", checksum_relative))
+
+                provenance_relative = f"{archive_relative}.provenance.json"
+                provenance_path = _source_regular_file(root, provenance_relative, findings)
+                if provenance_path is not None:
+                    try:
+                        if provenance_path.stat().st_size > 65_536:
+                            raise ValueError
+                        provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+                        provenance_matches = (
+                            isinstance(provenance, dict)
+                            and set(provenance) == SOURCE_PROVENANCE_FIELDS
+                            and all(provenance.get(key) == record.get(key) for key in SOURCE_PROVENANCE_FIELDS)
+                        )
+                        if provenance_matches:
+                            counts["provenance_sidecars_matched"] += 1
+                        else:
+                            findings.append(_source_finding("SOURCE_PROVENANCE_SIDECAR_MISMATCH", provenance_relative))
+                    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+                        findings.append(_source_finding("SOURCE_PROVENANCE_SIDECAR_INVALID", provenance_relative))
+
+    findings.sort(key=lambda finding: (finding["path"], finding["code"], json.dumps(finding, sort_keys=True)))
+    if status != "BLOCKED_WITH_EVIDENCE" and findings:
+        status = "FAILED_WITH_EVIDENCE"
+    body: dict[str, Any] = {
+        "schema_version": "pa-market-only-v38/source-archive-byte-audit-1",
+        "status": status,
+        "checked_at_utc": checked_at,
+        "auditor_code_sha256": _file_sha(Path(__file__)),
+        "source_root_path_disclosed": False,
+        "source_hashes": {
+            "manifest_expected_sha256": SOURCE_ARCHIVE_MANIFEST_SHA256,
+            "manifest_observed_sha256": observed_hashes["manifest_sha256"],
+            "database_expected_sha256": SOURCE_ARCHIVE_DATABASE_SHA256,
+            "database_observed_sha256": observed_hashes["database_sha256"],
+        },
+        "counts": counts,
+        "findings": findings,
+        "operations": {
+            "network_calls": 0,
+            "model_calls": 0,
+            "orders_created": 0,
+            "database_opened": False,
+            "archives_extracted": False,
+            "source_writes": 0,
+        },
+        "limitations": [
+            "A VERIFIED result confirms local bytes match the frozen manifest and cached checksum/provenance sidecars; it does not freshly authenticate Binance or prove historical receipt times.",
+            "The SQLite source was hashed as opaque bytes only; its tables and derived V36 feature frames were not rebuilt by this check.",
+            "This source audit does not add labels, model decisions, point-in-time Gate quotes, executable samples, or completed closes.",
+        ],
+    }
+    body["report_sha256"] = _canonical_sha(body)
+    return body
+
+
+def _source_report_path_is_safe(source_directory: Path, report_path: Path) -> bool:
+    source_root = Path(source_directory).resolve(strict=False)
+    report_target = Path(report_path).resolve(strict=False)
+    return report_target != source_root and source_root not in report_target.parents
 
 
 def _is_sha(value: Any) -> bool:
@@ -552,9 +911,9 @@ def audit_primary_dataset(plan_path: Path, dataset_directory: Path) -> dict[str,
             "source_archive_bytes_and_derived_feature_frames_recomputed": False,
         },
         "limitations": [
-            "This verifier independently checks raw visible bars and frozen sampling metadata but does not reopen or rehash the original source archive files.",
+            "This primary-dataset audit checks raw visible bars and frozen sampling metadata but does not itself rehash the original source archive files; use source archive audit mode for that separate local check.",
             "It does not reimplement V36 derived feature frames, so it does not independently recompute market_input_sha256 or evidence_ref_count.",
-            "The source database and source manifest hashes are matched as declared metadata only; their original bytes are not independently available to this verifier.",
+            "This report binds source hashes as declared metadata only; the separate source archive audit compares local bytes but does not freshly authenticate Binance or prove historical receipt times.",
             "The Binance UM reconstruction and 60-second availability proxy are not historical Gate receive-time or point-in-time bid/ask evidence.",
             "Paired temporal contexts are not IID trade observations; zero labels and zero executable samples remain.",
         ],
@@ -571,12 +930,29 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--plan", type=Path, default=DEFAULT_PLAN)
     parser.add_argument("--dataset-directory", type=Path, default=DEFAULT_DATASET)
-    parser.add_argument("--output", type=Path, required=True,
+    parser.add_argument("--output", type=Path,
                         help="New local report path; existing files are never overwritten")
+    parser.add_argument("--source-archive-dir", type=Path,
+                        help="Audit the frozen source archive bundle using local bytes only")
+    parser.add_argument("--source-archive-report", type=Path,
+                        help="New report path outside --source-archive-dir; never overwritten")
     args = parser.parse_args(argv)
+    source_mode = args.source_archive_dir is not None or args.source_archive_report is not None
+    if source_mode and (args.source_archive_dir is None or args.source_archive_report is None):
+        parser.error("--source-archive-dir and --source-archive-report must be used together")
+    if source_mode and args.output is not None:
+        parser.error("--output cannot be combined with source archive audit mode")
+    if not source_mode and args.output is None:
+        parser.error("--output is required unless source archive audit mode is selected")
     try:
-        report = audit_primary_dataset(args.plan, args.dataset_directory)
-        target = args.output
+        if source_mode:
+            target = args.source_archive_report
+            if not _source_report_path_is_safe(args.source_archive_dir, target):
+                raise IndependentAuditError("SOURCE_REPORT_PATH_INSIDE_SOURCE_ROOT")
+            report = audit_source_archive_directory(args.source_archive_dir)
+        else:
+            target = args.output
+            report = audit_primary_dataset(args.plan, args.dataset_directory)
         target.parent.mkdir(parents=True, exist_ok=True)
         encoded = json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
         with target.open("x", encoding="utf-8", newline="\n") as stream:
@@ -584,13 +960,13 @@ def main(argv: list[str] | None = None) -> int:
     except FileExistsError:
         print(json.dumps({"status": "OUTPUT_ALREADY_EXISTS"}))
         return 2
-    except (OSError, UnicodeError, ValueError, TypeError) as exc:
+    except (OSError, RuntimeError, UnicodeError, ValueError, TypeError) as exc:
         print(json.dumps({"status": "AUDIT_REJECTED",
                           "error_code": getattr(exc, "code", type(exc).__name__)}, ensure_ascii=False))
         return 2
-    print(json.dumps({"status": report["status"], "output": str(args.output.resolve()),
+    print(json.dumps({"status": report["status"], "output": str(target.resolve()),
                       "report_sha256": report["report_sha256"]}, ensure_ascii=False))
-    return 0
+    return 0 if report["status"] in {"PASS_WITH_EVIDENCE_LIMITS", "VERIFIED"} else 2
 
 
 if __name__ == "__main__":

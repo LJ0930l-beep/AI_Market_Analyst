@@ -43,6 +43,22 @@ The offline V38 data-preparation stage is **accepted for research-input construc
 
 The requested long-term product contract is documented in `docs/plans/AI-Market-Analyst-Product-Contract-V1.md`; the dependency-ordered delivery plan, reuse inventory, gaps, proposed interfaces, and acceptance gates are in `docs/plans/Multi-Asset-Trader-Terminal-Roadmap.md`. These documents do not change the current V38–V42 execution order and do not implement a production multi-asset path. V38 P0 research-readiness work and its no-regression verification were completed first. Production risk settings, fixed 2,000 USDT behavior, historical research artifacts, and account permissions remain unchanged.
 
+## Current Gate 2 source archive and regression snapshot — 2026-10-09
+
+**Disposition: PASS for frozen local source-byte integrity and no-regression verification; overall V38–V42 remains PARTIAL.** The new source mode in `scripts/independent_verify_v38_gate2.py` verified the frozen source manifest and SQLite byte hashes, all 50 monthly archives, all 50 checksum sidecars, and all 50 provenance sidecars. It rehashed 48,627,283 archive bytes without opening SQLite, network access, source writes, archive extraction, model calls, or order calls. The local machine report is Git-ignored at `reports/v38+/verification/v38-source-archive-byte-audit-20261009-v3.json`; canonical report SHA-256 is `5b1b86e5cb04284938aa67a233f618b8e16c97ae2c78386dbaac510d10958347`.
+
+- Focused verifier tests: **19 passed**, comprising eleven new source-bundle tests and eight existing independent Gate 2 checks.
+- Full local suite: **2,451 passed, 1 skipped, 0 failed**, with one existing Starlette/httpx deprecation warning. Git-ignored machine evidence: `reports/v38+/verification/v38-source-archive-full-20261009-v2.json` (SHA-256 `cd9881f5a9d0236d4d634a98bf7e071a76cbd6770b7c4c722b391a2e62130458`) and the comparison `reports/v38+/verification/v38-source-archive-full-20261009-v2-vs-baseline.json` (SHA-256 `279972a0c2c3a306dddf099d310d880d8669c806505e869ec45372435411d015`).
+- Exact same-environment comparison to baseline `64a5c4206a5073e0c44e9d5cc4178705ffa24664`: **`PASS_NO_NEW_FAILURES`**. All 100 baseline failure-phase nodes are resolved; all 128 post-baseline test nodes pass; no baseline nodes are missing, no new failures, and no phase changes.
+- Full-repository Ruff remains at its pre-existing **4,119** diagnostics. Exact comparison to the frozen Ruff JSON found **0 added and 0 removed** diagnostics; both touched Python files pass targeted Ruff with no findings. The ignored current diagnostic JSON is `reports/v38+/verification/v38-source-archive-ruff-current-20261009-v2.json` (SHA-256 `a4ed7e056067738703030ffd3685453ca1f9aab08286b7851984527d5a492932`). `py_compile` and `git diff --check` pass.
+- Fresh primary-data standalone report remains `PASS_WITH_EVIDENCE_LIMITS`: `reports/v38+/verification/v38-gate2-standalone-crosscheck-20261009-v6.json`, report SHA-256 `c6b326634ef7f9aa89503b8df4784831e06d1393512bc857dd90dec007e2b21b`.
+
+The local evidence JSON and source bytes are not included in Git. This verifies byte identity against the previously frozen local manifest and cached sidecars, not fresh source-host authenticity or actual historical receipt times. SQLite schema/table contents and V36 derived features were not independently rebuilt. The V38 input remains preparation-only: labels, Gemini-scored decisions, and executable samples remain zero; the 60-second availability timestamp remains a proxy.
+
+### Product-contract supplement placement
+
+`docs/plans/AI-Market-Analyst-Product-Contract-V1.md` and `docs/plans/Multi-Asset-Trader-Terminal-Roadmap.md` already record the requested terminal contract, reuse inventory, missing modules, interfaces, dependencies, and acceptance gates. They remain design-only. The active V38 Gate 2 integrity P0 is completed before product implementation; subsequent roadmap work is dependency-ordered from `InstrumentSpec`/capability metadata to account-level Gate fee settlement, trader/intelligence interfaces, governed memory, portfolio simulation, and terminal consolidation. The production 2,000 USDT fixed notional, Gate production paths, account settings, Live state, and historical artifacts are unchanged.
+
 ## V42 prerequisites
 
 - Independently review the exact test-node/phase comparison and the 100-node register. Lease-loss cancellation, simulated permission/revocation, and local response-identity checks have passing offline coverage. Passing local tests do not establish remote integration behavior.
