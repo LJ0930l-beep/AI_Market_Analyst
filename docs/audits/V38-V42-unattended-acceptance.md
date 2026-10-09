@@ -87,6 +87,10 @@ Overall status remains **PARTIAL**. Gate 2 has zero blind labels and zero scored
 
 These gaps are requirements, not predicted outcomes. None of the current tests or reconstructed Binance samples proves positive expected value or authorizes trading.
 
+### Gate 2 fresh reproducibility recheck — 2026-10-09
+
+The read-only audit rerun reproduced the V3 manifest, 54 visible inputs, 18 sealed test hashes, archive hashes, zero overlaps, and exact blind-label registry binding. Its output was byte-identical to the earlier final V3 audit. Fresh `tests/v38/` run: **68 passed**. The recheck reused the existing committed auditor implementation; it is reproducibility evidence, not a second independent implementation. It does not change Gate 2's `PASS_FOR_DATA_AND_EVALUATION_PREPARATION_WITH_CAVEATS` boundary: annotations, scored Gemini decisions, executable samples, and complete closes remain 0, and data availability remains a proxy.
+
 
 ## Gate 2 blind-evaluation follow-up — 2026-10-09
 
