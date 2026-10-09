@@ -274,3 +274,16 @@ def test_malformed_decision_id_and_evidence_refs_fail_closed_without_raising(
 
     assert "BLIND_LABEL_DECISION_ID_INVALID" in errors
     assert "BLIND_LABEL_EVIDENCE_REFS_INVALID" in errors
+
+
+def test_unhashable_target_structure_is_rejected_without_raising(
+    market_point_factory, bind_synthetic_input_for_unit_test,
+):
+    market_input = build_market_only_input(market_point_factory())
+    bind_synthetic_input_for_unit_test(market_input)
+    record = make_label(market_input)
+    record["label"]["target_structure"] = ["PRIOR_SWING"]
+
+    errors = validate_blind_label_record(record, market_input)
+
+    assert "BLIND_LABEL_TARGET_STRUCTURE_INVALID" in errors

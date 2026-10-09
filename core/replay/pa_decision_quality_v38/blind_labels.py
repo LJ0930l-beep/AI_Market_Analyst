@@ -197,7 +197,8 @@ def validate_blind_label_record(record: Any, market_input: Any) -> list[str]:
     for field, required in (("target_evidence_refs", False), ("counter_evidence_refs", False)):
         if not _unique_refs(label.get(field), valid_refs, required=required):
             errors.append(f"BLIND_LABEL_{field.upper()}_INVALID")
-    if (label.get("target_structure") in TARGET_WITH_EVIDENCE
+    if (isinstance(label.get("target_structure"), str)
+            and label.get("target_structure") in TARGET_WITH_EVIDENCE
             and not label.get("target_evidence_refs")):
         errors.append("BLIND_LABEL_TARGET_EVIDENCE_REQUIRED")
     raw_label_refs = label.get("evidence_refs")
