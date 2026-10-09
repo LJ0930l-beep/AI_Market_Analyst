@@ -40,8 +40,14 @@
 - Exact comparison to frozen V41 baseline `64a5c4206a5073e0c44e9d5cc4178705ffa24664`: **`PASS_NO_NEW_FAILURES`**, 0 new failing node/phase pairs, all 100 inherited baseline failure-phase pairs resolved, and 0 phase changes. The branch has 109 test nodes added since that baseline.
 - Isolated comparison to V38.3 handoff commit `42c425fddfdb220cbb7d407083ad65b1fa28d369`: **`PASS_NO_NEW_FAILURES`**, 6 new test nodes, 0 new failing nodes, and 0 phase changes.
 - Ruff, `py_compile`, CLI `--help`, and `git diff --check`: **passed**.
-- This change's pre-commit rerun and GitHub CI are pending.
+- At initial audit authoring, this change's pre-commit rerun and GitHub CI had not yet run; the post-commit results are recorded below.
 - No genuine reviewer annotations were created, transmitted, or summarized. No provider/model call, exchange request, order, Live/TestNet session, or production setting change occurred.
+
+## Post-commit verification addendum — 2026-10-09
+
+The initial metrics commit was `d6ac527edf872d6c24b7bd2b2c1fcf885adaf13d`. The repository pre-commit hook then passed the full suite: **2,432 passed, 1 skipped, 1 existing Starlette/httpx deprecation warning** in 319.04 seconds.
+
+GitHub Actions run [37877417766](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37877417766) passed: quick research/risk/replay/transport gates **158 passed**; full Windows suite **2,433 passed, 25 subtests passed, 1 existing deprecation warning** in 1,049.88 seconds. PR #14 is OPEN and CLEAN with auto-merge unset; its base PR #13 is also OPEN/CLEAN with auto-merge unset. The run verifies commit `d6ac527`; no code changes followed it. This post-commit report update is documentation-only and triggers a fresh PR workflow.
 
 ## Limits and remaining gates
 
