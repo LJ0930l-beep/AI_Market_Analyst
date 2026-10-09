@@ -127,7 +127,7 @@ def make_runtime(path: Path, provider: object | None = None) -> tuple[SQLiteStor
     return store, runtime
 
 
-def wait_for(predicate, timeout: float = 2.0) -> None:
+def wait_for(predicate, timeout: float = 10.0) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if predicate():

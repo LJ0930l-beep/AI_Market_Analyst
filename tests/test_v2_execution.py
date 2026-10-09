@@ -127,7 +127,7 @@ def test_stop_first_no_lookahead_and_duplicate_settlement(store):
     p = proposal().to_dict()
     plan = risk_plan(p, MARKET, now=NOW)
     sim = SimulationEngine(store)
-    sim.open("both", p, plan)
+    sim.open("both", p, plan, created_at=NOW.isoformat())
     sim.advance("BTCUSDT", Bar(NOW - timedelta(hours=1), 100, 116, 94, 100, 10))
     assert store.v2_records("simulated_positions")[0]["status"] == "OPEN"
     bar = Bar(NOW + timedelta(minutes=15), 100, 116, 94, 100, 10)
