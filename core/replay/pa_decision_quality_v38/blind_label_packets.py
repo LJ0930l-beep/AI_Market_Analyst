@@ -112,7 +112,7 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _load_visible_dataset(dataset_directory: Path) -> tuple[
+def load_v38_visible_dataset(dataset_directory: Path) -> tuple[
     dict[str, Any], dict[str, Any], dict[str, dict[str, Any]], dict[str, dict[str, Any]], str, str,
 ]:
     """Load and rebind only the visible input document; never open sealed-test files."""
@@ -363,7 +363,7 @@ def create_blind_annotation_packet(
     if not isinstance(rater_id, str) or _RATER_TOKEN.fullmatch(rater_id) is None:
         raise BlindLabelPacketError("BLIND_PACKET_RATER_ID_INVALID")
     _manifest, _inputs, points_by_id, market_inputs, manifest_sha, visible_sha = (
-        _load_visible_dataset(dataset_directory)
+        load_v38_visible_dataset(dataset_directory)
     )
     protocol, protocol_sha = load_blind_label_protocol()
     item_bindings = protocol["eligible_input_bindings"][DATASET_ID]
@@ -505,7 +505,7 @@ def import_blind_label_submissions(
 ) -> dict[str, Any]:
     """Rebind two or more complete blinded packets to the frozen inputs and validate labels."""
     _manifest, _inputs, points_by_id, market_inputs, manifest_sha, visible_sha = (
-        _load_visible_dataset(dataset_directory)
+        load_v38_visible_dataset(dataset_directory)
     )
     protocol, protocol_sha = load_blind_label_protocol()
     pairs = list(escrow_submission_pairs)

@@ -8,7 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from core.replay.pa_decision_quality_v38 import blind_label_packets, blind_labels
+from core.replay.pa_decision_quality_v38 import blind_label_metrics, blind_label_packets, blind_labels
+from core.replay.pa_decision_quality_v38.blind_label_metrics import (
+    summarize_v38_blind_label_batch,
+)
 from core.replay.pa_decision_quality_v38.blind_label_packets import (
     BlindLabelPacketError,
     create_blind_annotation_packet,
@@ -106,6 +109,7 @@ def frozen_visible_dataset(tmp_path, market_point_factory, monkeypatch):
     digest = canonical_sha256(protocol)
     loader = lambda path=None: (protocol, digest)
     monkeypatch.setattr(blind_label_packets, "load_blind_label_protocol", loader)
+    monkeypatch.setattr(blind_label_metrics, "load_blind_label_protocol", loader)
     monkeypatch.setattr(blind_labels, "load_blind_label_protocol", loader)
     return dataset_directory, points, protocol, manifest, visible_path
 
@@ -229,6 +233,39 @@ def test_two_complete_submissions_rebind_and_validate_without_opening_sealed_fil
     assert result["decision_count"] == 54
     assert result["annotation_count"] == 108
     assert {record["partition"] for record in result["annotations"]} == {"optimization", "validation"}
+    assert not (dataset_directory / "untouched-test-sealed-manifest.json").exists()
+
+
+def test_imported_fixture_batch_emits_preregistered_metrics_without_consensus(
+    frozen_visible_dataset,
+):
+    dataset_directory, _points, protocol, _manifest, _visible = frozen_visible_dataset
+    packets = [create_blind_annotation_packet(dataset_directory, rater_id=code)
+               for code in ("reviewer_a", "reviewer_b")]
+    pairs = [(escrow, _submission(packet, escrow, protocol)) for packet, escrow in packets]
+    batch = import_blind_label_submissions(dataset_directory, pairs)
+
+    result = summarize_v38_blind_label_batch(dataset_directory, batch)
+
+    assert result["decision_count"] == 54
+    assert result["rater_count"] == 2
+    assert result["annotation_count"] == 108
+    assert result["agreement_by_field"]["context_regime"]["agreement_coefficient"]["status"] == "NOT_ESTIMABLE"
+    assert result["agreement_by_field"]["context_regime"]["agreement_coefficient"]["value"] is None
+    assert result["agreement_by_field"]["location"]["unknown_fraction"] == 1.0
+    assert result["evidence_reference_integrity"] == {
+        "status": "VALIDATED",
+        "reference_occurrences_by_role": {
+            "evidence_refs": 108,
+            "target_evidence_refs": 0,
+            "counter_evidence_refs": 0,
+        },
+        "reference_occurrences": 108,
+        "invalid_reference_occurrences": 0,
+        "invalid_reference_fraction": 0.0,
+    }
+    assert result["consensus_labels_created"] is False
+    assert "consensus_labels" not in result
     assert not (dataset_directory / "untouched-test-sealed-manifest.json").exists()
 
 
