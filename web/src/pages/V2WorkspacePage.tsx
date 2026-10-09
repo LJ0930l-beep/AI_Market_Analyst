@@ -488,6 +488,9 @@ const GATE_TESTNET_ACCOUNT_ID = "gate_testnet";
 function isGateTestnetProfile(
   profile: GateAccountProfileResponse | undefined,
 ): profile is GateAccountProfileResponse {
+  const credentialIdentityMatches =
+    typeof profile?.credentials?.configured === "boolean" &&
+    (!profile.credentials.configured || profile.credentials.testnet === true);
   return Boolean(
       profile &&
       profile.account_id === GATE_TESTNET_ACCOUNT_ID &&
@@ -497,7 +500,7 @@ function isGateTestnetProfile(
       profile.mode.toUpperCase() === "TESTNET" &&
       typeof profile.api_environment === "string" &&
       profile.api_environment.toUpperCase() === "TESTNET" &&
-      profile.credentials?.testnet === true,
+      credentialIdentityMatches,
   );
 }
 
