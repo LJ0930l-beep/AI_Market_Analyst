@@ -73,7 +73,7 @@ def test_http_200_sse_faults_never_yield_partial_completion_and_are_single_attem
                 elif scenario == "body_read_stall":
                     self.wfile.write(_frame(_chunk(content="private-partial-output")))
                     self.wfile.flush()
-                    release.wait(.5)
+                    release.wait(1.5)
                     self.wfile.write(_frame(_chunk(finish="stop")) + b"data: [DONE]\n\n")
                 else:
                     self.wfile.write(_frame(_chunk(content='{"action":"WAIT"}'))
@@ -104,7 +104,10 @@ def test_http_200_sse_faults_never_yield_partial_completion_and_are_single_attem
             with pytest.raises(ModelClientError) as failure:
                 client.chat_completion(
                     [{"role": "user", "content": "offline fixture"}],
-                    model_name=DEFAULT_MODEL, stream=True, timeout_sec=.18,
+                    # Leave enough time for the loopback server's abortive close
+                    # to reach a loaded Windows runner. The body-stall fixture
+                    # intentionally waits beyond this deadline.
+                    model_name=DEFAULT_MODEL, stream=True, timeout_sec=1.0,
                 )
             trace = failure.value.transport_trace
             assert trace["phase"] == "FAILED"
