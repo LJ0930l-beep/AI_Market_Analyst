@@ -347,28 +347,91 @@ class ModelClient:
             method="POST",
         )
         try:
+            finish_seen = False
+            done_seen = False
+            data_lines: list[str] = []
+
+            def parse_event(data: str) -> dict[str, Any] | None:
+                nonlocal finish_seen
+                if data == "[DONE]":
+                    if not finish_seen:
+                        raise ModelClientError("MODEL_STREAM_FINISH_MISSING")
+                    return None
+                if done_seen:
+                    raise ModelClientError("MODEL_STREAM_DATA_AFTER_DONE")
+                try:
+                    chunk = json.loads(data)
+                except json.JSONDecodeError as exc:
+                    raise ModelClientError("MODEL_STREAM_EVENT_INVALID") from exc
+                if not isinstance(chunk, dict):
+                    raise ModelClientError("MODEL_STREAM_EVENT_INVALID")
+                if chunk.get("error") is not None:
+                    raise ModelClientError("MODEL_STREAM_PROVIDER_ERROR")
+
+                choices = chunk.get("choices")
+                if choices is not None:
+                    if not isinstance(choices, list):
+                        raise ModelClientError("MODEL_STREAM_EVENT_INVALID")
+                    if finish_seen and choices:
+                        raise ModelClientError("MODEL_STREAM_DATA_AFTER_FINISH")
+                    for choice in choices:
+                        if not isinstance(choice, dict):
+                            raise ModelClientError("MODEL_STREAM_EVENT_INVALID")
+                        finish_reason = choice.get("finish_reason")
+                        if finish_reason is not None:
+                            if finish_reason != "stop":
+                                raise ModelClientError("MODEL_STREAM_FINISH_INVALID")
+                            if finish_seen:
+                                raise ModelClientError("MODEL_STREAM_FINISH_INVALID")
+                            finish_seen = True
+
+                if "model" in chunk:
+                    response_model = chunk.get("model")
+                    if (
+                        not isinstance(response_model, str)
+                        or not response_model.strip()
+                        or not is_configured_model_identity(response_model)
+                    ):
+                        raise ModelClientError("MODEL_RESPONSE_IDENTITY_MISMATCH")
+                    self._response_state.model = response_model.strip()
+                return chunk
+
             with urlopen(req, timeout=timeout_sec or self.timeout_sec) as resp:
                 if on_response_open is not None:
                     on_response_open(resp)
                 for line_bytes in resp:
                     if cancel_event is not None and cancel_event.is_set():
                         break
-                    line = line_bytes.decode("utf-8").strip()
-                    if not line or not line.startswith("data: "):
-                        continue
-                    data_str = line[6:].strip()
-                    if data_str == "[DONE]":
-                        break
                     try:
-                        chunk = json.loads(data_str)
-                        if isinstance(chunk, dict) and "model" in chunk:
-                            response_model = chunk.get("model")
-                            if not isinstance(response_model, str) or not response_model.strip() or not is_configured_model_identity(response_model):
-                                raise ModelClientError("MODEL_RESPONSE_IDENTITY_MISMATCH")
-                            self._response_state.model = response_model.strip()
-                        yield chunk
-                    except json.JSONDecodeError:
-                        continue
+                        lines = line_bytes.decode("utf-8").splitlines()
+                    except UnicodeDecodeError as exc:
+                        raise ModelClientError("MODEL_STREAM_EVENT_INVALID") from exc
+                    for line in lines:
+                        if not line:
+                            if not data_lines:
+                                continue
+                            data = "\n".join(data_lines)
+                            data_lines.clear()
+                            if data == "[DONE]":
+                                if not finish_seen:
+                                    raise ModelClientError("MODEL_STREAM_FINISH_MISSING")
+                                if done_seen:
+                                    raise ModelClientError("MODEL_STREAM_DATA_AFTER_DONE")
+                                done_seen = True
+                                continue
+                            chunk = parse_event(data)
+                            if chunk is not None:
+                                yield chunk
+                            continue
+                        if line.startswith(":"):
+                            continue
+                        if line.startswith("data:"):
+                            value = line[5:]
+                            data_lines.append(value.removeprefix(" "))
+                if cancel_event is not None and cancel_event.is_set():
+                    return
+                if not done_seen:
+                    raise ModelClientError("MODEL_STREAM_EOF_BEFORE_DONE")
         except ModelClientError:
             raise
         except Exception as exc:

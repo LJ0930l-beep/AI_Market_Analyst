@@ -36,8 +36,12 @@ class _Response:
         return False
 
     def __iter__(self):
-        yield ("data: " + json.dumps({"model": DEFAULT_MODEL, "choices": [{"delta": {"content": "ok"}}]}) + "\n").encode("utf-8")
-        yield b"data: [DONE]\n"
+        chunk = {
+            "model": DEFAULT_MODEL,
+            "choices": [{"delta": {"content": "ok"}, "finish_reason": "stop"}],
+        }
+        yield ("data: " + json.dumps(chunk) + "\n\n").encode("utf-8")
+        yield b"data: [DONE]\n\n"
 
 
 def test_stream_uses_bounded_consult_output_budget(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -171,7 +175,7 @@ def test_stream_rejects_any_present_noncanonical_model_identity(response_model: 
     class Response(_Response):
         def __iter__(self):
             envelope = {"model": response_model, "choices": [{"delta": {"content": "bad"}}]}
-            yield ("data: " + json.dumps(envelope) + "\n").encode("utf-8")
+            yield ("data: " + json.dumps(envelope) + "\n\n").encode("utf-8")
 
     monkeypatch.setattr(model_client_module, "urlopen", lambda *_args, **_kwargs: Response())
     client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL, retries=0)
@@ -182,12 +186,54 @@ def test_stream_rejects_any_present_noncanonical_model_identity(response_model: 
 def test_stream_allows_missing_response_identity_for_verified_manifest_binding(monkeypatch: pytest.MonkeyPatch) -> None:
     class Response(_Response):
         def __iter__(self):
-            yield b'data: {"choices":[{"delta":{"content":"ok"}}]}\n'
+            yield b'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\n'
+            yield b'data: [DONE]\n\n'
 
     monkeypatch.setattr(model_client_module, "urlopen", lambda *_args, **_kwargs: Response())
     client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL, retries=0)
     assert len(list(client.chat_completion_stream([{"role": "user", "content": "hello"}], model_name=DEFAULT_MODEL))) == 1
     assert client.last_response_model is None
+
+
+@pytest.mark.parametrize(
+    ("frames", "failure_code"),
+    [
+        ([b'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'], "MODEL_STREAM_EOF_BEFORE_DONE"),
+        ([b'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n', b"data: [DONE]\n\n"], "MODEL_STREAM_FINISH_MISSING"),
+        ([b'data: {"choices":[{"delta":{},"finish_reason":"length"}]}\n\n', b"data: [DONE]\n\n"], "MODEL_STREAM_FINISH_INVALID"),
+        ([b"data: {not-json}\n\n"], "MODEL_STREAM_EVENT_INVALID"),
+        ([b'data: {"error":{"message":"provider detail"}}\n\n'], "MODEL_STREAM_PROVIDER_ERROR"),
+        (
+            [
+                b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+                b'data: {"choices":[{"delta":{"content":"late"}}]}\n\n',
+            ],
+            "MODEL_STREAM_DATA_AFTER_FINISH",
+        ),
+    ],
+)
+def test_stream_requires_valid_stop_and_done_terminal(
+    frames: list[bytes], failure_code: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Response(_Response):
+        def __iter__(self):
+            yield from frames
+
+    monkeypatch.setattr(model_client_module, "urlopen", lambda *_args, **_kwargs: Response())
+    client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL, retries=0)
+    with pytest.raises(ModelClientError, match=failure_code):
+        list(client.chat_completion_stream([{"role": "user", "content": "hello"}], model_name=DEFAULT_MODEL))
+
+
+def test_stream_cancellation_does_not_require_terminal_frames(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(model_client_module, "urlopen", lambda *_args, **_kwargs: _Response())
+    client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL, retries=0)
+    cancelled = model_client_module.threading.Event()
+    cancelled.set()
+
+    assert list(client.chat_completion_stream(
+        [{"role": "user", "content": "hello"}], model_name=DEFAULT_MODEL, cancel_event=cancelled
+    )) == []
 
 
 @pytest.mark.parametrize("value", [0, -1, 2049, True, 1.5])
