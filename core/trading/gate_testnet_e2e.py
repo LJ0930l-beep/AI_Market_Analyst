@@ -258,7 +258,7 @@ class GateTestnetE2EService:
                     or _symbol(observed.get("symbol")) != _symbol(symbol)
                     or _symbol(initial.get("contract")) != _symbol(symbol)
                     or observed.get("reduce_only") is not True
-                    or initial.get("reduce_only") is not True
+                    or not (initial.get("reduce_only") is True or initial.get("is_reduce_only") is True)
                 ):
                     raise ValueError("PROTECTION_ID_SCOPE_MISMATCH")
                 state = str(observed.get("status") or "").upper()
@@ -277,7 +277,7 @@ class GateTestnetE2EService:
                     or _symbol(terminal.get("symbol")) != _symbol(symbol)
                     or _symbol(terminal_initial.get("contract")) != _symbol(symbol)
                     or terminal.get("reduce_only") is not True
-                    or terminal_initial.get("reduce_only") is not True
+                    or not (terminal_initial.get("reduce_only") is True or terminal_initial.get("is_reduce_only") is True)
                     or str(terminal.get("status") or "").upper() != "FINISHED"
                     or not finish_as
                 ):

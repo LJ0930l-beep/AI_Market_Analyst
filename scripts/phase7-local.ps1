@@ -298,13 +298,37 @@ function Invoke-Start {
     if ($LASTEXITCODE -ne 0) { throw "Python uvicorn is unavailable; install the API extra first" }
     if (-not (Test-PortAvailable $ApiHost $ApiPort)) { throw "API port is occupied; no process was stopped" }
     if (-not (Test-PortAvailable $WebHost $WebPort)) { throw "web port is occupied; no process was stopped" }
-    $distIndex = Join-Path $ProjectRoot "web\dist\index.html"
-    if ($Build -or -not (Test-Path -LiteralPath $distIndex -PathType Leaf)) {
+    $distRoot = Join-Path $ProjectRoot "web\dist"
+    $distIndex = Join-Path $distRoot "index.html"
+    $localBuildMarker = Join-Path $distRoot ".phase7-local-build.json"
+    $needsLocalBuild = [bool]$Build -or -not (Test-Path -LiteralPath $distIndex -PathType Leaf)
+    if (-not $needsLocalBuild) {
+        try {
+            $buildMetadata = Get-Content -LiteralPath $localBuildMarker -Raw | ConvertFrom-Json
+            $needsLocalBuild = $buildMetadata.format_version -ne "phase7_local_build_v1" -or $buildMetadata.api_base_url -ne "/api"
+        } catch {
+            # Generic Vite builds can leave a usable-looking dist that points
+            # the credential UI at the desktop API port instead of this local
+            # preview's same-origin /api proxy. Rebuild unless our marker says
+            # this output was made for the phase-7 local launcher.
+            $needsLocalBuild = $true
+        }
+    }
+    if ($needsLocalBuild) {
         Push-Location (Join-Path $ProjectRoot "web")
         try {
+            $previousApiBaseUrl = $env:VITE_API_BASE_URL
             $env:VITE_API_BASE_URL = "/api"
-            & $npm run build
-            if ($LASTEXITCODE -ne 0) { throw "web build failed" }
+            try {
+                & $npm run build
+                if ($LASTEXITCODE -ne 0) { throw "web build failed" }
+                if (-not (Test-Path -LiteralPath $distIndex -PathType Leaf)) { throw "web build did not produce dist/index.html" }
+                @{ format_version = "phase7_local_build_v1"; api_base_url = "/api" } |
+                    ConvertTo-Json -Compress |
+                    Set-Content -LiteralPath $localBuildMarker -Encoding ascii
+            } finally {
+                $env:VITE_API_BASE_URL = $previousApiBaseUrl
+            }
         } finally { Pop-Location }
     }
     New-Item -ItemType Directory -Path $StateRoot -Force | Out-Null

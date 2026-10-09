@@ -432,7 +432,6 @@ def test_gate_testnet_account_does_not_read_local_ledger_or_route_paper_order(tm
     assert account.json()["data_status"] == "NOT_CONFIGURED_NO_TESTNET_CREDENTIALS"
     assert account.json()["balance"]["total"] is None
     assert account.json()["private_api_access"] == "NOT_ATTEMPTED_NO_CREDENTIALS"
-
     trades = client.get(f"/v2/gate/trades?account_id={GATE_PAPER_ACCOUNT_ID}")
     assert trades.status_code == 200, trades.text
     assert trades.json()["summary"]["source"] == "NOT_CONFIGURED_NO_TESTNET_CREDENTIALS"
@@ -443,6 +442,55 @@ def test_gate_testnet_account_does_not_read_local_ledger_or_route_paper_order(tm
             "SELECT COUNT(*) FROM trade_fills WHERE account_id=?",
             (GATE_PAPER_ACCOUNT_ID,),
         ).fetchone()[0] == 0
+
+
+def test_gate_testnet_order_test_requires_explicit_server_confirmation(tmp_path, monkeypatch):
+    store = SQLiteStore(tmp_path / "gate-testnet-explicit-confirmation.db")
+    store.initialize()
+    provision_default_gate_accounts(store)
+    calls = []
+
+    def build_trader(_store, account_id):
+        calls.append(("build_trader", account_id))
+        return object()
+
+    def run_e2e(_service, request, trader):
+        calls.append(("run_e2e", request, trader))
+        return {"status": "COMPLETED", "account_id": request["account_id"]}
+
+    monkeypatch.setattr("apps.api.v2.build_gate_trader", build_trader)
+    monkeypatch.setattr("apps.api.v2.GateTestnetE2EService.run", run_e2e)
+    client = _v2_client(store)
+    payload = {
+        "account_id": GATE_PAPER_ACCOUNT_ID,
+        "symbol": "BTCUSDT",
+        "side": "LONG",
+        "stop_type": "PERCENT",
+        "stop_value": 1,
+        "take_profit_type": "PERCENT",
+        "take_profit_value": 3,
+        "leverage": 1,
+        "cleanup": True,
+        "idempotency_key": "confirmation-required-test",
+    }
+
+    blocked = client.post("/v2/gate/testnet/order-test", json=payload)
+
+    assert blocked.status_code == 422
+    assert "TESTNET_CONFIRMATION_REQUIRED" in blocked.json()["detail"]
+    assert calls == []
+
+    confirmed = client.post(
+        "/v2/gate/testnet/order-test",
+        json={**payload, "confirm_testnet": True},
+    )
+
+    assert confirmed.status_code == 200, confirmed.text
+    assert confirmed.json() == {"status": "COMPLETED", "account_id": GATE_PAPER_ACCOUNT_ID}
+    assert len(calls) == 2
+    assert calls[0] == ("build_trader", GATE_PAPER_ACCOUNT_ID)
+    assert calls[1][0] == "run_e2e"
+    assert calls[1][1]["confirm_testnet"] is True
 
 
 def test_gate_live_account_is_account_scoped_not_release_locked(tmp_path):
