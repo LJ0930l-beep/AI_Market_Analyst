@@ -118,14 +118,16 @@ def _source_provenance(
     bars_by_timeframe: dict[str, Any], context: CausalContext,
 ) -> dict[str, Any]:
     used = {
-        (timeframe, _stamp(bar.end))
+        (timeframe, _stamp(bar.end), _stamp(bar.available_at))
         for timeframe, bars in context.bars.items()
         for bar in bars
     }
     selected: list[dict[str, Any]] = []
     for timeframe, rows in bars_by_timeframe.items():
         for row in rows:
-            if (timeframe, _stamp(_utc(row.get("bar_end"), "BAR_TIME_INVALID"))) in used:
+            end = _stamp(_utc(row.get("bar_end"), "BAR_TIME_INVALID"))
+            available = _stamp(_utc(row.get("available_at"), "BAR_TIME_INVALID"))
+            if (timeframe, end, available) in used:
                 selected.append(row)
     sources = sorted({str(row.get("source", "")) for row in selected})
     if any(source not in _ALLOWED_SOURCES for source in sources):

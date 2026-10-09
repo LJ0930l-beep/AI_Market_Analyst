@@ -59,6 +59,14 @@ The local evidence JSON and source bytes are not included in Git. This verifies 
 
 `docs/plans/AI-Market-Analyst-Product-Contract-V1.md` and `docs/plans/Multi-Asset-Trader-Terminal-Roadmap.md` already record the requested terminal contract, reuse inventory, missing modules, interfaces, dependencies, and acceptance gates. They remain design-only. The active V38 Gate 2 integrity P0 is completed before product implementation; subsequent roadmap work is dependency-ordered from `InstrumentSpec`/capability metadata to account-level Gate fee settlement, trader/intelligence interfaces, governed memory, portfolio simulation, and terminal consolidation. The production 2,000 USDT fixed notional, Gate production paths, account settings, Live state, and historical artifacts are unchanged.
 
+## Gate 2 derived-input audit and causality repair — 2026-10-09
+
+The independent standard-library verifier rebuilt all **54** frozen visible V3 market inputs. Every market-input hash and evidence-reference count matched its frozen descriptor. It did not open the 18 untouched-test payloads, source database, or account state and made no network/model calls or orders. The redacted report is Git-ignored at `reports/v38+/verification/v38-market-input-independent-audit-20261009-v4.json`, canonical SHA-256 `c742c56522ab262873cb74e6e5227217b82a47996467dfdee4e3b7f6b27ee655`.
+
+The audit also found and repaired a causal metadata edge case in `market_only._source_provenance`: late duplicate rows sharing the same bar end were included in provenance even when their availability time excluded them from the decision context. The provenance join now also requires the selected row's `available_at`. The full frozen V3 hashes and reference counts remain unchanged. See `V38-derived-market-input-independent-audit.md` for independent method, regression evidence, and limitations.
+
+Verification after this repair: `tests/v38/` **100 passed**; full suite **2,462 passed, 1 skipped, 0 failed**; exact baseline comparison **`PASS_NO_NEW_FAILURES`** (100/100 inherited failure nodes pass, all 139 new nodes pass, 0 new failure or phase-change nodes). Gate 2 remains accepted for input preparation only: historical availability is still a proxy and blind labels, Gemini-scored decisions, and Gate-executable samples remain zero.
+
 ## V42 prerequisites
 
 - Independently review the exact test-node/phase comparison and the 100-node register. Lease-loss cancellation, simulated permission/revocation, and local response-identity checks have passing offline coverage. Passing local tests do not establish remote integration behavior.
