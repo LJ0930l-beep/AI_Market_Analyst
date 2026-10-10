@@ -86,6 +86,16 @@ PR #26 remains OPEN/Draft at exact head `ffc265be9bdcb1f97aef5c80d572636ca9cef03
 
 No descendant success rewrites PR #23's failed exact-head result. The review candidates remain `FIX_IN_REVIEW`; human review and explicit merge approval are still required. No branch was merged and no model, exchange, TestNet, Live, or order request was made.
 
+## 2026-10-10 exact current-head refresh — 21:35Z
+
+The additive snapshot [`PR-INTEGRATION-MATRIX-LIVE-20261010T213530Z.json`](../audits/PR-INTEGRATION-MATRIX-LIVE-20261010T213530Z.json), SHA-256 `A2F87BC0C6B82C6AA053D5E5D28BF30C842D7F2FDB53D87BAA28D7E1F75E41AF`, rechecked all 27 current PR heads, bases, check runs and review counts. GitHub `main` remains `8642639a78ca9aa56fbad1e88aea4b82169ea433`; 27 PRs are OPEN, 0 merged, and all have zero reviews. Current heads classify as 15 ALL_SUCCESS, #23 FAILURE, #1–#11 NO_CHECKS, and 0 in progress.
+
+PR #26 head `fa5832f7f81c8cb5438aecc5b8bead9e02ce9cfc` is based on main, contains all #1–#25 current head commits as ancestors, and has 211 changed files. Its exact-head run [38086165883](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38086165883) passed 222 quick tests and 2,520 full tests, with 25 subtests and one existing warning. PR #27 head `58430c72b3c5e989cc77be86145527de7b0f9ef7` is based on #26 and has 29 changed files; exact-head run [38086177948](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38086177948) passed 275 quick tests and 2,573 full tests, with 25 subtests and one existing warning.
+
+The immediately preceding #26 run timed out at the then-configured 30-minute job limit after 1,971 tests passed; the workflow limit is now 45 minutes, and the exact new head passed. A preceding #27 run recorded one Windows SQLite temporary-file cleanup error after 2,572 tests passed; the isolated local test and the latest full hosted run passed. Preserve that earlier run as an intermittent reliability caveat. Neither result is rewritten.
+
+Status remains `FIX_IN_REVIEW`: no human review or merge decision exists. Keep both candidate PRs Draft and unmerged; no model, exchange, TestNet, Live, order, or account-setting operation was performed.
+
 ## 2026-10-10 exact current-head refresh — 19:41Z
 
 The immutable live snapshot [`PR-INTEGRATION-MATRIX-LIVE-20261010T194115Z.json`](../audits/PR-INTEGRATION-MATRIX-LIVE-20261010T194115Z.json), SHA-256 `F933C0E4FF3C21BDA8E806BF1D4FAEE865AF80664FA975B332C01C640FBBC4EC`, captured 27 open PRs and 0 merged PRs. `main` remains `8642639a78ca9aa56fbad1e88aea4b82169ea433`. PR #26 is still based on main and includes PR #1–#25 current-head ancestry; PR #27 is stacked on #26.

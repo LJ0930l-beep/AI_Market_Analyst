@@ -140,3 +140,11 @@ The `V38_STORED_INPUT_EVIDENCE_REF_SELF_AUTHORIZATION` subfinding is now `PATCHE
 The repair validates stored context/version and timeframe frames, requires sorted unique non-empty bar references, and checks that top-level evidence references equal the frame-reference union. Invalid executor input is rejected before calling the fixed fake provider or writing a ledger. The frozen historical ledger remains 144 lines / 512,044 bytes with SHA-256 `820212A5699B718C922232C584FCFDCB4F79B675EA8653B1898A0D4025B837A7`; no historical response was relabeled or retried.
 
 G1 offline response-contract verification passes. Parent B-002 remains `BLOCKED_WITH_EVIDENCE` for provider-native structured-output capability, underlying model weights/identity attestation, and actual billing. Hosted CI is not remote provider evidence and does not authorize G2. No Gemini, Gate/TestNet/Live call or order was made by this repair.
+
+## 2026-10-10 latest exact-head verification — 21:35Z
+
+PR #27 current head `58430c72b3c5e989cc77be86145527de7b0f9ef7` passed exact-head hosted run [38086177948](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38086177948): quick gate 275 passed; full suite 2,573 passed, 25 subtests passed, one existing Starlette/httpx warning. This verifies the offline contract and regression suite on the current candidate SHA only.
+
+Keep the prior exact-head run [38083801386](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38083801386) in the record: 2,572 tests passed before `test_explicit_start_is_singleton_and_stop_leaves_no_thread` encountered `WinError 32` while deleting its temporary SQLite file. The focused local test passed, and the current full hosted rerun passed; classify the lock as not reproduced, with residual intermittent test-environment risk. No test or historical failure was deleted.
+
+The original ledger remains at SHA-256 `820212A5699B718C922232C584FCFDCB4F79B675EA8653B1898A0D4025B837A7`; the 67 `INVALID_JSON` outcomes remain unchanged. Provider `response_format` support, underlying model weights/identity attestation, and billing remain UNKNOWN/BLOCKED_WITH_EVIDENCE. No Gemini request was made. G2 remains locked pending the manual's fresh explicit scope and stop-rule requirements.

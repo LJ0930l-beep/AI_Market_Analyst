@@ -184,3 +184,11 @@ After the user confirmed the local Antigravity route change, a separate one-inte
 ## V2.0 G0/G1 evidence refresh — 2026-10-10 19:41Z
 
 The current review snapshot and gate assessment are recorded in [`V2-G0-G1-current-state-20261010T194115Z.md`](../audits/V2-G0-G1-current-state-20261010T194115Z.md) with the machine-readable PR matrix [`PR-INTEGRATION-MATRIX-LIVE-20261010T194115Z.json`](../audits/PR-INTEGRATION-MATRIX-LIVE-20261010T194115Z.json). G0 remains `FIX_IN_REVIEW` pending human review of PR #26/#27. G1 offline validation passes on PR #27's exact head and hosted CI; remote provider capability, model-weight identity, and billing remain blocked. The G4/B05 calibration identity limitation is registered as B-20261010-003 and must remain fail-closed until upstream gates and its offline negative-test contract are accepted. No provider or exchange call was made for this documentation refresh.
+
+## V2.0 G0/G1 exact current-head refresh — 2026-10-10 21:35Z
+
+The historical 19:41 audit remains unchanged. The additive refresh is [`V2-G0-G1-live-refresh-20261010T213530Z.md`](../audits/V2-G0-G1-live-refresh-20261010T213530Z.md), backed by [`PR-INTEGRATION-MATRIX-LIVE-20261010T213530Z.json`](../audits/PR-INTEGRATION-MATRIX-LIVE-20261010T213530Z.json). The handbook's `main` SHA is still current, while its 25-open-PR baseline is stale: GitHub now has 27 OPEN, 0 merged, 0 reviews; 15 current-head checks pass, #23 remains failed, and #1–#11 have no current-head check runs.
+
+PR #26 `fa5832f7f81c8cb5438aecc5b8bead9e02ce9cfc` contains the current heads of PRs #1–#25 and passes hosted run `38086165883` (222 quick / 2,520 full). PR #27 `58430c72b3c5e989cc77be86145527de7b0f9ef7` is stacked on #26 and passes hosted run `38086177948` (275 quick / 2,573 full). Both remain Draft and unmerged pending human review. The earlier #26 timeout and #27 SQLite cleanup failure are retained in the blocker reports; the current full runs passed.
+
+G1 offline response-contract work is accepted on the current candidate; provider structured-output capability, remote model identity/weights and billing remain blocked. Do not start G2 without its fresh explicit authorization and bounded scope. No Gemini/Gate API, TestNet/Live request, order, or production account change was made in this refresh.
