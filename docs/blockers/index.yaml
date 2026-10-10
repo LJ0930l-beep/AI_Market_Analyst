@@ -14,4 +14,4 @@ blockers:
     component: model
     file: docs/blockers/B-20261010-002-model-response-capability.md
     trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
-    next_owner_action: Verify exact-head PR #27 quick/full CI for the V38 runner integer-byte fix; keep external provider capability blocked and issue no model calls.
+    next_owner_action: Human review of Draft PRs #26 and #27; keep external provider capability blocked and issue no model calls. PR #27 exact-head hosted CI passed on attempt 2; retain the first-attempt Windows SQLite cleanup failure as an intermittent reliability caveat.
