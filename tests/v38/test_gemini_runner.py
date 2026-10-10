@@ -14,6 +14,7 @@ from core.replay.pa_decision_quality_v38.gemini_runner import (
     PROMPT_HASHES,
     ProviderCallResult,
     _call_key,
+    _result_event,
     build_model_messages,
     canonical_sha256,
     execute_authorized_optimization,
@@ -272,6 +273,87 @@ def test_analysis_requires_a_completed_bound_json_transport_trace(tmp_path, mark
 
     assert report["status_counts"] == {"INVALID_TRANSPORT_EVIDENCE": 2}
     assert report["valid_analysis_records"] == 0
+
+
+def test_model_call_error_keeps_only_safe_model_code_and_current_trace(tmp_path, market_point_factory):
+    from core.model_client import ModelClientError
+
+    root = Path(__file__).resolve().parents[2]
+    auth, prompts, market_input = _setup(root, market_point_factory)
+    ledger = tmp_path / "model-call-ledger.jsonl"
+
+    def refused(messages, request_id):
+        trace = CompletionTransportTrace(messages, 1, 30, request_id=request_id)
+        trace.data["transport_mode"] = "JSON"
+        trace.request_written(128, 0.01)
+        trace.awaiting_headers()
+        trace.headers_received(401)
+        trace.body_received(8)
+        trace.failed(ModelClientError("MODEL_UPSTREAM_HTTP_401"))
+        failure = ModelClientError("MODEL_UPSTREAM_HTTP_401")
+        failure.transport_trace = trace.snapshot()
+        raise failure
+
+    report = execute_authorized_optimization(
+        [market_input], prompts, authorization=auth, ledger_path=ledger,
+        call_model=refused, max_contexts=1,
+    )
+
+    assert report["status_counts"] == {"CALL_ERROR_NO_RETRY": 2}
+    assert report["valid_analysis_records"] == 0
+    assert all(
+        row["result"]["error_code"] == "MODEL_UPSTREAM_HTTP_401"
+        and row["result"]["transport_trace"]["http_status"] == 401
+        and row["result"]["transport_trace"]["request_id"] == row["intent"]["request_id"]
+        for row in report["records"]
+    )
+
+
+def test_model_call_error_discards_arbitrary_exception_message():
+    failure = RuntimeError("private token must not be recorded")
+    result = _result_event({"call_key": "key", "run_id": "run", "request_id": "request"}, None, failure=failure)
+
+    assert result["error_code"] == "MODEL_CALL_FAILED"
+    assert result["error_type"] == "RuntimeError"
+    assert "private token" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("trace_request_id", ["a" * 32, "b" * 32])
+def test_cli_model_caller_attaches_transport_trace_only_for_current_request(
+    monkeypatch, trace_request_id,
+):
+    import scripts.run_market_only_gemini_v38 as cli
+    from core.config import config
+    from core.model_client import ModelClientError, model_client
+
+    monkeypatch.setattr(config, "api_key", "fixture-relay-key")
+
+    def refused(messages, **kwargs):
+        trace = CompletionTransportTrace(
+            messages, 1, kwargs["timeout_sec"], request_id=trace_request_id,
+        )
+        trace.data["transport_mode"] = "JSON"
+        trace.request_written(128, 0.01)
+        trace.awaiting_headers()
+        trace.headers_received(401)
+        trace.body_received(8)
+        trace.failed(ModelClientError("MODEL_UPSTREAM_HTTP_401"))
+        model_client._response_state.transport_trace = trace
+        raise ModelClientError("MODEL_UPSTREAM_HTTP_401")
+
+    monkeypatch.setattr(model_client, "chat_completion", refused)
+    _, call_model = cli._model_caller()
+    request_id = "a" * 32
+
+    with pytest.raises(ModelClientError) as failure:
+        call_model([{"role": "user", "content": "fixture"}], request_id)
+
+    attached_trace = getattr(failure.value, "transport_trace", None)
+    if trace_request_id == request_id:
+        assert attached_trace["request_id"] == request_id
+        assert attached_trace["http_status"] == 401
+    else:
+        assert attached_trace is None
 
 
 def test_invalid_analysis_is_preserved_and_not_silently_repaired_or_resized(

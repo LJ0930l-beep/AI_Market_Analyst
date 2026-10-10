@@ -528,10 +528,14 @@ def _result_event(
     }
     if failure is not None:
         code = getattr(failure, "code", None)
-        safe_code = code if isinstance(code, str) and re.fullmatch(r"MODEL_[A-Z0-9_]{1,96}", code) else None
+        if not isinstance(code, str) or re.fullmatch(r"MODEL_[A-Z0-9_]{1,96}", code) is None:
+            # ModelClientError exposes stable machine codes as its message;
+            # keep only that strict form and discard arbitrary exception text.
+            message = str(failure)
+            code = message if re.fullmatch(r"MODEL_[A-Z0-9_]{1,96}", message) else None
         common.update(
             status="CALL_ERROR_NO_RETRY",
-            error_code=safe_code or "MODEL_CALL_FAILED",
+            error_code=code or "MODEL_CALL_FAILED",
             error_type=type(failure).__name__[:80],
         )
         return common

@@ -81,19 +81,32 @@ def _model_caller() -> tuple[Any, Any]:
         raise ValueError("V38_GEMINI_PROXY_CREDENTIAL_UNAVAILABLE")
 
     def call(messages: list[dict[str, str]], request_id: str) -> ProviderCallResult:
-        response = model_client.chat_completion(
-            messages,
-            mode="FAST",
-            response_format={"type": "json_object"},
-            stream=False,
-            temperature_override=0.0,
-            max_tokens=MAX_OUTPUT_TOKENS,
-            model_name=DEFAULT_MODEL,
-            reasoning_effort="high",
-            timeout_sec=min(float(config.timeout_sec), 120.0),
-            retries=0,
-            request_id=request_id,
-        )
+        try:
+            response = model_client.chat_completion(
+                messages,
+                mode="FAST",
+                response_format={"type": "json_object"},
+                stream=False,
+                temperature_override=0.0,
+                max_tokens=MAX_OUTPUT_TOKENS,
+                model_name=DEFAULT_MODEL,
+                reasoning_effort="high",
+                timeout_sec=min(float(config.timeout_sec), 120.0),
+                retries=0,
+                request_id=request_id,
+            )
+        except Exception as exc:
+            # The client retains a sanitized trace for HTTP refusals, but its
+            # exception path does not return ProviderCallResult. Bind that
+            # trace only when it belongs to this exact request; never reuse a
+            # previous call's transport evidence.
+            trace = model_client.last_transport_trace
+            if isinstance(trace, dict) and trace.get("request_id") == request_id:
+                try:
+                    exc.transport_trace = trace
+                except (AttributeError, TypeError):
+                    pass
+            raise
         return ProviderCallResult(
             payload=response,
             response_model_id=model_client.last_response_model,
