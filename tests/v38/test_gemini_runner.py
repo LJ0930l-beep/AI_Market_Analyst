@@ -299,13 +299,16 @@ def test_model_call_error_keeps_only_safe_model_code_and_current_trace(tmp_path,
         call_model=refused, max_contexts=1,
     )
 
-    assert report["status_counts"] == {"CALL_ERROR_NO_RETRY": 2}
+    assert report["status_counts"] == {
+        "CALL_ERROR_NO_RETRY": 1,
+        "NOT_ATTEMPTED": 1,
+    }
     assert report["valid_analysis_records"] == 0
     assert all(
         row["result"]["error_code"] == "MODEL_UPSTREAM_HTTP_401"
         and row["result"]["transport_trace"]["http_status"] == 401
         and row["result"]["transport_trace"]["request_id"] == row["intent"]["request_id"]
-        for row in report["records"]
+        for row in report["records"] if row["status"] == "CALL_ERROR_NO_RETRY"
     )
 
 
@@ -448,6 +451,52 @@ def test_existing_provider_quota_rejection_latches_across_invocations(
     assert first["provider_rate_or_quota_stop_latched"] is True
     assert second["provider_rate_or_quota_stop_latched"] is True
     assert second["status_counts"] == {"INVALID_PROVIDER_RESPONSE": 1, "NOT_ATTEMPTED": 1}
+
+
+def test_region_rejection_stops_arm_pair_and_latches_across_invocations(
+    tmp_path, market_point_factory,
+):
+    from core.model_client import ModelClientError
+
+    root = Path(__file__).resolve().parents[2]
+    auth, prompts, market_input = _setup(root, market_point_factory)
+    second_market_input = build_market_only_input(market_point_factory(
+        symbol="ETHUSDT", decision_id="v38-fixture-eth-20251015-1200z",
+    ))
+    ledger = tmp_path / "model-call-ledger.jsonl"
+    calls: list[str] = []
+
+    def region_rejection(messages, request_id):
+        calls.append(request_id)
+        trace = CompletionTransportTrace(messages, 1, 30, request_id=request_id)
+        trace.data["transport_mode"] = "JSON"
+        trace.request_written(128, 0.01)
+        trace.awaiting_headers()
+        trace.headers_received(400)
+        trace.body_received(64)
+        trace.failed(ModelClientError("MODEL_UPSTREAM_REGION_UNSUPPORTED"))
+        failure = ModelClientError("MODEL_UPSTREAM_REGION_UNSUPPORTED")
+        failure.transport_trace = trace.snapshot()
+        raise failure
+
+    first = execute_authorized_optimization(
+        [market_input, second_market_input], prompts, authorization=auth, ledger_path=ledger,
+        call_model=region_rejection, max_contexts=2,
+    )
+    second = execute_authorized_optimization(
+        [market_input, second_market_input], prompts, authorization=auth, ledger_path=ledger,
+        call_model=region_rejection, max_contexts=2,
+    )
+
+    assert len(calls) == 1
+    assert first["dispatch_intent_count"] == second["dispatch_intent_count"] == 1
+    assert first["status_counts"] == second["status_counts"] == {
+        "CALL_ERROR_NO_RETRY": 1,
+        "NOT_ATTEMPTED": 3,
+    }
+    assert first["provider_stop_latched"] is True
+    assert first["provider_rate_or_quota_stop_latched"] is False
+    assert second["provider_stop_latched"] is True
 
 
 def test_cli_is_dry_run_by_default_and_does_not_initialize_model_client(

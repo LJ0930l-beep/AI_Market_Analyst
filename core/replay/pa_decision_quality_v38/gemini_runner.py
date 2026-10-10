@@ -31,7 +31,7 @@ from core.replay.pa_decision_quality_v38.market_only import (
 )
 
 AUTHORIZATION_SCHEMA_VERSION = "pa-market-only-v38/model-call-authorization-1"
-RUN_SCHEMA_VERSION = "pa-market-only-v38/gemini-run-1"
+RUN_SCHEMA_VERSION = "pa-market-only-v38/gemini-run-2"
 LEDGER_SCHEMA_VERSION = "pa-market-only-v38/gemini-call-ledger-2"
 DATASET_SCHEMA_VERSION = "pa-market-only-v38/stratified-purged-market-input-dataset-1"
 DATASET_ID = "V38_BINANCE_BTC_ETH_STRATIFIED_PURGED_CONTEXTS_20261009_V1"
@@ -680,11 +680,26 @@ def _trace_matches_intent(trace: Any, intent: dict[str, Any]) -> bool:
     )
 
 
-def _provider_stop_result(result: dict[str, Any]) -> bool:
+def _provider_rate_or_quota_stop_result(result: dict[str, Any]) -> bool:
     trace = result.get("transport_trace")
     return (
         result.get("error_code") in {"MODEL_UPSTREAM_HTTP_402", "MODEL_UPSTREAM_HTTP_429"}
         or isinstance(trace, dict) and trace.get("http_status") in {402, 429}
+    )
+
+
+def _provider_stop_result(result: dict[str, Any]) -> bool:
+    """Latch provider-wide refusals so one bad route cannot burn the batch."""
+    trace = result.get("transport_trace")
+    error_code = result.get("error_code")
+    return (
+        _provider_rate_or_quota_stop_result(result)
+        or error_code == "MODEL_UPSTREAM_REGION_UNSUPPORTED"
+        or error_code in {
+            "MODEL_UPSTREAM_HTTP_400", "MODEL_UPSTREAM_HTTP_401",
+            "MODEL_UPSTREAM_HTTP_403", "MODEL_UPSTREAM_HTTP_404",
+        }
+        or isinstance(trace, dict) and trace.get("http_status") in {400, 401, 403, 404}
     )
 
 
@@ -808,7 +823,7 @@ def execute_authorized_optimization(
     with _exclusive_ledger_lock(ledger_path):
         events = _read_ledger(ledger_path)
         indexed = _validate_event_pairing(events, schedule)
-        provider_rejection_latched = any(
+        provider_stop_latched = any(
             pair.get("RESULT") is not None and _provider_stop_result(pair["RESULT"])
             for pair in indexed.values()
         )
@@ -823,7 +838,7 @@ def execute_authorized_optimization(
                     break
 
         for market_input, arm_id, prompt, messages in schedule:
-            if provider_rejection_latched:
+            if provider_stop_latched:
                 break
             if market_input["decision_id"] not in selected_ids:
                 continue
@@ -848,9 +863,9 @@ def execute_authorized_optimization(
             result = _append_event(ledger_path, result)
             indexed[call_key]["RESULT"] = result
             if _provider_stop_result(result):
-                # A quota/rate response ends this run immediately; other samples
-                # remain NOT_ATTEMPTED in the fixed denominator.
-                provider_rejection_latched = True
+                # Provider-wide refusals end this run immediately; remaining
+                # context-arm pairs stay visible in the fixed denominator.
+                provider_stop_latched = True
                 break
     return review_gemini_ledger(inputs, prompts, _read_ledger(ledger_path))
 
@@ -948,8 +963,13 @@ def review_gemini_ledger(
         "provider_cost_usdt": None,
         "provider_cost_status": "UNVERIFIED_NO_PRICE_OR_BILLING_RECEIPT",
         "provider_internal_deduplication": "UNVERIFIED",
-        "provider_rate_or_quota_stop_latched": any(
+        "provider_stop_latched": any(
             result is not None and _provider_stop_result(result)
+            for pair in indexed.values()
+            for result in [pair.get("RESULT")]
+        ),
+        "provider_rate_or_quota_stop_latched": any(
+            result is not None and _provider_rate_or_quota_stop_result(result)
             for pair in indexed.values()
             for result in [pair.get("RESULT")]
         ),
