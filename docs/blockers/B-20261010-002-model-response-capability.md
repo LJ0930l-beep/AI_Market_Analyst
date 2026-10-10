@@ -65,13 +65,13 @@ Keep G2 closed pending human review of PRs #26/#27 and separate explicit G2 auth
 
 ## 2026-10-10 independent offline review addendum — fractional transport byte count
 
-**Subfinding:** `V2_TRANSPORT_REQUEST_BYTES_INTEGER_TYPE`; severity S1; status `PATCHED_LOCALLY_AWAITING_EXACT_HEAD_CI`. Parent B-002 remains `BLOCKED_WITH_EVIDENCE` for external provider capability/identity/billing.
+**Subfinding:** `V2_TRANSPORT_REQUEST_BYTES_INTEGER_TYPE`; severity S1; status `PATCHED_AND_EXACT_HEAD_CI_VERIFIED`. Parent B-002 remains `BLOCKED_WITH_EVIDENCE` for external provider capability/identity/billing.
 
 - **Root cause:** V2 accepted any finite positive float as `transport_trace.request_bytes_written`; a byte count is an integer quantity, so fractional values cannot be a valid transport receipt.
 - **Source evidence:** `core/ai/transport_diagnostics.py::_TracedConnection.send()` calls `request_written(len(data), ...)` for bytes-like request data; `len(data)` is an integer. The trace accumulator preserves that byte count.
 - **Original offline reproduction:** at PR #27 head `5314acd9e51a77a2984c58e3c45958eaf1b7278b`, `_evaluate(_envelope(_minimal(), request_bytes_written=1.5))` returned `VALID_LOCAL_CONTRACT` and `MATCHED_COMPLETED_JSON_HTTP_200`. Test-first parameter cases for `1.0` and `1.5` then failed (2 failed, 7 passed) while existing integer/invalid cases behaved as expected. No network, exchange, or provider path was involved.
-- **Temporary containment:** the evaluator still has `remote_dispatch_allowed=false`; only fixed offline fixtures are accepted here. Keep G1/G2 closed while the integer-only repair awaits exact-head CI.
+- **Temporary containment:** the evaluator still has `remote_dispatch_allowed=false`; only fixed offline fixtures are accepted here. Keep G1 pending human review and G2 blocked while external provider capability remains unknown.
 - **Repair:** require `type(request_bytes_written) is int and request_bytes_written > 0`; add rejection cases for whole and fractional floats and assert no normalized analysis is emitted. Scope is only `response_contract_v2.py` and its unit test; V1 runner and shared trace production are unchanged.
 - **Local evidence:** response-contract suite `42 passed`; repository quick gate `264 passed`; Ruff check/format and `git diff --check` pass. These do not replace exact-head hosted CI.
-- **Acceptance:** updated PR #27 head must pass hosted quick and full offline suites; retain exact run link and counts; confirm V1 behavior, main, V35 risk controls, model-call ledger, and production execution remain unchanged.
+- **Acceptance:** PR #27 exact head `4f07961861ff8f95147f75495fcaf78063cf3d2b` passed hosted run [38058300661](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38058300661): quick gate 264 passed; full offline suite 2,560 passed, 1 Starlette deprecation warning, and 25 subtests passed. This run verifies the integer-only transport receipt repair. The local review confirmed V1/shared trace production, `main`, V35 risk controls, the frozen model-call ledger, and production execution were unchanged.
 - **Rollback:** revert only the integer-only V2 predicate and its added parameter cases/assertions. Preserve the earlier response-size fix and all original evidence; keep G1 blocked if exact-head CI fails.

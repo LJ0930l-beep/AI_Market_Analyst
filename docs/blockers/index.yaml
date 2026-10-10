@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V1
-updated_at_utc: 2026-10-10T13:59:16Z
+updated_at_utc: 2026-10-10T14:24:14Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -14,4 +14,4 @@ blockers:
     component: model
     file: docs/blockers/B-20261010-002-model-response-capability.md
     trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
-    next_owner_action: Verify exact-head PR #27 quick/full CI for the V2 integer-only transport byte fix; keep remote capability blocked and do not call.
+    next_owner_action: Keep remote provider capability blocked and issue no model calls; await human review of PRs #26/#27. Rerun exact-head CI after any code change.
