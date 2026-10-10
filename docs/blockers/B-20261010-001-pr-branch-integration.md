@@ -55,3 +55,9 @@ PR #23 exact-head run `37963206552` 有 3 个 `tests/test_macro_actuals.py` 失�
 The original incident narrative above preserves the discovery-time branch evidence. At `2026-10-10T11:23:57Z`, the refreshed GitHub snapshot recorded 27 open PRs. PR #26 exact head `ffc265be9bdcb1f97aef5c80d572636ca9cef035` passed run `38043671492`; stacked PR #27 exact head `732a77ee415461caa7c74b6faba2a9807b45ba77` passed run `38046845072`. PR #23 exact head remains failed on run `37963206552`; PR #24/#25 descendant passes do not rewrite it. PRs #1–#11 have no check runs attached to their current heads; #12–#22 and #24–#27 have successful current-head checks.
 
 Refreshed machine snapshot: [`PR-INTEGRATION-MATRIX-REFRESH-20261010.json`](../audits/PR-INTEGRATION-MATRIX-REFRESH-20261010.json), SHA-256 `B94397AE77DB87C0574C93709D1377103F630F9D76DE358DF8A82BA495BC27E4`. The original 25-PR matrix remains unchanged. Status is `FIX_IN_REVIEW`, not `VERIFIED`: both candidate PRs still need human review and explicit merge approval.
+
+## 2026-10-10 exact-head CI refresh — 13:18Z
+
+PR #26 remains at `ffc265be9bdcb1f97aef5c80d572636ca9cef035`; exact-head run `38043671492` passed (222 quick, 2,518 full). PR #27 now points to `cd0de57dae6d6aa5368158ea678697c72688fc2e`; exact-head run `38053934404` passed (262 quick, 2,558 full, one Starlette deprecation warning, 25 subtests). PR #23 head still has failed run `37963206552`; PRs #1–#11 have no current-head check runs. The live matrix is `docs/audits/PR-INTEGRATION-MATRIX-LIVE-20261010T131858Z.json`, SHA-256 `5F3E6C2F4D8E43D9823218853CA1F305625920AC41352E4A0327BBF1C9C90068`.
+
+Both review candidates remain OPEN, Draft, with no reviews and no merge. Status remains `FIX_IN_REVIEW`; CI does not replace the required human review/approval. Keep source branches and old CI outcomes unchanged.

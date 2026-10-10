@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V1
-updated_at_utc: 2026-10-10T12:51:59Z
+updated_at_utc: 2026-10-10T13:20:15Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -14,4 +14,4 @@ blockers:
     component: model
     file: docs/blockers/B-20261010-002-model-response-capability.md
     trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
-    next_owner_action: Verify the response-size validation patch on PR #27 exact-head quick/full CI; keep real provider capability unknown and do not call without separate G2 authorization.
+    next_owner_action: Exact-head PR #27 quick/full CI verifies the offline size-limit patch; keep remote capability blocked, await human review of PRs #26/#27 and separate G2 authorization; do not call.

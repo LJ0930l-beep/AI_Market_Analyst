@@ -54,3 +54,11 @@ G0 候选 PR #26 的同 head hosted quick/full CI 已通过，但候选仍 Draft
 - **Local acceptance evidence:** `python -m pytest -q tests/v38/test_response_contract_v2.py` — 40 passed; the repository quick-gate command — 262 passed; Ruff check/format and `git diff --check` passed. The frozen call ledger remains 144 lines with SHA-256 `820212A5699B718C922232C584FCFDCB4F79B675EA8653B1898A0D4025B837A7`. These are local results only; the base `c56c542` hosted run does not cover the patch.
 - **Unblock criteria:** new PR #27 exact head must pass quick and full hosted CI; rerun the response-contract test on that head; confirm the V38 ledger SHA remains unchanged. Provider capability remains blocked separately until an explicitly authorized G2 probe.
 - **Rollback:** revert only this parameter-check move and its six-case test. Keep PR #27 open and G1 blocked if the new CI or review fails; no changes to V1, production execution, V35 risk controls, frozen samples, or historical ledger.
+
+## 2026-10-10 exact-head CI acceptance addendum — 13:18Z
+
+The `V2_RESPONSE_SIZE_LIMIT_TYPECHECK_ORDER` subfinding is now `PATCHED_AND_EXACT_HEAD_CI_VERIFIED`: PR #27 exact head `cd0de57dae6d6aa5368158ea678697c72688fc2e` passed hosted run `38053934404` (262 quick, 2,558 full, one Starlette deprecation warning, 25 subtests). The targeted response-contract suite rerun locally passed 40 tests. Invalid positive-size configuration cases fail closed before response-length comparison.
+
+The parent B-002 remains `BLOCKED_WITH_EVIDENCE`: remote structured-response capability, actual response identity/weights, and billing remain unknown. This CI result does not authorize G2. No new model, exchange, TestNet, Live, or order request was made. The immutable 144-line ledger was read-only rechecked in the default checkout at SHA-256 `820212A5699B718C922232C584FCFDCB4F79B675EA8653B1898A0D4025B837A7`; the active isolated worktree does not carry that ignored artifact.
+
+Keep G2 closed pending human review of PRs #26/#27 and separate explicit G2 authorization with fresh frozen optimization scope, a request ceiling, and a cost/stop rule. Roll back only the size-limit validation move and its six negative tests if a regression is found.
