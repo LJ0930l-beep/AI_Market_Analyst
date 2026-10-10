@@ -85,3 +85,11 @@ The live snapshot at 17:45:21Z contains 27 open PRs: 15 current heads with all c
 PR #26 remains OPEN/Draft at exact head `ffc265be9bdcb1f97aef5c80d572636ca9cef035`; hosted run `38043671492` completed successfully (222 quick / 2,518 full). Stacked PR #27 remains OPEN/Draft at exact head `22a137ec16776457959b44c225f191ac465c5065`; hosted run [38070919856](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38070919856) completed successfully (273 quick / 2,569 full, one Starlette deprecation warning, 25 subtests). Both have zero reviews/comments and no auto-merge. The `ALL_SUCCESS` classification is based on completed exact-head check runs; an aggregate legacy status of `pending` with zero status contexts is not treated as an in-progress run.
 
 No descendant success rewrites PR #23's failed exact-head result. The review candidates remain `FIX_IN_REVIEW`; human review and explicit merge approval are still required. No branch was merged and no model, exchange, TestNet, Live, or order request was made.
+
+## 2026-10-10 exact current-head refresh — 19:41Z
+
+The immutable live snapshot [`PR-INTEGRATION-MATRIX-LIVE-20261010T194115Z.json`](../audits/PR-INTEGRATION-MATRIX-LIVE-20261010T194115Z.json), SHA-256 `F933C0E4FF3C21BDA8E806BF1D4FAEE865AF80664FA975B332C01C640FBBC4EC`, captured 27 open PRs and 0 merged PRs. `main` remains `8642639a78ca9aa56fbad1e88aea4b82169ea433`. PR #26 is still based on main and includes PR #1–#25 current-head ancestry; PR #27 is stacked on #26.
+
+PR #27 exact head `9eb55ac19b7e8739b7500cca03b0c9d2a253c299` passed hosted run [38078606379](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38078606379): quick gate 275 passed and full suite 2,571 passed with one Starlette deprecation warning and 25 subtests. The current-head matrix still has 15 all-success heads, PR #23's original failure, 11 heads without checks (#1–#11), and none in progress. PR #26/#27 remain OPEN/Draft, with no reviews, merge, or auto-merge.
+
+This refresh updates evidence only. Status remains `FIX_IN_REVIEW` pending human review and explicit merge decisions; the historical PR #23 failure remains unchanged. No source PR, `main`, model route, exchange, account, or order was changed or contacted.
