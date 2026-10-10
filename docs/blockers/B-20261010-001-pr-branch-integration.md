@@ -61,3 +61,11 @@ Refreshed machine snapshot: [`PR-INTEGRATION-MATRIX-REFRESH-20261010.json`](../a
 PR #26 remains at `ffc265be9bdcb1f97aef5c80d572636ca9cef035`; exact-head run `38043671492` passed (222 quick, 2,518 full). PR #27 now points to `cd0de57dae6d6aa5368158ea678697c72688fc2e`; exact-head run `38053934404` passed (262 quick, 2,558 full, one Starlette deprecation warning, 25 subtests). PR #23 head still has failed run `37963206552`; PRs #1–#11 have no current-head check runs. The live matrix is `docs/audits/PR-INTEGRATION-MATRIX-LIVE-20261010T131858Z.json`, SHA-256 `5F3E6C2F4D8E43D9823218853CA1F305625920AC41352E4A0327BBF1C9C90068`.
 
 Both review candidates remain OPEN, Draft, with no reviews and no merge. Status remains `FIX_IN_REVIEW`; CI does not replace the required human review/approval. Keep source branches and old CI outcomes unchanged.
+
+## 2026-10-10 exact-head refresh — 15:05Z
+
+The latest read-only GitHub capture covers **27** open PRs (the handbook's earlier 25-PR count is historical and stale). `main` remains `8642639a78ca9aa56fbad1e88aea4b82169ea433`. Current exact-head checks are 15 all-success, 1 failure (#23), 11 with no check runs (#1–#11), and 0 in progress. The new snapshot [`PR-INTEGRATION-MATRIX-LIVE-20261010T150501Z.json`](../audits/PR-INTEGRATION-MATRIX-LIVE-20261010T150501Z.json) has SHA-256 `6325C97D395222026BAEFE5F557ABCD5CE88BA61DB4C37D5AC7C2889213B5E6D` and captures 2026-10-10T15:05:01Z–15:05:11Z.
+
+PR #26 exact head `ffc265be9bdcb1f97aef5c80d572636ca9cef035` remains green on run `38043671492` (222 quick, 2,518 full). PR #27 exact head `132b2387e65bfe5eae8ed09ac6f533606f35aca8` is green on run `38059970482` (264 quick, 2,560 full, 1 deprecation warning, 25 subtests; 24m51s). PR #23 exact head remains failed on `37963206552`; descendants do not rewrite that result. PR #26/#27 remain OPEN, Draft, without review or merge.
+
+This snapshot is the remote state **before** the new local runner-byte validation patch is pushed. The working branch is adding an offline S1 repair for a second fractional-byte acceptance path; its failure-first reproduction and local tests are recorded in B-002. Next step: finish local validation, push the isolated PR #27 patch, and require exact-head hosted quick/full CI. G0 remains `FIX_IN_REVIEW`; no remote merge or external model/exchange request is authorized by this refresh.

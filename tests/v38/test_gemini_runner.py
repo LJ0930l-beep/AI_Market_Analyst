@@ -293,6 +293,69 @@ def test_analysis_requires_a_completed_bound_json_transport_trace(tmp_path, mark
     assert report["valid_analysis_records"] == 0
 
 
+@pytest.mark.parametrize("request_bytes_written", [1.0, 1.5])
+def test_runner_and_review_reject_noninteger_transport_byte_counts(
+    tmp_path,
+    market_point_factory,
+    request_bytes_written,
+):
+    root = Path(__file__).resolve().parents[2]
+    auth, prompts, market_input = _setup(root, market_point_factory)
+    ledger = tmp_path / "model-call-ledger.jsonl"
+
+    def noninteger_transport(messages, request_id):
+        fixture = _fixture_call(messages, request_id)
+        trace = dict(fixture.transport_trace)
+        trace["request_bytes_written"] = request_bytes_written
+        return ProviderCallResult(fixture.payload, fixture.response_model_id, trace)
+
+    report = execute_authorized_optimization(
+        [market_input],
+        prompts,
+        authorization=auth,
+        ledger_path=ledger,
+        call_model=noninteger_transport,
+        max_contexts=1,
+    )
+
+    assert report["status_counts"] == {"INVALID_TRANSPORT_EVIDENCE": 2}
+    events = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines()]
+    reviewed = review_gemini_ledger([market_input], prompts, events)
+    assert reviewed["status_counts"] == {"INVALID_TRANSPORT_EVIDENCE": 2}
+    assert reviewed["transport_request_bytes_written_count"] == 0
+
+
+def test_ledger_review_rejects_rehashed_valid_analysis_with_fractional_byte_count(
+    tmp_path,
+    market_point_factory,
+):
+    root = Path(__file__).resolve().parents[2]
+    auth, prompts, market_input = _setup(root, market_point_factory)
+    ledger = tmp_path / "model-call-ledger.jsonl"
+    execute_authorized_optimization(
+        [market_input],
+        prompts,
+        authorization=auth,
+        ledger_path=ledger,
+        call_model=_fixture_call,
+        max_contexts=1,
+    )
+    events = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines()]
+    for event in events:
+        if event["event_type"] == "RESULT":
+            event["transport_trace"]["request_bytes_written"] = 1.5
+
+    previous_digest = "0" * 64
+    for event in events:
+        event["previous_event_sha256"] = previous_digest
+        unsigned = {key: value for key, value in event.items() if key != "event_sha256"}
+        event["event_sha256"] = canonical_sha256(unsigned)
+        previous_digest = event["event_sha256"]
+
+    with pytest.raises(ValueError, match="GEMINI_RUN_VALID_ANALYSIS_PROVENANCE_INVALID"):
+        review_gemini_ledger([market_input], prompts, events)
+
+
 def test_model_call_error_keeps_only_safe_model_code_and_current_trace(tmp_path, market_point_factory):
     from core.model_client import ModelClientError
 
