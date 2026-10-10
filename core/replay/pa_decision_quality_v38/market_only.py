@@ -22,6 +22,7 @@ REQUIRED_TIMEFRAMES = ("15m", "5m", "1h", "4h")
 ALLOWED_PARTITIONS = {"optimization", "validation", "untouched_test"}
 
 _HEX_256 = re.compile(r"^[0-9a-f]{64}$")
+_EVIDENCE_REF = re.compile(r"^bar:(?P<timeframe>5m|15m|1h|4h):[0-9a-f]{16}$")
 _ALLOWED_SOURCES = {
     "BINANCE_UM_OFFICIAL_MONTHLY_ARCHIVE_RECONSTRUCTED",
     "fixture:deterministic",
@@ -525,7 +526,7 @@ def _valid_stored_input(request: dict[str, Any]) -> bool:
         if any(_utc(value, "BAR_TIME_INVALID") >= decision_time for value in availability.values()):
             return False
         refs = request.get("evidence_refs")
-        if not _valid_refs(refs, set(refs) if isinstance(refs, list) else set(), allow_empty=False):
+        if not _valid_stored_evidence_refs(request, refs, decision_time):
             return False
         authority = request.get("authority")
         if authority != {
@@ -539,6 +540,56 @@ def _valid_stored_input(request: dict[str, Any]) -> bool:
         return request.get("market_input_sha256") == _canonical_sha(without_digest)
     except (MarketOnlyError, TypeError, ValueError):
         return False
+
+
+def _valid_stored_evidence_refs(
+    request: dict[str, Any], refs: Any, decision_time: datetime,
+) -> bool:
+    """Bind persisted evidence refs to the versioned causal context that contains them."""
+    if (not isinstance(refs, list) or not refs
+            or any(not isinstance(ref, str) or not _EVIDENCE_REF.fullmatch(ref) for ref in refs)
+            or refs != sorted(set(refs))):
+        return False
+
+    context = request.get("market_context")
+    if (not isinstance(context, dict)
+            or set(context) != {
+                "schema_version", "status", "input_sha256", "data_as_of_by_timeframe", "frames",
+            }
+            or context.get("schema_version") != "pa-decision-quality-v36/context-1"
+            or context.get("status") != "READY"
+            or not isinstance(context.get("input_sha256"), str)
+            or not _HEX_256.fullmatch(context["input_sha256"])):
+        return False
+
+    frames = context.get("frames")
+    data_as_of = context.get("data_as_of_by_timeframe")
+    if (not isinstance(frames, dict) or set(frames) != set(REQUIRED_TIMEFRAMES)
+            or not isinstance(data_as_of, dict) or set(data_as_of) != set(REQUIRED_TIMEFRAMES)):
+        return False
+
+    context_refs: set[str] = set()
+    for timeframe in REQUIRED_TIMEFRAMES:
+        frame = frames.get(timeframe)
+        if not isinstance(frame, dict) or frame.get("status") != "READY":
+            return False
+        frame_as_of = frame.get("data_as_of")
+        if (not isinstance(frame_as_of, str) or data_as_of.get(timeframe) != frame_as_of
+                or _utc(frame_as_of, "BAR_TIME_INVALID") >= decision_time):
+            return False
+        frame_refs = frame.get("evidence_refs")
+        if (not isinstance(frame_refs, list) or not frame_refs
+                or any(
+                    not isinstance(ref, str)
+                    or (match := _EVIDENCE_REF.fullmatch(ref)) is None
+                    or match.group("timeframe") != timeframe
+                    for ref in frame_refs
+                )
+                or frame_refs != sorted(set(frame_refs))):
+            return False
+        context_refs.update(frame_refs)
+
+    return refs == sorted(context_refs)
 
 
 def validate_stored_market_only_input(request: Any) -> bool:

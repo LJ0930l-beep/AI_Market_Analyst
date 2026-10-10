@@ -502,6 +502,11 @@ def _safe_usage(raw: Any) -> dict[str, int] | None:
     return output or None
 
 
+def _valid_request_byte_count(trace: Any) -> bool:
+    value = trace.get("request_bytes_written") if isinstance(trace, dict) else None
+    return type(value) is int and 0 < value <= 1_000_000_000_000
+
+
 def _result_event(
     intent: dict[str, Any],
     call_result: ProviderCallResult | None,
@@ -593,12 +598,13 @@ def _result_event(
             error_code="RESPONSE_MODEL_ID_NOT_EXACT_GEMINI_3_8_FLASH_HIGH",
         )
         return common
-    if (not _trace_matches_intent(trace, intent)
-            or trace.get("phase") != "COMPLETED"
-            or trace.get("http_status") != 200
-            or trace.get("transport_mode") != "JSON"
-            or type(trace.get("request_bytes_written")) not in (int, float)
-            or trace["request_bytes_written"] <= 0):
+    if (
+        not _trace_matches_intent(trace, intent)
+        or trace.get("phase") != "COMPLETED"
+        or trace.get("http_status") != 200
+        or trace.get("transport_mode") != "JSON"
+        or not _valid_request_byte_count(trace)
+    ):
         common.update(status="INVALID_TRANSPORT_EVIDENCE", error_code="COMPLETED_JSON_TRANSPORT_UNVERIFIED")
         return common
     if len(content) > MAX_RECORDED_RESPONSE_CHARS:
@@ -837,20 +843,21 @@ def _build_provider_stop_rearm_event(
 def _validate_valid_analysis_result(result: dict[str, Any], intent: dict[str, Any]) -> None:
     raw_text = result.get("raw_response_text")
     trace = result.get("transport_trace")
-    if (result.get("response_model_id") != DEFAULT_MODEL
-            or result.get("model_identity_status") != "RESPONSE_MATCHED_REQUESTED_MODEL"
-            or result.get("finish_reason") != "stop"
-            or result.get("error_code") is not None
-            or not isinstance(raw_text, str)
-            or len(raw_text) > MAX_RECORDED_RESPONSE_CHARS
-            or result.get("raw_response_chars") != len(raw_text)
-            or result.get("raw_response_sha256") != hashlib.sha256(raw_text.encode("utf-8")).hexdigest()
-            or not _trace_matches_intent(trace, intent)
-            or trace.get("phase") != "COMPLETED"
-            or trace.get("http_status") != 200
-            or trace.get("transport_mode") != "JSON"
-            or type(trace.get("request_bytes_written")) not in (int, float)
-            or trace["request_bytes_written"] <= 0):
+    if (
+        result.get("response_model_id") != DEFAULT_MODEL
+        or result.get("model_identity_status") != "RESPONSE_MATCHED_REQUESTED_MODEL"
+        or result.get("finish_reason") != "stop"
+        or result.get("error_code") is not None
+        or not isinstance(raw_text, str)
+        or len(raw_text) > MAX_RECORDED_RESPONSE_CHARS
+        or result.get("raw_response_chars") != len(raw_text)
+        or result.get("raw_response_sha256") != hashlib.sha256(raw_text.encode("utf-8")).hexdigest()
+        or not _trace_matches_intent(trace, intent)
+        or trace.get("phase") != "COMPLETED"
+        or trace.get("http_status") != 200
+        or trace.get("transport_mode") != "JSON"
+        or not _valid_request_byte_count(trace)
+    ):
         raise MarketOnlyError("GEMINI_RUN_VALID_ANALYSIS_PROVENANCE_INVALID")
     try:
         parsed = json.loads(raw_text)
@@ -1045,7 +1052,7 @@ def review_gemini_ledger(
             intent_count += 1
             terminal_count += 1
             trace = result.get("transport_trace")
-            if isinstance(trace, dict) and type(trace.get("request_bytes_written")) in (int, float) and trace["request_bytes_written"] > 0:
+            if _valid_request_byte_count(trace):
                 transport_written_count += 1
             if isinstance(trace, dict) and trace.get("http_status") in range(200, 300):
                 response_count += 1

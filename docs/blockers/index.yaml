@@ -1,17 +1,24 @@
 schema_version: V2_BLOCKER_INDEX_V1
-updated_at_utc: 2026-10-10T09:57:34Z
+updated_at_utc: 2026-10-10T19:43:32Z
 blockers:
   - id: B-20261010-001
     severity: S1
-    status: OPEN
+    status: FIX_IN_REVIEW
     component: integration
     file: docs/blockers/B-20261010-001-pr-branch-integration.md
-    trigger_signature: PR_BRANCHES_DIVERGE_WITHOUT_SINGLE_COMBINATION_CANDIDATE
-    next_owner_action: Open a draft integration PR for the locally verified candidate; require same-head hosted quick/full CI and review; do not merge.
+    trigger_signature: PR_COMBINATION_CANDIDATE_AWAITS_HUMAN_REVIEW
+    next_owner_action: Human review PR #26 and #27; keep both Draft and unmerged; rerun exact-head CI after any requested change.
   - id: B-20261010-002
     severity: S1
-    status: OPEN
+    status: BLOCKED_WITH_EVIDENCE
     component: model
     file: docs/blockers/B-20261010-002-model-response-capability.md
     trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
-    next_owner_action: Freeze Prompt/Schema V2 and complete offline negative tests; no model call.
+    next_owner_action: Human review of Draft PRs #26 and #27; keep external provider capability blocked and issue no model calls. PR #27 exact-head hosted CI passed on attempt 2; retain the first-attempt Windows SQLite cleanup failure as an intermittent reliability caveat.
+  - id: B-20261010-003
+    severity: S1
+    status: OPEN
+    component: model
+    file: docs/blockers/B-20261010-003-calibration-identity-evidence.md
+    trigger_signature: CALIBRATION_REMOTE_WEIGHT_DIGEST_REQUIRED
+    next_owner_action: After upstream G0/G1 review and authorized G2/G3 evidence, design the offline identity-mode contract and fake-provider negative matrix; keep calibration fail-closed.
