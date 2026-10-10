@@ -27,6 +27,16 @@ Evidence snapshot: latest local full-suite and exact baseline evidence is record
 
 Overall V38–V42 status remains **PARTIAL**. V40 is complete for offline simulation/economics evidence and V41 is complete for the local full-suite census. V39 remote retry semantics and V42 controlled research remain gated. No entry in this panel authorizes paid model calls, exchange access, account changes, Live mode, or orders.
 
+## Current status correction — 2026-10-10
+
+This additive update supersedes the earlier Gemini row's `Actual Gemini calls: 0` and `NOT RUN` snapshot. The authorized V38 optimization-only campaign has now consumed all **72 dispatch intents**: **67 `INVALID_JSON`, 4 `CALL_ERROR_NO_RETRY`, 1 `AMBIGUOUS_NO_RESULT_NEVER_RETRY`, and 0 valid analyses**. All 67 HTTP 200 responses identified `gemini-3.8-flash-high` but failed strict JSON/schema parsing. The provider usage receipts do not establish billed cost; total cost is unknown. No 429 was observed, so the weekly quota is not known to be exhausted. The local route was subsequently changed by the operator, but the existing 72-intent authorization is spent; another study requires a new frozen prompt/schema and bounded authorization. The hash-chained ledger and local report are detailed in `V38-gemini-smoke-followup.md`.
+
+V39's local health probe also had a floating-point timeout-boundary defect. Its deterministic regression now passes, with **35 affected offline tests passing**. This is not a replacement for full-suite and remote CI verification, which are pending for the working change. Remote provider idempotency/billing, exchange execution, research quality, profitability, and deployment qualification remain unverified. No orders or production-setting changes occurred.
+
+## Timeout follow-up verification — 2026-10-10
+
+The pending verification above has completed on commit `3976b2011571046c5a259b93ad3214c38dca553e`. Local commit-hook suite: **2,488 passed, 1 skipped, 1 existing warning**. GitHub Actions run `38034198847`: quick gate **198 passed**; full suite **2,489 passed, 0 failed, 1 existing warning, 25 subtests**. The local/hosted collection differs by one skipped-versus-passed test; both runs are green. PR #25 is open and has no auto-merge configuration. The V38 campaign disposition remains **0 valid analyses**; these code tests do not establish a trading edge or remote provider guarantees.
+
 
 ## Gate 2 addendum — 2026-10-09
 
@@ -65,3 +75,40 @@ The complete local suite is **2,451 passed, 1 skipped, 0 failed**. Exact compari
 ## Latest Gate 2 derived-input check — 2026-10-09
 
 Independent reconstruction now matches all **54/54** visible V3 `market_input_sha256` values and **54/54** evidence-reference counts. A causality regression also fixed provenance inclusion for late duplicate rows by matching the selected bar's availability time. `tests/v38/` is **100 passed**; the full suite is **2,462 passed, 1 skipped, 0 failed**, and the exact baseline comparison is `PASS_NO_NEW_FAILURES` (139 added nodes pass, no new failures or phase changes). The local ignored report and remaining proxy/data limitations are recorded in [`V38-derived-market-input-independent-audit.md`](V38-derived-market-input-independent-audit.md). There are still 0 blind labels, 0 Gemini-scored decisions, and 0 Gate-executable samples; product and production scope remains unchanged.
+
+## Current verification update — 2026-10-10
+
+- At the time of this update, GitHub reported PRs #1–#23 open with no auto-merge request. The latest V37.1 head remained `64a5c4206a5073e0c44e9d5cc4178705ffa24664`; the current TestNet repair head was `5831f9785e5f8b09d6a819c562949beceb6db4b0`, based on the #19 product-contract branch. PR #23's quick CI gate had passed; its full-suite job was still running.
+- A fresh standard-library cross-check of the frozen V3 dataset passed with evidence limits: 54 visible samples were checked, the 18 untouched-test records remained hash-only, and the companion independent market-input verifier reproduced 54/54 hashes and evidence-reference counts. Availability remains `ASSUMED_PROXY` (`bar_end + 60 seconds`); there are still 0 labels, 0 Gemini-scored decisions, and 0 Gate-executable samples. The source-byte and visible-input cross-check reports are separate evidence, and neither proves historical Gate receipt time or point-in-time quotes.
+- The authorized Gate TestNet smoke run filled and closed one minimum-size BTCUSDT contract. The first E2E record remains `RECONCILIATION_REQUIRED`; its two run-owned protective orders were separately verified and cancelled, and final remote state was 0 positions / 0 pending orders. TestNet leverage was set to 1x and was not restored. See [`V38-gate-testnet-smoke-20261010.md`](V38-gate-testnet-smoke-20261010.md). This was an execution-path check, not a Gemini decision or strategy result.
+- The user clarified that the saved Gate TestNet API key is read/write. The UI's `VERIFIED_READ_ONLY` label is the scope of its credential-verification flow; it does not override the user's stated key permissions. The earlier TestNet fill-and-close record supplies separate write-path evidence. No credential needs to be re-entered for this clarification.
+- The age-sensitive macro fixture/status issue is corrected by [`V41-macro-calendar-clock-determinism.md`](V41-macro-calendar-clock-determinism.md). Current local full suite: **2,464 passed, 1 skipped, 0 failed**, with one existing Starlette/httpx deprecation warning. Ruff on the two touched files retains pre-existing diagnostics with no increases; it is not reported as clean.
+- V42 research acceptance remains **NOT_STARTED**: independent blind labels and verified Gemini decisions are 0; complete research closes remain 0; the 30-close minimum and live-data shadow observation window remain unmet. This panel does not establish positive expectancy or deployment readiness; Live stays unauthorized.
+
+## Current research-runner update — 2026-10-10
+
+The user has authorized Gemini 3.8 Flash High through Antigravity Tools up to the provider's weekly quota. An additive run authorization and separate CLI now cover only the frozen V3 optimization partition (36 contexts, A1/A2, maximum 72 request intents). The CLI remains dry-run by default; the offline dry-run rebuilt all 36 optimization inputs against the frozen manifest and used 0 model calls / 0 orders. The model-call path has single-attempt transport, exact response identity and evidence validation, and an append-only intent ledger shared by linked worktrees; provider-side deduplication and billing remain unverified. No model call was made by this code change. See [`V38-gemini-runner-readiness.md`](V38-gemini-runner-readiness.md).
+
+The focused runner/client selection is **22 passed**, `tests/v38/` is **113 passed**, and the complete local suite is **2,479 passed, 1 skipped, 0 failed** (one existing Starlette/httpx warning). Exact comparison with frozen baseline `64a5c4206a5073e0c44e9d5cc4178705ffa24664` is `PASS_NO_NEW_FAILURES`: no missing baseline nodes, new failures, or phase changes; all 100 inherited failures resolve and 156 post-baseline test nodes pass. The executor now revalidates the authorization and prompt pins itself, hash-chains the shared ledger, binds results to their scheduled transport evidence, and latches provider 402/429 stops across invocations. PR #24's complete GitHub Actions run `37966405672` succeeded and PR #24 remains open without auto-merge. Blind labels and scored Gemini decisions remain **0**; therefore V38 decision quality and V42 research acceptance remain unmeasured. No result here authorizes orders or Live mode.
+
+## Controlled Gemini smoke update — 2026-10-10
+
+PR #25's full offline CI run `38015439803` passed on commit `130d21271423a9cc4148ecda09823cc072147c01`. The first explicitly authorized A1/A2 optimization smoke dispatched 2 intents and recorded 2 `CALL_ERROR_NO_RETRY` results; 0 analyses passed schema/evidence validation and the other 70 of 72 planned intents remain unattempted. Response model identity, transport receipt, provider usage, and cost are unverified. The failed context-arm pairs remain immutable and are not retried. A trace/error-code diagnostic repair is under review and has 17 focused V38 tests passing locally; no additional context will be sent before its remote full-suite gate passes. Details: [`V38-gemini-smoke-followup.md`](V38-gemini-smoke-followup.md). This does not change the Gate TestNet read/write evidence or authorize production actions.
+
+## Gemini route refusal — 2026-10-10
+
+The trace/error-code repair passed remote CI at commit `1d8ddabeca15d7a3ac6f64ec0a45b5bc7ad07fea` (run `38017637786`; 2,484 tests and 25 subtests passed). The next distinct optimization context returned `MODEL_UPSTREAM_REGION_UNSUPPORTED` / HTTP 400 for A1 and A2. The cumulative run is 4 intents, 4 terminal errors, 0 valid analyses, 68 not attempted, and 0 orders. Only the latter two errors have bound HTTP traces; provider acceptance, model identity, usage, and billing remain unverified. Do not issue further Gemini calls through this route until the region/route issue is resolved. V38 research is `BLOCKED_WITH_EVIDENCE`, not accepted.
+
+The runner now has a local-only stop-latch repair for this provider-wide refusal and HTTP 400/401/403/404 errors. It also preserves the distinct rate/quota latch field. `tests/v38/` passes 118 tests and focused lint is clean; the latest repair still needs full-suite CI. Full detail and machine report hashes: [`V38-gemini-smoke-followup.md`](V38-gemini-smoke-followup.md).
+
+## Full local suite after stop-latch repair — 2026-10-10
+
+The completed local suite collected 2,485 tests (2,484 passed, 1 skipped, 0 failed). Exact frozen-baseline comparison is `PASS_NO_NEW_FAILURES`: 100 inherited failure nodes are resolved, all 161 added test nodes pass, with no missing tests, new failures, or phase changes. Remote run `38019164193` remained in progress at the time this result was recorded. This does not change the `BLOCKED_WITH_EVIDENCE` disposition for further Gemini calls on the unsupported route or establish research success.
+
+## Final stop-latch CI result — 2026-10-10
+
+Remote run `38019164193` completed successfully on `fe06d034c091f6431bdbd093643ed9f5f0732f26`: focused gate 195 passed; full offline suite 2,485 passed, 1 existing deprecation warning, 25 subtests passed. PR #25 is open, clean, and has no auto-merge configured. The Gemini route remains blocked with evidence; no valid analyses or trading decisions resulted from the calls.
+
+## Separate JSON-format pilot - 2026-10-10
+
+The user-confirmed route change was verified by a read-only local `/models` request (HTTP 200, requested model listed). Under a new one-request authorization, one reused V3 optimization context produced a single fenced JSON response from the exact requested model; parser, analysis schema, and evidence-reference validation passed. The result is `FORMAT_PILOT_ANALYSIS_VALID` for format testing only, with `quality_sample_eligible=false`. Provider usage totals are internally inconsistent, and cost is unknown. No prior campaign record changed; no exchange request or order occurred. Full local tests: **2,512 passed, 1 skipped, 0 failed**. The bounded pilot and limitations are recorded in [`V38-gemini-json-format-pilot-followup.md`](V38-gemini-json-format-pilot-followup.md). Overall research and V42 acceptance remain **PARTIAL / NOT ESTABLISHED**.

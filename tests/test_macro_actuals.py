@@ -195,7 +195,7 @@ def test_bls_period_mismatch_retries_after_15m_and_then_uses_one_batch(tmp_path)
 
     providers = {"bls_fetch": fetch_series, "clock": lambda: current_clock[0]}
     refresh_calendar(store, fetch=lambda: rows, now=started, actual_provider=providers,
-                     clock=lambda: current_clock[0])
+                     clock=providers["clock"])
     first = store.v2_records("macro_events")[0]
     assert first["actual_status"] == "PERIOD_MISMATCH"
     retry_at = started + timedelta(minutes=16)

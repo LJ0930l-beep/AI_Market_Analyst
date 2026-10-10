@@ -120,7 +120,7 @@ def calendar_status(store, *, now=None):
     )
     try:
         fetched = datetime.fromisoformat(state.get("last_success_at", ""))
-        if as_of - fetched > timedelta(hours=6):
+        if as_of - utc_datetime(fetched) > timedelta(hours=6):
             if state.get("status") == "SCHEDULE_FETCH_FAILED":
                 state["schedule_cache_status"] = "STALE"
             else:
@@ -645,7 +645,7 @@ def refresh_calendar(store, *, fetch=None, now=None, actual_provider=None, clock
     clock = clock or (lambda: datetime.now(timezone.utc))
     should_sync_actuals = actual_provider is not None or fetch is None
     with _lock:
-        prior = calendar_status(store, now=clock())
+        prior = calendar_status(store, now=now)
         # A newly installed source registry enriches existing schedules once,
         # even if the old process left its schedule cooldown in durable state.
         cached = [item for item in store.v2_records("macro_events", limit=500)
@@ -663,7 +663,7 @@ def refresh_calendar(store, *, fetch=None, now=None, actual_provider=None, clock
         try:
             last = datetime.fromisoformat(prior.get("last_attempt_at", ""))
             if timedelta(0) <= now - last < timedelta(minutes=15):
-                result = calendar_status(store, now=clock())
+                result = calendar_status(store, now=now)
                 result.update(refresh_deferred=True, retry_after_seconds=max(1, int((last + timedelta(minutes=15) - now).total_seconds())))
                 return result
         except (ValueError, TypeError):
@@ -738,4 +738,4 @@ def refresh_calendar(store, *, fetch=None, now=None, actual_provider=None, clock
                 # No raw network exception/URL credentials in user-visible status.
                 state.update(status="UNAVAILABLE", error=f"公开日历更新失败（{type(exc).__name__}），保留上次缓存；请检查网络后重试。")
         store.set_scheduler_state("macro_calendar.status", state, updated_at=now.isoformat())
-        return calendar_status(store, now=clock())
+        return calendar_status(store, now=now)
