@@ -103,3 +103,8 @@ The immutable live snapshot [`PR-INTEGRATION-MATRIX-LIVE-20261010T194115Z.json`]
 PR #27 exact head `9eb55ac19b7e8739b7500cca03b0c9d2a253c299` passed hosted run [38078606379](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38078606379): quick gate 275 passed and full suite 2,571 passed with one Starlette deprecation warning and 25 subtests. The current-head matrix still has 15 all-success heads, PR #23's original failure, 11 heads without checks (#1–#11), and none in progress. PR #26/#27 remain OPEN/Draft, with no reviews, merge, or auto-merge.
 
 This refresh updates evidence only. Status remains `FIX_IN_REVIEW` pending human review and explicit merge decisions; the historical PR #23 failure remains unchanged. No source PR, `main`, model route, exchange, account, or order was changed or contacted.
+
+
+## 2026-10-10 live exact-head refresh — 20261010T221231Z
+
+Current read-only state: [`V2-G0-G1-live-state-20261010T221231Z.json`](../audits/V2-G0-G1-live-state-20261010T221231Z.json) and [`V2-G0-G1-live-refresh-20261010T221231Z.md`](../audits/V2-G0-G1-live-refresh-20261010T221231Z.md). PR #26 head `fa5832f7f81c8cb5438aecc5b8bead9e02ce9cfc` and stacked PR #27 head `d124c1597fcc4ce8655845eb7d68afc4c6552002` pass exact-head hosted quick/full CI. Current PR #1–#25 heads are ancestors of #26; #26 is an ancestor of #27. GitHub reports 27 open PRs, zero submitted reviews, no auto-merge. Status remains `FIX_IN_REVIEW`; next owner action is human review and explicit merge decision. Keep both candidates Draft and unmerged. PR #23 exact-head failure remains unchanged.

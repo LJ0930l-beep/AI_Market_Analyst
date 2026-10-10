@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V1
-updated_at_utc: 2026-10-10T21:35:30Z
+updated_at_utc: 2026-10-10T22:12:42.556769Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -7,14 +7,14 @@ blockers:
     component: integration
     file: docs/blockers/B-20261010-001-pr-branch-integration.md
     trigger_signature: PR_COMBINATION_CANDIDATE_AWAITS_HUMAN_REVIEW
-    next_owner_action: Human review PR #26 and #27; keep both Draft and unmerged; rerun exact-head CI after any requested change. Latest exact heads pass; no review exists.
+    next_owner_action: Human review PR #26 and #27; keep both Draft and unmerged; rerun exact-head CI after requested changes. Current heads and ancestry are revalidated in the additive V2 G0/G1 live snapshot.
   - id: B-20261010-002
     severity: S1
     status: BLOCKED_WITH_EVIDENCE
     component: model
     file: docs/blockers/B-20261010-002-model-response-capability.md
     trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
-    next_owner_action: Keep provider capability blocked and issue no model calls; after human review, require a fresh explicitly authorized bounded G2 scope. PR #27 exact-head run 38086177948 passes; retain run 38083801386 SQLite cleanup failure as a not-reproduced reliability caveat.
+    next_owner_action: Keep provider capability blocked and issue no model calls; after human G0 review, require a fresh explicit bounded G2 scope. Latest PR #27 exact-head run 38088943367 passes; provider capability and identity remain unverified.
   - id: B-20261010-003
     severity: S1
     status: OPEN

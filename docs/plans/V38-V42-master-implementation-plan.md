@@ -192,3 +192,11 @@ The historical 19:41 audit remains unchanged. The additive refresh is [`V2-G0-G1
 PR #26 `fa5832f7f81c8cb5438aecc5b8bead9e02ce9cfc` contains the current heads of PRs #1–#25 and passes hosted run `38086165883` (222 quick / 2,520 full). PR #27 `58430c72b3c5e989cc77be86145527de7b0f9ef7` is stacked on #26 and passes hosted run `38086177948` (275 quick / 2,573 full). Both remain Draft and unmerged pending human review. The earlier #26 timeout and #27 SQLite cleanup failure are retained in the blocker reports; the current full runs passed.
 
 G1 offline response-contract work is accepted on the current candidate; provider structured-output capability, remote model identity/weights and billing remain blocked. Do not start G2 without its fresh explicit authorization and bounded scope. No Gemini/Gate API, TestNet/Live request, order, or production account change was made in this refresh.
+
+
+## V2.0 G0/G1 exact-head live refresh — 2026-10-10T22:12:42.556769Z
+
+- Current source: [`../audits/V2-G0-G1-live-refresh-20261010T221231Z.md`](../audits/V2-G0-G1-live-refresh-20261010T221231Z.md); machine state: [`../audits/V2-G0-G1-live-state-20261010T221231Z.json`](../audits/V2-G0-G1-live-state-20261010T221231Z.json).
+- GitHub has 27 open PRs, `main@8642639a78ca9aa56fbad1e88aea4b82169ea433`, zero reviews; #26/#27 remain Draft and unmerged. Current-head CI: 15 all-success, #23 failure, #1–#11 no checks.
+- PR #26 `fa5832f7f81c8cb5438aecc5b8bead9e02ce9cfc` covers current PR #1–#25 ancestry; PR #27 `d124c1597fcc4ce8655845eb7d68afc4c6552002` is stacked on it. Exact-head hosted quick/full suites pass for both candidates.
+- G0 remains `FIX_IN_REVIEW` pending human review. G1 offline validation passes; B-002/G2 remains blocked without fresh bounded authorization and external provider evidence. No Gemini/Gate/TestNet/Live request or order was made.
