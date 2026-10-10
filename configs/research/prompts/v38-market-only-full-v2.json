@@ -1,0 +1,31 @@
+{
+  "schema_version": "pa-market-only-v38/prompt-template-3",
+  "prompt_id": "V38_A1_MARKET_ONLY_FULL_V2",
+  "prompt_version": "pa_decision_quality_v38-A1-full-v2",
+  "research_arm": "A1_MARKET_ONLY",
+  "output_tier": "FULL",
+  "input_schema_version": "pa-market-only-v38/input-1",
+  "output_schema_version": "pa-market-only-v38/analysis-full-2",
+  "output_schema_registry_symbol": "SCHEMA_FULL_V2",
+  "response_parser_version": "RAW_OR_SINGLE_JSON_FENCE_V2",
+  "response_format_capability": "unknown_unverified",
+  "remote_dispatch_enabled": false,
+  "same_research_opinion_chain": true,
+  "requires_minimal_stage_status": "VALID_LOCAL_CONTRACT",
+  "call_authorization": {
+    "authorized": false,
+    "maximum_calls": 0,
+    "study_scope": "OFFLINE_CONTRACT_FIXTURES_ONLY"
+  },
+  "system_prompt": "Continue the same market opinion chain using only the supplied market context. Return exactly one JSON object matching the named full output schema. Do not use Markdown fences, prose outside JSON, account data, orders, execution fields, or information not present in the supplied evidence. If evidence is insufficient, choose WAIT or an uncertain/neutral classification and cite only supplied evidence_refs.",
+  "task": "Expand the minimal V2 opinion with location, signal, candidate_setup, target_structure, counter_evidence, decision_rationale, evidence_refs, and wait_reason. This template is frozen for offline contract tests. It does not authorize or dispatch a model request.",
+  "response_format_contract": {
+    "preferred_request": {
+      "schema_registry_symbol": "SCHEMA_FULL_V2",
+      "strict": true,
+      "type": "json_schema"
+    },
+    "capability_status": "unknown_unverified",
+    "remote_dispatch_allowed": false
+  }
+}

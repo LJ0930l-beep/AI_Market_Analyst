@@ -1,4 +1,5 @@
 """Strict, versioned JSON completion-envelope parsing for V38 research pilots."""
+
 from __future__ import annotations
 
 import json
@@ -9,6 +10,7 @@ from .market_only import MarketOnlyError
 
 RAW_JSON_ONLY_V1 = "RAW_JSON_ONLY_V1"
 RAW_OR_SINGLE_JSON_FENCE_V1 = "RAW_OR_SINGLE_JSON_FENCE_V1"
+RAW_OR_SINGLE_JSON_FENCE_V2 = "RAW_OR_SINGLE_JSON_FENCE_V2"
 _JSON_FENCE = re.compile(r"```json[ \t]*\r?\n(.*?)\r?\n```[ \t]*", re.DOTALL)
 
 
@@ -36,7 +38,7 @@ def parse_json_completion(content: str, *, parser_version: str) -> dict[str, Any
     stripped = content.strip()
     if parser_version == RAW_JSON_ONLY_V1:
         candidate = stripped
-    elif parser_version == RAW_OR_SINGLE_JSON_FENCE_V1:
+    elif parser_version in {RAW_OR_SINGLE_JSON_FENCE_V1, RAW_OR_SINGLE_JSON_FENCE_V2}:
         if "```" in stripped:
             match = _JSON_FENCE.fullmatch(stripped)
             if match is None or stripped.count("```") != 2:

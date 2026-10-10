@@ -1,12 +1,12 @@
-# B-20261010-002 — 响应 envelope 已定位，代理结构化能力仍未知
+# B-20261010-002 — V38 结构化响应能力未验证
 
-```yaml
 id: B-20261010-002
 severity: S1
-status: OPEN
+status: BLOCKED_WITH_EVIDENCE
 component: model
 mode: RESEARCH_OFFLINE
-branch_sha: fcfc9ec37102d0ec4a09fc777fec0e44d20291cc
+g0_base_sha: ffc265be9bdcb1f97aef5c80d572636ca9cef035
+g1_working_branch: codex/v2-g1-offline-20261010
 trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
 first_seen_at_utc: 2026-10-10T09:27:00Z
 user_authorization: DOCUMENTED_SCOPE_ONLY
@@ -15,30 +15,29 @@ remote_effect_known: false
 risk_to_funds: NONE
 affected_sample_or_order_ids: 67 immutable INVALID_JSON results and 1 separate consumed format pilot
 immediate_stop_or_isolation: No new Gemini call, no retry, no rewriting/relabeling old result; validation and untouched-test remain sealed.
-evidence_files_and_hashes: docs/audits/V38-invalid-json-classification-20261010.json SHA-256 4ba18a5bbb41ad8525e334cf44bcad98ab6d5d98ac76823b49f0f6c871785db7; source ledger SHA-256 820212a5699b718c922232c584fcfdcb4f79b675ea8653b1898a0d4025b837a7
-reproduction: Read-only _read_ledger + review_gemini_ledger, then RAW_OR_SINGLE_JSON_FENCE_V1 parse and V38 schema/evidence validation; no network path.
-root_cause_status: HYPOTHESIS
-safe_fallback: Strict local parser/schema validation with capability PROMPT_ONLY_UNVERIFIED and offline fake-provider tests.
-patch_pr: https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/25
-negative_tests: Empty/partial/truncated body; finish_reason length/error; missing/mismatched model ID; malformed/multiple fence; invalid/unknown/future evidence refs; unsupported response_format; duplicate intent; usage mismatch.
-unblock_criteria: New immutable Prompt/Schema V2 and capability labels; full offline negative matrix passes; raw replies/hash and cost-unknown state retained; G0 integration candidate passes before G1 acceptance; separate user authorization before any new paid request.
+evidence_files_and_hashes: docs/audits/V38-invalid-json-classification-20261010.json SHA-256 4ba18a5bbb41ad8525e334cf44bcad98ab6d5d98ac76823b49f0f6c871785db7; source ledger SHA-256 820212a5699b718c922232c584fcfdcb4f79b675ea8653b1898a0d4025b837a7; offline V2 report docs/audits/V38-Prompt-Schema-V2-offline-contract-20261010.md; full-suite local JUnit SHA-256 C9359E2863F499657C922810B586CD8F5EC085C1593B2AC44C48B4953226A261 (Git-ignored)
+reproduction: Local fixed response envelopes through evaluate_response_v2; targeted V2/parser/format-pilot/runner tests, no network path.
+root_cause_status: HISTORICAL_LOCAL_ENVELOPE_GAP_CONFIRMED; REMOTE_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
+safe_fallback: Strict V2 local JSON/schema/evidence validation; actual route capability remains unknown_unverified; V2 prompt remote dispatch disabled.
+patch_pr: Stacked G1 offline branch codex/v2-g1-offline-20261010 based on G0 candidate PR #26; no auto-merge.
+negative_tests: Empty/partial/truncated body; finish_reason length/error; missing/mismatched model ID; malformed/multiple fence; invalid/unknown/future evidence refs; unsupported response_format fake fixture; duplicate JSON key; usage mismatch; duplicate intent in existing pilot tests.
+unblock_criteria: Offline contract PR and same-head full CI pass; any G2 remote capability probe requires separate explicit user authorization, a new frozen scope, request ceiling, budget/stop rule, and provider/route identity evidence.
 needs_human_decision: true
-next_owner_action: Freeze V2 contract and implement/test offline capability and response failure matrix; do not call the model.
-```
+next_owner_action: Keep provider capability blocked and do not issue model requests; await independent G2 authorization after human review of G0/G1 PRs.
 
 ## 已证实与仍未知
 
-旧解析器对完整 `message.content` 直接执行 `json.loads`。只读复算显示原始账本 67/67 个 `INVALID_JSON` 均是单层、完整 JSON fence；新的兼容解析和现有 V38 schema/evidence_refs 诊断 67/67 通过。源账本校验前后均为 SHA-256 `820212a5699b718c922232c584fcfdcb4f79b675ea8653b1898a0d4025b837a7`。
+只读复算显示，冻结账本的 67 个回包均为完整单层 JSON fence；离线 V2 兼容解析和 V38 schema/evidence_refs 验证可以解释其格式，但没有更改任何旧状态。冻结账本 SHA-256 仍为 820212a5699b718c922232c584fcfdcb4f79b675ea8653b1898a0d4025b837a7。
 
-这证实本地 envelope 解析缺口，不证明 Antigravity/Gemini 是否支持、忽略或透传 `response_format`。账本未保存完整 HTTP response body，usage 67/67 算术不一致，费用未知。独立 one-intent pilot 的结果不计旧研究，也因复用样本而无 quality eligibility；它的授权已经消耗。
+新增 Prompt/Schema V2 与 fake-provider 矩阵仅验证本地契约。成功的本地解析、HTTP 样例、模型字段或 fenced JSON 均不能证明 Antigravity 实际执行 response_format=json_schema。当前真实能力、provider receipt 和费用仍未知。
 
 ## 处置、验收与回滚
 
-- 临时方案：旧响应及 72/71 分母保持原样；只用本地固定回包和当前版本化 parser 做诊断。所有未知保持 `UNKNOWN`，不得增发请求以“确认”。
-- 修复：新建与 V1 并行的 Prompt/Schema V2 与最小 parseability 阶梯；明确 capability enum，当前路线默认 `prompt_only_unverified`。增加 empty、partial、`length`、错误 finish、身份缺失/不符、坏引用、代理包装和重复意图的 fake-provider 负例；确保原始文本哈希永久保留且旧 ledger 不可写回。
-- 验收：G0 候选先通过；新 parser 与 schema 负例在本地和候选 CI 通过，unknown provider capability 明确拒绝提升；无新的 Gemini 调用。任何 G2 付费试验另需用户新授权和独立冻结范围。
-- 回滚：V1 runner、prompt、历史 ledger 从不覆盖；如果 V2 解析或 capability 声明回归，仅撤回 V2 分支改动并保持 RESEARCH_OFFLINE，不改旧结果。
+- 临时方案：只接受固定 V2 schema 与 decision-time evidence_refs；V2 无远程 dispatch 授权，能力固定为 unknown_unverified。
+- 修复：保留 V1；新增最小/完整版 V2 schemas、离线 parser policy 和固定 envelope 验证。原文与规范化分析分离，错误响应 fail closed。
+- 验收：V2/parser/format-pilot/runner 离线测试通过、候选完整 CI 同 head 通过、历史账本 hash 不变。真实代理 capability 仍需独立 G2 授权与有界试验。
+- 回滚：只撤销堆叠 G1 PR 的 V2 新增文件和 parser V2 名称；V1、G0 候选、V35 风控、历史研究 ledger 与报告不变。
 
 ## 当前状态
 
-历史 67 条失败分类已完成；24 项 parser/format 专项测试通过，当前 PR #25 full CI 通过。该 blocker 仍 `OPEN`，因为完整 capability 合同和负例矩阵未完成，G1 尚未整体验收，G2 未授权。
+G0 候选 PR #26 的同 head hosted quick/full CI 已通过，但候选仍 Draft、未合并。G1 离线响应契约针对测试 70 targeted passed、tests/v38 170 passed、full suite 2,542 passed / 1 skipped / 0 failed，Ruff passed；G1 远端能力仍 BLOCKED_WITH_EVIDENCE。未触发 Gemini、Gate/TestNet/Live API 或订单。费用状态保持未知。任何 G2 调用需用户另行明确授权。

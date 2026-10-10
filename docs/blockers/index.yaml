@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V1
-updated_at_utc: 2026-10-10T09:57:34Z
+updated_at_utc: 2026-10-10T10:59:01Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -7,11 +7,11 @@ blockers:
     component: integration
     file: docs/blockers/B-20261010-001-pr-branch-integration.md
     trigger_signature: PR_BRANCHES_DIVERGE_WITHOUT_SINGLE_COMBINATION_CANDIDATE
-    next_owner_action: Open a draft integration PR for the locally verified candidate; require same-head hosted quick/full CI and review; do not merge.
+    next_owner_action: Keep PR #26 as a draft candidate; require human review; do not merge automatically.
   - id: B-20261010-002
     severity: S1
-    status: OPEN
+    status: BLOCKED_WITH_EVIDENCE
     component: model
     file: docs/blockers/B-20261010-002-model-response-capability.md
     trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
-    next_owner_action: Freeze Prompt/Schema V2 and complete offline negative tests; no model call.
+    next_owner_action: G1 offline contract is implemented; real provider capability remains unknown; do not call without separate G2 authorization.
