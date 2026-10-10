@@ -26,7 +26,7 @@ The runner wrote one durable dispatch intent and one terminal result. The result
 ## Verification
 
 - Pilot/parser tests: `tests/v38/test_json_response.py` and `tests/v38/test_format_pilot.py`, **24 passed** after adding linked-worktree sharing and alternate-ledger rejection coverage.
-- Full offline suite: **2,512 passed, 1 skipped, 0 failed**, with one existing Starlette/httpx deprecation warning (356.08 seconds; final commit-hook run).
+- Full offline suite: **2,512 passed, 1 skipped, 0 failed**, with one existing Starlette/httpx deprecation warning. The initial commit-hook run took 356.08 seconds; the final amended-commit rerun passed the same suite in 363.47 seconds.
 - Targeted Ruff, `py_compile`, and `git diff --check`: passed.
 - CLI dry-run: `DRY_RUN`, 0 dispatch intents, 0 terminal results, 0 orders.
 - `--run`: one route preflight and one model completion, with no retry or repair request.
