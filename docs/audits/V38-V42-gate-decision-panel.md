@@ -108,3 +108,7 @@ The completed local suite collected 2,485 tests (2,484 passed, 1 skipped, 0 fail
 ## Final stop-latch CI result — 2026-10-10
 
 Remote run `38019164193` completed successfully on `fe06d034c091f6431bdbd093643ed9f5f0732f26`: focused gate 195 passed; full offline suite 2,485 passed, 1 existing deprecation warning, 25 subtests passed. PR #25 is open, clean, and has no auto-merge configured. The Gemini route remains blocked with evidence; no valid analyses or trading decisions resulted from the calls.
+
+## Separate JSON-format pilot - 2026-10-10
+
+The user-confirmed route change was verified by a read-only local `/models` request (HTTP 200, requested model listed). Under a new one-request authorization, one reused V3 optimization context produced a single fenced JSON response from the exact requested model; parser, analysis schema, and evidence-reference validation passed. The result is `FORMAT_PILOT_ANALYSIS_VALID` for format testing only, with `quality_sample_eligible=false`. Provider usage totals are internally inconsistent, and cost is unknown. No prior campaign record changed; no exchange request or order occurred. Full local tests: **2,512 passed, 1 skipped, 0 failed**. The bounded pilot and limitations are recorded in [`V38-gemini-json-format-pilot-followup.md`](V38-gemini-json-format-pilot-followup.md). Overall research and V42 acceptance remain **PARTIAL / NOT ESTABLISHED**.
