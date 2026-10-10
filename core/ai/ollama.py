@@ -228,7 +228,7 @@ class OllamaProvider:
                     matches = [row for row in manifest if configured_manifest_entry_matches(row, requested_model=target)]
                     if len(matches) != 1:
                         raise LLMError("MODEL_MANIFEST_IDENTITY_MISMATCH", code="MODEL_MANIFEST_IDENTITY_MISMATCH")
-                    remaining = deadline - time.monotonic()
+                    remaining = min(timeout, deadline - time.monotonic())
                     if remaining <= 0:
                         raise TimeoutError("MODEL_HEALTH_DEADLINE_EXCEEDED")
                     answer = model_client.structured_analysis(

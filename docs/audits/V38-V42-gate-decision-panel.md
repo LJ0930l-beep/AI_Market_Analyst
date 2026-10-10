@@ -27,6 +27,12 @@ Evidence snapshot: latest local full-suite and exact baseline evidence is record
 
 Overall V38–V42 status remains **PARTIAL**. V40 is complete for offline simulation/economics evidence and V41 is complete for the local full-suite census. V39 remote retry semantics and V42 controlled research remain gated. No entry in this panel authorizes paid model calls, exchange access, account changes, Live mode, or orders.
 
+## Current status correction — 2026-10-10
+
+This additive update supersedes the earlier Gemini row's `Actual Gemini calls: 0` and `NOT RUN` snapshot. The authorized V38 optimization-only campaign has now consumed all **72 dispatch intents**: **67 `INVALID_JSON`, 4 `CALL_ERROR_NO_RETRY`, 1 `AMBIGUOUS_NO_RESULT_NEVER_RETRY`, and 0 valid analyses**. All 67 HTTP 200 responses identified `gemini-3.8-flash-high` but failed strict JSON/schema parsing. The provider usage receipts do not establish billed cost; total cost is unknown. No 429 was observed, so the weekly quota is not known to be exhausted. The local route was subsequently changed by the operator, but the existing 72-intent authorization is spent; another study requires a new frozen prompt/schema and bounded authorization. The hash-chained ledger and local report are detailed in `V38-gemini-smoke-followup.md`.
+
+V39's local health probe also had a floating-point timeout-boundary defect. Its deterministic regression now passes, with **35 affected offline tests passing**. This is not a replacement for full-suite and remote CI verification, which are pending for the working change. Remote provider idempotency/billing, exchange execution, research quality, profitability, and deployment qualification remain unverified. No orders or production-setting changes occurred.
+
 
 ## Gate 2 addendum — 2026-10-09
 

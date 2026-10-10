@@ -20,3 +20,7 @@ Coverage includes SSE split frames and Unicode, multiline events/comments, EOF b
 - The suite rejects data after terminal completion but does not establish a provider-wide deduplication contract for repeated event IDs.
 
 No retry or provider behavior was changed. **V39 status: PARTIAL** until the operator defines duplicate-cost handling and any future provider integration is separately authorized and bounded.
+
+## Local health-probe timeout cap follow-up — 2026-10-10
+
+`OllamaProvider.health()` now caps the computed remaining probe timeout at the caller's configured maximum. The prior `deadline - monotonic()` arithmetic could produce `30.000000000000057` for a 30-second request when the clock samples drifted by one floating-point unit. A deterministic regression was run before the production-code change and failed with that exact over-cap value; it passes after the clamp. The focused command covering health evidence, health budgets, Ollama contracts, and prepared-provider budgets passes **35 tests**. `git diff --check` passes. Targeted Ruff retains the same 7 pre-existing diagnostics across the two touched Python files, with no additions or removals. Full-suite and remote CI for this follow-up are pending. This local fix does not resolve remote provider idempotency, duplicate billing, or exchange behavior; V39 remains **PARTIAL**.
