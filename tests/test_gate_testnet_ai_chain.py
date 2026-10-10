@@ -1016,8 +1016,9 @@ class _E2EFixtureTrader:
         return {"status": "CANCELED", "order_id": order_id}
 
 
-@pytest.mark.parametrize("native_is_reduce_only", [False, True])
-def test_gate_testnet_e2e_uses_remote_fill_and_cleans_without_local_fill(tmp_path, native_is_reduce_only):
+def _assert_gate_testnet_e2e_uses_remote_fill_and_cleans_without_local_fill(
+    tmp_path, *, native_is_reduce_only: bool,
+):
     store = _store(tmp_path)
     provision_default_gate_accounts(store)
     trader = _E2EFixtureTrader()
@@ -1052,6 +1053,18 @@ def test_gate_testnet_e2e_uses_remote_fill_and_cleans_without_local_fill(tmp_pat
     assert len(trader.calls) == 2
     replay_without_credentials = GateTestnetE2EService(store).run(request, None)
     assert replay_without_credentials["idempotent_replay"] is True
+
+
+def test_gate_testnet_e2e_uses_remote_fill_and_cleans_without_local_fill(tmp_path):
+    _assert_gate_testnet_e2e_uses_remote_fill_and_cleans_without_local_fill(
+        tmp_path, native_is_reduce_only=False,
+    )
+
+
+def test_gate_testnet_e2e_handles_native_is_reduce_only_field(tmp_path):
+    _assert_gate_testnet_e2e_uses_remote_fill_and_cleans_without_local_fill(
+        tmp_path, native_is_reduce_only=True,
+    )
 
 
 @pytest.mark.parametrize("cleanup_mode", ["delete_fails", "nonterminal"])
