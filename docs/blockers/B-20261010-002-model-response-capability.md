@@ -113,3 +113,11 @@ The next owner action is human review of Draft PRs #26 and #27. Keep remote prov
 - **Repair:** Validate that the allowlist is an ordinary `set` or `frozenset` of non-empty, trimmed strings before reference membership checks. Invalid context returns `INVALID_EVIDENCE` / `EVIDENCE_ALLOWLIST_INVALID` and never emits normalized analysis. Changes are limited to `response_contract_v2.py`, `tests/v38/test_response_contract_v2.py`, and this record; V1 and production execution paths are untouched.
 - **Local evidence:** The five new negative cases pass and the immutable valid-allowlist control passes; `python -m pytest -q tests/v38/test_response_contract_v2.py tests/v38/test_gemini_runner.py` passes 72 tests. Exact-head hosted CI is still required after push.
 - **Rollback:** Revert only the allowlist validator and its five tests. Preserve prior response-contract fixes, historical ledgers/reports, and the G2 authorization boundary.
+
+## 2026-10-10 exact-head CI acceptance addendum — evidence allowlist input validation — 17:38Z
+
+The `V2_EVIDENCE_ALLOWLIST_CONTEXT_TYPE` subfinding is `PATCHED_AND_EXACT_HEAD_CI_VERIFIED`. PR #27 exact head `22a137ec16776457959b44c225f191ac465c5065` passed hosted run [38070919856](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38070919856): quick gate 273 passed; full offline suite 2,569 passed, with one Starlette deprecation warning and 25 subtests.
+
+The response-contract and Gemini runner tests passed 72 cases locally. Five failure-first malformed-context cases had reproduced the defect; the repair now accepts only a `set` or `frozenset` containing non-empty trimmed strings and rejects invalid context as `INVALID_EVIDENCE` / `EVIDENCE_ALLOWLIST_INVALID` without normalized analysis. A valid `frozenset` control passes. No V1 contract, production execution path, V35 risk control, historical sample, or ledger was modified.
+
+The parent B-002 remains `BLOCKED_WITH_EVIDENCE` for remote structured-response capability, actual response identity/weights, and billing. PR #27 remains OPEN/Draft without human review. No Gemini, Gate/TestNet/Live request or order was made; this exact-head CI does not authorize G2.
