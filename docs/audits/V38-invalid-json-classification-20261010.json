@@ -1,0 +1,104 @@
+{
+  "schema_version": "V2_G1_V38_INVALID_JSON_CLASSIFICATION_V1",
+  "generated_at_utc": "2026-10-10T09:27:00Z",
+  "source": {
+    "path": "reports/v38+/runs/v38-gemini-call-intent-ledger-v1.jsonl",
+    "sha256_before": "820212a5699b718c922232c584fcfdcb4f79b675ea8653b1898a0d4025b837a7",
+    "sha256_after": "820212a5699b718c922232c584fcfdcb4f79b675ea8653b1898a0d4025b837a7",
+    "byte_count": 512044,
+    "unchanged_during_audit": true,
+    "raw_response_text_included_in_this_report": false
+  },
+  "verification_method": {
+    "ledger_reader": "core.replay.pa_decision_quality_v38.gemini_runner._read_ledger",
+    "ledger_review": "review_gemini_ledger",
+    "envelope_parser": "RAW_OR_SINGLE_JSON_FENCE_V1",
+    "schema_and_evidence_validator": "validate_market_only_analysis",
+    "writes_to_source_ledger": false,
+    "original_statuses_or_score_denominators_changed": false
+  },
+  "campaign": {
+    "dispatch_intents": 72,
+    "terminal_results": 71,
+    "unmatched_intents": 1,
+    "result_status_counts": {
+      "INVALID_JSON": 67,
+      "CALL_ERROR_NO_RETRY": 4,
+      "AMBIGUOUS_NO_RESULT_NEVER_RETRY": 1
+    },
+    "original_valid_analyses": 0,
+    "trade_quality_samples": 0
+  },
+  "invalid_json_envelopes": {
+    "count": 67,
+    "single_complete_json_markdown_fence": 67,
+    "raw_json_object_without_fence": 0,
+    "prose_or_wrapper_text": 0,
+    "empty_response_text": 0,
+    "partial_or_invalid_inner_json": 0,
+    "other_envelope": 0,
+    "raw_character_count_min": 1645,
+    "raw_character_count_max": 2763,
+    "raw_response_hash_mismatches": 0,
+    "compatibility_parser_successes": 67,
+    "schema_and_evidence_ref_validations_passed": 67,
+    "historical_status_reclassified": false
+  },
+  "response_metadata": {
+    "http_200_count": 67,
+    "finish_reason_stop_count": 67,
+    "response_model_id_counts": {
+      "gemini-3.8-flash-high": 67
+    },
+    "provider_usage_receipt_count": 67,
+    "provider_cost_usdt_known_count": 0,
+    "raw_http_response_body_retained": false,
+    "transport_trace_has_response_byte_count_only": true
+  },
+  "usage_integrity": {
+    "prompt_tokens_sum_reported": 720668,
+    "completion_tokens_sum_reported": 56359,
+    "sum_of_prompt_and_completion": 777027,
+    "total_tokens_sum_reported": 901797,
+    "per_response_arithmetic_mismatch_count": 67,
+    "difference_total_minus_prompt_and_completion": 124770,
+    "billing_cost_status": "UNKNOWN"
+  },
+  "other_failure_evidence": {
+    "call_error_results": 4,
+    "http_400_results": 2,
+    "results_without_http_status": 2,
+    "no_response_result_count": 2,
+    "unmatched_ambiguous_intent_may_be_retried": false
+  },
+  "root_cause": {
+    "confirmed": "The frozen parser passed the entire message.content to json.loads; all 67 response contents had one complete JSON Markdown fence, which the old raw-JSON-only parser rejects before schema validation.",
+    "not_proven": [
+      "Whether the proxy/provider honored or ignored response_format=json_object.",
+      "Provider-side capability negotiation or native schema guarantees.",
+      "Cryptographic attestation of the response model or its underlying weights.",
+      "Provider billing, duplicate handling, or weekly quota consumption."
+    ],
+    "not_a_claim_of": [
+      "67 historically valid V38 analyses.",
+      "Trading accuracy, profitability, or positive expectancy.",
+      "Repair or recovery of any old result."
+    ]
+  },
+  "separate_format_pilot": {
+    "included_in_72_intent_denominator": false,
+    "status": "FORMAT_PILOT_ANALYSIS_VALID",
+    "dispatch_intents": 1,
+    "quality_sample_eligible": false,
+    "reason": "The selected optimization context had already been used in the prior campaign.",
+    "authorization_consumed": true,
+    "provider_usage_fields_reconcile": false,
+    "provider_cost_status": "UNKNOWN"
+  },
+  "current_turn_external_actions": {
+    "gemini_completion_calls": 0,
+    "gate_api_calls": 0,
+    "orders": 0,
+    "live_actions": 0
+  }
+}

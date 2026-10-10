@@ -140,6 +140,7 @@ class ModelClient:
         reasoning_effort: str | None = None,
         timeout_sec: float | None = None,
         retries: int | None = None,
+        request_id: str | None = None,
     ) -> Dict[str, Any]:
         """Execute a standard chat completion call."""
         # Providers import this module; load their package after client initialization.
@@ -195,7 +196,11 @@ class ModelClient:
         if request_retries != 0:
             raise ModelClientError("MODEL_RETRY_UNSAFE_WITHOUT_IDEMPOTENCY")
 
-        request_id = uuid.uuid4().hex
+        if request_id is None:
+            request_id = uuid.uuid4().hex
+        elif (not isinstance(request_id, str) or len(request_id) != 32
+              or any(character not in "0123456789abcdef" for character in request_id)):
+            raise ModelClientError("MODEL_REQUEST_ID_INVALID")
         last_exception = None
         for attempt in range(request_retries + 1):
             start_t = time.time()
