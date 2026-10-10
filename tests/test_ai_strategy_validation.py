@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import pytest
 
 from core.analysis.ai_strategy_validation import frozen_strategy_manifest, validate_ai_strategy_evidence
+from core.model_routing import DEFAULT_SMART_MODEL
 from core.storage import SQLiteStore
 from core.trading.ai_strategy_book import TEMPLATES
 from core.trading.ai_led_engine import AICycleContext, AICycleResult, AIActionOutput, AILedDecisionEngine
@@ -15,8 +16,8 @@ from core.trading.ledger import AccountLedger
 from core.trading.strategy_execution import normalize_execution
 
 
-ALIAS = "Bonsai-2-27B-PTQ1_0"
-ARTIFACT = "Ternary-Bonsai-2-27B-PTQ1_0.gguf"
+ALIAS = DEFAULT_SMART_MODEL
+ARTIFACT = DEFAULT_SMART_MODEL
 PROMPT = "ai-market-analyst-test-prompt-v1"
 REQUEST_HASH = "a" * 64
 
@@ -382,7 +383,7 @@ def test_manifest_is_frozen_and_empty_evidence_cannot_be_ranked(tmp_path):
     assert len({item["sha256"] for item in manifest["strategies"]}) == 5
     assert [item["scan_interval_minutes"] for item in manifest["strategies"]] == [5, 15, 15, 15, 15]
     assert manifest["strategies"][-1]["id"] == "price_action_structure"
-    assert manifest["strategies"][-1]["profile_version"] == "price_action_structure_v1"
+    assert manifest["strategies"][-1]["profile_version"] == "price_action_structure_v3_main15_entry5"
     assert manifest == frozen_strategy_manifest()
 
     store = _store(tmp_path / "empty.sqlite3")

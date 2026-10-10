@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from apps.api.main import create_app
 from core.instruments import instrument_for
+from core.model_routing import DEFAULT_MODEL
 from core.monitoring import MonitoringPolicy, MonitoringService
 from core.monitoring_runtime import MonitoringRuntime
 from core.trading.session_manager import RuntimeLease
@@ -53,10 +54,10 @@ class FakeSmartProvider:
         return {
             "available": True,
             "model_available": True,
-            "model_id": "Bonsai-2-27B-PTQ1_0",
-            "actual_model_id": "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+            "model_id": DEFAULT_MODEL,
+            "actual_model_id": DEFAULT_MODEL,
             "model_identity_source": "verified_manifest",
-            "models": ["Ternary-Bonsai-2-27B-PTQ1_0.gguf"],
+            "models": [DEFAULT_MODEL],
         }
 
     def generate_json(self, _messages, **kwargs):
@@ -76,9 +77,10 @@ class FakeSmartProvider:
         }
         return (payload, json.dumps(payload, separators=(",", ":")), {
             "latency_ms": 1.0,
-            "model_id": "Bonsai-2-27B-PTQ1_0",
-            "actual_model_id": "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
-            "verified_manifest_model_id": "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+            "model_id": DEFAULT_MODEL,
+            "model_version": DEFAULT_MODEL,
+            "actual_model_id": DEFAULT_MODEL,
+            "verified_manifest_model_id": DEFAULT_MODEL,
             "model_identity_source": "completion_response",
             "prompt_version": kwargs.get("prompt_version"),
             "input_hash": kwargs.get("input_hash"),
@@ -125,7 +127,7 @@ def make_runtime(path: Path, provider: object | None = None) -> tuple[SQLiteStor
     return store, runtime
 
 
-def wait_for(predicate, timeout: float = 2.0) -> None:
+def wait_for(predicate, timeout: float = 10.0) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if predicate():

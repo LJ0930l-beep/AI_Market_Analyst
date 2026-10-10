@@ -1,0 +1,31 @@
+{
+  "schema_version": "pa-market-only-v38/prompt-template-2",
+  "prompt_id": "V38_A1_MARKET_ONLY_JSON_FORMAT_PILOT_V1",
+  "prompt_version": "pa_decision_quality_v38-A1.2-json-envelope-pilot",
+  "research_arm": "A1_MARKET_ONLY",
+  "task": "Describe the supplied historical market context as known at decision_time. Separate Context, Location, and Signal. State higher-timeframe bias, indicative bias, candidate setup, target structure if directly supported, strongest counter-evidence, and whether to OBSERVE or WAIT.",
+  "constraints": [
+    "Use only the supplied market_input and its evidence_refs; cite only those exact references.",
+    "Treat decision_time as the strict information cutoff. Ignore later data and do not infer future outcomes.",
+    "The input contains reconstructed Binance UM OHLCV, not Gate quotes, account state, fees, news, or execution rules.",
+    "Do not invent news, unavailable evidence, executable prices, account facts, position sizes, leverage, risk approval, or net reward/risk.",
+    "Use UNKNOWN when evidence is insufficient. Preserve the strongest counter-evidence.",
+    "Allowed action values are OBSERVE and WAIT only. This is a market opinion, never an order or trading instruction.",
+    "Return exactly one JSON object matching the supplied schema, preferably as raw JSON with no Markdown. If a Markdown wrapper is unavoidable, use exactly one complete ```json ... ``` fence with no text before or after it."
+  ],
+  "input_schema_version": "pa-market-only-v38/input-1",
+  "output_schema_version": "pa-market-only-v38/analysis-1",
+  "response_parser_version": "RAW_OR_SINGLE_JSON_FENCE_V1",
+  "model_selection": {
+    "provider": "Antigravity Tools reverse proxy",
+    "model_id": "gemini-3.8-flash-high",
+    "response_identity": "MUST_VERIFY_FROM_RESPONSE",
+    "status": "USER_AUTHORIZED_FORMAT_PILOT"
+  },
+  "call_authorization": {
+    "authorized": true,
+    "maximum_calls": 1,
+    "maximum_budget_usdt": null,
+    "study_scope": "FORMAT_PARSEABILITY_ONLY_NOT_DECISION_QUALITY"
+  }
+}

@@ -252,13 +252,18 @@ class GateTestnetE2EService:
             try:
                 observed = fetcher(order_id, symbol)
                 initial = observed.get("initial") if isinstance(observed, dict) and isinstance(observed.get("initial"), dict) else {}
+                # Gate can represent the native flag as
+                # ``initial.is_reduce_only`` or ``initial.is_close`` instead
+                # of ``initial.reduce_only``. The scoped Gate adapter
+                # validates those native flags and exposes the normalized
+                # result as top-level ``reduce_only``; keep the original
+                # exchange payload intact here.
                 if (
                     not isinstance(observed, dict)
                     or str(observed.get("order_id") or observed.get("id_string") or "") != order_id
                     or _symbol(observed.get("symbol")) != _symbol(symbol)
                     or _symbol(initial.get("contract")) != _symbol(symbol)
                     or observed.get("reduce_only") is not True
-                    or initial.get("reduce_only") is not True
                 ):
                     raise ValueError("PROTECTION_ID_SCOPE_MISMATCH")
                 state = str(observed.get("status") or "").upper()
@@ -277,7 +282,6 @@ class GateTestnetE2EService:
                     or _symbol(terminal.get("symbol")) != _symbol(symbol)
                     or _symbol(terminal_initial.get("contract")) != _symbol(symbol)
                     or terminal.get("reduce_only") is not True
-                    or terminal_initial.get("reduce_only") is not True
                     or str(terminal.get("status") or "").upper() != "FINISHED"
                     or not finish_as
                 ):

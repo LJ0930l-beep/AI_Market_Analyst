@@ -74,6 +74,26 @@ def test_health_keeps_this_probe_trace_through_cache_pin_and_durable_context(mon
     assert calls[0]['reasoning_effort'] == 'high' and 0 < calls[0]['timeout_sec'] <= 30
 
 
+def test_health_probe_timeout_never_exceeds_configured_budget(monkeypatch):
+    calls = []
+    # Model the sub-microsecond clock-sampling drift seen on Windows CI.
+    monotonic_values = iter([1.0, 1.0 - 5.684341886080802e-14, 1.0])
+    monkeypatch.setattr(ollama.time, 'monotonic', lambda: next(monotonic_values))
+    monkeypatch.setattr(ollama.model_client, 'list_models',
+                        lambda **_: [{'id': DEFAULT_SMART_MODEL}])
+
+    def fail_probe(_messages, **options):
+        calls.append(options)
+        raise TimeoutError('fixture timeout')
+
+    monkeypatch.setattr(ollama.model_client, 'structured_analysis', fail_probe)
+    result = ollama.OllamaProvider().health(timeout_sec=30)
+
+    assert result['available'] is False
+    assert len(calls) == 1
+    assert calls[0]['timeout_sec'] == 30
+
+
 def test_manifest_failure_cannot_steal_previous_completion_trace(monkeypatch):
     calls = []
     monkeypatch.setattr(ollama.model_client._response_state, 'transport_trace',

@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from core.instruments import instrument_for
+from core.model_routing import DEFAULT_SMART_MODEL
 from core.monitoring import (
     MonitoringPolicy,
     MonitoringService,
@@ -57,10 +58,10 @@ class FakeSmartProvider:
         return {
             "available": True,
             "model_available": True,
-            "model_id": "Bonsai-2-27B-PTQ1_0",
-            "actual_model_id": "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+            "model_id": DEFAULT_SMART_MODEL,
+            "actual_model_id": DEFAULT_SMART_MODEL,
             "model_identity_source": "verified_manifest",
-            "models": ["Ternary-Bonsai-2-27B-PTQ1_0.gguf"],
+            "models": [DEFAULT_SMART_MODEL],
         }
 
     def generate_json(self, messages, **kwargs):
@@ -82,9 +83,10 @@ class FakeSmartProvider:
         }
         return payload, json.dumps(payload, separators=(",", ":")), {
             "latency_ms": 1.0,
-            "model_id": "Bonsai-2-27B-PTQ1_0",
-            "actual_model_id": "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
-            "verified_manifest_model_id": "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+            "model_id": DEFAULT_SMART_MODEL,
+            "model_version": DEFAULT_SMART_MODEL,
+            "actual_model_id": DEFAULT_SMART_MODEL,
+            "verified_manifest_model_id": DEFAULT_SMART_MODEL,
             "model_identity_source": "completion_response",
             "prompt_version": kwargs.get("prompt_version"),
             "input_hash": kwargs.get("input_hash"),
@@ -219,7 +221,7 @@ def test_opportunity_accepts_list_invalidation_without_optional_price() -> None:
         symbol="BTCUSDT",
         timeframe="15m",
         trigger_event_id="trigger-list-invalidation",
-        model_id="Bonsai-2-27B-PTQ1_0",
+        model_id=DEFAULT_SMART_MODEL,
         data_as_of=POINT,
     )
     assert analysis.invalidation_price is None

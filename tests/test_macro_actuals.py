@@ -150,6 +150,7 @@ def test_bls_writer_availability_is_completion_time_and_reader_has_asof_cutoff(t
     refresh_calendar(
         store, fetch=lambda: rows, now=started,
         actual_provider={"bls_fetch": fetch_series, "clock": lambda: completed},
+        clock=lambda: completed,
     )
     events = store.v2_records("macro_events")
     assert len(events) == 4
@@ -193,12 +194,14 @@ def test_bls_period_mismatch_retries_after_15m_and_then_uses_one_batch(tmp_path)
         return payload, current_clock[0]
 
     providers = {"bls_fetch": fetch_series, "clock": lambda: current_clock[0]}
-    refresh_calendar(store, fetch=lambda: rows, now=started, actual_provider=providers)
+    refresh_calendar(store, fetch=lambda: rows, now=started, actual_provider=providers,
+                     clock=providers["clock"])
     first = store.v2_records("macro_events")[0]
     assert first["actual_status"] == "PERIOD_MISMATCH"
     retry_at = started + timedelta(minutes=16)
     current_clock[0] = retry_at
-    refresh_calendar(store, fetch=lambda: rows, now=retry_at, actual_provider=providers)
+    refresh_calendar(store, fetch=lambda: rows, now=retry_at, actual_provider=providers,
+                     clock=lambda: current_clock[0])
     retried = store.v2_records("macro_events")[0]
     assert retried["actual_status"] == "VERIFIED"
     assert retried["actual"] == "29K"
@@ -214,7 +217,8 @@ def test_stale_actual_is_retained_with_error_after_later_fetch_failure(tmp_path)
     current_clock = [started + timedelta(seconds=2)]
     refresh_calendar(store, fetch=lambda: rows, now=started,
                      actual_provider={"bls_fetch": lambda *_: (bls_payload(), current_clock[0]),
-                                      "clock": lambda: current_clock[0]})
+                                      "clock": lambda: current_clock[0]},
+                     clock=lambda: current_clock[0])
     first = store.v2_records("macro_events")[0]
     old_available = first["actual_available_at"]
     with store._connect() as db:
@@ -228,6 +232,7 @@ def test_stale_actual_is_retained_with_error_after_later_fetch_failure(tmp_path)
         store, fetch=lambda: rows, now=retry_at,
         actual_provider={"bls_fetch": lambda *_: (_ for _ in ()).throw(OSError("offline")),
                          "clock": lambda: current_clock[0]},
+        clock=lambda: current_clock[0],
     )
     retained = store.v2_records("macro_events")[0]
     assert result["status"] == "SCHEDULE_ONLY"

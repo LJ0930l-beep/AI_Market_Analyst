@@ -30,6 +30,7 @@ def test_import_nofx_strategy_saves_prompt_and_cadence_without_importing_executo
         execution=execution,
         template_id=initial["template_id"],
     )
+    stored_execution = AIStrategyBook(store).active("gate_testnet")["execution"]
 
     response = client.post(
         "/v2/ai-strategy/import-nofx?account_id=gate_testnet",
@@ -45,7 +46,7 @@ def test_import_nofx_strategy_saves_prompt_and_cadence_without_importing_executo
                         "decision_process": "Review open positions, compare the allowed market candidates, then act.",
                     },
                     "custom_prompt": "Prefer passive limit orders.",
-                    "indicators": {"klines": {"primary_timeframe": "5m"}},
+                    "indicators": {"klines": {"primary_timeframe": "15m"}},
                     "risk_control": {"btc_eth_max_leverage": 100},
                     "coin_source": {"static_coins": ["BTCUSDT"]},
                     "indicators_secret_fixture": "NOFX_PRIVATE_CREDENTIAL_DO_NOT_ECHO",
@@ -57,18 +58,42 @@ def test_import_nofx_strategy_saves_prompt_and_cadence_without_importing_executo
     assert response.status_code == 200
     payload = response.json()
     assert payload["active"]["revision"] == 2
-    assert payload["active"]["template_id"] == "aggressive_impulse"
-    assert payload["active"]["execution"]["scan_interval_minutes"] == 5
-    assert payload["active"]["nofx_runtime"]["signal_timeframe"] == "5m"
+    assert payload["active"]["template_id"] == "price_action_structure"
+    assert payload["active"]["execution"]["scan_interval_minutes"] == 15
+    assert payload["active"]["nofx_runtime"]["signal_timeframe"] == "15m"
     assert payload["active"]["nofx_runtime"]["candidate_sources"] == ["gate_active_usdt_perpetuals"]
-    assert payload["active"]["profile"]["signal_timeframe"] == "5m"
-    assert payload["active"]["execution"]["leverage"] == 21
-    assert payload["active"]["execution"]["max_notional_usdt"] == 620
+    assert payload["active"]["profile"]["signal_timeframe"] == "15m"
+    assert payload["active"]["execution"] == stored_execution
     assert payload["active"]["sections"]["entry_standards"].startswith("Compare trend")
     assert payload["truncated_fields"] == []
     assert "risk_control" not in payload["imported_fields"]
     assert any("杠杆" in item for item in payload["ignored_fields"])
     assert "NOFX_PRIVATE_CREDENTIAL_DO_NOT_ECHO" not in response.text
+
+
+def test_import_nofx_5m_primary_is_rejected_without_changing_active_strategy(tmp_path):
+    store, client = _client(tmp_path)
+    before = AIStrategyBook(store).active("gate_testnet")
+    response = client.post(
+        "/v2/ai-strategy/import-nofx?account_id=gate_testnet",
+        json={
+            "expected_revision": before["revision"],
+            "configuration": {
+                "strategy_type": "ai_trading",
+                "ai_config": {
+                    "prompt_sections": {"entry_standards": "Use closed bars and preserve the 15m decision cadence."},
+                    "indicators": {"klines": {"primary_timeframe": "5m"}},
+                },
+            },
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "NOFX_TIMEFRAME_UNSUPPORTED"
+    after = AIStrategyBook(store).active("gate_testnet")
+    assert after["revision"] == before["revision"]
+    assert after["template_id"] == before["template_id"]
+    assert after["execution"] == before["execution"]
 
 
 def test_import_nofx_strategy_reports_prompt_fields_truncated_to_bonsai_budget(tmp_path):

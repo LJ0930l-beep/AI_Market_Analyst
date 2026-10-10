@@ -530,7 +530,11 @@ class ReplayAccount:
                 raise ValueError("POSITION_SIZE_REQUIRED")
             if requested_qty <= 0:
                 raise ValueError("QUANTITY_MUST_BE_POSITIVE")
-            requested_qty = _round_step(requested_qty, step, ROUND_DOWN)
+            require_exact_quantity = bool(decision.get("_require_exact_quantity"))
+            rounded_requested_qty = _round_step(requested_qty, step, ROUND_DOWN)
+            if require_exact_quantity and rounded_requested_qty != requested_qty:
+                raise ValueError("REQUESTED_QUANTITY_NOT_EXACT")
+            requested_qty = rounded_requested_qty
             if requested_qty < min_amount:
                 raise ValueError("QUANTITY_BELOW_CONTRACT_MIN")
 
@@ -540,6 +544,8 @@ class ReplayAccount:
 
             # Apply amount and margin limits to the requested amount.  The
             # resulting order is rounded down, never over budget or contract.
+            if require_exact_quantity and requested_qty > max_amount:
+                raise ValueError("QUANTITY_ABOVE_CONTRACT_MAX")
             requested_qty = min(requested_qty, max_amount)
             cap, used, reserved, available = self._budget(leverage_overrides={instrument: leverage})
             marketable_limit = order_type == "LIMIT" and (price >= reference if side == "LONG" else price <= reference)
@@ -555,6 +561,8 @@ class ReplayAccount:
             max_affordable = opposite_qty + _round_step(available / unit_cost, step, ROUND_DOWN)
             quantity = min(requested_qty, max_affordable)
             quantity = _round_step(quantity, step, ROUND_DOWN)
+            if require_exact_quantity and quantity != requested_qty:
+                raise ValueError("MARGIN_BUDGET_INSUFFICIENT")
             if quantity < min_amount:
                 raise ValueError("MARGIN_BUDGET_BELOW_CONTRACT_MIN")
             notional = quantity * price * contract_size

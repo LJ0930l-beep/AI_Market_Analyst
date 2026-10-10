@@ -918,6 +918,24 @@ def test_gate_protection_readback_rejects_conflicting_native_reduce_only_flags()
         trader.fetch_protection_order("9001", "BTCUSDT")
 
 
+def test_gate_protection_readback_normalizes_gate_is_reduce_only_without_reduce_only_field():
+    class Exchange:
+        def privateFuturesGetSettlePriceOrdersOrderId(self, _params):
+            return {
+                "id": "9001", "status": "open",
+                "initial": {"contract": "BTC_USDT", "size": -1, "is_reduce_only": True},
+                "trigger": {"price": "89.0", "price_type": 1},
+            }
+
+    trader = GateLiveTrader("key", "secret", testnet=True, exchange=Exchange())
+
+    result = trader.fetch_protection_order("9001", "BTCUSDT")
+
+    assert result["reduce_only"] is True
+    assert "reduce_only" not in result["initial"]
+    assert result["initial"]["is_reduce_only"] is True
+
+
 class _E2EFixtureTrader:
     testnet = True
     live_trading_enabled = True
@@ -928,6 +946,7 @@ class _E2EFixtureTrader:
         self.canceled: list[str] = []
         self.protection_status = "OPEN"
         self.protection_cleanup_mode = "success"
+        self.protection_native_is_reduce_only = False
 
     def get_market_metadata(self, symbol):
         return {
@@ -977,11 +996,14 @@ class _E2EFixtureTrader:
         return {"status": "CANCELED", "order_id": order_id}
 
     def fetch_protection_order(self, order_id, symbol):
+        initial = {"contract": "BTC_USDT", "size": "0.1", "reduce_only": True, "text": "t-e2e-sl"}
+        if self.protection_native_is_reduce_only:
+            initial = {"contract": "BTC_USDT", "size": "0.1", "is_reduce_only": True, "text": "t-e2e-sl"}
         return {
             "order_id": str(order_id), "symbol": symbol, "status": self.protection_status,
             "finish_as": "cancelled" if self.protection_status == "FINISHED" else None,
             "reduce_only": True,
-            "initial": {"contract": "BTC_USDT", "size": "0.1", "reduce_only": True, "text": "t-e2e-sl"},
+            "initial": initial,
             "observed_at": "2030-01-02T12:00:00+00:00",
         }
 
@@ -994,10 +1016,13 @@ class _E2EFixtureTrader:
         return {"status": "CANCELED", "order_id": order_id}
 
 
-def test_gate_testnet_e2e_uses_remote_fill_and_cleans_without_local_fill(tmp_path):
+def _assert_gate_testnet_e2e_uses_remote_fill_and_cleans_without_local_fill(
+    tmp_path, *, native_is_reduce_only: bool,
+):
     store = _store(tmp_path)
     provision_default_gate_accounts(store)
     trader = _E2EFixtureTrader()
+    trader.protection_native_is_reduce_only = native_is_reduce_only
     request = {
         "account_id": "gate_paper",
         "symbol": "BTCUSDT",
@@ -1028,6 +1053,18 @@ def test_gate_testnet_e2e_uses_remote_fill_and_cleans_without_local_fill(tmp_pat
     assert len(trader.calls) == 2
     replay_without_credentials = GateTestnetE2EService(store).run(request, None)
     assert replay_without_credentials["idempotent_replay"] is True
+
+
+def test_gate_testnet_e2e_uses_remote_fill_and_cleans_without_local_fill(tmp_path):
+    _assert_gate_testnet_e2e_uses_remote_fill_and_cleans_without_local_fill(
+        tmp_path, native_is_reduce_only=False,
+    )
+
+
+def test_gate_testnet_e2e_handles_native_is_reduce_only_field(tmp_path):
+    _assert_gate_testnet_e2e_uses_remote_fill_and_cleans_without_local_fill(
+        tmp_path, native_is_reduce_only=True,
+    )
 
 
 @pytest.mark.parametrize("cleanup_mode", ["delete_fails", "nonterminal"])
