@@ -91,3 +91,14 @@ Keep G2 closed pending human review of PRs #26/#27 and separate explicit G2 auth
 - **Rollback:** Revert only the V38 runner byte-count predicate and its regression tests if a regression appears. Preserve V2 response-contract fixes, all historical reports, V35 risk controls, and the immutable ledger.
 
 The next owner action is human review of Draft PRs #26 and #27. Keep remote provider capability, identity, and billing marked unknown; no model calls are authorized by this CI result.
+
+## 2026-10-10 offline negative-matrix evidence refresh — 16:27Z
+
+**Subfinding:** `V2_G1_OFFLINE_NEGATIVE_MATRIX_COVERAGE`; severity S1; status `COVERED_AND_EXACT_HEAD_CI_VERIFIED`. Parent B-002 remains `BLOCKED_WITH_EVIDENCE` for remote provider capability, identity attestation, and billing.
+
+- **Finding:** The 10 October offline review's then-current gap list became stale after later V2 negative cases landed. Reinspection of the actual current head found coverage for finish-length/missing/non-stop, empty and partial content, identity missing/mismatch, evidence-ref rejection, byte/transport validation, and a fake-provider `json_schema` request that remains unverified.
+- **Evidence:** `python -m pytest -q tests/v38/test_response_contract_v2.py tests/v38/test_gemini_runner.py` passed **66 tests** at head `986e2f27fb3cb20957ab0b3a4413a58445b50a69`. Current-head hosted run [38066089278](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38066089278) passed the 267-test quick gate and 2,563-test full suite. The fake-provider test asserts `response_format_capability=unknown_unverified`, `NOT_PRESENT_NO_REMOTE_CAPABILITY_PROBE`, and `remote_dispatch_allowed=false`.
+- **Root cause of stale statement:** The prior timestamped audit captured an earlier negative-matrix state and was not rewritten when later tests were added. Its original statement remains as historical context; the current-state correction is recorded in [`V2-G0-G1-live-refresh-20261010T162737Z.md`](../audits/V2-G0-G1-live-refresh-20261010T162737Z.md).
+- **Temporary containment:** Keep all real provider dispatch disabled. Historical ledger, old response labels and denominators remain unchanged; no old or ambiguous intent is retried.
+- **Acceptance:** Offline negative-matrix tests and current exact-head CI pass. This does not establish provider behavior. Remote schema capability, actual underlying model/weights, replay/billing behavior, and usage receipts remain unknown, so G1's external capability gate stays open and G2 remains unauthorized.
+- **Rollback:** Revert only this additive status note if its evidence reference is invalidated. Preserve the dated old review, test cases, historical ledger, and prior CI results.
