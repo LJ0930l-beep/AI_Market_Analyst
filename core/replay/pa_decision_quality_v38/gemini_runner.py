@@ -730,7 +730,15 @@ def _provider_stop_state(events: list[dict[str, Any]]) -> tuple[list[dict[str, A
     return route_stops, quota_or_rate_stop
 
 
-def _validate_route_readiness(evidence: Any) -> dict[str, Any]:
+def _validate_route_readiness(
+    evidence: Any, *, validation_time_utc: datetime | None = None,
+) -> dict[str, Any]:
+    """Validate route evidence, checking freshness only at live rearm time.
+
+    Persisted events are checked against their immutable `rearmed_at_utc`
+    timestamp by `_validate_provider_stop_rearms`; they must not expire merely
+    because the append-only ledger is read later.
+    """
     required = {
         "schema_version", "endpoint", "http_status", "model_id",
         "model_listed", "model_catalog_sha256", "checked_at_utc",
@@ -751,9 +759,12 @@ def _validate_route_readiness(evidence: Any) -> dict[str, Any]:
         parsed = datetime.fromisoformat(str(checked_at))
     except ValueError as exc:
         raise MarketOnlyError("GEMINI_PROVIDER_REARM_EVIDENCE_INVALID") from exc
-    now = datetime.now(UTC)
-    if (parsed.tzinfo is None or parsed > now + timedelta(seconds=30)
-            or now - parsed > timedelta(minutes=5)):
+    if parsed.tzinfo is None:
+        raise MarketOnlyError("GEMINI_PROVIDER_REARM_EVIDENCE_INVALID")
+    if (validation_time_utc is not None
+            and (validation_time_utc.tzinfo is None
+                 or parsed > validation_time_utc + timedelta(seconds=30)
+                 or validation_time_utc - parsed > timedelta(minutes=5))):
         raise MarketOnlyError("GEMINI_PROVIDER_REARM_EVIDENCE_STALE")
     return evidence
 
@@ -808,7 +819,7 @@ def _validate_provider_stop_rearms(events: list[dict[str, Any]]) -> None:
 def _build_provider_stop_rearm_event(
     evidence: dict[str, Any], active_route_stops: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    validated = _validate_route_readiness(evidence)
+    validated = _validate_route_readiness(evidence, validation_time_utc=datetime.now(UTC))
     return {
         "schema_version": LEDGER_SCHEMA_VERSION,
         "event_type": "PROVIDER_STOP_REARM",
@@ -947,7 +958,9 @@ def execute_authorized_optimization(
         indexed = _validate_event_pairing(events, schedule)
         active_route_stops, quota_or_rate_stop = _provider_stop_state(events)
         if provider_route_reauthorization is not None:
-            route_evidence = _validate_route_readiness(provider_route_reauthorization)
+            route_evidence = _validate_route_readiness(
+                provider_route_reauthorization, validation_time_utc=datetime.now(UTC),
+            )
             if quota_or_rate_stop:
                 raise MarketOnlyError("GEMINI_RUN_PROVIDER_QUOTA_STOP_REMAINS_LATCHED")
             if active_route_stops:

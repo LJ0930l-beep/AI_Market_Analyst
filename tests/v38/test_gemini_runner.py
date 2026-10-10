@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -17,6 +17,7 @@ from core.replay.pa_decision_quality_v38.gemini_runner import (
     ROUTE_READINESS_SCHEMA_VERSION,
     ProviderCallResult,
     _call_key,
+    _read_ledger,
     _result_event,
     build_model_messages,
     canonical_sha256,
@@ -524,7 +525,7 @@ def test_region_rejection_stops_arm_pair_and_latches_across_invocations(
 
 
 def test_route_reauthorization_is_append_only_and_never_retries_prior_pair(
-    tmp_path, market_point_factory,
+    tmp_path, monkeypatch, market_point_factory,
 ):
     root = Path(__file__).resolve().parents[2]
     auth, prompts, market_input = _setup(root, market_point_factory)
@@ -566,6 +567,18 @@ def test_route_reauthorization_is_append_only_and_never_retries_prior_pair(
         )
     assert ledger.read_text(encoding="utf-8").splitlines() == original_lines
 
+    stale_evidence = _route_reauthorization_evidence()
+    stale_evidence["checked_at_utc"] = (
+        datetime.now(UTC) - timedelta(minutes=6)
+    ).isoformat().replace("+00:00", "Z")
+    with pytest.raises(ValueError, match="GEMINI_PROVIDER_REARM_EVIDENCE_STALE"):
+        execute_authorized_optimization(
+            [market_input, second_market_input], prompts, authorization=auth,
+            ledger_path=ledger, call_model=_fixture_call, max_contexts=1,
+            provider_route_reauthorization=stale_evidence,
+        )
+    assert ledger.read_text(encoding="utf-8").splitlines() == original_lines
+
     recovered = execute_authorized_optimization(
         [market_input, second_market_input], prompts, authorization=auth,
         ledger_path=ledger, call_model=lambda messages, request_id: (
@@ -585,6 +598,22 @@ def test_route_reauthorization_is_append_only_and_never_retries_prior_pair(
         "NOT_ATTEMPTED": 2,
         "VALID_ANALYSIS": 1,
     }
+
+    from core.replay.pa_decision_quality_v38 import gemini_runner
+
+    class LaterDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return super().now(tz) + timedelta(minutes=10)
+
+    with monkeypatch.context() as future_clock:
+        future_clock.setattr(gemini_runner, "datetime", LaterDateTime)
+        aged_events = _read_ledger(ledger)
+        aged_review = gemini_runner.review_gemini_ledger(
+            [market_input, second_market_input], prompts, aged_events,
+        )
+    assert aged_review["provider_stop_rearm_count"] == 1
+    assert aged_review["provider_stop_latched"] is False
 
     continued = execute_authorized_optimization(
         [market_input, second_market_input], prompts, authorization=auth,
