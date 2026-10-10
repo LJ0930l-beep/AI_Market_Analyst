@@ -936,6 +936,27 @@ def test_gate_protection_readback_normalizes_gate_is_reduce_only_without_reduce_
     assert result["initial"]["is_reduce_only"] is True
 
 
+@pytest.mark.parametrize("is_close", [True, False])
+def test_gate_protection_readback_uses_native_is_close_flag_fail_closed(is_close):
+    class Exchange:
+        def privateFuturesGetSettlePriceOrdersOrderId(self, _params):
+            return {
+                "id": "9001", "status": "open",
+                "initial": {"contract": "BTC_USDT", "size": -1, "is_close": is_close},
+                "trigger": {"price": "89.0", "price_type": 1},
+            }
+
+    trader = GateLiveTrader("key", "secret", testnet=True, exchange=Exchange())
+
+    if is_close:
+        result = trader.fetch_protection_order("9001", "BTCUSDT")
+        assert result["reduce_only"] is True
+        assert result["initial"]["is_close"] is True
+    else:
+        with pytest.raises(ValueError, match="GATE_PROTECTION_NOT_REDUCE_ONLY"):
+            trader.fetch_protection_order("9001", "BTCUSDT")
+
+
 class _E2EFixtureTrader:
     testnet = True
     live_trading_enabled = True
