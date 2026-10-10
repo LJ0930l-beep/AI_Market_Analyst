@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from copy import deepcopy
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -12,6 +14,7 @@ from core.replay.pa_decision_quality_v38.gemini_runner import (
     ANALYSIS_JSON_SCHEMA,
     AUTHORIZATION_ID,
     PROMPT_HASHES,
+    ROUTE_READINESS_SCHEMA_VERSION,
     ProviderCallResult,
     _call_key,
     _result_event,
@@ -73,6 +76,20 @@ def _fixture_call(messages: list[dict[str, str]], request_id: str) -> ProviderCa
         response_model_id=DEFAULT_MODEL,
         transport_trace=trace.snapshot(),
     )
+
+
+def _route_reauthorization_evidence() -> dict[str, object]:
+    catalog_bytes = json.dumps([DEFAULT_MODEL], separators=(",", ":")).encode("utf-8")
+    return {
+        "schema_version": ROUTE_READINESS_SCHEMA_VERSION,
+        "endpoint": "http://127.0.0.1:8045/v1/models",
+        "http_status": 200,
+        "model_id": DEFAULT_MODEL,
+        "model_listed": True,
+        "model_catalog_sha256": hashlib.sha256(catalog_bytes).hexdigest(),
+        "checked_at_utc": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "operator_confirmed_route_change": True,
+    }
 
 
 def _setup(root: Path, market_point_factory):
@@ -451,6 +468,13 @@ def test_existing_provider_quota_rejection_latches_across_invocations(
     assert first["provider_rate_or_quota_stop_latched"] is True
     assert second["provider_rate_or_quota_stop_latched"] is True
     assert second["status_counts"] == {"INVALID_PROVIDER_RESPONSE": 1, "NOT_ATTEMPTED": 1}
+    with pytest.raises(ValueError, match="GEMINI_RUN_PROVIDER_QUOTA_STOP_REMAINS_LATCHED"):
+        execute_authorized_optimization(
+            [market_input], prompts, authorization=auth, ledger_path=ledger,
+            call_model=quota_rejection, max_contexts=1,
+            provider_route_reauthorization=_route_reauthorization_evidence(),
+        )
+    assert len(calls) == 1
 
 
 def test_region_rejection_stops_arm_pair_and_latches_across_invocations(
@@ -499,6 +523,126 @@ def test_region_rejection_stops_arm_pair_and_latches_across_invocations(
     assert second["provider_stop_latched"] is True
 
 
+def test_route_reauthorization_is_append_only_and_never_retries_prior_pair(
+    tmp_path, market_point_factory,
+):
+    root = Path(__file__).resolve().parents[2]
+    auth, prompts, market_input = _setup(root, market_point_factory)
+    second_market_input = build_market_only_input(market_point_factory(
+        symbol="ETHUSDT", decision_id="v38-fixture-eth-20251015-1200z",
+    ))
+    ledger = tmp_path / "model-call-ledger.jsonl"
+    calls: list[str] = []
+
+    def region_rejection(messages, request_id):
+        calls.append(request_id)
+        trace = CompletionTransportTrace(messages, 1, 30, request_id=request_id)
+        trace.data["transport_mode"] = "JSON"
+        trace.request_written(128, 0.01)
+        trace.awaiting_headers()
+        trace.headers_received(400)
+        trace.body_received(64)
+        error = RuntimeError("MODEL_UPSTREAM_REGION_UNSUPPORTED")
+        error.transport_trace = trace.snapshot()
+        raise error
+
+    first = execute_authorized_optimization(
+        [market_input, second_market_input], prompts, authorization=auth,
+        ledger_path=ledger, call_model=region_rejection, max_contexts=2,
+    )
+    original_lines = ledger.read_text(encoding="utf-8").splitlines()
+    original_events = [json.loads(line) for line in original_lines]
+    original_result = next(event for event in original_events if event["event_type"] == "RESULT")
+    assert first["provider_stop_latched"] is True
+    assert len(calls) == 1
+
+    invalid_evidence = _route_reauthorization_evidence()
+    invalid_evidence["model_listed"] = False
+    with pytest.raises(ValueError, match="GEMINI_PROVIDER_REARM_EVIDENCE_INVALID"):
+        execute_authorized_optimization(
+            [market_input, second_market_input], prompts, authorization=auth,
+            ledger_path=ledger, call_model=_fixture_call, max_contexts=1,
+            provider_route_reauthorization=invalid_evidence,
+        )
+    assert ledger.read_text(encoding="utf-8").splitlines() == original_lines
+
+    recovered = execute_authorized_optimization(
+        [market_input, second_market_input], prompts, authorization=auth,
+        ledger_path=ledger, call_model=lambda messages, request_id: (
+            calls.append(request_id) or _fixture_call(messages, request_id)
+        ), max_contexts=1,
+        provider_route_reauthorization=_route_reauthorization_evidence(),
+    )
+    events_after_rearm = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines()]
+    rearm = next(event for event in events_after_rearm if event["event_type"] == "PROVIDER_STOP_REARM")
+    assert len(calls) == 2
+    assert events_after_rearm[:2] == original_events
+    assert rearm["supersedes_result_event_sha256s"] == [original_result["event_sha256"]]
+    assert recovered["provider_stop_rearm_count"] == 1
+    assert recovered["provider_stop_latched"] is False
+    assert recovered["status_counts"] == {
+        "CALL_ERROR_NO_RETRY": 1,
+        "NOT_ATTEMPTED": 2,
+        "VALID_ANALYSIS": 1,
+    }
+
+    continued = execute_authorized_optimization(
+        [market_input, second_market_input], prompts, authorization=auth,
+        ledger_path=ledger, call_model=lambda messages, request_id: (
+            calls.append(request_id) or _fixture_call(messages, request_id)
+        ), max_contexts=1,
+    )
+    assert len(calls) == 4
+    assert continued["provider_stop_latched"] is False
+    assert continued["valid_analysis_records"] == 3
+    intents = [event for event in events_after_rearm if event["event_type"] == "DISPATCH_INTENT"]
+    assert len({event["call_key"] for event in intents}) == len(intents) == 2
+
+
+def test_route_refusal_after_reauthorization_latches_again_immediately(
+    tmp_path, market_point_factory,
+):
+    root = Path(__file__).resolve().parents[2]
+    auth, prompts, market_input = _setup(root, market_point_factory)
+    ledger = tmp_path / "model-call-ledger.jsonl"
+    calls: list[str] = []
+
+    def region_rejection(messages, request_id):
+        calls.append(request_id)
+        trace = CompletionTransportTrace(messages, 1, 30, request_id=request_id)
+        trace.data["transport_mode"] = "JSON"
+        trace.request_written(128, 0.01)
+        trace.awaiting_headers()
+        trace.headers_received(400)
+        trace.body_received(64)
+        error = RuntimeError("MODEL_UPSTREAM_REGION_UNSUPPORTED")
+        error.transport_trace = trace.snapshot()
+        raise error
+
+    first = execute_authorized_optimization(
+        [market_input], prompts, authorization=auth, ledger_path=ledger,
+        call_model=region_rejection, max_contexts=1,
+    )
+    assert first["provider_stop_latched"] is True
+
+    resumed = execute_authorized_optimization(
+        [market_input], prompts, authorization=auth, ledger_path=ledger,
+        call_model=region_rejection, max_contexts=1,
+        provider_route_reauthorization=_route_reauthorization_evidence(),
+    )
+    blocked = execute_authorized_optimization(
+        [market_input], prompts, authorization=auth, ledger_path=ledger,
+        call_model=region_rejection, max_contexts=1,
+    )
+
+    assert len(calls) == 2
+    assert resumed["provider_stop_rearm_count"] == 1
+    assert resumed["provider_stop_latched"] is True
+    assert blocked["provider_stop_latched"] is True
+    assert blocked["dispatch_intent_count"] == 2
+    assert blocked["status_counts"] == {"CALL_ERROR_NO_RETRY": 2}
+
+
 def test_cli_is_dry_run_by_default_and_does_not_initialize_model_client(
     tmp_path, monkeypatch, capsys, market_point_factory,
 ):
@@ -532,3 +676,52 @@ def test_cli_is_dry_run_by_default_and_does_not_initialize_model_client(
     assert "DRY_RUN_READY_NO_MODEL_CALL" in output
     assert '"model_calls_used": 0' in output
     assert not (report_root / "runs" / "intent.jsonl").exists()
+
+
+def test_route_reauthorization_preflight_is_local_authenticated_get_without_completion(monkeypatch):
+    import scripts.run_market_only_gemini_v38 as cli
+
+    class FakeConfiguration:
+        base_url = "http://127.0.0.1:8045/v1"
+        model_name = DEFAULT_MODEL
+        api_key = "test-local-token"
+
+    class FakeClient:
+        model_name = DEFAULT_MODEL
+
+        @staticmethod
+        def _configuration_error(_model):
+            return None
+
+        @staticmethod
+        def chat_completion(*_args, **_kwargs):
+            pytest.fail("ROUTE_READINESS_MUST_NOT_SEND_COMPLETION")
+
+    class FakeResponse:
+        status = 200
+
+        @staticmethod
+        def read(_limit):
+            return json.dumps({"data": [{"id": DEFAULT_MODEL}]}).encode("utf-8")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    observed: list[tuple[str, str, int]] = []
+
+    def fake_open(request, *, timeout):
+        observed.append((request.full_url, request.get_method(), timeout))
+        assert request.get_header("Authorization") == "Bearer test-local-token"
+        return FakeResponse()
+
+    evidence = cli._provider_route_reauthorization_evidence(
+        configuration=FakeConfiguration(), client=FakeClient(), opener=fake_open,
+    )
+
+    assert observed == [("http://127.0.0.1:8045/v1/models", "GET", 8)]
+    assert evidence["model_listed"] is True
+    assert evidence["http_status"] == 200
+    assert evidence["operator_confirmed_route_change"] is True

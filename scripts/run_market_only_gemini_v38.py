@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +18,7 @@ from core.replay.pa_decision_quality_v38.gemini_runner import (
     MAX_CALLS,
     MAX_CONTEXTS,
     MAX_OUTPUT_TOKENS,
+    ROUTE_READINESS_SCHEMA_VERSION,
     ProviderCallResult,
     execute_authorized_optimization,
     load_authorization,
@@ -116,6 +119,69 @@ def _model_caller() -> tuple[Any, Any]:
     return model_client, call
 
 
+def _provider_route_reauthorization_evidence(
+    *, configuration: Any | None = None, client: Any | None = None, opener: Any | None = None,
+) -> dict[str, Any]:
+    """Read the authenticated local model catalog; this never sends a completion."""
+    from urllib.error import HTTPError, URLError
+    from urllib.request import Request
+
+    if configuration is None:
+        from core.config import config as configuration
+    if client is None:
+        from core.model_client import model_client as client
+    if opener is None:
+        from urllib.request import urlopen as opener
+    from core.model_routing import DEFAULT_MODEL
+
+    if (configuration.model_name != DEFAULT_MODEL
+            or client.model_name != DEFAULT_MODEL
+            or client._configuration_error(DEFAULT_MODEL) is not None):
+        raise ValueError("V38_GEMINI_MODEL_ROUTE_NOT_PINNED_TO_AUTHORIZED_LOOPBACK")
+    if not isinstance(configuration.api_key, str) or not configuration.api_key.strip():
+        raise ValueError("V38_GEMINI_PROXY_CREDENTIAL_UNAVAILABLE")
+
+    endpoint = configuration.base_url.rstrip("/") + "/models"
+    request = Request(
+        endpoint,
+        headers={"Authorization": f"Bearer {configuration.api_key}", "Accept": "application/json"},
+        method="GET",
+    )
+    try:
+        with opener(request, timeout=8) as response:
+            if response.status != 200:
+                raise ValueError("V38_GEMINI_PROXY_MODEL_CATALOG_UNAVAILABLE")
+            body = response.read(1_048_577)
+    except (HTTPError, URLError, TimeoutError, OSError) as exc:
+        raise ValueError("V38_GEMINI_PROXY_MODEL_CATALOG_UNAVAILABLE") from exc
+    if len(body) > 1_048_576:
+        raise ValueError("V38_GEMINI_PROXY_MODEL_CATALOG_INVALID")
+    try:
+        document = json.loads(body.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError("V38_GEMINI_PROXY_MODEL_CATALOG_INVALID") from exc
+    rows = document.get("data") if isinstance(document, dict) else None
+    if not isinstance(rows, list):
+        raise TypeError("V38_GEMINI_PROXY_MODEL_CATALOG_INVALID")
+    model_ids = sorted(
+        row["id"] for row in rows
+        if isinstance(row, dict) and isinstance(row.get("id"), str)
+    )
+    if DEFAULT_MODEL not in model_ids:
+        raise ValueError("V38_GEMINI_AUTHORIZED_MODEL_NOT_LISTED")
+    catalog_bytes = json.dumps(model_ids, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return {
+        "schema_version": ROUTE_READINESS_SCHEMA_VERSION,
+        "endpoint": "http://127.0.0.1:8045/v1/models",
+        "http_status": 200,
+        "model_id": DEFAULT_MODEL,
+        "model_listed": True,
+        "model_catalog_sha256": hashlib.sha256(catalog_bytes).hexdigest(),
+        "checked_at_utc": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "operator_confirmed_route_change": True,
+    }
+
+
 def _write_report(path: Path, report: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -144,6 +210,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="New ignored report path; required with --execute and never overwritten.")
     parser.add_argument("--execute", action="store_true",
                         help="Send exactly one completion request per new selected context-arm; no retries or repairs.")
+    parser.add_argument(
+        "--resume-after-provider-route-change", action="store_true",
+        help=("After operator-confirmed route repair, authenticate a local GET /v1/models and "
+              "append an auditable rearm event for prior route refusals. Never clears quota stops."),
+    )
     args = parser.parse_args(argv)
     try:
         authorization = load_authorization(args.authorization)
@@ -160,6 +231,8 @@ def main(argv: list[str] | None = None) -> int:
         else:
             ledger_path = _reports_path(args.ledger, must_not_exist=False)
         if not args.execute:
+            if args.resume_after_provider_route_change:
+                raise ValueError("V38_GEMINI_PROVIDER_REARM_REQUIRES_EXECUTE")
             print(json.dumps({
                 "status": "DRY_RUN_READY_NO_MODEL_CALL",
                 "authorization_id": authorization["authorization_id"],
@@ -183,13 +256,18 @@ def main(argv: list[str] | None = None) -> int:
         if ledger_path != _shared_worktree_ledger():
             raise ValueError("V38_GEMINI_EXECUTION_REQUIRES_CANONICAL_SHARED_LEDGER")
         report_path = _reports_path(args.output, must_not_exist=True)
+        route_evidence = (
+            _provider_route_reauthorization_evidence()
+            if args.resume_after_provider_route_change else None
+        )
         _, call_model = _model_caller()
         report = execute_authorized_optimization(
             inputs, prompts, authorization=authorization, ledger_path=ledger_path,
             call_model=call_model, max_contexts=args.max_contexts,
+            provider_route_reauthorization=route_evidence,
         )
         _write_report(report_path, report)
-    except (OSError, ValueError, MarketOnlyError) as exc:
+    except (OSError, TypeError, ValueError, MarketOnlyError) as exc:
         safe_message = str(exc)
         if not safe_message.isupper() or len(safe_message) > 128:
             safe_message = "V38_GEMINI_RUN_FAILED"
@@ -204,6 +282,7 @@ def main(argv: list[str] | None = None) -> int:
         "dispatch_intent_count": report["dispatch_intent_count"],
         "terminal_result_count": report["terminal_result_count"],
         "valid_analysis_records": report["valid_analysis_records"],
+        "provider_stop_rearm_count": report["provider_stop_rearm_count"],
         "provider_cost_usdt": None,
         "orders_created": 0,
     }, ensure_ascii=False, sort_keys=True))

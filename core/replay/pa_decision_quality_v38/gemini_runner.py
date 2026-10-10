@@ -15,7 +15,7 @@ from collections import Counter
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -31,8 +31,9 @@ from core.replay.pa_decision_quality_v38.market_only import (
 )
 
 AUTHORIZATION_SCHEMA_VERSION = "pa-market-only-v38/model-call-authorization-1"
-RUN_SCHEMA_VERSION = "pa-market-only-v38/gemini-run-2"
+RUN_SCHEMA_VERSION = "pa-market-only-v38/gemini-run-3"
 LEDGER_SCHEMA_VERSION = "pa-market-only-v38/gemini-call-ledger-2"
+ROUTE_READINESS_SCHEMA_VERSION = "pa-market-only-v38/provider-route-readiness-1"
 DATASET_SCHEMA_VERSION = "pa-market-only-v38/stratified-purged-market-input-dataset-1"
 DATASET_ID = "V38_BINANCE_BTC_ETH_STRATIFIED_PURGED_CONTEXTS_20261009_V1"
 PLAN_SHA256 = "094ee37ff932b3f237c4eef77a42dc94cf496928a46afd5a5c30efa35cfa873f"
@@ -424,14 +425,16 @@ def _read_ledger(path: Path) -> list[dict[str, Any]]:
                     or event.get("schema_version") != LEDGER_SCHEMA_VERSION
                     or event.get("authorization_id") != AUTHORIZATION_ID
                     or event.get("dataset_id") != DATASET_ID
-                    or event.get("event_type") not in {"DISPATCH_INTENT", "RESULT"}
-                    or not _SHA256.fullmatch(str(event.get("call_key") or ""))):
+                    or event.get("event_type") not in {"DISPATCH_INTENT", "RESULT", "PROVIDER_STOP_REARM"}
+                    or (event.get("event_type") != "PROVIDER_STOP_REARM"
+                        and not _SHA256.fullmatch(str(event.get("call_key") or "")))):
                 raise MarketOnlyError("GEMINI_RUN_LEDGER_EVENT_INVALID")
             events.append(event)
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise MarketOnlyError("GEMINI_RUN_LEDGER_INVALID") from exc
     _validate_ledger_chain(events)
     _index_events(events)
+    _validate_provider_stop_rearms(events)
     return events
 
 
@@ -475,6 +478,8 @@ def _append_event(path: Path, event: dict[str, Any]) -> dict[str, Any]:
 def _index_events(events: list[dict[str, Any]]) -> dict[str, dict[str, dict[str, Any]]]:
     indexed: dict[str, dict[str, dict[str, Any]]] = {}
     for event in events:
+        if event["event_type"] == "PROVIDER_STOP_REARM":
+            continue
         call_key = event["call_key"]
         entry = indexed.setdefault(call_key, {})
         event_type = event["event_type"]
@@ -703,6 +708,121 @@ def _provider_stop_result(result: dict[str, Any]) -> bool:
     )
 
 
+def _provider_route_stop_result(result: dict[str, Any]) -> bool:
+    return _provider_stop_result(result) and not _provider_rate_or_quota_stop_result(result)
+
+
+def _provider_stop_state(events: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], bool]:
+    """Return active route refusals and the sticky quota/rate stop state."""
+    route_stops: list[dict[str, Any]] = []
+    quota_or_rate_stop = False
+    for event in events:
+        if event.get("event_type") == "RESULT":
+            result = event
+            if _provider_rate_or_quota_stop_result(result):
+                quota_or_rate_stop = True
+            elif _provider_route_stop_result(result):
+                route_stops.append(result)
+        elif event.get("event_type") == "PROVIDER_STOP_REARM":
+            # Validation below guarantees that this event references exactly
+            # the route stops currently active and cannot clear quota stops.
+            route_stops = []
+    return route_stops, quota_or_rate_stop
+
+
+def _validate_route_readiness(evidence: Any) -> dict[str, Any]:
+    required = {
+        "schema_version", "endpoint", "http_status", "model_id",
+        "model_listed", "model_catalog_sha256", "checked_at_utc",
+        "operator_confirmed_route_change",
+    }
+    if not isinstance(evidence, dict) or set(evidence) != required:
+        raise MarketOnlyError("GEMINI_PROVIDER_REARM_EVIDENCE_INVALID")
+    if (evidence.get("schema_version") != ROUTE_READINESS_SCHEMA_VERSION
+            or evidence.get("endpoint") != "http://127.0.0.1:8045/v1/models"
+            or evidence.get("http_status") != 200
+            or evidence.get("model_id") != DEFAULT_MODEL
+            or evidence.get("model_listed") is not True
+            or evidence.get("operator_confirmed_route_change") is not True
+            or not _SHA256.fullmatch(str(evidence.get("model_catalog_sha256") or ""))):
+        raise MarketOnlyError("GEMINI_PROVIDER_REARM_EVIDENCE_INVALID")
+    checked_at = evidence.get("checked_at_utc")
+    try:
+        parsed = datetime.fromisoformat(str(checked_at))
+    except ValueError as exc:
+        raise MarketOnlyError("GEMINI_PROVIDER_REARM_EVIDENCE_INVALID") from exc
+    now = datetime.now(UTC)
+    if (parsed.tzinfo is None or parsed > now + timedelta(seconds=30)
+            or now - parsed > timedelta(minutes=5)):
+        raise MarketOnlyError("GEMINI_PROVIDER_REARM_EVIDENCE_STALE")
+    return evidence
+
+
+def _validate_provider_stop_rearms(events: list[dict[str, Any]]) -> None:
+    """Check every rearm is a fresh, explicit acknowledgement of prior route errors."""
+    route_stops: list[dict[str, Any]] = []
+    quota_or_rate_stop = False
+    seen_rearm_ids: set[str] = set()
+    for event in events:
+        event_type = event.get("event_type")
+        if event_type == "RESULT":
+            if _provider_rate_or_quota_stop_result(event):
+                quota_or_rate_stop = True
+            elif _provider_route_stop_result(event):
+                route_stops.append(event)
+            continue
+        if event_type != "PROVIDER_STOP_REARM":
+            continue
+        expected_fields = {
+            "schema_version", "event_type", "authorization_id", "dataset_id",
+            "rearm_id", "supersedes_result_event_sha256s", "route_readiness",
+            "rearmed_at_utc", "ledger_sequence", "previous_event_sha256", "event_sha256",
+        }
+        rearm_id = event.get("rearm_id")
+        refs = event.get("supersedes_result_event_sha256s")
+        if (set(event) != expected_fields
+                or event.get("schema_version") != LEDGER_SCHEMA_VERSION
+                or event.get("authorization_id") != AUTHORIZATION_ID
+                or event.get("dataset_id") != DATASET_ID
+                or not isinstance(rearm_id, str) or not _REQUEST_ID.fullmatch(rearm_id)
+                or rearm_id in seen_rearm_ids
+                or not isinstance(refs, list)
+                or refs != sorted({str(row.get("event_sha256") or "") for row in route_stops})
+                or not refs
+                or quota_or_rate_stop):
+            raise MarketOnlyError("GEMINI_PROVIDER_REARM_EVENT_INVALID")
+        evidence = _validate_route_readiness(event.get("route_readiness"))
+        try:
+            rearmed_at = datetime.fromisoformat(str(event.get("rearmed_at_utc")))
+            checked_at = datetime.fromisoformat(str(evidence["checked_at_utc"]))
+        except ValueError as exc:
+            raise MarketOnlyError("GEMINI_PROVIDER_REARM_EVENT_INVALID") from exc
+        if (rearmed_at.tzinfo is None or checked_at.tzinfo is None
+                or checked_at > rearmed_at + timedelta(seconds=30)
+                or rearmed_at - checked_at > timedelta(minutes=5)):
+            raise MarketOnlyError("GEMINI_PROVIDER_REARM_EVENT_STALE")
+        seen_rearm_ids.add(rearm_id)
+        route_stops = []
+
+
+def _build_provider_stop_rearm_event(
+    evidence: dict[str, Any], active_route_stops: list[dict[str, Any]],
+) -> dict[str, Any]:
+    validated = _validate_route_readiness(evidence)
+    return {
+        "schema_version": LEDGER_SCHEMA_VERSION,
+        "event_type": "PROVIDER_STOP_REARM",
+        "authorization_id": AUTHORIZATION_ID,
+        "dataset_id": DATASET_ID,
+        "rearm_id": uuid.uuid4().hex,
+        "supersedes_result_event_sha256s": sorted(
+            str(row["event_sha256"]) for row in active_route_stops
+        ),
+        "route_readiness": validated,
+        "rearmed_at_utc": _utc_now(),
+    }
+
+
 def _validate_valid_analysis_result(result: dict[str, Any], intent: dict[str, Any]) -> None:
     raw_text = result.get("raw_response_text")
     trace = result.get("transport_trace")
@@ -736,6 +856,7 @@ def _validate_valid_analysis_result(result: dict[str, Any], intent: dict[str, An
 
 def _validate_event_pairing(events: list[dict[str, Any]], schedule: list[tuple[dict[str, Any], str, dict[str, Any], list[dict[str, str]]]]) -> dict[str, dict[str, dict[str, Any]]]:
     _validate_ledger_chain(events)
+    _validate_provider_stop_rearms(events)
     indexed = _index_events(events)
     expected = {
         _call_key(market_input["decision_id"], arm_id):
@@ -808,6 +929,7 @@ def execute_authorized_optimization(
     ledger_path: Path,
     call_model: Callable[[list[dict[str, str]], str], ProviderCallResult],
     max_contexts: int,
+    provider_route_reauthorization: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run at most one request per frozen context/arm; never retries any result."""
     if (isinstance(max_contexts, bool) or not isinstance(max_contexts, int)
@@ -823,10 +945,20 @@ def execute_authorized_optimization(
     with _exclusive_ledger_lock(ledger_path):
         events = _read_ledger(ledger_path)
         indexed = _validate_event_pairing(events, schedule)
-        provider_stop_latched = any(
-            pair.get("RESULT") is not None and _provider_stop_result(pair["RESULT"])
-            for pair in indexed.values()
-        )
+        active_route_stops, quota_or_rate_stop = _provider_stop_state(events)
+        if provider_route_reauthorization is not None:
+            route_evidence = _validate_route_readiness(provider_route_reauthorization)
+            if quota_or_rate_stop:
+                raise MarketOnlyError("GEMINI_RUN_PROVIDER_QUOTA_STOP_REMAINS_LATCHED")
+            if active_route_stops:
+                _append_event(
+                    ledger_path,
+                    _build_provider_stop_rearm_event(route_evidence, active_route_stops),
+                )
+                events = _read_ledger(ledger_path)
+                indexed = _validate_event_pairing(events, schedule)
+                active_route_stops, quota_or_rate_stop = _provider_stop_state(events)
+        provider_stop_latched = bool(active_route_stops or quota_or_rate_stop)
         selected_ids: list[str] = []
         for market_input, arm_id, _, _ in schedule:
             decision_id = market_input["decision_id"]
@@ -867,7 +999,7 @@ def execute_authorized_optimization(
                 # context-arm pairs stay visible in the fixed denominator.
                 provider_stop_latched = True
                 break
-    return review_gemini_ledger(inputs, prompts, _read_ledger(ledger_path))
+        return review_gemini_ledger(inputs, prompts, _read_ledger(ledger_path))
 
 
 def review_gemini_ledger(
@@ -942,6 +1074,7 @@ def review_gemini_ledger(
             },
         })
     denominator = len(schedule)
+    active_route_stops, quota_or_rate_stop = _provider_stop_state(events)
     report: dict[str, Any] = {
         "schema_version": RUN_SCHEMA_VERSION,
         "run_mode": "AUTHORIZED_GEMINI_MARKET_ONLY_OPTIMIZATION",
@@ -963,15 +1096,10 @@ def review_gemini_ledger(
         "provider_cost_usdt": None,
         "provider_cost_status": "UNVERIFIED_NO_PRICE_OR_BILLING_RECEIPT",
         "provider_internal_deduplication": "UNVERIFIED",
-        "provider_stop_latched": any(
-            result is not None and _provider_stop_result(result)
-            for pair in indexed.values()
-            for result in [pair.get("RESULT")]
-        ),
-        "provider_rate_or_quota_stop_latched": any(
-            result is not None and _provider_rate_or_quota_stop_result(result)
-            for pair in indexed.values()
-            for result in [pair.get("RESULT")]
+        "provider_stop_latched": bool(active_route_stops or quota_or_rate_stop),
+        "provider_rate_or_quota_stop_latched": quota_or_rate_stop,
+        "provider_stop_rearm_count": sum(
+            event.get("event_type") == "PROVIDER_STOP_REARM" for event in events
         ),
         "status_counts": dict(sorted(statuses.items())),
         "valid_analysis_records": statuses["VALID_ANALYSIS"],
