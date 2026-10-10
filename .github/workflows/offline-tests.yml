@@ -1,0 +1,51 @@
+name: Offline test suite
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: offline-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Offline quick and full suites
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install test dependencies
+        shell: pwsh
+        run: python -m pip install -e ".[api,market,test]"
+
+      - name: Run quick research, risk, replay, and transport gates
+        shell: pwsh
+        run: >-
+          python -m pytest -q
+          tests/v37_1
+          tests/v38
+          tests/test_v35_trade_feasibility.py
+          tests/test_gate_entry_economics.py
+          tests/test_ai_simulation.py
+          tests/test_v39_sse_fault_injection.py
+
+      - name: Run complete offline test suite
+        shell: pwsh
+        run: python -m pytest -q

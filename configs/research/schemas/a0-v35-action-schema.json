@@ -1,0 +1,419 @@
+{
+  "canonicalization": "UTF-8 JSON, sorted object keys, compact separators, non-finite values forbidden",
+  "frozen_at_utc": "2026-10-08T15:45:43Z",
+  "schema": {
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "enum": [
+          "WAIT",
+          "HOLD",
+          "OPEN_LONG",
+          "OPEN_SHORT",
+          "REDUCE_POSITION",
+          "CLOSE_POSITION",
+          "TIGHTEN_STOP",
+          "UPDATE_PROTECTION",
+          "CANCEL_ORDER"
+        ],
+        "type": "string"
+      },
+      "candidate_id": {
+        "maxLength": 200,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "closed_15m_bar": {
+        "maxLength": 200,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "confidence": {
+        "maximum": 100,
+        "minimum": 0,
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "entry_condition": {
+        "maxLength": 500,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "entry_price": {
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "entry_zone": {
+        "additionalProperties": false,
+        "properties": {
+          "high": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "low": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "type": [
+          "object",
+          "null"
+        ]
+      },
+      "evidence_refs": {
+        "items": {
+          "maxLength": 200,
+          "type": "string"
+        },
+        "maxItems": 32,
+        "type": "array"
+      },
+      "instrument_id": {
+        "maxLength": 80,
+        "minLength": 1,
+        "type": "string"
+      },
+      "invalidation_condition": {
+        "maxLength": 800,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "limit_price": {
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "market_summary": {
+        "maxLength": 1000,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "new_stop_price": {
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "new_take_profit": {
+        "exclusiveMinimum": 0,
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "news_context": {
+        "additionalProperties": false,
+        "properties": {
+          "impact": {
+            "enum": [
+              "POSITIVE",
+              "NEGATIVE",
+              "NEUTRAL",
+              "UNKNOWN",
+              null
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "maxLength": 800,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": [
+          "object",
+          "null"
+        ]
+      },
+      "next_trigger_price": {
+        "exclusiveMinimum": 0,
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "order_id": {
+        "maxLength": 160,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "order_preference": {
+        "enum": [
+          "MARKET",
+          "LIMIT",
+          "AUTO"
+        ],
+        "type": "string"
+      },
+      "position_id": {
+        "maxLength": 160,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "position_size_usdt": {
+        "exclusiveMinimum": 0,
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "reason": {
+        "maxLength": 2000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "reduce_fraction": {
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "requested_leverage": {
+        "minimum": 1,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "requested_risk_fraction": {
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "stop_price": {
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "strategy_analysis": {
+        "additionalProperties": false,
+        "properties": {
+          "entry_condition": {
+            "maxLength": 500,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "matched_conditions": {
+            "items": {
+              "maxLength": 300,
+              "type": "string"
+            },
+            "maxItems": 32,
+            "type": "array"
+          },
+          "missing_conditions": {
+            "items": {
+              "maxLength": 300,
+              "type": "string"
+            },
+            "maxItems": 32,
+            "type": "array"
+          },
+          "next_trigger_price": {
+            "exclusiveMinimum": 0,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "strategy_id": {
+            "maxLength": 100,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "trigger_completion_pct": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "type": [
+          "object",
+          "null"
+        ]
+      },
+      "strategy_candidate_id": {
+        "maxLength": 200,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "strategy_id": {
+        "maxLength": 100,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "strategy_plan": {
+        "additionalProperties": false,
+        "properties": {
+          "entry_conditions": {
+            "items": {
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "type": "array"
+          },
+          "exit_conditions": {
+            "items": {
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "thesis": {
+            "maxLength": 800,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "thesis",
+          "entry_conditions",
+          "exit_conditions"
+        ],
+        "type": [
+          "object",
+          "null"
+        ]
+      },
+      "take_profit": {
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "take_profit_1": {
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "take_profit_2": {
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "timeframe_analysis": {
+        "additionalProperties": false,
+        "properties": {
+          "15m": {
+            "maxLength": 800,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "1d": {
+            "maxLength": 800,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "1h": {
+            "maxLength": 800,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "4h": {
+            "maxLength": 800,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "5m": {
+            "maxLength": 800,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": [
+          "object",
+          "null"
+        ]
+      },
+      "ttl_seconds": {
+        "maximum": 1800,
+        "minimum": 60,
+        "type": [
+          "integer",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "action",
+      "instrument_id",
+      "reason",
+      "confidence"
+    ],
+    "type": "object"
+  },
+  "schema_id": "aima:a0:v35-action-schema",
+  "schema_sha256": "d2e264052568f7e6bf661c1cc40beef2dd573178f93ca0a5103d7b4a23d29763",
+  "schema_version": "v35-ai-action-schema/sha256:d2e264052568f7e6bf661c1cc40beef2dd573178f93ca0a5103d7b4a23d29763",
+  "scope": "BASE_SCHEMA_ONLY; per-call frozen_decision_schema constraints were input-dependent and are not present in the V25 sample; never infer the effective historical schema from this base file",
+  "source": {
+    "commit": "2a5d7b9992a7909a6a597917e409ecb0737f9c89",
+    "path": "core/trading/model_schemas.py",
+    "symbol": "AI_ACTION_SCHEMA"
+  }
+}

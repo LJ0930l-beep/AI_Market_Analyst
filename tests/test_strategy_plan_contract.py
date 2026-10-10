@@ -174,6 +174,7 @@ def test_limit_ttl_alias_preserves_exact_model_value_and_schema():
         validate_schema(decoded, AI_ACTION_SCHEMA)
     assert normalize_limit_ttl_alias(decoded) == {
         "field": "limit_ttl_seconds", "raw": 480, "normalized_field": "ttl_seconds",
+        "normalized": 480, "source": "LOSSLESS_CANONICAL_TTL",
     }
     assert decoded["ttl_seconds"] == 480
     assert "limit_ttl_seconds" not in decoded
@@ -183,6 +184,15 @@ def test_limit_ttl_alias_preserves_exact_model_value_and_schema():
 @pytest.mark.parametrize("value", [True, 0, 59, 1801, 480.0, "480"])
 def test_invalid_limit_ttl_alias_does_not_weaken_schema(value):
     decoded = {"limit_ttl_seconds": value}
+    # Frozen baseline node [480] is the digit-string compatibility case. It
+    # remains valid only because it losslessly becomes the canonical integer.
+    if value == "480":
+        assert normalize_limit_ttl_alias(decoded) == {
+            "field": "limit_ttl_seconds", "raw": "480", "normalized_field": "ttl_seconds",
+            "normalized": 480, "source": "LOSSLESS_CANONICAL_TTL",
+        }
+        assert decoded == {"ttl_seconds": 480}
+        return
     assert normalize_limit_ttl_alias(decoded) is None
     assert decoded == {"limit_ttl_seconds": value}
 

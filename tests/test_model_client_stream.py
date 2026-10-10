@@ -6,7 +6,7 @@ from urllib.error import URLError
 import pytest
 
 from core import model_client as model_client_module
-from core.model_client import ModelClient, ModelClientError
+from core.model_client import ModelClient, ModelClientError, ModelTimeoutError
 from core.model_routing import DEFAULT_MODEL
 
 
@@ -36,8 +36,12 @@ class _Response:
         return False
 
     def __iter__(self):
-        yield ("data: " + json.dumps({"model": DEFAULT_MODEL, "choices": [{"delta": {"content": "ok"}}]}) + "\n").encode("utf-8")
-        yield b"data: [DONE]\n"
+        chunk = {
+            "model": DEFAULT_MODEL,
+            "choices": [{"delta": {"content": "ok"}, "finish_reason": "stop"}],
+        }
+        yield ("data: " + json.dumps(chunk) + "\n\n").encode("utf-8")
+        yield b"data: [DONE]\n\n"
 
 
 def test_stream_uses_bounded_consult_output_budget(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -87,7 +91,7 @@ def test_chat_completion_preserves_the_selected_high_reasoning_tier(monkeypatch:
 
 
 def test_structured_analysis_forwards_provider_timeout_and_retries(monkeypatch: pytest.MonkeyPatch) -> None:
-    client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL, retries=2)
+    client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL, retries=0)
     captured: dict[str, object] = {}
 
     def fake_chat_completion(*_args, **kwargs):
@@ -112,23 +116,47 @@ def test_chat_completion_honors_per_call_timeout_and_retry_count(monkeypatch: py
 
     def fake_urlopen(_request, *, timeout):
         timeouts.append(timeout)
-        if len(timeouts) < 3:
-            raise URLError("temporary failure")
-        return _JsonResponse({"choices": [{"message": {"content": "ok"}}]})
+        raise URLError("response may have been lost after request submission")
 
     monkeypatch.setattr(model_client_module, "urlopen", fake_urlopen)
     monkeypatch.setattr(model_client_module.time, "sleep", lambda _seconds: None)
-    client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL, retries=0)
+    client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL)
 
-    response = client.chat_completion(
-        [{"role": "user", "content": "decision"}],
-        model_name=DEFAULT_MODEL,
-        timeout_sec=37.5,
-        retries=2,
-    )
+    with pytest.raises(ModelTimeoutError):
+        client.chat_completion(
+            [{"role": "user", "content": "decision"}],
+            model_name=DEFAULT_MODEL,
+            timeout_sec=37.5,
+        )
 
-    assert response["content"] == "ok"
-    assert timeouts == [37.5, 37.5, 37.5]
+    assert timeouts == [37.5]
+    assert client.last_transport_trace["attempt"] == 1
+
+
+def test_retry_request_is_rejected_before_any_network_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[object] = []
+    monkeypatch.setattr(model_client_module, "urlopen", lambda *args, **kwargs: calls.append(args))
+    client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL)
+
+    with pytest.raises(ModelClientError, match="MODEL_RETRY_UNSAFE_WITHOUT_IDEMPOTENCY"):
+        client.chat_completion(
+            [{"role": "user", "content": "decision"}],
+            model_name=DEFAULT_MODEL,
+            retries=1,
+        )
+
+    assert calls == []
+
+
+def test_retry_client_configuration_is_rejected_before_any_network_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[object] = []
+    monkeypatch.setattr(model_client_module, "urlopen", lambda *args, **kwargs: calls.append(args))
+    client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL, retries=1)
+
+    with pytest.raises(ModelClientError, match="MODEL_RETRY_UNSAFE_WITHOUT_IDEMPOTENCY"):
+        client.chat_completion([{"role": "user", "content": "decision"}], model_name=DEFAULT_MODEL)
+
+    assert calls == []
 
 
 def test_chat_completion_rejects_unknown_reasoning_effort_before_network(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -147,7 +175,7 @@ def test_stream_rejects_any_present_noncanonical_model_identity(response_model: 
     class Response(_Response):
         def __iter__(self):
             envelope = {"model": response_model, "choices": [{"delta": {"content": "bad"}}]}
-            yield ("data: " + json.dumps(envelope) + "\n").encode("utf-8")
+            yield ("data: " + json.dumps(envelope) + "\n\n").encode("utf-8")
 
     monkeypatch.setattr(model_client_module, "urlopen", lambda *_args, **_kwargs: Response())
     client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL, retries=0)
@@ -158,12 +186,54 @@ def test_stream_rejects_any_present_noncanonical_model_identity(response_model: 
 def test_stream_allows_missing_response_identity_for_verified_manifest_binding(monkeypatch: pytest.MonkeyPatch) -> None:
     class Response(_Response):
         def __iter__(self):
-            yield b'data: {"choices":[{"delta":{"content":"ok"}}]}\n'
+            yield b'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\n'
+            yield b'data: [DONE]\n\n'
 
     monkeypatch.setattr(model_client_module, "urlopen", lambda *_args, **_kwargs: Response())
     client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL, retries=0)
     assert len(list(client.chat_completion_stream([{"role": "user", "content": "hello"}], model_name=DEFAULT_MODEL))) == 1
     assert client.last_response_model is None
+
+
+@pytest.mark.parametrize(
+    ("frames", "failure_code"),
+    [
+        ([b'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'], "MODEL_STREAM_EOF_BEFORE_DONE"),
+        ([b'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n', b"data: [DONE]\n\n"], "MODEL_STREAM_FINISH_MISSING"),
+        ([b'data: {"choices":[{"delta":{},"finish_reason":"length"}]}\n\n', b"data: [DONE]\n\n"], "MODEL_STREAM_FINISH_INVALID"),
+        ([b"data: {not-json}\n\n"], "MODEL_STREAM_EVENT_INVALID"),
+        ([b'data: {"error":{"message":"provider detail"}}\n\n'], "MODEL_STREAM_PROVIDER_ERROR"),
+        (
+            [
+                b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+                b'data: {"choices":[{"delta":{"content":"late"}}]}\n\n',
+            ],
+            "MODEL_STREAM_DATA_AFTER_FINISH",
+        ),
+    ],
+)
+def test_stream_requires_valid_stop_and_done_terminal(
+    frames: list[bytes], failure_code: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Response(_Response):
+        def __iter__(self):
+            yield from frames
+
+    monkeypatch.setattr(model_client_module, "urlopen", lambda *_args, **_kwargs: Response())
+    client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL, retries=0)
+    with pytest.raises(ModelClientError, match=failure_code):
+        list(client.chat_completion_stream([{"role": "user", "content": "hello"}], model_name=DEFAULT_MODEL))
+
+
+def test_stream_cancellation_does_not_require_terminal_frames(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(model_client_module, "urlopen", lambda *_args, **_kwargs: _Response())
+    client = ModelClient(base_url="http://127.0.0.1:8045/v1", model_name=DEFAULT_MODEL, retries=0)
+    cancelled = model_client_module.threading.Event()
+    cancelled.set()
+
+    assert list(client.chat_completion_stream(
+        [{"role": "user", "content": "hello"}], model_name=DEFAULT_MODEL, cancel_event=cancelled
+    )) == []
 
 
 @pytest.mark.parametrize("value", [0, -1, 2049, True, 1.5])

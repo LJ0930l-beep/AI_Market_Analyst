@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-market-analyst.local/schemas/v38-market-only-input-v1.json",
+  "title": "V38 Market-only Input Envelope",
+  "description": "Causal OHLCV context only. Account and execution constraints are intentionally absent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "track", "decision_id", "symbol", "partition", "decision_time",
+    "data_available_through_by_timeframe", "market_context", "evidence_refs", "provenance",
+    "authority", "market_input_sha256"
+  ],
+  "properties": {
+    "schema_version": {"const": "pa-market-only-v38/input-1"},
+    "track": {"const": "MARKET_ONLY"},
+    "decision_id": {"type": "string", "minLength": 1},
+    "symbol": {"type": "string", "pattern": "^[A-Z0-9]{3,20}$"},
+    "partition": {"enum": ["optimization", "validation", "untouched_test"]},
+    "decision_time": {"type": "string", "format": "date-time"},
+    "data_available_through_by_timeframe": {
+      "type": "object", "additionalProperties": false,
+      "required": ["15m", "5m", "1h", "4h"],
+      "properties": {
+        "15m": {"type": "string", "format": "date-time"},
+        "5m": {"type": "string", "format": "date-time"},
+        "1h": {"type": "string", "format": "date-time"},
+        "4h": {"type": "string", "format": "date-time"}
+      }
+    },
+    "market_context": {"type": "object"},
+    "evidence_refs": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}},
+    "provenance": {"type": "object"},
+    "authority": {
+      "type": "object", "additionalProperties": false,
+      "required": ["production_authority", "order_creation_authorized", "account_state_included", "execution_constraints_included"],
+      "properties": {
+        "production_authority": {"const": false},
+        "order_creation_authorized": {"const": false},
+        "account_state_included": {"const": false},
+        "execution_constraints_included": {"const": false}
+      }
+    },
+    "market_input_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

@@ -18,6 +18,7 @@ class EntryEconomicsError(ValueError):
 
 
 PRICE_ACTION_MIN_NET_RR = Decimal("2.0")
+_UNSET = object()
 
 
 def effective_min_net_rr(template_id: Any, configured_min_net_rr: Any) -> Decimal:
@@ -173,16 +174,17 @@ def quantity_for_notional(*, notional_usdt: Any, entry_price: Any, order_type: s
     return (raw_quantity / step).to_integral_value(rounding=ROUND_FLOOR) * step
 
 
-def evaluate_gate_entry_economics(
+def calculate_gate_entry_economics(
     *, side: str, order_type: str, quote: Any, entry_price: Any, stop_price: Any,
     target_price: Any, quantity: Any, contract_size: Any, price_tick: Any,
     amount_step: Any, taker_fee_rate: Any, slippage_rate: Any,
-    equity: Any | None, risk_per_trade_pct: Any, min_net_rr: Any,
+    equity: Any | None, risk_per_trade_pct: Any, min_net_rr: Any = _UNSET,
 ) -> GateEntryEconomics:
-    """Evaluate a Gate opening proposal using the same pessimistic cost model.
+    """Calculate Gate entry economics without applying acceptance thresholds.
 
     ``risk_per_trade_pct`` is percentage points (0.15 means 0.15% of equity).
-    Missing prices, contract precision, costs, equity, or policy fail closed.
+    This is the shared calculation primitive for both enforcement and read-only
+    diagnostics. Missing prices, precision, costs, or policy inputs fail closed.
     """
     clean_side = str(side).upper()
     clean_type = str(order_type).lower()
@@ -200,7 +202,8 @@ def evaluate_gate_entry_economics(
     if risk_pct > Decimal(100):
         raise EntryEconomicsError("GATE_ENTRY_ECONOMICS_INVALID", "risk_per_trade_pct must be percentage points")
     equity_dec = _decimal("equity", equity, positive=True) if equity is not None else None
-    rr_floor = _decimal("min_net_rr", min_net_rr, positive=True)
+    if min_net_rr is not _UNSET:
+        _decimal("min_net_rr", min_net_rr, positive=True)
     qty = _decimal("quantity", quantity, positive=True)
     if (qty / step) != (qty / step).to_integral_value():
         raise EntryEconomicsError("GATE_AMOUNT_STEP_MISMATCH")
@@ -237,8 +240,28 @@ def evaluate_gate_entry_economics(
         estimated_target_net_usdt=target_net, net_reward_risk=net_rr,
         taker_fee_rate=fee, slippage_rate=slippage, price_tick=tick, amount_step=step,
     )
-    if net_rr < rr_floor:
+    return result
+
+
+def evaluate_gate_entry_economics(
+    *, side: str, order_type: str, quote: Any, entry_price: Any, stop_price: Any,
+    target_price: Any, quantity: Any, contract_size: Any, price_tick: Any,
+    amount_step: Any, taker_fee_rate: Any, slippage_rate: Any,
+    equity: Any | None, risk_per_trade_pct: Any, min_net_rr: Any,
+) -> GateEntryEconomics:
+    """Calculate and enforce the Gate net-RR and stop-risk acceptance rules."""
+    result = calculate_gate_entry_economics(
+        side=side, order_type=order_type, quote=quote,
+        entry_price=entry_price, stop_price=stop_price, target_price=target_price,
+        quantity=quantity, contract_size=contract_size, price_tick=price_tick,
+        amount_step=amount_step, taker_fee_rate=taker_fee_rate,
+        slippage_rate=slippage_rate, equity=equity,
+        risk_per_trade_pct=risk_per_trade_pct, min_net_rr=min_net_rr,
+    )
+    rr_floor = _decimal("min_net_rr", min_net_rr, positive=True)
+    if result.net_reward_risk < rr_floor:
         raise EntryEconomicsError("AI_NET_REWARD_RISK_TOO_LOW")
-    if max_risk is not None and stop_risk > max_risk:
+    if (result.max_stop_risk_usdt is not None
+            and result.estimated_stop_risk_usdt > result.max_stop_risk_usdt):
         raise EntryEconomicsError("STOP_RISK_LIMIT_EXCEEDED")
     return result

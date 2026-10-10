@@ -981,7 +981,7 @@ class _E2EFixtureTrader:
             "order_id": str(order_id), "symbol": symbol, "status": self.protection_status,
             "finish_as": "cancelled" if self.protection_status == "FINISHED" else None,
             "reduce_only": True,
-            "initial": {"contract": "BTC_USDT", "size": "0.1", "reduce_only": True, "text": "t-e2e-sl"},
+            "initial": {"contract": "BTC_USDT", "size": "0.1", "is_reduce_only": True, "text": "t-e2e-sl"},
             "observed_at": "2030-01-02T12:00:00+00:00",
         }
 

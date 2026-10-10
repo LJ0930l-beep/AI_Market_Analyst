@@ -2,3 +2,5 @@
 # execute under Git for Windows, which silently disables the pre-commit gate.
 scripts/hooks/* text eol=lf
 *.sh text eol=lf
+/configs/research/*.json text eol=lf
+/configs/research/**/*.json text eol=lf

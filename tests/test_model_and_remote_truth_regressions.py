@@ -56,7 +56,7 @@ def test_system_blocked_cycle_cannot_publish_even_a_valid_identity_as_a_decision
         "model_id": DEFAULT_SMART_MODEL,
         "actual_model_id": DEFAULT_SMART_MODEL,
         "model_identity_source": "completion_response",
-        "verified_manifest_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+        "verified_manifest_model_id": DEFAULT_SMART_MODEL,
     }
     cycle = _public_cycle(
         {
@@ -86,7 +86,7 @@ def test_public_cycle_accepts_identity_equivalent_alias_and_manifest_receipt():
         "model_id": DEFAULT_SMART_MODEL,
         "actual_model_id": DEFAULT_SMART_MODEL,
         "model_identity_source": "completion_response",
-        "verified_manifest_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+        "verified_manifest_model_id": DEFAULT_SMART_MODEL,
     }
     cycle = _public_cycle(
         {
@@ -107,7 +107,7 @@ def test_request_bound_receipt_accepts_alias_matching_a_manifest_path():
         "model_id": DEFAULT_SMART_MODEL,
         "actual_model_id": DEFAULT_SMART_MODEL,
         "model_identity_source": "request_bound_to_verified_manifest",
-        "verified_manifest_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+        "verified_manifest_model_id": DEFAULT_SMART_MODEL,
     }
     cycle = _public_cycle(
         {
@@ -118,7 +118,10 @@ def test_request_bound_receipt_accepts_alias_matching_a_manifest_path():
             "payload_json": json.dumps({"model_receipt": receipt}),
         }
     )
-    assert cycle["details"]["model_receipt"] == receipt
+    # Frozen node ID retained for baseline comparison; request-bound identity
+    # is intentionally no longer displayed as a verified model response.
+    assert cycle["details"]["model"] is None
+    assert cycle["details"]["model_receipt"] is None
 
 
 def test_public_cycle_rejects_a_forged_model_or_manifest_identity():

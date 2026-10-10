@@ -50,7 +50,7 @@ def _record(index: int, action: str, realized_r: float | None, raw: float = 0.7,
 class PerformancePhase3Tests(unittest.TestCase):
     def test_calibration_default_provenance_uses_pinned_bonsai_model(self):
         result = fit_calibration([], scope={"source_type": "replay"})
-        self.assertEqual(result.version, "cal-v1-Bonsai-2-27B-PTQ1_0")
+        self.assertEqual(result.version, "cal-v1-gemini-3.8-flash-high")
 
     def test_calibration_preserves_explicit_model_scope(self):
         result = fit_calibration([], scope={"source_type": "replay", "model_id": "custom-model"})

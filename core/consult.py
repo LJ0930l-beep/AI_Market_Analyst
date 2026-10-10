@@ -30,6 +30,7 @@ from .model_routing import (
     ModelRoutingConfig,
     ModelTask,
     configured_manifest_entry_matches,
+    is_configured_model_identity,
     is_verified_model_receipt,
     route_model,
 )
@@ -141,6 +142,10 @@ class ConsultConfig:
     fast_model_name: str | None = None
     smart_model_name: str | None = None
 
+    def __post_init__(self) -> None:
+        if isinstance(self.retries, bool) or not isinstance(self.retries, int) or self.retries != 0:
+            raise ValueError("QWEN_CONSULT_RETRY_UNSAFE_WITHOUT_IDEMPOTENCY")
+
     @classmethod
     def from_env(cls) -> "ConsultConfig":
         provider = OllamaProvider()
@@ -164,7 +169,7 @@ class ConsultConfig:
             max_output_chars=_bounded_int("QWEN_CONSULT_MAX_OUTPUT_CHARS", 12_000, 512, 24_000),
             max_output_tokens=_bounded_int("QWEN_CONSULT_MAX_OUTPUT_TOKENS", int(provider.max_tokens), 64, 2_048),
             context_length=_bounded_int("OLLAMA_CONTEXT_LENGTH", int(provider.context_length), 2_048, 32_768),
-            retries=_bounded_int("QWEN_CONSULT_RETRIES", 0, 0, 1),
+            retries=_bounded_int("QWEN_CONSULT_RETRIES", 0, 0, 0),
             concurrency=_bounded_int("QWEN_CONSULT_CONCURRENCY", 1, 1, 1),
             freshness_seconds=_bounded_int("QWEN_CONSULT_FRESHNESS_SEC", 3_600, 60, 86_400),
             fast_model_name=routing.fast_model,
@@ -584,6 +589,7 @@ class OllamaConsultTransport:
 
         def infer() -> None:
             try:
+                verified_response_model: str | None = None
                 stream = self.model_client.chat_completion_stream(
                     list(messages),
                     mode="ANALYSIS",
@@ -609,13 +615,47 @@ class OllamaConsultTransport:
                     if content is not None and not isinstance(content, str):
                         push(("error", ConsultTransportError("QWEN_STREAM_INVALID", "The Gemini stream returned invalid data.")))
                         return
-                    if content and not push(("content", content)):
-                        return
+                    response_model = self.model_client.last_response_model
+                    if response_model is not None:
+                        if (
+                            not is_configured_model_identity(response_model)
+                            or (
+                                verified_response_model is not None
+                                and response_model != verified_response_model
+                            )
+                        ):
+                            self.model_receipt = {
+                                **receipt,
+                                "actual_model_id": response_model,
+                                "model_identity_source": "unverified",
+                            }
+                            push(("error", ConsultTransportError("QWEN_MODEL_IDENTITY_MISMATCH", "The configured model response identity could not be verified.")))
+                            return
+                        verified_response_model = response_model
+                    if content:
+                        if verified_response_model is None:
+                            self.model_receipt = {
+                                **receipt,
+                                "actual_model_id": None,
+                                "model_identity_source": "unverified",
+                            }
+                            push(("error", ConsultTransportError("QWEN_MODEL_IDENTITY_MISMATCH", "The configured model response identity could not be verified.")))
+                            return
+                        if not push(("content", content)):
+                            return
                 response_model = self.model_client.last_response_model
+                if response_model is None or verified_response_model is None:
+                    self.model_receipt = {
+                        **receipt,
+                        "actual_model_id": None,
+                        "model_identity_source": "unverified",
+                    }
+                    push(("error", ConsultTransportError("QWEN_MODEL_IDENTITY_MISMATCH", "The configured model response identity could not be verified.")))
+                    return
                 self.model_receipt = {
                     **receipt,
-                    "actual_model_id": response_model or receipt["verified_manifest_model_id"],
-                    "model_identity_source": "completion_response" if response_model else "request_bound_to_verified_manifest",
+                    "actual_model_id": response_model,
+                    "model_identity_source": "completion_response",
                 }
                 if not is_verified_model_receipt(self.model_receipt):
                     push(("error", ConsultTransportError("QWEN_MODEL_IDENTITY_MISMATCH", "The configured model response identity could not be verified.")))
@@ -663,17 +703,8 @@ class OllamaConsultTransport:
                     pass
 
     async def stream(self, messages: tuple[dict[str, str], ...]) -> AsyncIterator[str]:
-        for attempt in range(self.config.retries + 1):
-            emitted = False
-            try:
-                async for content in self._stream_once(messages):
-                    emitted = True
-                    yield content
-                return
-            except ConsultTransportError as exc:
-                if emitted or not exc.retryable or attempt >= self.config.retries:
-                    raise
-                await asyncio.sleep(0.2 * (attempt + 1))
+        async for content in self._stream_once(messages):
+            yield content
 
 
 class ConsultSession:
