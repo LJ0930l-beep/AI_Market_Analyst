@@ -100,13 +100,19 @@ def _envelope(
     }
 
 
-def _evaluate(envelope: dict, *, tier: OutputTier = OutputTier.MINIMAL, **kwargs) -> dict:
+def _evaluate(
+    envelope: dict,
+    *,
+    tier: OutputTier = OutputTier.MINIMAL,
+    valid_evidence_refs=_VALID_REFS,
+    **kwargs,
+) -> dict:
     return evaluate_response_v2(
         envelope,
         tier=tier,
         requested_model_id=DEFAULT_MODEL,
         expected_request_id=_REQUEST_ID,
-        valid_evidence_refs=_VALID_REFS,
+        valid_evidence_refs=valid_evidence_refs,
         **kwargs,
     )
 
@@ -219,6 +225,35 @@ def test_v2_rejects_unknown_or_future_evidence_references(bad_ref):
 
     assert result["status"] == "INVALID_EVIDENCE"
     assert result["error_code"] == "RESPONSE_SCHEMA_OR_EVIDENCE_INVALID"
+
+
+@pytest.mark.parametrize(
+    "invalid_refs",
+    [None, [next(iter(_VALID_REFS))], {"", next(iter(_VALID_REFS))}, {None, next(iter(_VALID_REFS))}],
+)
+def test_v2_rejects_malformed_evidence_allowlist_without_raising(invalid_refs):
+    result = _evaluate(_envelope(_minimal()), valid_evidence_refs=invalid_refs)
+
+    assert result["status"] == "INVALID_EVIDENCE"
+    assert result["error_code"] == "EVIDENCE_ALLOWLIST_INVALID"
+    assert result["normalized_analysis"] is None
+
+
+def test_v2_accepts_an_immutable_valid_evidence_allowlist():
+    result = _evaluate(_envelope(_minimal()), valid_evidence_refs=frozenset(_VALID_REFS))
+
+    assert result["status"] == "VALID_LOCAL_CONTRACT"
+    assert result["normalized_analysis"] == _minimal()
+
+
+def test_v2_does_not_accept_blank_ref_even_when_corrupt_allowlist_contains_it():
+    analysis = _minimal()
+    analysis["evidence_refs"] = [""]
+    result = _evaluate(_envelope(analysis), valid_evidence_refs={""})
+
+    assert result["status"] == "INVALID_EVIDENCE"
+    assert result["error_code"] == "EVIDENCE_ALLOWLIST_INVALID"
+    assert result["normalized_analysis"] is None
 
 
 def test_v2_full_contract_rejects_unknown_nested_evidence_references():

@@ -102,3 +102,14 @@ The next owner action is human review of Draft PRs #26 and #27. Keep remote prov
 - **Temporary containment:** Keep all real provider dispatch disabled. Historical ledger, old response labels and denominators remain unchanged; no old or ambiguous intent is retried.
 - **Acceptance:** Offline negative-matrix tests and current exact-head CI pass. This does not establish provider behavior. Remote schema capability, actual underlying model/weights, replay/billing behavior, and usage receipts remain unknown, so G1's external capability gate stays open and G2 remains unauthorized.
 - **Rollback:** Revert only this additive status note if its evidence reference is invalidated. Preserve the dated old review, test cases, historical ledger, and prior CI results.
+
+## 2026-10-10 independent offline review addendum — evidence allowlist input validation — 17:07Z
+
+**Subfinding:** `V2_EVIDENCE_ALLOWLIST_CONTEXT_TYPE`; severity S2; status `PATCHED_LOCALLY_AWAITING_EXACT_HEAD_CI`. Parent B-002 remains `BLOCKED_WITH_EVIDENCE` for remote provider capability, identity attestation, and billing.
+
+- **Root cause:** The V2 evaluator validated model-supplied evidence references against `valid_evidence_refs` without validating the allowlist container or entries. `None` raised an uncaught `TypeError`; list and malformed set inputs were accepted as lookup containers; a blank reference could be certified when the corrupt allowlist also contained `""`.
+- **Original offline reproduction:** On base head `3ad669db6b00ae66c725a1198da5d84e70c7365e`, five failure-first cases produced 5 failures / 42 deselected. One raised `TypeError: argument of type 'NoneType' is not iterable`; four showed that unsupported/malformed allowlists or a blank reference could fail to receive the expected context rejection, including cases labeled `VALID_LOCAL_CONTRACT`. Only fixed local envelopes were used.
+- **Temporary containment:** No V2 remote dispatch is enabled, and the evaluator is not connected to a production or exchange route. Keep G1 and G2 blocked at their existing gates while validating the offline context boundary.
+- **Repair:** Validate that the allowlist is an ordinary `set` or `frozenset` of non-empty, trimmed strings before reference membership checks. Invalid context returns `INVALID_EVIDENCE` / `EVIDENCE_ALLOWLIST_INVALID` and never emits normalized analysis. Changes are limited to `response_contract_v2.py`, `tests/v38/test_response_contract_v2.py`, and this record; V1 and production execution paths are untouched.
+- **Local evidence:** The five new negative cases pass and the immutable valid-allowlist control passes; `python -m pytest -q tests/v38/test_response_contract_v2.py tests/v38/test_gemini_runner.py` passes 72 tests. Exact-head hosted CI is still required after push.
+- **Rollback:** Revert only the allowlist validator and its five tests. Preserve prior response-contract fixes, historical ledgers/reports, and the G2 authorization boundary.

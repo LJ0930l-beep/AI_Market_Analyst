@@ -195,7 +195,12 @@ def _enum_value(value: Any, allowed: set[str]) -> bool:
     return isinstance(value, str) and value in allowed
 
 
-def _known_refs(value: Any, valid_evidence_refs: set[str], *, allow_empty: bool = False) -> bool:
+def _known_refs(
+    value: Any,
+    valid_evidence_refs: set[str] | frozenset[str],
+    *,
+    allow_empty: bool = False,
+) -> bool:
     return (
         isinstance(value, list)
         and (allow_empty or bool(value))
@@ -204,11 +209,17 @@ def _known_refs(value: Any, valid_evidence_refs: set[str], *, allow_empty: bool 
     )
 
 
+def _valid_evidence_allowlist(value: Any) -> bool:
+    return type(value) in (set, frozenset) and all(
+        type(ref) is str and bool(ref.strip()) and ref == ref.strip() for ref in value
+    )
+
+
 def _validate_v2_analysis(
     analysis: Any,
     *,
     tier: OutputTier,
-    valid_evidence_refs: set[str],
+    valid_evidence_refs: set[str] | frozenset[str],
 ) -> tuple[list[str], str | None]:
     if not isinstance(analysis, dict):
         return ["ANALYSIS_NOT_OBJECT"], "INVALID_SCHEMA"
@@ -300,6 +311,8 @@ def _validate_v2_analysis(
                 analysis["target_structure"]["evidence_refs"],
             ]
         )
+    if not _valid_evidence_allowlist(valid_evidence_refs):
+        return ["EVIDENCE_ALLOWLIST_INVALID"], "INVALID_EVIDENCE"
     if any(not _known_refs(refs, valid_evidence_refs, allow_empty=(index > 0)) for index, refs in enumerate(ref_lists)):
         return ["EVIDENCE_REFERENCE_INVALID_OR_NOT_CAUSAL"], "INVALID_EVIDENCE"
     try:
@@ -327,7 +340,7 @@ def evaluate_response_v2(
     tier: OutputTier | str,
     requested_model_id: str,
     expected_request_id: str,
-    valid_evidence_refs: set[str],
+    valid_evidence_refs: set[str] | frozenset[str],
     max_raw_response_chars: int = MAX_RAW_RESPONSE_CHARS,
 ) -> dict[str, Any]:
     """Evaluate one fixed response fixture without making any network call.
@@ -477,7 +490,12 @@ def evaluate_response_v2(
     )
     result["validation_errors"] = errors
     if errors:
-        return reject(category or "INVALID_SCHEMA", "RESPONSE_SCHEMA_OR_EVIDENCE_INVALID")
+        error_code = (
+            "EVIDENCE_ALLOWLIST_INVALID"
+            if errors == ["EVIDENCE_ALLOWLIST_INVALID"]
+            else "RESPONSE_SCHEMA_OR_EVIDENCE_INVALID"
+        )
+        return reject(category or "INVALID_SCHEMA", error_code)
     result["normalized_analysis"] = analysis
     result["status"] = "VALID_LOCAL_CONTRACT"
     return result
