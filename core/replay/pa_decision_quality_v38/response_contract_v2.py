@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from copy import deepcopy
 from enum import Enum
 from typing import Any
@@ -349,7 +350,10 @@ def evaluate_response_v2(
         "error_code": None,
         "requested_model_id": requested_model_id,
         "response_model_id": None,
+        "payload_model_id": None,
+        "response_model_id_source": "UNAVAILABLE",
         "model_identity_status": "UNVERIFIED_NO_RESPONSE_MODEL_ID",
+        "model_identity_evidence_level": "UNVERIFIED_NO_RESPONSE_MODEL_METADATA",
         "response_format_capability": ResponseFormatCapability.UNKNOWN_UNVERIFIED.value,
         "capability_evidence_status": "NOT_PRESENT_NO_REMOTE_CAPABILITY_PROBE",
         "remote_dispatch_allowed": False,
@@ -394,13 +398,11 @@ def evaluate_response_v2(
 
     payload_model = payload.get("model")
     response_model = envelope.get("response_model_id")
-    result["response_model_id"] = (
-        response_model
-        if isinstance(response_model, str)
-        else (payload_model if isinstance(payload_model, str) else None)
-    )
+    result["response_model_id"] = response_model if isinstance(response_model, str) else None
+    result["payload_model_id"] = payload_model if isinstance(payload_model, str) else None
     if not isinstance(requested_model_id, str) or not requested_model_id.strip():
         result["model_identity_status"] = "UNVERIFIED_INVALID_REQUESTED_MODEL_ID"
+        result["response_model_id_source"] = "REQUESTED_MODEL_ID_INVALID"
         return reject("MODEL_IDENTITY_UNVERIFIED", "REQUESTED_MODEL_ID_INVALID")
     if (
         not isinstance(payload_model, str)
@@ -408,17 +410,32 @@ def evaluate_response_v2(
         or not isinstance(response_model, str)
         or not response_model.strip()
     ):
+        if isinstance(response_model, str) and response_model.strip():
+            result["response_model_id_source"] = "ADAPTER_RECEIPT_ONLY"
+        elif isinstance(payload_model, str) and payload_model.strip():
+            result["response_model_id_source"] = "PAYLOAD_FIELD_ONLY"
+        else:
+            result["response_model_id_source"] = "NO_RESPONSE_MODEL_FIELD"
         result["model_identity_status"] = "UNVERIFIED_NO_RESPONSE_MODEL_ID"
         return reject("MODEL_IDENTITY_UNVERIFIED", "RESPONSE_MODEL_ID_MISSING")
     if payload_model != response_model:
+        result["response_model_id_source"] = "PAYLOAD_AND_ADAPTER_RECEIPT_DISAGREE"
+        result["model_identity_evidence_level"] = "REPORTED_RESPONSE_FIELDS_DISAGREE"
         result["model_identity_status"] = "RESPONSE_MODEL_FIELDS_DISAGREE"
         return reject("MODEL_IDENTITY_MISMATCH", "RESPONSE_MODEL_FIELDS_DISAGREE")
+    result["response_model_id_source"] = "PAYLOAD_AND_ADAPTER_RECEIPT_MATCH"
     if response_model != requested_model_id:
+        result["model_identity_evidence_level"] = "REPORTED_FIELDS_DO_NOT_MATCH_REQUESTED_MODEL"
         result["model_identity_status"] = "RESPONSE_MODEL_ID_MISMATCH"
         return reject("MODEL_IDENTITY_MISMATCH", "RESPONSE_MODEL_ID_NOT_REQUESTED_MODEL")
     result["model_identity_status"] = "RESPONSE_MATCHED_REQUESTED_MODEL"
+    result["model_identity_evidence_level"] = "REPORTED_FIELDS_MATCH_ONLY_NO_WEIGHT_ATTESTATION"
 
     trace = envelope.get("transport_trace")
+    request_bytes_written = trace.get("request_bytes_written") if isinstance(trace, dict) else None
+    valid_request_bytes = (type(request_bytes_written) is int and request_bytes_written > 0) or (
+        type(request_bytes_written) is float and math.isfinite(request_bytes_written) and request_bytes_written > 0
+    )
     if (
         not isinstance(expected_request_id, str)
         or not expected_request_id
@@ -427,8 +444,7 @@ def evaluate_response_v2(
         or trace.get("phase") != "COMPLETED"
         or trace.get("http_status") != 200
         or trace.get("transport_mode") != "JSON"
-        or type(trace.get("request_bytes_written")) not in (int, float)
-        or trace["request_bytes_written"] <= 0
+        or not valid_request_bytes
     ):
         return reject("INVALID_TRANSPORT", "COMPLETED_JSON_TRANSPORT_UNVERIFIED")
     result["transport_receipt_status"] = "MATCHED_COMPLETED_JSON_HTTP_200"

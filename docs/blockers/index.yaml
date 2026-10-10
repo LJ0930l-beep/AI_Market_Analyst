@@ -1,13 +1,13 @@
 schema_version: V2_BLOCKER_INDEX_V1
-updated_at_utc: 2026-10-10T10:59:01Z
+updated_at_utc: 2026-10-10T11:38:31Z
 blockers:
   - id: B-20261010-001
     severity: S1
-    status: OPEN
+    status: FIX_IN_REVIEW
     component: integration
     file: docs/blockers/B-20261010-001-pr-branch-integration.md
-    trigger_signature: PR_BRANCHES_DIVERGE_WITHOUT_SINGLE_COMBINATION_CANDIDATE
-    next_owner_action: Keep PR #26 as a draft candidate; require human review; do not merge automatically.
+    trigger_signature: PR_COMBINATION_CANDIDATE_AWAITS_HUMAN_REVIEW
+    next_owner_action: Human review PR #26 and #27; keep both Draft and unmerged; rerun exact-head CI after any requested change.
   - id: B-20261010-002
     severity: S1
     status: BLOCKED_WITH_EVIDENCE

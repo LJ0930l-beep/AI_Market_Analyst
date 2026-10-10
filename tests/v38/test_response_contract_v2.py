@@ -70,6 +70,7 @@ def _envelope(
     payload_model: str | None = DEFAULT_MODEL,
     response_model_id: str | None = DEFAULT_MODEL,
     request_id: str = _REQUEST_ID,
+    request_bytes_written: float = 256,
     usage: dict | None = None,
 ) -> dict:
     if content is None and analysis is not None:
@@ -94,7 +95,7 @@ def _envelope(
             "phase": "COMPLETED",
             "http_status": 200,
             "transport_mode": "JSON",
-            "request_bytes_written": 256,
+            "request_bytes_written": request_bytes_written,
         },
     }
 
@@ -120,6 +121,8 @@ def test_v2_minimal_and_full_contracts_accept_causal_offline_fixtures(tier, anal
     assert result["status"] == "VALID_LOCAL_CONTRACT"
     assert result["normalized_analysis"] == analysis
     assert result["model_identity_status"] == "RESPONSE_MATCHED_REQUESTED_MODEL"
+    assert result["model_identity_evidence_level"] == "REPORTED_FIELDS_MATCH_ONLY_NO_WEIGHT_ATTESTATION"
+    assert result["response_model_id_source"] == "PAYLOAD_AND_ADAPTER_RECEIPT_MATCH"
     assert result["transport_receipt_status"] == "MATCHED_COMPLETED_JSON_HTTP_200"
     assert result["provider_cost_status"] == "UNKNOWN_NO_VERIFIED_BILLING_RECEIPT"
     assert result["remote_dispatch_allowed"] is False
@@ -170,9 +173,21 @@ def test_payload_model_alone_does_not_verify_missing_adapter_identity():
     result = _evaluate(_envelope(_minimal(), response_model_id=None))
 
     assert result["status"] == "MODEL_IDENTITY_UNVERIFIED"
-    assert result["response_model_id"] == DEFAULT_MODEL
+    assert result["response_model_id"] is None
+    assert result["payload_model_id"] == DEFAULT_MODEL
+    assert result["response_model_id_source"] == "PAYLOAD_FIELD_ONLY"
     assert result["model_identity_status"] == "UNVERIFIED_NO_RESPONSE_MODEL_ID"
     assert result["raw_response_sha256"]
+    assert result["normalized_analysis"] is None
+
+
+def test_adapter_receipt_alone_does_not_hide_missing_payload_model():
+    result = _evaluate(_envelope(_minimal(), payload_model=None))
+
+    assert result["status"] == "MODEL_IDENTITY_UNVERIFIED"
+    assert result["response_model_id"] == DEFAULT_MODEL
+    assert result["payload_model_id"] is None
+    assert result["response_model_id_source"] == "ADAPTER_RECEIPT_ONLY"
     assert result["normalized_analysis"] is None
 
 
@@ -206,6 +221,15 @@ def test_v2_rejects_unknown_or_future_evidence_references(bad_ref):
     assert result["error_code"] == "RESPONSE_SCHEMA_OR_EVIDENCE_INVALID"
 
 
+def test_v2_full_contract_rejects_unknown_nested_evidence_references():
+    analysis = _full()
+    analysis["candidate_setup"]["evidence_refs"] = ["bar:future:2099-01-01T00:00:00Z"]
+    result = _evaluate(_envelope(analysis), tier=OutputTier.FULL)
+
+    assert result["status"] == "INVALID_EVIDENCE"
+    assert result["normalized_analysis"] is None
+
+
 def test_v2_rejects_unknown_enum_and_execution_fields():
     analysis = _minimal()
     analysis["market_regime"] = "PROFIT_GUARANTEED"
@@ -218,6 +242,14 @@ def test_v2_rejects_unknown_enum_and_execution_fields():
 
 def test_v2_rejects_request_response_transport_mismatch():
     result = _evaluate(_envelope(_minimal(), request_id="b" * 32))
+
+    assert result["status"] == "INVALID_TRANSPORT"
+    assert result["transport_receipt_status"] == "UNVERIFIED"
+
+
+@pytest.mark.parametrize("request_bytes_written", [True, False, 0, -1, float("nan"), float("inf"), -float("inf")])
+def test_v2_rejects_non_finite_or_non_positive_transport_byte_counts(request_bytes_written):
+    result = _evaluate(_envelope(_minimal(), request_bytes_written=request_bytes_written))
 
     assert result["status"] == "INVALID_TRANSPORT"
     assert result["transport_receipt_status"] == "UNVERIFIED"
@@ -236,10 +268,29 @@ def test_v2_oversized_body_is_hashed_but_not_retained():
 def test_fake_provider_ignoring_schema_request_does_not_prove_route_capability():
     fence = chr(96) * 3
     raw = fence + "json\n" + json.dumps(_minimal(), separators=(",", ":")) + "\n" + fence
-    result = _evaluate(_envelope(content=raw))
+    request = {
+        "response_format": {
+            "type": "json_schema",
+            "strict": True,
+            "json_schema": {"name": "v38_market_view_minimal_v2"},
+        }
+    }
 
+    class FakeProviderIgnoringSchema:
+        def complete(self, submitted_request):
+            self.submitted_request = submitted_request
+            # A fenced response demonstrates that the fake did not follow the
+            # requested raw structured-output envelope.
+            return _envelope(content=raw)
+
+    provider = FakeProviderIgnoringSchema()
+    envelope = provider.complete(request)
+    result = _evaluate(envelope)
+
+    assert provider.submitted_request["response_format"]["type"] == "json_schema"
     assert result["status"] == "VALID_LOCAL_CONTRACT"
     assert result["response_format_capability"] == "unknown_unverified"
+    assert result["capability_evidence_status"] == "NOT_PRESENT_NO_REMOTE_CAPABILITY_PROBE"
     assert result["remote_dispatch_allowed"] is False
 
 

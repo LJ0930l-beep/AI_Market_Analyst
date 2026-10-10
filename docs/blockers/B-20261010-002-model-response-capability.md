@@ -6,6 +6,7 @@ status: BLOCKED_WITH_EVIDENCE
 component: model
 mode: RESEARCH_OFFLINE
 g0_base_sha: ffc265be9bdcb1f97aef5c80d572636ca9cef035
+branch_sha: 732a77ee415461caa7c74b6faba2a9807b45ba77
 g1_working_branch: codex/v2-g1-offline-20261010
 trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
 first_seen_at_utc: 2026-10-10T09:27:00Z
@@ -20,7 +21,7 @@ reproduction: Local fixed response envelopes through evaluate_response_v2; targe
 root_cause_status: HISTORICAL_LOCAL_ENVELOPE_GAP_CONFIRMED; REMOTE_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
 safe_fallback: Strict V2 local JSON/schema/evidence validation; actual route capability remains unknown_unverified; V2 prompt remote dispatch disabled.
 patch_pr: Stacked G1 offline branch codex/v2-g1-offline-20261010 based on G0 candidate PR #26; no auto-merge.
-negative_tests: Empty/partial/truncated body; finish_reason length/error; missing/mismatched model ID; malformed/multiple fence; invalid/unknown/future evidence refs; unsupported response_format fake fixture; duplicate JSON key; usage mismatch; duplicate intent in existing pilot tests.
+negative_tests: Empty/partial/truncated body; finish_reason length/error/missing; missing/mismatched model ID with payload/adapter source separation; malformed/multiple fence; invalid/unknown/future top-level and nested evidence refs; offline fake provider ignores a submitted json_schema request and capability remains unknown; duplicate JSON key; usage mismatch; NaN/infinite/non-positive transport byte counts; duplicate intent in existing pilot tests.
 unblock_criteria: Offline contract PR and same-head full CI pass; any G2 remote capability probe requires separate explicit user authorization, a new frozen scope, request ceiling, budget/stop rule, and provider/route identity evidence.
 needs_human_decision: true
 next_owner_action: Keep provider capability blocked and do not issue model requests; await independent G2 authorization after human review of G0/G1 PRs.
@@ -40,4 +41,4 @@ next_owner_action: Keep provider capability blocked and do not issue model reque
 
 ## 当前状态
 
-G0 候选 PR #26 的同 head hosted quick/full CI 已通过，但候选仍 Draft、未合并。G1 离线响应契约针对测试 70 targeted passed、tests/v38 170 passed、full suite 2,542 passed / 1 skipped / 0 failed，Ruff passed；G1 远端能力仍 BLOCKED_WITH_EVIDENCE。未触发 Gemini、Gate/TestNet/Live API 或订单。费用状态保持未知。任何 G2 调用需用户另行明确授权。
+G0 候选 PR #26 的同 head hosted quick/full CI 已通过，但候选仍 Draft、未合并。G1 复审补丁本地验证：V2 evaluator 34 passed、仓库 quick gate 256 passed、全量离线套件 2,551 passed / 1 skipped / 0 failed；Ruff check/format 与 git diff --check 通过。该结果来自本地工作树；复审补丁推送后必须以 PR #27 最新精确 head 的 hosted CI 确认。G1 远端能力仍 BLOCKED_WITH_EVIDENCE。未触发 Gemini、Gate/TestNet/Live API 或订单。费用状态保持未知。任何 G2 调用需用户另行明确授权。

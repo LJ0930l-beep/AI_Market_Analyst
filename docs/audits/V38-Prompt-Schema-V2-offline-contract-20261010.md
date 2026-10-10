@@ -44,7 +44,7 @@
 - core/replay/pa_decision_quality_v38/json_response.py：仅注册 V2 fence parser 名称；V1 解析规则保持原样。
 - docs/blockers/B-20261010-002-model-response-capability.md 与 docs/blockers/index.yaml：将未验证的代理能力和离线修复状态准确登记。
 
-文件哈希：
+初版文件哈希（第7节复审补丁前；最终复审代码哈希见第7节）：
 
 | 文件 | SHA-256 |
 |---|---|
@@ -81,3 +81,22 @@
 若 V2 回归，回滚仅撤销新增 V2 文件和 parser V2 注册；V1 runner/prompt、G0 候选、原始账本和历史报告均不变。PR #26 仍是独立 G0 候选。
 
 剩余风险：Antigravity 对 response_format=json_schema、json_object 的实际接受/拒绝、能力回执、计费和账单行为均没有本阶段新证据。真实能力保持 unknown_unverified，route 未解锁。任何后续受控模型试验属于 G2，需单独新的明确授权、全新冻结范围、有限请求数和费用停止规则。旧 72 intents 与已消耗 pilot authorization 不可复用。
+
+## 7. 2026-10-10 离线复审补充
+
+代码复审补上两处证据边界：
+
+- 不再把 payload 内的 `model` 字段挪填到适配器 `response_model_id`。两种来源单独保留；缺一项、来源字段冲突或请求模型不匹配都拒绝本地分析。即使字段相等，`model_identity_evidence_level` 也明确写为 `REPORTED_FIELDS_MATCH_ONLY_NO_WEIGHT_ATTESTATION`。
+- `request_bytes_written` 仅接受正整数或有限正浮点值；拒绝布尔值、0、负数、NaN 和正负 Infinity，避免非有限传输元数据通过比较判断。
+- fake provider 负例现在明确提交 `response_format.type=json_schema` 请求，再让本地 fake 返回 fenced JSON；结果仍固定为 capability `unknown_unverified`。这只演示本地 evaluator 不提升能力，不声称真实代理支持或忽略该参数。
+- FULL tier 新增 candidate_setup 嵌套未来 evidence ref 拒绝测试。
+
+追加验证：
+
+- `python -m pytest -q tests/v38/test_response_contract_v2.py`：**34 passed**。
+- 仓库 quick gate：**256 passed**（32.07s）。
+- 仓库全量离线套件：**2,551 passed, 1 skipped, 0 failed**；1 条既有 Starlette/httpx 弃用警告；359.38s。
+- JUnit：`reports/v38+/verification/v2-g1-refined-20261010.xml`，SHA-256 `1312059A617766EC26B146D51239C6A1E556CC7220EBB3F40140EE50054C267A`，本地 Git-ignored。
+- Ruff check、Ruff format check、`git diff --check`：通过。
+
+复审后的代码 SHA-256：`core/replay/pa_decision_quality_v38/response_contract_v2.py`=`31A0DAFCCA9103ABC6B50356168F3F18BF75EC3A9AAA6938613EBF6594E3E8BC`；`tests/v38/test_response_contract_v2.py`=`E3D8E62A3A1F4BB693C14B953C25415A6EAA42AA6DA62A50F4A41E6D942B3EFD`。这次补丁不接入校准器或 production runner；远端 capability 仍为 unknown，G2 未启动。该补充所在更新后的 PR #27 还需同一新 head 的 GitHub CI，不能引用旧 head CI 代替。

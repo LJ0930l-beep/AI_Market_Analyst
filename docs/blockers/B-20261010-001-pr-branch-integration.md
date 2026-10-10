@@ -3,32 +3,32 @@
 ```yaml
 id: B-20261010-001
 severity: S1
-status: OPEN
+status: FIX_IN_REVIEW
 component: integration
 mode: RESEARCH_OFFLINE
-branch_sha: 97d138fc3f8072668af1bbeada3475d612f55a7d
-trigger_signature: PR_BRANCHES_DIVERGE_WITHOUT_SINGLE_COMBINATION_CANDIDATE
+branch_sha: 732a77ee415461caa7c74b6faba2a9807b45ba77
+trigger_signature: PR_COMBINATION_CANDIDATE_AWAITS_HUMAN_REVIEW
 first_seen_at_utc: 2026-10-10T09:27:00Z
 user_authorization: DOCUMENTED_SCOPE_ONLY
 external_cost_or_order_attempted: false
 remote_effect_known: true
 risk_to_funds: NONE
-affected_sample_or_order_ids: PR-1-through-25; no orders
+affected_sample_or_order_ids: PR-1-through-27; no orders
 immediate_stop_or_isolation: No remote merge, force-push, TestNet request, or Live action. Preserve all source PR refs.
-evidence_files_and_hashes: docs/audits/PR-INTEGRATION-MATRIX-20261010.json SHA-256 8318066478e5d767452db920fca4b5eb9d35c37787c610e0f327660445466edc.
-reproduction: gh pr list --state all --limit 100 --json number,headRefName,headRefOid,baseRefName,baseRefOid,files,statusCheckRollup
+evidence_files_and_hashes: docs/audits/PR-INTEGRATION-MATRIX-20261010.json Git-blob SHA-256 8318066478e5d767452db920fca4b5eb9d35c37787c610e0f327660445466edc; docs/audits/PR-INTEGRATION-MATRIX-REFRESH-20261010.json SHA-256 B94397AE77DB87C0574C93709D1377103F630F9D76DE358DF8A82BA495BC27E4.
+reproduction: gh pr list --state all --limit 100 --json number,title,state,isDraft,headRefName,headRefOid,baseRefName,baseRefOid,updatedAt,mergeable,reviewDecision,statusCheckRollup; query check-runs by each exact head SHA
 root_cause_status: CONFIRMED
 safe_fallback: Preserve separate branches and perform only a local isolated integration candidate.
-patch_pr: https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/25
+patch_pr: https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/26 and https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/27
 negative_tests: Candidate must include Gate account isolation, Gate 4h pagination, reduce-only semantics, macro clock behavior, model response identity/parser failures, and full offline CI.
-unblock_criteria: One candidate SHA includes PR-20/21/22 and PR-25 ancestry (including PR-23/24 fix); changed-file overlap reviewed; full quick and full hosted CI pass on that exact SHA; same-environment baseline has zero new failures; rollback point recorded.
+unblock_criteria: One candidate SHA includes PR-20/21/22 and PR-25 ancestry (including PR-23/24 fix); changed-file overlap reviewed; full quick and full hosted CI pass on that exact SHA; same-environment baseline has zero new failures; rollback point recorded; human review and explicit merge approval are complete.
 needs_human_decision: true
 candidate_branch: codex/v2-g0-integration-20261010
 candidate_source_heads: origin/main@8642639a78ca9aa56fbad1e88aea4b82169ea433; PR20@43eb1835ef76b8c39f9b560ceaa3cac1b436d1bf; PR21@941e38372a0c0f96d1aaecd4a4ca2faf62dd3070; PR22@cb03f8e34cedca18d735187fdab41cda388eaa99; PR25@97d138fc3f8072668af1bbeada3475d612f55a7d
 candidate_local_verification: targeted 38 passed; quick gate 222 passed; full 2517 passed, 1 skipped, 0 failed; baseline 2113 passed, 103 failed, 1 skipped; node-id comparison 0 new failures, 0 missing baseline nodes.
 candidate_junit_sha256: baseline ec187fb87f395a5bb3949d358b13614b73dacfbfa873dc7d8a451ef54374ca9b; candidate dad101a071100b00d9071936e13233f1efcfa8813e82a1acd3d29fbbe9c0a733
-remote_ci_status: PR25 documentation head run 38042151994 passed quick gate and full suite was in progress at last observation; no hosted run yet for candidate branch.
-next_owner_action: Publish the verified candidate as a draft integration PR; verify same-head hosted quick/full checks and wait for human review; do not merge.
+remote_ci_status: PR26 exact head ffc265be9bdcb1f97aef5c80d572636ca9cef035 run 38043671492 passed quick/full; PR27 exact head 732a77ee415461caa7c74b6faba2a9807b45ba77 run 38046845072 passed quick/full; PR23 exact head remains failed on run 37963206552 and is not rewritten by green descendants.
+next_owner_action: Human review PR26 and PR27; keep both Draft and unmerged; if review requests changes, patch the isolated candidate and rerun same-head CI.
 ```
 
 ## 故障原因与原始证据
@@ -48,4 +48,10 @@ PR #23 exact-head run `37963206552` 有 3 个 `tests/test_macro_actuals.py` 失�
 
 ## 当前状态
 
-`OPEN`。本地候选已合并 #20/#21/#22/#25 并通过同环境完整测试和基线差集；仍待 draft PR 上相同 candidate SHA 的 hosted quick/full CI 与人工审查。PR #25 自身的旧 head 绿灯不替代组合候选验收。
+`FIX_IN_REVIEW`。PR #26 组合候选与 PR #27 G1 堆叠候选均已在各自精确 SHA 通过 hosted quick/full CI，但两者仍 Draft、未合并，且没有人工审查决定。PR #23 自身的失败检查保持失败；后代修复不改写其历史结论。
+
+## 2026-10-10 live snapshot addendum
+
+The original incident narrative above preserves the discovery-time branch evidence. At `2026-10-10T11:23:57Z`, the refreshed GitHub snapshot recorded 27 open PRs. PR #26 exact head `ffc265be9bdcb1f97aef5c80d572636ca9cef035` passed run `38043671492`; stacked PR #27 exact head `732a77ee415461caa7c74b6faba2a9807b45ba77` passed run `38046845072`. PR #23 exact head remains failed on run `37963206552`; PR #24/#25 descendant passes do not rewrite it. PRs #1–#11 have no check runs attached to their current heads; #12–#22 and #24–#27 have successful current-head checks.
+
+Refreshed machine snapshot: [`PR-INTEGRATION-MATRIX-REFRESH-20261010.json`](../audits/PR-INTEGRATION-MATRIX-REFRESH-20261010.json), SHA-256 `B94397AE77DB87C0574C93709D1377103F630F9D76DE358DF8A82BA495BC27E4`. The original 25-PR matrix remains unchanged. Status is `FIX_IN_REVIEW`, not `VERIFIED`: both candidate PRs still need human review and explicit merge approval.
