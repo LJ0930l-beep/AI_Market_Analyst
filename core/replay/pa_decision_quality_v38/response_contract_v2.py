@@ -374,6 +374,9 @@ def evaluate_response_v2(
         result["error_code"] = code
         return result
 
+    if type(max_raw_response_chars) is not int or max_raw_response_chars < 1:
+        return reject("INVALID_PROVIDER_RESPONSE", "RESPONSE_SIZE_LIMIT_INVALID")
+
     if not isinstance(envelope, dict):
         return reject("INVALID_PROVIDER_RESPONSE", "RESPONSE_ENVELOPE_NOT_OBJECT")
     payload = envelope.get("payload")
@@ -460,8 +463,6 @@ def evaluate_response_v2(
             "INVALID_FINISH_REASON",
             "COMPLETION_FINISH_REASON_MISSING" if finish_reason is None else "COMPLETION_DID_NOT_FINISH_WITH_STOP",
         )
-    if type(max_raw_response_chars) is not int or max_raw_response_chars < 1:
-        return reject("INVALID_PROVIDER_RESPONSE", "RESPONSE_SIZE_LIMIT_INVALID")
     if len(content) > max_raw_response_chars:
         return reject("RESPONSE_TOO_LARGE", "COMPLETION_CONTENT_TOO_LARGE")
     if not content.strip():

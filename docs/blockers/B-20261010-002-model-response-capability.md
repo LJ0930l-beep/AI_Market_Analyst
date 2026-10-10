@@ -42,3 +42,15 @@ next_owner_action: Keep provider capability blocked and do not issue model reque
 ## 当前状态
 
 G0 候选 PR #26 的同 head hosted quick/full CI 已通过，但候选仍 Draft、未合并。G1 复审补丁本地验证：V2 evaluator 34 passed、仓库 quick gate 256 passed、全量离线套件 2,551 passed / 1 skipped / 0 failed；Ruff check/format 与 git diff --check 通过。该结果来自本地工作树；复审补丁推送后必须以 PR #27 最新精确 head 的 hosted CI 确认。G1 远端能力仍 BLOCKED_WITH_EVIDENCE。未触发 Gemini、Gate/TestNet/Live API 或订单。费用状态保持未知。任何 G2 调用需用户另行明确授权。
+
+## 2026-10-10 independent offline review addendum — response size limit
+
+**Sub-finding:** `V2_RESPONSE_SIZE_LIMIT_TYPECHECK_ORDER`; severity S1; status `PATCHED_LOCALLY_AWAITING_EXACT_HEAD_CI`. The parent B-002 remains `BLOCKED_WITH_EVIDENCE` because real provider capability, identity attestation, and billing are unknown.
+
+- **Root cause:** `evaluate_response_v2()` compared `len(content)` with `max_raw_response_chars` before validating that the configured limit was a positive exact `int`.
+- **Original reproduction evidence:** on base head `c56c54271834c9fd78fad623c3010d725bd70682`, a fixed local `_envelope(_minimal())` with `max_raw_response_chars=None` raised `TypeError: '<=' not supported between instances of 'int' and 'NoneType'` at `response_contract_v2.py:396`. Passing a string raised the corresponding int/string comparison error. No network or exchange client was involved.
+- **Temporary containment:** keep G1 unaccepted and use no remote model path. An invalid caller-supplied size limit is an evaluator/configuration fault; it must never become a valid analysis.
+- **Repair:** move strict positive-integer validation before envelope/body comparisons. Add parameterized negatives for `None`, string, bool, zero, negative, and float values. Only `response_contract_v2.py` and `tests/v38/test_response_contract_v2.py` change in code.
+- **Local acceptance evidence:** `python -m pytest -q tests/v38/test_response_contract_v2.py` — 40 passed; the repository quick-gate command — 262 passed; Ruff check/format and `git diff --check` passed. The frozen call ledger remains 144 lines with SHA-256 `820212A5699B718C922232C584FCFDCB4F79B675EA8653B1898A0D4025B837A7`. These are local results only; the base `c56c542` hosted run does not cover the patch.
+- **Unblock criteria:** new PR #27 exact head must pass quick and full hosted CI; rerun the response-contract test on that head; confirm the V38 ledger SHA remains unchanged. Provider capability remains blocked separately until an explicitly authorized G2 probe.
+- **Rollback:** revert only this parameter-check move and its six-case test. Keep PR #27 open and G1 blocked if the new CI or review fails; no changes to V1, production execution, V35 risk controls, frozen samples, or historical ledger.

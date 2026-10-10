@@ -265,6 +265,16 @@ def test_v2_oversized_body_is_hashed_but_not_retained():
     assert result["raw_response_text"] is None
 
 
+@pytest.mark.parametrize("invalid_limit", [None, "32", True, 0, -1, 1.5])
+def test_v2_invalid_response_size_limit_fails_closed_without_raising(invalid_limit):
+    result = _evaluate(_envelope(_minimal()), max_raw_response_chars=invalid_limit)
+
+    assert result["status"] == "INVALID_PROVIDER_RESPONSE"
+    assert result["error_code"] == "RESPONSE_SIZE_LIMIT_INVALID"
+    assert result["normalized_analysis"] is None
+    assert result["remote_dispatch_allowed"] is False
+
+
 def test_fake_provider_ignoring_schema_request_does_not_prove_route_capability():
     fence = chr(96) * 3
     raw = fence + "json\n" + json.dumps(_minimal(), separators=(",", ":")) + "\n" + fence
