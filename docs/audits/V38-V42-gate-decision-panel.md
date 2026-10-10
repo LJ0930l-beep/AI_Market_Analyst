@@ -33,6 +33,10 @@ This additive update supersedes the earlier Gemini row's `Actual Gemini calls: 0
 
 V39's local health probe also had a floating-point timeout-boundary defect. Its deterministic regression now passes, with **35 affected offline tests passing**. This is not a replacement for full-suite and remote CI verification, which are pending for the working change. Remote provider idempotency/billing, exchange execution, research quality, profitability, and deployment qualification remain unverified. No orders or production-setting changes occurred.
 
+## Timeout follow-up verification — 2026-10-10
+
+The pending verification above has completed on commit `3976b2011571046c5a259b93ad3214c38dca553e`. Local commit-hook suite: **2,488 passed, 1 skipped, 1 existing warning**. GitHub Actions run `38034198847`: quick gate **198 passed**; full suite **2,489 passed, 0 failed, 1 existing warning, 25 subtests**. The local/hosted collection differs by one skipped-versus-passed test; both runs are green. PR #25 is open and has no auto-merge configuration. The V38 campaign disposition remains **0 valid analyses**; these code tests do not establish a trading edge or remote provider guarantees.
+
 
 ## Gate 2 addendum — 2026-10-09
 
