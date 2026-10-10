@@ -100,3 +100,7 @@
 - Ruff check、Ruff format check、`git diff --check`：通过。
 
 复审后的代码 SHA-256：`core/replay/pa_decision_quality_v38/response_contract_v2.py`=`31A0DAFCCA9103ABC6B50356168F3F18BF75EC3A9AAA6938613EBF6594E3E8BC`；`tests/v38/test_response_contract_v2.py`=`E3D8E62A3A1F4BB693C14B953C25415A6EAA42AA6DA62A50F4A41E6D942B3EFD`。这次补丁不接入校准器或 production runner；远端 capability 仍为 unknown，G2 未启动。该补充所在更新后的 PR #27 还需同一新 head 的 GitHub CI，不能引用旧 head CI 代替。
+
+## 2026-10-10 correction — V2 transport byte-count type
+
+A follow-up offline review found that the earlier Section 7 description of positive finite floats as accepted was too permissive. `request_bytes_written` is sourced from `len(data)` on bytes-like requests; it must be a positive exact integer. The V2 evaluator now rejects both `1.0` and `1.5` as `INVALID_TRANSPORT` and emits no normalized analysis. This is a correction to the new V2 offline contract only; it does not rewrite historical response outcomes or change the V1 runner/shared transport producer. The new fix is local and awaits exact-head PR #27 hosted CI. See the corresponding additive subfinding in B-20261010-002.

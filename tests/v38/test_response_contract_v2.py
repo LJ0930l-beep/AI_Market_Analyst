@@ -245,14 +245,19 @@ def test_v2_rejects_request_response_transport_mismatch():
 
     assert result["status"] == "INVALID_TRANSPORT"
     assert result["transport_receipt_status"] == "UNVERIFIED"
+    assert result["normalized_analysis"] is None
 
 
-@pytest.mark.parametrize("request_bytes_written", [True, False, 0, -1, float("nan"), float("inf"), -float("inf")])
-def test_v2_rejects_non_finite_or_non_positive_transport_byte_counts(request_bytes_written):
+@pytest.mark.parametrize(
+    "request_bytes_written",
+    [True, False, 0, -1, 1.0, 1.5, float("nan"), float("inf"), -float("inf")],
+)
+def test_v2_rejects_invalid_transport_byte_counts(request_bytes_written):
     result = _evaluate(_envelope(_minimal(), request_bytes_written=request_bytes_written))
 
     assert result["status"] == "INVALID_TRANSPORT"
     assert result["transport_receipt_status"] == "UNVERIFIED"
+    assert result["normalized_analysis"] is None
 
 
 def test_v2_oversized_body_is_hashed_but_not_retained():

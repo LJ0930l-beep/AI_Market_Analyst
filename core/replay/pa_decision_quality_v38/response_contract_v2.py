@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 from copy import deepcopy
 from enum import Enum
 from typing import Any
@@ -436,9 +435,7 @@ def evaluate_response_v2(
 
     trace = envelope.get("transport_trace")
     request_bytes_written = trace.get("request_bytes_written") if isinstance(trace, dict) else None
-    valid_request_bytes = (type(request_bytes_written) is int and request_bytes_written > 0) or (
-        type(request_bytes_written) is float and math.isfinite(request_bytes_written) and request_bytes_written > 0
-    )
+    valid_request_bytes = type(request_bytes_written) is int and request_bytes_written > 0
     if (
         not isinstance(expected_request_id, str)
         or not expected_request_id
