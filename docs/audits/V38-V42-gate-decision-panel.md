@@ -90,3 +90,11 @@ PR #25's full offline CI run `38015439803` passed on commit `130d21271423a9cc414
 The trace/error-code repair passed remote CI at commit `1d8ddabeca15d7a3ac6f64ec0a45b5bc7ad07fea` (run `38017637786`; 2,484 tests and 25 subtests passed). The next distinct optimization context returned `MODEL_UPSTREAM_REGION_UNSUPPORTED` / HTTP 400 for A1 and A2. The cumulative run is 4 intents, 4 terminal errors, 0 valid analyses, 68 not attempted, and 0 orders. Only the latter two errors have bound HTTP traces; provider acceptance, model identity, usage, and billing remain unverified. Do not issue further Gemini calls through this route until the region/route issue is resolved. V38 research is `BLOCKED_WITH_EVIDENCE`, not accepted.
 
 The runner now has a local-only stop-latch repair for this provider-wide refusal and HTTP 400/401/403/404 errors. It also preserves the distinct rate/quota latch field. `tests/v38/` passes 118 tests and focused lint is clean; the latest repair still needs full-suite CI. Full detail and machine report hashes: [`V38-gemini-smoke-followup.md`](V38-gemini-smoke-followup.md).
+
+## Full local suite after stop-latch repair — 2026-10-10
+
+The completed local suite collected 2,485 tests (2,484 passed, 1 skipped, 0 failed). Exact frozen-baseline comparison is `PASS_NO_NEW_FAILURES`: 100 inherited failure nodes are resolved, all 161 added test nodes pass, with no missing tests, new failures, or phase changes. Remote run `38019164193` remained in progress at the time this result was recorded. This does not change the `BLOCKED_WITH_EVIDENCE` disposition for further Gemini calls on the unsupported route or establish research success.
+
+## Final stop-latch CI result — 2026-10-10
+
+Remote run `38019164193` completed successfully on `fe06d034c091f6431bdbd093643ed9f5f0732f26`: focused gate 195 passed; full offline suite 2,485 passed, 1 existing deprecation warning, 25 subtests passed. PR #25 is open, clean, and has no auto-merge configured. The Gemini route remains blocked with evidence; no valid analyses or trading decisions resulted from the calls.
