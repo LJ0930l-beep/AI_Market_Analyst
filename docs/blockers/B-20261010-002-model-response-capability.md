@@ -196,3 +196,9 @@ The ledger remains 144 lines / 512,044 bytes / SHA-256 `820212a5699b718c922232c5
 The full refreshed PR/head/check and ledger record is [`V2-G0-G1-live-state-20261011T091403Z.json`](../audits/V2-G0-G1-live-state-20261011T091403Z.json), Git blob SHA-256 `8dfe75e1afad571e763de2b5353c76c2ae9b23537d964609cc3257b4e31fb302` (Windows CRLF worktree SHA-256 `3e6dd6b0dc874c58cc883d3bd917ce50e908b31f04d602d3733bca11225b2594`); the readable report is [`V2-G0-G1-live-refresh-20261011T091403Z.md`](../audits/V2-G0-G1-live-refresh-20261011T091403Z.md).
 
 This verifies the offline response contract only. Remote provider-native `response_format`, authenticated underlying model/weights, billing and quota remain UNKNOWN. Keep dispatch disabled; G2 remains `NOT_AUTHORIZED` until G0 review and a fresh bounded authorization.
+
+## 2026-10-11 offline exact-head refresh — 12:29Z
+
+PR #27 exact head 230550b87abccb1530bc34e9997a8afee46732c4 passed hosted run 38136662102: Python quick 286, full 2,600, Web 29 files / 161 tests, lint, and build. A same-host JUnit node-ID comparison against the frozen baseline recorded 2,599 passed, 1 Windows symlink-capability skip, and zero failures on the candidate; 103 baseline failures now pass, no baseline nodes are missing, and no new failures appear. This is local/offline evidence only; details and report hashes are in docs/audits/V2-G0-G1-live-refresh-20261011T122959Z.md and docs/audits/PR-INTEGRATION-MATRIX-20261011.json.
+
+The V2 dispatch flag remains false and max_calls remains zero. Provider response_format behavior, authenticated response model/weight identity, billing and quota settlement are still unknown. Keep G2 NOT_AUTHORIZED until independent G0 human review and a fresh bounded authorization. No provider, exchange, TestNet, Live, order, ledger, or production account configuration was used or changed.

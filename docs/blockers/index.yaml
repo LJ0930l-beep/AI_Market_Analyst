@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V1
-updated_at_utc: 2026-10-11T09:44:35Z
+updated_at_utc: 2026-10-11T12:29:59Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -7,14 +7,14 @@ blockers:
     component: integration
     file: docs/blockers/B-20261010-001-pr-branch-integration.md
     trigger_signature: PR_COMBINATION_CANDIDATE_AWAITS_HUMAN_REVIEW
-    next_owner_action: Validate the frontend CI repair on the new exact PR #27 head (current pre-repair head e983df58b93157a75adc29ac709eb7a927f50513 run 38128269910 had Python quick passed/full pending); then obtain independent human review of Draft PR #26/#27 and record the integration decision. Preserve PR #1-11 NO_CHECKS and PR #23's failure. Do not auto-merge.
+    next_owner_action: 'Current 2026-10-11T12:29:59Z snapshot: PR #26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 run 38107795624 passed; PR #27 exact head 230550b87abccb1530bc34e9997a8afee46732c4 run 38136662102 passed. Both remain Draft/Open with zero reviews and no auto-merge. Obtain independent human review and record an integration decision; preserve PR #1-11 NO_REPORTED_CHECKS and PR #23 failure. Do not auto-merge.'
   - id: B-20261010-002
     severity: S1
     status: BLOCKED_WITH_EVIDENCE
     component: model
     file: docs/blockers/B-20261010-002-model-response-capability.md
     trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
-    next_owner_action: Keep provider dispatch disabled. PR #27 exact head e983df58b93157a75adc29ac709eb7a927f50513 run 38128269910 had quick passed/full pending at 2026-10-11T09:44:35Z. Obtain independent review of Draft PR #26/#27 before G2. Remote response_format, model identity/weights, billing, and quota remain unknown; any G2 run needs a fresh bounded authorization.
+    next_owner_action: 'Keep provider dispatch disabled. PR #27 exact head 230550b87abccb1530bc34e9997a8afee46732c4 passed hosted Python and web checks; local same-environment differential found 0 new failures and 0 missing baseline nodes. Remote response_format, model identity/weights, billing, and quota remain unknown. G2 requires G0 human review and a fresh bounded authorization.'
   - id: B-20261010-003
     severity: S1
     status: OPEN
@@ -22,3 +22,10 @@ blockers:
     file: docs/blockers/B-20261010-003-calibration-identity-evidence.md
     trigger_signature: CALIBRATION_REMOTE_WEIGHT_DIGEST_REQUIRED
     next_owner_action: After upstream G0/G1 review and authorized G2/G3 evidence, design the offline identity-mode contract and fake-provider negative matrix; keep calibration fail-closed.
+  - id: B-20261011-004
+    severity: S1
+    status: VERIFIED
+    component: ci
+    file: docs/blockers/B-20261011-004-datetime-local-timezone-ci.md
+    trigger_signature: DATETIME_LOCAL_TEST_EXPECTATION_ASSUMES_UTC_PLUS_8
+    next_owner_action: 'Keep the timezone-neutral assertion; retain the original failing run and repair evidence as historical records.'
