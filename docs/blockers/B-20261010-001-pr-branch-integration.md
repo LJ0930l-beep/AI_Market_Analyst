@@ -104,6 +104,19 @@ PR #27 exact head `9eb55ac19b7e8739b7500cca03b0c9d2a253c299` passed hosted run [
 
 This refresh updates evidence only. Status remains `FIX_IN_REVIEW` pending human review and explicit merge decisions; the historical PR #23 failure remains unchanged. No source PR, `main`, model route, exchange, account, or order was changed or contacted.
 
+## 2026-10-11 full candidate refresh — 04:02Z
+
+The new point-in-time snapshot is [`V2-G0-G1-live-refresh-20261011T040254Z.md`](../audits/V2-G0-G1-live-refresh-20261011T040254Z.md), with the complete current 27-PR inventory in [`PR-INTEGRATION-MATRIX-LIVE-20261011T040254Z.json`](../audits/PR-INTEGRATION-MATRIX-LIVE-20261011T040254Z.json). Main remains `8642639a78ca9aa56fbad1e88aea4b82169ea433`; PRs #1–25 retain their prior head/base SHAs. All 25 current heads are ancestors of PR #26, and PR #27 is based exactly on PR #26 head.
+
+- PR #26 `00d1c4405a513b9e5cdee9f6fa15808b4386d8b1`: exact-head run [38107795624](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38107795624) passed quick (231) and full (2,538), plus 25 subtests; 217 changed files.
+- PR #27 `2cfc8f0ecdac401fc102202d8d3b3f9efa3f53ad`: exact-head run [38108665836](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38108665836) passed quick (284) and full (2,591), plus 25 subtests; 37 changed files.
+- The 9 shared paths are sequential follow-up edits on the exact PR #26 base. Both candidates remain Draft, have zero reviews, and have auto-merge disabled.
+- PRs #1–11 still have no checks and PR #23 still fails its current check. Preserve these gaps in the G0 decision; green candidate CI alone is not G0 acceptance.
+
+The full local suite on the PR #27 worktree passed **2,590 / skipped 1 / failed 0**. Same-host node-ID comparison with the baseline at main `8642639a78ca9aa56fbad1e88aea4b82169ea433` found all 103 baseline-failing IDs now passing, with zero missing baseline failures, zero regressions from baseline passes, and zero new failures. This is an integrated-candidate comparison; it does not attribute those resolved failures only to PR #26/#27. The detailed command, XML hashes, and test inventory are in the linked live refresh report.
+
+Status remains `FIX_IN_REVIEW`; do not merge until human review and an explicit integration decision are recorded.
+
 
 ## 2026-10-10 live exact-head refresh — 20261010T221231Z
 

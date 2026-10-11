@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V1
-updated_at_utc: 2026-10-11T03:21:26Z
+updated_at_utc: 2026-10-11T04:08:15Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -7,14 +7,14 @@ blockers:
     component: integration
     file: docs/blockers/B-20261010-001-pr-branch-integration.md
     trigger_signature: PR_COMBINATION_CANDIDATE_AWAITS_HUMAN_REVIEW
-    next_owner_action: Human review PR #26 at 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 and PR #27 after sync; PR #26 quick gate passes but full run 38107795624 was in progress at 2026-10-11T03:21:26Z; PR #27 needs a new exact-head workflow after push. Keep both Draft and unmerged. See V2-G0-G1-candidate-followup-20261011T032126Z.md.
+    next_owner_action: Human review Draft PR #26 at 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 and Draft PR #27 at 2cfc8f0ecdac401fc102202d8d3b3f9efa3f53ad; exact-head runs 38107795624 and 38108665836 passed, and local node-ID comparison found zero new failures. Resolve PR #1-11 missing checks and retain PR #23 failure for review. No auto-merge. See ../audits/V2-G0-G1-live-refresh-20261011T040254Z.md.
   - id: B-20261010-002
     severity: S1
     status: BLOCKED_WITH_EVIDENCE
     component: model
     file: docs/blockers/B-20261010-002-model-response-capability.md
     trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
-    next_owner_action: Keep provider capability blocked and issue no model calls; PR #27 remote head 57b987a657706e01223aea6e9c8a241c164b5ab3 passed prior run 38105897070; synced local candidate af258eecf2cbb80bf764be67349cec3becb0f873 has no hosted result yet. After human G0 review, require a fresh explicit bounded G2 scope. Provider capability, identity and billing remain unverified. See V2-G0-G1-candidate-followup-20261011T032126Z.md.
+    next_owner_action: Keep provider dispatch disabled and issue no model calls. PR #27 exact head 2cfc8f0ecdac401fc102202d8d3b3f9efa3f53ad passed offline run 38108665836; this does not verify remote response_format, model identity/weights, billing, or quota. After human G0 review, require fresh explicit bounded G2 authorization. See ../audits/V2-G0-G1-live-refresh-20261011T040254Z.md.
   - id: B-20261010-003
     severity: S1
     status: OPEN

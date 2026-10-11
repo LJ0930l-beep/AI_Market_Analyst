@@ -153,3 +153,9 @@ The original ledger remains at SHA-256 `820212A5699B718C922232C584FCFDCB4F79B675
 ## 2026-10-10 G1 exact-head refresh — 20261010T221231Z
 
 Latest #27 exact-head run [38088943367](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38088943367) is on `d124c1597fcc4ce8655845eb7d68afc4c6552002`: quick 275 passed; full 2573 passed, 25 subtests passed, 1 existing warning. Original ledger remains 512,044 bytes / SHA-256 `820212a5699b718c922232c584fcfdcb4f79b675ea8653b1898a0d4025b837a7` and historical classifications are unchanged. G1 offline contract verification passes; provider-native `response_format` capability, remote weight identity, and verified billing remain unknown. No remote request was made. Keep G2 blocked pending fresh bounded authorization.
+
+## 2026-10-11 exact-head refresh — 04:02Z
+
+PR #27 current head `2cfc8f0ecdac401fc102202d8d3b3f9efa3f53ad` passed exact-head offline CI [38108665836](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38108665836): quick 284 passed, full 2,591 passed, 25 subtests, and one existing warning. The additive candidate state and full PR inventory are recorded in [`V2-G0-G1-live-refresh-20261011T040254Z.md`](../audits/V2-G0-G1-live-refresh-20261011T040254Z.md) and its linked matrix.
+
+This evidence validates only the local/offline response contract and its tests. Provider-native `response_format` behavior, actual underlying model identity or weights, provider billing, and quota settlement remain unverified. The immutable 72-call ledger and separate format-pilot ledger remain unchanged; no call was made by this refresh. Keep dispatch disabled and G2 locked until human G0 review and a fresh explicit bounded authorization.
