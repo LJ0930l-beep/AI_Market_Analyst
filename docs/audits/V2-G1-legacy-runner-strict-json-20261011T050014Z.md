@@ -30,9 +30,9 @@ The two regression tests cover execution classification and rehashed-ledger revi
 - `ruff check` on the changed Python files: passed.
 - `git diff --check`: passed.
 - `ruff format --check` reports pre-existing whole-file formatting drift in both files; checking each file from the unchanged `92dec39` HEAD also returns the same nonzero result. The formatter was not run because it would reformat unrelated existing code.
-- Exact-head hosted CI for the repair is required before this finding can be accepted.
+- Exact-head hosted CI for the code repair passed on PR #27 head `cf1f1d881e6868e46219be58789eddf164a20332`; details are in the dated acceptance update below.
 
-The repair status is `PATCHED_LOCAL_SUITE_PASS_AWAITING_EXACT_HEAD_CI`. G0 remains `FIX_IN_REVIEW`; PR #26 and PR #27 remain Draft with no reviews. Remote response-format capability, remote model identity/weights, and billing remain unknown. This work does not authorize G2.
+The repair status is `PATCHED_AND_EXACT_HEAD_CI_VERIFIED`. G0 remains `FIX_IN_REVIEW`; PR #26 and PR #27 remain Draft with no reviews. Remote response-format capability, remote model identity/weights, and billing remain unknown. This work does not authorize G2.
 
 ## Verification update — 2026-10-11 05:07Z
 
@@ -41,3 +41,7 @@ Full offline verification finished on the local candidate: `2,592 passed, 1 skip
 ## Rollback
 
 If a regression is found, revert only the two parser call-site changes and these two tests. Keep the strict V2 parser, immutable historical ledgers/reports, V35 risk controls, and the no-dispatch G2 boundary intact.
+
+## Exact-head hosted acceptance — 2026-10-11 05:30Z
+
+PR #27 exact code head `cf1f1d881e6868e46219be58789eddf164a20332` passed hosted run [38114167230](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38114167230). The quick gate passed **286 tests**; the full offline suite passed **2,593 tests**, with one existing Starlette/httpx deprecation warning and 25 subtests, in 736.90 seconds. This verifies the strict-parser code change at that exact SHA. It does not verify provider response-format capability, model weights/identity, or billing.

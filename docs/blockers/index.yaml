@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V1
-updated_at_utc: 2026-10-11T05:07:48Z
+updated_at_utc: 2026-10-11T05:30:03Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -14,7 +14,7 @@ blockers:
     component: model
     file: docs/blockers/B-20261010-002-model-response-capability.md
     trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
-    next_owner_action: Keep provider dispatch disabled and issue no model calls. Verify that the newest PR #27 hosted run matches its latest head and review the offline duplicate-key repair at ../audits/V2-G1-legacy-runner-strict-json-20261011T050014Z.md. CI does not verify remote response_format, model identity/weights, billing, or quota. After human G0 review, require fresh explicit bounded G2 authorization.
+    next_owner_action: Keep provider dispatch disabled and issue no model calls. The duplicate-key parser repair passed exact-head run 38114167230; obtain human review of Draft PRs #26/#27 before any G2 proposal. CI does not verify remote response_format, model identity/weights, billing, or quota. G2 still requires fresh explicit bounded authorization.
   - id: B-20261010-003
     severity: S1
     status: OPEN
