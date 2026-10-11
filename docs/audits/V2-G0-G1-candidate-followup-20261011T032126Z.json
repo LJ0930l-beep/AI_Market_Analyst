@@ -1,0 +1,58 @@
+{
+  "schema_version": "V2_G0_G1_CANDIDATE_FOLLOWUP_V1",
+  "captured_at_utc": "2026-10-11T03:21:26Z",
+  "prior_full_pr_snapshot": {
+    "path": "PR-INTEGRATION-MATRIX-LIVE-20261011T023050Z.json",
+    "sha256": "653887E6BB0F5202C258709C42208DB4C8625837313AF5C2F2784CBD50BB4511",
+    "scope_note": "Additive refresh for PR #26/#27; prior PR inventory remains the historical full snapshot."
+  },
+  "main_sha": "8642639a78ca9aa56fbad1e88aea4b82169ea433",
+  "pr26": {
+    "state": "OPEN",
+    "draft": true,
+    "base_branch": "main",
+    "base_sha": "8642639a78ca9aa56fbad1e88aea4b82169ea433",
+    "head_sha": "00d1c4405a513b9e5cdee9f6fa15808b4386d8b1",
+    "change": "Exact Gate protection order_type allowlist; documented values retained, unknown substring matches rejected.",
+    "workflow_run_id": "38107795624",
+    "workflow_url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38107795624",
+    "quick_gate": "SUCCESS",
+    "full_gate": "IN_PROGRESS"
+  },
+  "pr27": {
+    "state": "OPEN",
+    "draft": true,
+    "remote_head_at_capture": "57b987a657706e01223aea6e9c8a241c164b5ab3",
+    "previous_exact_head_run_id": "38105897070",
+    "previous_exact_head_result": "SUCCESS",
+    "local_synced_candidate_sha_before_this_report_commit": "af258eecf2cbb80bf764be67349cec3becb0f873",
+    "contains_pr26_head": true,
+    "new_exact_head_workflow": "NOT_STARTED_AT_CAPTURE",
+    "note": "The report commit will create a new PR #27 head and trigger a fresh workflow; this snapshot does not claim that future run passed."
+  },
+  "local_verification": {
+    "target": "python -m pytest -q tests/test_gate_testnet_ai_chain.py",
+    "target_result": "33 passed, 1 pre-existing Starlette/httpx deprecation warning",
+    "commit_hook": "2537 passed, 1 skipped, 1 pre-existing Starlette/httpx deprecation warning",
+    "commit_hook_duration_seconds": 377.27,
+    "git_diff_check": "PASS"
+  },
+  "safety": {
+    "gemini_calls": 0,
+    "gate_testnet_or_live_requests": 0,
+    "orders_submitted": 0,
+    "account_or_production_settings_changed": false,
+    "pr_auto_merge": false,
+    "pr_merge_performed": false
+  },
+  "decision": {
+    "g0": "FIX_IN_REVIEW",
+    "g0_blocking_evidence": [
+      "PR #26 full exact-head workflow is in progress at capture.",
+      "PR #27 synced candidate needs a new exact-head workflow after push.",
+      "Neither PR has human review or merge authorization."
+    ],
+    "g1": "OFFLINE_CONTRACT_ONLY",
+    "provider_response_format_model_identity_and_billing": "UNVERIFIED"
+  }
+}
