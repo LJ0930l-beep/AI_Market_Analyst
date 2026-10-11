@@ -18,16 +18,20 @@ def test_strategy_open_appears_once_in_analysis_without_replaying_orders(tmp_pat
     # Explicit fixture-only simulation setting; never applied to user accounts.
     store.upsert_app_setting("simulation.allow_unknown_macro", True)
     answer = {"decision":"EXECUTE_TRADE", "summary":"本地测试满足规则", "counterevidence":[]}
-    artifact = r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"
     model = OllamaProvider(base_url=model_client.base_url, model_name=DEFAULT_MODEL)
     monkeypatch.setattr(model, "health", lambda **_kwargs: {
         "available": True,
         "model_available": True,
         "model_id": DEFAULT_MODEL,
-        "actual_model_id": artifact,
-        "model_identity_source": "verified_manifest",
+        "actual_model_id": DEFAULT_MODEL,
+        "model_identity_source": "completion_probe",
     })
-    monkeypatch.setattr(model_client, "structured_analysis", lambda *_args, **_kwargs: answer)
+
+    def fake_structured_analysis(*_args, **_kwargs):
+        model_client._response_state.model = DEFAULT_MODEL
+        return answer
+
+    monkeypatch.setattr(model_client, "structured_analysis", fake_structured_analysis)
     model_client._response_state.model = None
     now = datetime.now(timezone.utc)
     proposal = {"account_id":"strategy_account", "symbol":"BTCUSDT", "strategy_id":"ema_trend",

@@ -1,0 +1,176 @@
+{
+  "schema_version": "pa-market-only-v38/evaluation-preregistration-1",
+  "preregistration_id": "V38_MARKET_ONLY_BLIND_EVALUATION_20261009_V1",
+  "frozen_on_utc_date": "2026-10-09",
+  "partition_policy_sha256": "5169daa812c643cb35b40e3c5327bfbadf30b0c6b9c7db78b172de5c561f7ac7",
+  "primary_dataset": {
+    "dataset_id": "V38_BINANCE_BTC_ETH_STRATIFIED_PURGED_CONTEXTS_20261009_V1",
+    "sample_plan_sha256": "094ee37ff932b3f237c4eef77a42dc94cf496928a46afd5a5c30efa35cfa873f",
+    "manifest_sha256": "1f9e157bad2df4c32f863c2ae7a779b7d9ed573ad09d37f49ca44590eca4352a",
+    "selection": "Seeded SHA-256 choice among two predeclared UTC day candidates in each month-by-slot stratum; three strata/month; 8-day warmup windows; no outcome/A3/model selection.",
+    "counts": {
+      "total_contexts": 72,
+      "optimization_visible": 36,
+      "validation_visible": 18,
+      "untouched_test_hash_only": 18,
+      "visible_contexts_for_future_study": 54,
+      "paired_temporal_anchors": 36,
+      "same_symbol_overlap_pairs": 0,
+      "cross_partition_overlap_pairs": 0,
+      "completed_closes": 0,
+      "gate_executable_samples": 0
+    },
+    "analysis_scope": "Primary Gate 2 sample. Prompt development is restricted to optimization after separate provider authorization. Validation is used once only after model identity, prompts, schema, metrics and stopping rules are frozen. Untouched test remains hash/coverage only."
+  },
+  "data_evidence": {
+    "source": "Verified local Binance UM official monthly archives; no download performed for this preregistration.",
+    "price_evidence_grade": "VERIFIED_ARCHIVE_RECONSTRUCTION",
+    "availability_evidence_grade": "ASSUMED_PROXY",
+    "availability_basis": "BAR_END_PLUS_60_SECONDS_PROXY",
+    "historical_gate_receive_time_verified": false,
+    "point_in_time_bid_ask_available": false,
+    "news_and_macro_history": "UNKNOWN_NOT_SYNTHESIZED",
+    "original_v25_a0_exact_recovery": "0/100_NOT_RECOVERABLE"
+  },
+  "arms": [
+    {
+      "arm_id": "A1_MARKET_ONLY",
+      "prompt_version": "pa_decision_quality_v38-A1.1",
+      "prompt_path": "configs/research/prompts/v38-market-only-a1-v1.json",
+      "prompt_file_sha256": "b09bfbd1a9c58ef4e4d87feb3d35c2f49e24b1e7b5dd4d080d40273c760c32b4",
+      "input_schema_version": "pa-market-only-v38/input-1",
+      "output_schema_version": "pa-market-only-v38/analysis-1",
+      "model_provider": null,
+      "model_id": null,
+      "response_model_identity": "UNVERIFIED_NO_RESPONSE",
+      "status": "NOT_RUN_NO_MODEL_BUDGET_AUTHORIZATION"
+    },
+    {
+      "arm_id": "A2_MARKET_ONLY",
+      "prompt_version": "pa_decision_quality_v38-A2.1",
+      "prompt_path": "configs/research/prompts/v38-market-only-a2-v1.json",
+      "prompt_file_sha256": "040f3182f7ee36d483a3fe842a95acbea56d67cf1396816c766eee6239270b19",
+      "input_schema_version": "pa-market-only-v38/input-1",
+      "output_schema_version": "pa-market-only-v38/analysis-1",
+      "model_provider": null,
+      "model_id": null,
+      "response_model_identity": "UNVERIFIED_NO_RESPONSE",
+      "status": "NOT_RUN_NO_MODEL_BUDGET_AUTHORIZATION"
+    },
+    {
+      "arm_id": "A3_FROZEN_RULE",
+      "rule_id": "FAILED_BREAKOUT_20X15M_5M_REENTRY_FRESH_V2",
+      "rule_sha256": "6d88b00b8fe6e37bb51efc7aa820542db7cc8c9f753837ebf4416707af8736e1",
+      "status": "NOT_RUN_FOR_EXECUTION_NO_POINT_IN_TIME_BID_ASK",
+      "execution_candidate_claim_permitted": false
+    },
+    {
+      "arm_id": "B0_NEW_BASELINE",
+      "included": false,
+      "status": "NOT_INCLUDED",
+      "v25_a0_relabeling_permitted": false
+    }
+  ],
+  "blind_reference_protocol": {
+    "protocol_id": "V38_PA_REFERENCE_BLIND_LABELS_20261009_V2",
+    "path": "configs/research/labels/v38-pa-reference-label-protocol-v2.json",
+    "minimum_independent_raters_per_visible_context": 2,
+    "labelled_partitions": [
+      "optimization",
+      "validation"
+    ],
+    "untouched_test_payloads_or_labels": false,
+    "annotations_created": 0,
+    "adjudication_overwrites_original_ratings": false,
+    "protocol_sha256": "14827250890d37e33fc0b25121ca0414065e9e835c6beef830c95ed2a3fda64c",
+    "eligible_dataset_id": "V38_BINANCE_BTC_ETH_STRATIFIED_PURGED_CONTEXTS_20261009_V1"
+  },
+  "metrics": [
+    {
+      "metric_id": "terminal_status_and_completion",
+      "denominator": "All 54 preregistered visible primary decisions (36 optimization, 18 validation); ERROR, TIMEOUT and invalid rows remain in the denominator.",
+      "result": null,
+      "status": "NOT_RUN_NO_PROVIDER_CALLS"
+    },
+    {
+      "metric_id": "market_only_action_and_wait_concordance",
+      "denominator": "All 54 visible primary decisions; action domain is OBSERVE/WAIT only; errors and UNKNOWN reference labels are separately counted.",
+      "result": null,
+      "status": "NOT_RUN_NO_PROVIDER_CALLS_OR_LABELS"
+    },
+    {
+      "metric_id": "evidence_reference_integrity_and_support",
+      "denominator": "all model-emitted evidence references and all scored claims; malformed rows are retained as failures",
+      "result": null,
+      "status": "NOT_RUN_NO_PROVIDER_CALLS_OR_LABELS"
+    },
+    {
+      "metric_id": "target_structure_support",
+      "denominator": "all A2 target-bearing claims; UNKNOWN and unsupported target claims are reported separately",
+      "result": null,
+      "status": "NOT_RUN_NO_PROVIDER_CALLS_OR_LABELS"
+    },
+    {
+      "metric_id": "inter_rater_agreement",
+      "denominator": "independently paired annotation records by field; UNKNOWN coverage and class prevalence accompany agreement",
+      "result": null,
+      "status": "NOT_RUN_NO_LABELS"
+    },
+    {
+      "metric_id": "provider_latency_tokens_and_cost",
+      "denominator": "every planned request/attempt with verified provider telemetry; no inferred or imputed cost",
+      "result": null,
+      "status": "NOT_RUN_NO_PROVIDER_CALLS"
+    },
+    {
+      "metric_id": "proposal_acceptance_fill_and_complete_close",
+      "denominator": "each lifecycle stage separately; no stage is inferred from the preceding stage",
+      "result": null,
+      "status": "NOT_RUN_MARKET_ONLY_NO_EXECUTION_LIFECYCLE"
+    },
+    {
+      "metric_id": "strategy_net_profit_and_drawdown",
+      "denominator": "verified complete closes only, with at least 30 required for a minimum strategy-level claim",
+      "result": null,
+      "status": "INSUFFICIENT_SAMPLE_ZERO_COMPLETE_CLOSES"
+    }
+  ],
+  "authorization_and_observed_counts": {
+    "paid_model_calls_authorized": false,
+    "orders_created": 0,
+    "proposals_created": 0,
+    "gateway_acceptances": 0,
+    "venue_fills": 0,
+    "complete_closes": 0,
+    "production_risk_settings_changed": false,
+    "untouched_test_read_or_labeled": false,
+    "gemini_research_calls_used": 0,
+    "other_model_usage_status": "UNVERIFIED_POSSIBLE_CODEX_GPT_5_6_SOL_PROBE_INTERRUPTED_WITHOUT_RESPONSE_OR_USAGE_RECEIPT",
+    "codex_capability_probe": {
+      "model": "gpt-5.6-sol",
+      "status": "INTERRUPTED_WITHOUT_RESULT",
+      "provider_request_or_billing_status": "UNVERIFIED"
+    },
+    "primary_dataset_manifest_sha256": "1f9e157bad2df4c32f863c2ae7a779b7d9ed573ad09d37f49ca44590eca4352a"
+  },
+  "prior_datasets_for_separate_reporting": [
+    {
+      "dataset_id": "V38_BINANCE_BTC_ETH_MARKET_CONTEXTS_20261009_V1",
+      "manifest_sha256": "ca0786a4acdec7a7410b7df89e947bc2b698377fed69a13fd865fe4d1187bd99",
+      "total_contexts": 180,
+      "visible_optimization_validation": 120,
+      "untouched_test_hash_only": 60,
+      "cross_partition_overlap_pairs": 10,
+      "use": "DIAGNOSTIC_ONLY_NOT_ELIGIBLE_FOR_BLIND_OOS_COMPARISON"
+    },
+    {
+      "dataset_id": "V38_BINANCE_BTC_ETH_NONOVERLAP_CONTEXTS_20261009_V1",
+      "manifest_sha256": "1d76f1cd0e2eaa658eb8d32decc434a10e151cb7119a6b2a4f85801639537785",
+      "total_contexts": 80,
+      "visible_optimization_validation": 60,
+      "untouched_test_hash_only": 20,
+      "cross_partition_overlap_pairs": 0,
+      "use": "FIXED_GRID_SENSITIVITY_ONLY_NOT_POOLED_WITH_PRIMARY"
+    }
+  ]
+}

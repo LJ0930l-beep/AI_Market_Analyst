@@ -42,7 +42,7 @@ def _is_valid_smart_analysis(row: object) -> bool:
     )
 
 
-def _is_verified_bonsai_health(health: object) -> bool:
+def _is_verified_gemini_health(health: object) -> bool:
     return (
         isinstance(health, dict)
         and health.get("available") is True
@@ -134,7 +134,7 @@ def _model_smoke() -> dict[str, object]:
             for key, value in health.items()
             if key in {"provider", "available", "model_id", "actual_model_id", "model_identity_source", "model_available", "models", "context_length", "quantization", "think", "error_code"}
         }
-        if not _is_verified_bonsai_health(health):
+        if not _is_verified_gemini_health(health):
             result["status"] = "identity_unverified" if health.get("available") is True else "unavailable"
             return result
         messages = [

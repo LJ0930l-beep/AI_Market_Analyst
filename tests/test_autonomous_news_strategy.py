@@ -39,13 +39,13 @@ def context_and_output(now):
         started_at=now.isoformat(), expires_at=(now + timedelta(seconds=240)).isoformat(),
         allowed_instruments=("BTCUSDT",), decision_contract=CONTRACT,
         model_id=DEFAULT_SMART_MODEL,
-        model_version=r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+        model_version=DEFAULT_SMART_MODEL,
         model_call_attempted=True,
         model_call_completed=True,
         model_inference_settings={
-            "actual_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+            "actual_model_id": DEFAULT_SMART_MODEL,
             "model_identity_source": "completion_response",
-            "verified_manifest_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+            "verified_manifest_model_id": DEFAULT_SMART_MODEL,
         },
         market_snapshots={"BTCUSDT": {"price": 100.0, "bid": 99.95, "ask": 100.05, "slippage": 0.001, "liquidity_ok": True, "fresh": True, "data_as_of": now.isoformat()}},
         technical_context=technical_context(SimpleNamespace(list_market_bars=lambda s, tf, limit: bars(now, 15 if tf == "15m" else 60)), ("BTCUSDT",), now),
@@ -509,7 +509,7 @@ def test_low_net_rr_open_gets_one_model_authored_target_retry(setup):
     }
 
     class Model:
-        model_id = 'Bonsai-2-27B-PTQ1_0'
+        model_id = DEFAULT_SMART_MODEL
         context_length = 32768
         max_tokens = 900
 
@@ -534,13 +534,17 @@ def test_low_net_rr_open_gets_one_model_authored_target_retry(setup):
             else:
                 assert kwargs['prompt_version'].endswith('_net_rr_repair')
                 assert payload['required_geometry']['required_target_bound'] > 107
+                assert payload['inputs']['news_revisions'][0]['symbols'] == ['BTCUSDT']
+                assert 'news_revision:news1' in payload['inputs']['evidence_refs']
                 decision = dict(payload['previous_decision'], take_profit=118,
-                                reason='模型复核后选择结构目标118')
+                                reason='模型复核后选择结构目标118',
+                                evidence_refs=[ref for ref in payload['inputs']['evidence_refs']
+                                               if ref.startswith(('market_snapshot:', 'technical_snapshot:', 'news_revision:'))])
             return decision, json.dumps(decision), {
                 'model_id': DEFAULT_SMART_MODEL,
-                'actual_model_id': r'D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf',
+                'actual_model_id': DEFAULT_SMART_MODEL,
                 'model_identity_source': 'completion_response',
-                'verified_manifest_model_id': r'D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf',
+                'verified_manifest_model_id': DEFAULT_SMART_MODEL,
             }
 
     model = Model()
@@ -626,13 +630,11 @@ def test_coordinator_rejects_open_without_verified_manifest_artifact(setup, iden
     ctx, output = context_and_output(now)
     metadata = {
         "model_id": DEFAULT_SMART_MODEL,
-        "actual_model_id": (
-            DEFAULT_SMART_MODEL
-            if identity == "alias_as_actual"
-            else r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"
-        ),
+        "actual_model_id": DEFAULT_SMART_MODEL,
         "model_identity_source": "completion_response",
-        "verified_manifest_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+        "verified_manifest_model_id": (
+            "unlisted-model-artifact" if identity == "alias_as_actual" else DEFAULT_SMART_MODEL
+        ),
     }
     if identity == "missing":
         metadata = {}
@@ -653,7 +655,7 @@ def test_coordinator_rejects_open_without_verified_manifest_artifact(setup, iden
             return decision, json.dumps(decision), metadata
 
     coordinator.model_provider = Model()
-    with pytest.raises(ValueError, match="BONSAI_INFERENCE_RECEIPT_UNVERIFIED"):
+    with pytest.raises(ValueError, match="MODEL_INFERENCE_RECEIPT_UNVERIFIED"):
         coordinator._model_output(ctx)
 
 
@@ -668,16 +670,16 @@ def test_open_fails_closed_without_verified_bonsai_inference_receipt(setup, rece
     if receipt_state == "missing":
         ctx.model_inference_settings = {}
     elif receipt_state == "alias_as_actual":
-        ctx.model_inference_settings["actual_model_id"] = DEFAULT_SMART_MODEL
+        ctx.model_inference_settings["verified_manifest_model_id"] = "other-unlisted-model"
     elif receipt_state == "forged_artifact":
-        ctx.model_inference_settings["actual_model_id"] = "Other-Bonsai-2-27B-PTQ1_0.gguf"
+        ctx.model_inference_settings["actual_model_id"] = "unlisted-provider-model"
     elif receipt_state == "inference_incomplete":
         ctx.model_call_completed = False
 
     result = engine.execute_cycle(ctx, now=now, model_output=output)
 
     assert result.status == "BLOCKED"
-    assert result.reason == "BONSAI_INFERENCE_RECEIPT_UNVERIFIED"
+    assert result.reason == "MODEL_INFERENCE_RECEIPT_UNVERIFIED"
     assert result.action_output.action == "WAIT"
     assert result.decision_origin == "SYSTEM"
     assert result.order_intent is None
@@ -708,12 +710,12 @@ def test_model_prompt_freezes_technical_news_and_ai_authored_json(setup):
     }]
 
     class Model:
-        model_id = "Bonsai-2-27B-PTQ1_0"
+        model_id = DEFAULT_SMART_MODEL
         context_length = 8192
         max_tokens = 2048
 
         def generate_json(self, messages, **kwargs):
-            assert kwargs["model_name"] == "Bonsai-2-27B-PTQ1_0"
+            assert kwargs["model_name"] == DEFAULT_SMART_MODEL
             assert "忽略新闻" in messages[0]["content"]
             assert "每个动作都必须填写 instrument_id，且必须逐字选自 allowed_instruments" in messages[0]["content"]
             assert "EXTERNAL_OR_UNVERIFIED 只计入账户保证金/风险数字" in messages[0]["content"]
@@ -750,18 +752,18 @@ def test_model_prompt_freezes_technical_news_and_ai_authored_json(setup):
                     "evidence_refs": [r for r in payload["evidence_refs"] if r.startswith(("market_snapshot:", "technical_snapshot:", "market_radar:", "news_revision:"))],
                     **deepcopy(output.extra_fields)}
             return decision, json.dumps(decision), {
-                "model_id": "Bonsai-2-27B-PTQ1_0",
-                "actual_model_id": "models/Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                "model_id": DEFAULT_SMART_MODEL,
+                "actual_model_id": DEFAULT_SMART_MODEL,
                 "model_identity_source": "completion_response",
-                "verified_manifest_model_id": "models/Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                "verified_manifest_model_id": DEFAULT_SMART_MODEL,
             }
 
     coordinator.model_provider = Model()
     decoded = coordinator._model_output(ctx)
     assert ctx.model_call_completed is True
-    assert ctx.model_inference_settings["actual_model_id"] == "models/Ternary-Bonsai-2-27B-PTQ1_0.gguf"
+    assert ctx.model_inference_settings["actual_model_id"] == DEFAULT_SMART_MODEL
     assert ctx.model_inference_settings["model_identity_source"] == "completion_response"
-    assert ctx.model_inference_settings["verified_manifest_model_id"] == "models/Ternary-Bonsai-2-27B-PTQ1_0.gguf"
+    assert ctx.model_inference_settings["verified_manifest_model_id"] == DEFAULT_SMART_MODEL
     assert decoded.position_size_usdt == 80
     assert decoded.extra_fields["strategy_plan"]["name"] == "AI 区间恢复"
     assert ctx.evidence_bundle_id
@@ -781,7 +783,7 @@ def test_model_prompt_freezes_technical_news_and_ai_authored_json(setup):
         cycle_payload = json.loads(db.execute(
             "SELECT payload_json FROM ai_led_cycles WHERE cycle_id=?", (ctx.cycle_id,),
         ).fetchone()[0])
-    assert cycle_payload["model_inference_settings"]["actual_model_id"] == "models/Ternary-Bonsai-2-27B-PTQ1_0.gguf"
+    assert cycle_payload["model_inference_settings"]["actual_model_id"] == DEFAULT_SMART_MODEL
 
 
 def test_market_radar_loader_caps_symbols_and_series_and_preserves_unavailable_status(monkeypatch):
@@ -972,15 +974,17 @@ def test_compacted_three_symbol_prompt_fits_verified_8k_window_without_losing_tr
         )
 
     class Model:
-        model_id = "Bonsai-2-27B-PTQ1_0"
+        model_id = DEFAULT_SMART_MODEL
         context_length = 8192
-        max_tokens = 2048
+        max_tokens = 768
 
         def __init__(self):
             self.messages = None
             self.kwargs = None
+            self.calls = 0
 
         def generate_json(self, messages, **kwargs):
+            self.calls += 1
             self.messages = messages
             self.kwargs = kwargs
             return {"action": "WAIT", "instrument_id": "BTCUSDT", "reason": "等待下一次收盘确认", "confidence": None}
@@ -988,8 +992,9 @@ def test_compacted_three_symbol_prompt_fits_verified_8k_window_without_losing_tr
     model = Model()
     coordinator.model_provider = model
     coordinator._model_output(ctx)
-    assert 1024 <= model.kwargs["max_tokens"] <= model.max_tokens
-    assert model.kwargs["reasoning_effort"] == "none"
+    assert model.kwargs["max_tokens"] == 768
+    assert model.calls == 1
+    assert model.kwargs["reasoning_effort"] == "high"
 
     payload = json.loads(model.messages[1]["content"])
     assert set(payload["market_snapshots"]) == set(symbols)
@@ -1003,7 +1008,9 @@ def test_compacted_three_symbol_prompt_fits_verified_8k_window_without_losing_tr
     for symbol in candidate_symbols:
         headline = next(news for news in payload["news_revisions"] if news["symbol"] == symbol)
         assert headline["title"].startswith(f"{symbol} event")
-        assert len(headline["summary"]) >= 48
+        assert 0 < len(headline["summary"]) <= 48
+        assert headline["revision_id"]
+        assert headline["published_at"] and headline["known_at"]
     assert len(payload["account_truth"]["positions"]) == 3
     assert [item["ownership"] for item in payload["account_truth"]["positions"]] == [
         "VERIFIED_SYSTEM", "EXTERNAL_OR_UNVERIFIED", "EXTERNAL_OR_UNVERIFIED",
@@ -1026,7 +1033,7 @@ def test_compacted_three_symbol_prompt_fits_verified_8k_window_without_losing_tr
     assert "large_unused_provider_blob" not in json.dumps(payload)
     assert ctx.model_inference_settings["verified_context_length"] == 8192
     assert ctx.model_inference_settings["estimated_input_tokens"] + ctx.model_inference_settings["output_token_reserve"] <= 8192
-    assert ctx.model_inference_settings["reasoning_effort"] == "none"
+    assert ctx.model_inference_settings["reasoning_effort"] == "high"
     assert "JSON字段规则：" in model.messages[0]["content"]
     assert "JSON Schema (return one matching JSON object):" not in model.messages[0]["content"]
 
@@ -1364,6 +1371,8 @@ def test_nofx_runtime_and_gate_universe_contract_reach_bonsai_decision_payload(s
     _store, _, coordinator, _engine = setup
     now = datetime.now(timezone.utc)
     ctx, _output = context_and_output(now)
+    ctx.mode = TradingMode.TESTNET
+    ctx.venue = "gate"
     runtime = {
         "version": 1, "source": "NOFX_IMPORT", "signal_timeframe": "5m",
         "context_timeframes": ["15m", "1h"],
@@ -1409,20 +1418,29 @@ def test_nofx_runtime_and_gate_universe_contract_reach_bonsai_decision_payload(s
 
     from core.trading.autonomous_strategy import build_strategy_system_prompt
     gate_prompt = build_strategy_system_prompt(ctx.strategy_instructions, nofx_gate=True)
-    assert "每个动作包括 WAIT/HOLD 都必须填写来自 allowed_instruments 的 instrument_id" in gate_prompt
+    assert "所有动作填action、allowed_instruments内的instrument_id" in gate_prompt
     assert "EXTERNAL_OR_UNVERIFIED 继续计入账户保证金/风险事实" in gate_prompt
 
     class Model:
-        model_id = "Bonsai-2-27B-PTQ1_0"
+        model_id = DEFAULT_SMART_MODEL
         context_length = 8192
         max_tokens = 1000
 
         def generate_json(self, messages, **kwargs):
-            assert kwargs["model_name"] == "Bonsai-2-27B-PTQ1_0"
-            assert "每个动作都必须填写 instrument_id，且必须逐字选自 allowed_instruments" in messages[0]["content"]
-            assert "EXTERNAL_OR_UNVERIFIED 只计入账户保证金/风险数字" in messages[0]["content"]
+            assert kwargs["model_name"] == DEFAULT_SMART_MODEL
+            # The model-facing Gate prompt deliberately compacts repeated prose;
+            # assert its compact equivalents while the full source contract is
+            # checked above against ``gate_prompt``.
+            assert "所有动作填action、allowed_instruments内的instrument_id" in messages[0]["content"]
+            assert "EXTERNAL_OR_UNVERIFIED 计入账户保证金/风险" in messages[0]["content"]
             self.payload = json.loads(messages[1]["content"])
-            return {"action": "WAIT", "instrument_id": "BTCUSDT", "reason": "等待下一次收盘", "confidence": None}
+            return {
+                "action": "WAIT", "instrument_id": "BTCUSDT",
+                "reason": "等待下一次收盘确认结构",
+                "confidence": 40,
+                "strategy_analysis": {"missing_conditions": ["等待已收盘的5m K线确认结构"]},
+                "entry_condition": "下一根已收盘的5m K线确认结构后再评估",
+            }
 
     model = Model()
     coordinator.model_provider = model
@@ -1475,7 +1493,7 @@ def test_open_missing_confidence_gets_one_strict_model_repair(setup):
     ctx, output = context_and_output(now)
 
     class Model:
-        model_id = "Bonsai-2-27B-PTQ1_0"
+        model_id = DEFAULT_SMART_MODEL
         context_length = 32768
         max_tokens = 900
 
@@ -1497,9 +1515,9 @@ def test_open_missing_confidence_gets_one_strict_model_repair(setup):
                 }
                 return decision, json.dumps(decision), {
                     "model_id": DEFAULT_SMART_MODEL,
-                    "actual_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                    "actual_model_id": DEFAULT_SMART_MODEL,
                     "model_identity_source": "completion_response",
-                    "verified_manifest_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                    "verified_manifest_model_id": DEFAULT_SMART_MODEL,
                 }
             assert kwargs["prompt_version"].endswith("_repair")
             assert "confidence" in kwargs["schema"]["required"]
@@ -1508,9 +1526,9 @@ def test_open_missing_confidence_gets_one_strict_model_repair(setup):
             repaired = dict(payload["previous_decision"], confidence=78)
             return repaired, json.dumps(repaired), {
                 "model_id": DEFAULT_SMART_MODEL,
-                "actual_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                "actual_model_id": DEFAULT_SMART_MODEL,
                 "model_identity_source": "completion_response",
-                "verified_manifest_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                "verified_manifest_model_id": DEFAULT_SMART_MODEL,
             }
 
     model = Model()
@@ -1558,9 +1576,9 @@ def test_valid_open_normalizes_known_optional_explanations_with_raw_audit(setup)
             }
             return decision, json.dumps(decision, ensure_ascii=False), {
                 "model_id": DEFAULT_SMART_MODEL,
-                "actual_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                "actual_model_id": DEFAULT_SMART_MODEL,
                 "model_identity_source": "completion_response",
-                "verified_manifest_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                "verified_manifest_model_id": DEFAULT_SMART_MODEL,
             }
 
     model = Model()
@@ -1608,7 +1626,7 @@ def test_narrow_model_stop_gets_one_bounded_model_repair_without_changing_trade_
     }
 
     class Model:
-        model_id = "Bonsai-2-27B-PTQ1_0"
+        model_id = DEFAULT_SMART_MODEL
         context_length = 32768
         max_tokens = 900
 
@@ -1634,14 +1652,18 @@ def test_narrow_model_stop_gets_one_bounded_model_repair_without_changing_trade_
                 assert kwargs["prompt_version"].endswith("_stop_repair")
                 assert payload["required_geometry"]["minimum_stop_distance"] >= 3.6
                 assert payload["required_geometry"]["stop_boundary"] <= 96.4
-                decision = dict(payload["previous_decision"], stop_price=95, take_profit=118)
+                decision = dict(
+                    payload["previous_decision"], stop_price=95, take_profit=118,
+                    evidence_refs=[ref for ref in payload["inputs"]["evidence_refs"]
+                                   if ref.startswith(("market_snapshot:", "technical_snapshot:", "news_revision:"))],
+                )
                 if tamper_entry:
                     decision["entry_price"] = 101
             return decision, json.dumps(decision), {
                 "model_id": DEFAULT_SMART_MODEL,
-                "actual_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                "actual_model_id": DEFAULT_SMART_MODEL,
                 "model_identity_source": "completion_response",
-                "verified_manifest_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                "verified_manifest_model_id": DEFAULT_SMART_MODEL,
             }
 
     model = Model()
@@ -1678,7 +1700,7 @@ def test_crossing_short_limit_gets_model_authored_passive_entry_repair(setup, sc
     }
 
     class Model:
-        model_id = "Bonsai-2-27B-PTQ1_0"
+        model_id = DEFAULT_SMART_MODEL
         context_length = 32768
         max_tokens = 900
 
@@ -1704,14 +1726,18 @@ def test_crossing_short_limit_gets_model_authored_passive_entry_repair(setup, sc
             else:
                 assert kwargs["prompt_version"].endswith("_entry_repair")
                 assert payload["required_geometry"]["limit"]["reason"] == "CROSSES_QUOTE"
-                decision = dict(payload["previous_decision"], entry_price=100.2,
-                                limit_price=100.2, entry_zone={"low": 100.2, "high": 100.2},
-                                stop_price=104.5, take_profit=90)
+                decision = dict(
+                    payload["previous_decision"], entry_price=100.2,
+                    limit_price=100.2, entry_zone={"low": 100.2, "high": 100.2},
+                    stop_price=104.5, take_profit=90,
+                    evidence_refs=[ref for ref in payload["inputs"]["evidence_refs"]
+                                   if ref.startswith(("market_snapshot:", "technical_snapshot:", "news_revision:"))],
+                )
             return decision, json.dumps(decision), {
                 "model_id": DEFAULT_SMART_MODEL,
-                "actual_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                "actual_model_id": DEFAULT_SMART_MODEL,
                 "model_identity_source": "completion_response",
-                "verified_manifest_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                "verified_manifest_model_id": DEFAULT_SMART_MODEL,
             }
 
     model = Model()
@@ -1736,7 +1762,7 @@ def test_open_without_optional_analysis_uses_one_model_call(setup):
     ctx, output = context_and_output(now)
 
     class Model:
-        model_id = "Bonsai-2-27B-PTQ1_0"
+        model_id = DEFAULT_SMART_MODEL
         context_length = 32768
         max_tokens = 900
 
@@ -1758,9 +1784,9 @@ def test_open_without_optional_analysis_uses_one_model_call(setup):
                 raise AssertionError("optional narration must not trigger another model call")
             return decision, json.dumps(decision), {
                 "model_id": DEFAULT_SMART_MODEL,
-                "actual_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                "actual_model_id": DEFAULT_SMART_MODEL,
                 "model_identity_source": "completion_response",
-                "verified_manifest_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                "verified_manifest_model_id": DEFAULT_SMART_MODEL,
             }
 
     model = Model()
@@ -1781,7 +1807,7 @@ def test_open_missing_relevant_news_ref_repairs_by_appending_verified_ref_only(s
     ctx, output = context_and_output(now)
 
     class Model:
-        model_id = "Bonsai-2-27B-PTQ1_0"
+        model_id = DEFAULT_SMART_MODEL
         context_length = 32768
         max_tokens = 900
 
@@ -1808,9 +1834,9 @@ def test_open_missing_relevant_news_ref_repairs_by_appending_verified_ref_only(s
                 decision["evidence_refs"] = [*decision["evidence_refs"], "news_revision:news1"]
             return decision, json.dumps(decision), {
                 "model_id": DEFAULT_SMART_MODEL,
-                "actual_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                "actual_model_id": DEFAULT_SMART_MODEL,
                 "model_identity_source": "completion_response",
-                "verified_manifest_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                "verified_manifest_model_id": DEFAULT_SMART_MODEL,
             }
 
     model = Model()
@@ -1841,7 +1867,7 @@ def test_model_prompt_does_not_present_static_no_trigger_as_ai_entry_veto(setup)
     seen = {}
 
     class Model:
-        model_id = "Bonsai-2-27B-PTQ1_0"
+        model_id = DEFAULT_SMART_MODEL
         context_length = 32768
         max_tokens = 900
 
@@ -1917,7 +1943,7 @@ def test_invalid_error_envelope_is_blocked_and_persisted_without_fake_wait_repai
     ctx, _ = context_and_output(now)
 
     class Model:
-        model_id = "Bonsai-2-27B-PTQ1_0"
+        model_id = DEFAULT_SMART_MODEL
         context_length = 32768
         max_tokens = 900
 
@@ -2091,7 +2117,7 @@ def test_model_transport_failure_is_not_persisted_as_a_model_decision(setup, fai
     ctx, _ = context_and_output(datetime.now(timezone.utc))
 
     class FailedModel:
-        model_id = "Bonsai-2-27B-PTQ1_0"
+        model_id = DEFAULT_SMART_MODEL
         context_length = 8192
         max_tokens = 1000
 
@@ -2181,7 +2207,7 @@ def test_gate_wait_typo_reference_is_rejected_on_first_validation_without_retry(
     ctx, _=context_and_output(datetime.now(timezone.utc))
     ctx.mode=TradingMode.TESTNET; ctx.venue="gate"
     class Model:
-        model_id="Bonsai-2-27B-PTQ1_0";context_length=32768;max_tokens=1000
+        model_id=DEFAULT_SMART_MODEL;context_length=32768;max_tokens=1000
         calls=0
         def generate_json(self,messages,**kwargs):
             self.calls+=1
@@ -2209,7 +2235,7 @@ def test_model_rejects_ref_present_in_raw_context_but_hidden_from_fitted_call(se
         return payload,info
     monkeypatch.setattr(coordinator_module,"_fit_prompt_payload",fitted)
     class Model:
-        model_id="Bonsai-2-27B-PTQ1_0";context_length=32768;max_tokens=1000
+        model_id=DEFAULT_SMART_MODEL;context_length=32768;max_tokens=1000
         def generate_json(self,messages,**kwargs):
             assert hidden[-1] not in kwargs["schema"]["properties"]["evidence_refs"]["items"]["enum"]
             return {"action":"WAIT","instrument_id":"BTCUSDT","reason":"waiting","confidence":None,"evidence_refs":[hidden[-1]]}

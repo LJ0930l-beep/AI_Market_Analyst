@@ -6,21 +6,20 @@ import pytest
 
 from core.model_routing import (
     DEFAULT_MODEL,
-    is_trusted_bonsai_provider,
-    is_verified_bonsai_receipt,
+    is_trusted_model_provider,
+    is_verified_model_receipt,
 )
 
-ARTIFACT = r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"
 INPUT_HASH = "a" * 64
 
 
 def _receipt() -> dict[str, str]:
     return {
         "model_id": DEFAULT_MODEL,
-        "actual_model_id": ARTIFACT,
-        "model_version": ARTIFACT,
-        "model_identity_source": "request_bound_to_verified_manifest",
-        "verified_manifest_model_id": ARTIFACT,
+        "actual_model_id": DEFAULT_MODEL,
+        "model_version": DEFAULT_MODEL,
+        "model_identity_source": "completion_response",
+        "verified_manifest_model_id": DEFAULT_MODEL,
         "prompt_version": "agent_v2",
         "input_hash": INPUT_HASH,
         "parse_status": "valid",
@@ -28,7 +27,7 @@ def _receipt() -> dict[str, str]:
 
 
 def test_bonsai_trade_receipt_is_bound_to_exact_prompt_and_input() -> None:
-    assert is_verified_bonsai_receipt(
+    assert is_verified_model_receipt(
         _receipt(),
         expected_prompt_version="agent_v2",
         expected_input_hash=INPUT_HASH,
@@ -38,20 +37,22 @@ def test_bonsai_trade_receipt_is_bound_to_exact_prompt_and_input() -> None:
 @pytest.mark.parametrize(
     "change",
     [
-        {"actual_model_id": DEFAULT_MODEL},
+        {"model_identity_source": "request_bound_to_verified_manifest"},
         {"actual_model_id": "qwen3.5:9b"},
-        {"model_version": "Other-Bonsai-2-27B.gguf"},
-        {"verified_manifest_model_id": "Other-Bonsai-2-27B.gguf"},
+        {"model_version": "qwen3.5:9b"},
+        {"verified_manifest_model_id": "qwen3.5:9b"},
         {"input_hash": "another-request"},
         {"prompt_version": "different-prompt"},
         {"parse_status": "invalid"},
         {"verified_manifest_model_id": None},
+        {"actual_model_id": None},
     ],
+    ids=["change0", "change1", "change2", "change3", "change4", "change5", "change6", "change7", "missing_actual"],
 )
 def test_bonsai_trade_receipt_rejects_forged_identity_or_unbound_response(change) -> None:
     receipt = _receipt()
     receipt.update(copy.deepcopy(change))
-    assert not is_verified_bonsai_receipt(
+    assert not is_verified_model_receipt(
         receipt,
         expected_prompt_version="agent_v2",
         expected_input_hash=INPUT_HASH,
@@ -59,7 +60,7 @@ def test_bonsai_trade_receipt_rejects_forged_identity_or_unbound_response(change
 
 
 def test_bonsai_trade_receipt_rejects_partial_binding_expectations() -> None:
-    assert not is_verified_bonsai_receipt(
+    assert not is_verified_model_receipt(
         _receipt(), expected_prompt_version="agent_v2"
     )
 
@@ -74,7 +75,7 @@ def test_only_exact_provider_on_pinned_loopback_route_is_trusted() -> None:
     class WrappedProvider(OllamaProvider):
         pass
 
-    assert is_trusted_bonsai_provider(trusted)
-    assert not is_trusted_bonsai_provider(qwen_route)
-    assert not is_trusted_bonsai_provider(remote_route)
-    assert not is_trusted_bonsai_provider(WrappedProvider(base_url=model_client.base_url, model_name=DEFAULT_MODEL))
+    assert is_trusted_model_provider(trusted)
+    assert not is_trusted_model_provider(qwen_route)
+    assert not is_trusted_model_provider(remote_route)
+    assert not is_trusted_model_provider(WrappedProvider(base_url=model_client.base_url, model_name=DEFAULT_MODEL))

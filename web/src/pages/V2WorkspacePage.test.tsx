@@ -335,7 +335,7 @@ describe("V2 task workspace",()=>{
       vi.mocked(apiClient.v2).mockImplementation(async (path: string) => {
       if (path === "/gate/accounts") {
         return {accounts:[
-          {account_id:"gate_testnet",mode:"TESTNET",venue:"gate",account_kind:"TESTNET",api_environment:"TESTNET",api_base_url:"https://api-testnet.gateapi.io/api/v4",execution_adapter:"GATE_TESTNET_API",live_status:"AVAILABLE",private_api_access:"NOT_ATTEMPTED",credentials:{configured:false,api_key_masked:"",testnet:true,updated_at:null}},
+          {account_id:"gate_testnet",mode:"TESTNET",venue:"gate",account_kind:"TESTNET",api_environment:"TESTNET",api_base_url:"https://api-testnet.gateapi.io/api/v4",execution_adapter:"GATE_TESTNET_API",live_status:"AVAILABLE",private_api_access:"NOT_ATTEMPTED",credentials:{configured:false,api_key_masked:"",testnet:false,updated_at:null}},
           {account_id:"gate_live",mode:"LIVE",venue:"gate",account_kind:"LIVE",api_environment:"LIVE",api_base_url:"https://api.gateio.ws/api/v4",execution_adapter:"GATE_LIVE_API",live_status:"LOCKED",private_api_access:"NOT_ATTEMPTED",credentials:{configured:false,api_key_masked:"",testnet:false,updated_at:null}},
         ]};
       }
@@ -356,23 +356,22 @@ describe("V2 task workspace",()=>{
     expect(screen.getByTestId("gate-testnet-e2e")).toHaveTextContent("Gate TestNet 独立链路验收");
     expect(screen.getByRole("button", { name: /执行 TestNet 独立验收/ })).not.toBeDisabled();
   });
-  it("verifies and saves credentials in the selected Gate account slot",async()=>{
+  it("keeps a stale persisted Live account out of the TestNet credential flow",async()=>{
     const verifyCalls: Array<{path:string; method:string; body:unknown}> = [];
     vi.mocked(apiClient.v2).mockImplementation(async (path: string, method?: string, body?: unknown) => {
       if (path === "/gate/accounts") {
         return {accounts:[
-          {account_id:"gate_testnet",mode:"TESTNET",venue:"gate",account_kind:"TESTNET",api_environment:"TESTNET",api_base_url:"https://api-testnet.gateapi.io/api/v4",execution_adapter:"GATE_TESTNET_API",live_status:"AVAILABLE",private_api_access:"NOT_ATTEMPTED",credentials:{configured:false,api_key_masked:"",testnet:true,updated_at:null}},
-          {account_id:"gate_live",mode:"LIVE",venue:"gate",account_kind:"LIVE",api_environment:"LIVE",api_base_url:"https://api.gateio.ws/api/v4",execution_adapter:"GATE_LIVE_API",live_status:"LOCKED",private_api_access:"NOT_ATTEMPTED",credentials:{configured:false,api_key_masked:"",testnet:false,updated_at:null}},
+          {account_id:"gate_testnet",mode:"TESTNET",venue:"gate",account_kind:"TESTNET",api_environment:"TESTNET",api_base_url:"https://api-testnet.gateapi.io/api/v4",execution_adapter:"GATE_TESTNET_API",live_status:"AVAILABLE",private_api_access:"NOT_ATTEMPTED",credentials:{configured:false,api_key_masked:"",testnet:false,updated_at:null}},
         ]};
       }
-      if (path === "/accounts") return {accounts:[{account_id:"gate_testnet",mode:"TESTNET",venue:"gate"},{account_id:"gate_live",mode:"LIVE",venue:"gate"}]};
+      if (path === "/accounts") return {accounts:[{account_id:"gate_testnet",mode:"TESTNET",venue:"gate"}]};
       if (path.endsWith("/credentials/verify")) {
         verifyCalls.push({path,method:method || "",body});
         return {
           saved:true,
           private_api_access:"EXPLICITLY_REQUESTED",
-          account:{account_id:"gate_testnet",mode:"TESTNET",venue:"gate",account_kind:"GATE_TESTNET",api_environment:"TESTNET",api_base_url:"https://api-testnet.gateapi.io/api/v4",execution_adapter:"GATE_TESTNET_API",live_status:"AVAILABLE",private_api_access:"EXPLICITLY_REQUESTED",credentials:{configured:true,api_key_masked:"test***1234",testnet:true,updated_at:"2030-01-02T00:00:00Z"}},
-          validation:{valid:true,status:"VERIFIED_READ_ONLY",private_api_access:"EXPLICITLY_REQUESTED",account_id:"gate_testnet",api_environment:"TESTNET",account_type:"Gate.io Futures / Swap",data_status:"AVAILABLE",total_usdt:123.45},
+          account:{account_id:"gate_testnet_other",mode:"TESTNET",venue:"gate",account_kind:"TESTNET",api_environment:"TESTNET",api_base_url:"https://api-testnet.gateapi.io/api/v4",execution_adapter:"GATE_TESTNET_API",live_status:"AVAILABLE",private_api_access:"EXPLICITLY_REQUESTED",credentials:{configured:true,api_key_masked:"test***1234",testnet:true,updated_at:"2030-01-02T00:00:00Z"}},
+          validation:{valid:true,status:"VERIFIED_READ_ONLY",private_api_access:"EXPLICITLY_REQUESTED",account_id:"gate_testnet_other",api_environment:"TESTNET",account_type:"Gate.io Futures / Swap",data_status:"AVAILABLE",total_usdt:123.45},
         };
       }
       if (path.startsWith("/gate/config")) return {configured:false,api_key_masked:"",live_enabled:false,testnet:true,updated_at:null};
@@ -382,25 +381,32 @@ describe("V2 task workspace",()=>{
       if (path.startsWith("/workspace")) return {watchlist:[{symbol:"BTCUSDT"}],subscriptions:[],runtime:{state:"stopped"},decisions:[],positions:[],allow_unknown_macro:false};
       return {watchlist:[{symbol:"BTCUSDT"}],subscriptions:[],runtime:{state:"stopped"},decisions:[],positions:[],allow_unknown_macro:false};
     });
+    window.sessionStorage.setItem("aima.trading-account", "gate_live");
     show("gate-live");
+    const accountSelector = await screen.findByRole("combobox", {name:/Execution account|执行账户/});
+    expect(accountSelector).toHaveValue("gate_testnet");
+    expect(Array.from((accountSelector as HTMLSelectElement).options).map((option) => option.value)).toEqual(["gate_testnet"]);
+    expect((accountSelector as HTMLSelectElement).options[0]?.textContent).not.toMatch(/not registered|未登记/i);
     const key = await screen.findByLabelText(/API Key/);
     const secret = screen.getByLabelText(/API Secret/);
     fireEvent.change(key,{target:{value:"paper-verify-key"}});
     fireEvent.change(secret,{target:{value:"paper-verify-secret"}});
     fireEvent.click(await screen.findByRole("button",{name:/Verify & save/}));
-    expect(await screen.findByTestId("gate-verification-result")).toHaveTextContent("Read-only API verification passed");
+    expect(await screen.findByTestId("gate-credential-notice")).toHaveTextContent("TESTNET_SCOPE_MISMATCH");
+    expect(screen.queryByTestId("gate-verification-result")).not.toBeInTheDocument();
     await waitFor(()=>expect(verifyCalls).toEqual([{
       path:"/gate/accounts/gate_testnet/credentials/verify",
       method:"POST",
       body:{api_key:"paper-verify-key",api_secret:"paper-verify-secret"},
       }]));
+    expect(vi.mocked(apiClient.v2).mock.calls.some(([path]) => typeof path === "string" && path.includes("gate_live"))).toBe(false);
   });
   it("provisions a missing Gate profile before saving credentials through the scoped endpoint",async()=>{
     const calls: Array<{path:string;method:string;body:unknown}> = [];
     const testnetProfile = {
       account_id:"gate_testnet",mode:"TESTNET",venue:"gate",account_kind:"TESTNET",api_environment:"TESTNET",
       api_base_url:"https://api-testnet.gateapi.io/api/v4",execution_adapter:"GATE_TESTNET_API",live_status:"AVAILABLE",
-      private_api_access:"NOT_ATTEMPTED",credentials:{configured:false,api_key_masked:"",testnet:true,updated_at:null},
+      private_api_access:"NOT_ATTEMPTED",credentials:{configured:false,api_key_masked:"",testnet:false,updated_at:null},
     };
     vi.mocked(apiClient.v2).mockImplementation(async (path: string, method?: string, body?: unknown) => {
       calls.push({path,method:method || "GET",body});
@@ -435,12 +441,41 @@ describe("V2 task workspace",()=>{
     });
     expect(calls).not.toContainEqual(expect.objectContaining({path:"/gate/config",method:"POST"}));
   });
+  it("rejects a configured credential slot whose environment is not TestNet",async()=>{
+    const profile = {
+      account_id:"gate_testnet",mode:"TESTNET",venue:"gate",account_kind:"TESTNET",api_environment:"TESTNET",
+      api_base_url:"https://api-testnet.gateapi.io/api/v4",execution_adapter:"GATE_TESTNET_API",live_status:"AVAILABLE",
+      private_api_access:"NOT_ATTEMPTED",credentials:{configured:false,api_key_masked:"",testnet:false,updated_at:null},
+    };
+    vi.mocked(apiClient.v2).mockImplementation(async (path: string) => {
+      if (path === "/gate/accounts") return {accounts:[profile]};
+      if (path === "/accounts") return {accounts:[{account_id:"gate_testnet",mode:"TESTNET",venue:"gate"}]};
+      if (path.endsWith("/credentials/verify")) return {
+        saved:true,
+        private_api_access:"EXPLICITLY_REQUESTED",
+        account:{...profile,credentials:{configured:true,api_key_masked:"masked",testnet:false,updated_at:"2030-01-02T00:00:00Z"}},
+        validation:{valid:true,status:"VERIFIED_READ_ONLY",private_api_access:"EXPLICITLY_REQUESTED",account_id:"gate_testnet",api_environment:"TESTNET"},
+      };
+      if (path.startsWith("/gate/config")) return {configured:false,api_key_masked:"",live_enabled:false,testnet:false,updated_at:null};
+      if (path.startsWith("/gate/account")) return {configured:false,account_id:"gate_testnet",mode:"TESTNET",data_status:"NOT_CONFIGURED_NO_TESTNET_CREDENTIALS",balance:{total:null,free:null,used:null},positions:[]};
+      if (path.startsWith("/gate/trades")) return {configured:false,is_sample:false,trades:[],summary:{total_trades:0,total_fee_cost:null,source:"NOT_CONFIGURED_NO_TESTNET_CREDENTIALS"}};
+      if (path.startsWith("/gate/markets")) return {markets:[]};
+      if (path.startsWith("/workspace")) return {watchlist:[{symbol:"BTCUSDT"}],subscriptions:[],runtime:{state:"stopped"},decisions:[],positions:[],allow_unknown_macro:false};
+      return {watchlist:[{symbol:"BTCUSDT"}],subscriptions:[],runtime:{state:"stopped"},decisions:[],positions:[],allow_unknown_macro:false};
+    });
+    show("gate-live");
+    fireEvent.change(await screen.findByLabelText(/API Key/),{target:{value:"testnet-key"}});
+    fireEvent.change(screen.getByLabelText(/API Secret/),{target:{value:"testnet-secret"}});
+    fireEvent.submit(screen.getByLabelText(/API Key/).closest("form")!);
+    expect(await screen.findByTestId("gate-credential-notice")).toHaveTextContent("TESTNET_SCOPE_MISMATCH");
+    expect(screen.queryByTestId("gate-verification-result")).not.toBeInTheDocument();
+  });
   it("runs a scoped read-only Gate connection test without saving or sending",async()=>{
     const calls: Array<{path:string;method:string;body:unknown}> = [];
     vi.mocked(apiClient.v2).mockImplementation(async (path: string, method?: string, body?: unknown) => {
       if (path === "/gate/accounts") {
         return {accounts:[
-          {account_id:"gate_testnet",mode:"TESTNET",venue:"gate",account_kind:"TESTNET",api_environment:"TESTNET",api_base_url:"https://api-testnet.gateapi.io/api/v4",execution_adapter:"GATE_TESTNET_API",live_status:"AVAILABLE",private_api_access:"NOT_ATTEMPTED",credentials:{configured:false,api_key_masked:"",testnet:true,updated_at:null}},
+          {account_id:"gate_testnet",mode:"TESTNET",venue:"gate",account_kind:"TESTNET",api_environment:"TESTNET",api_base_url:"https://api-testnet.gateapi.io/api/v4",execution_adapter:"GATE_TESTNET_API",live_status:"AVAILABLE",private_api_access:"NOT_ATTEMPTED",credentials:{configured:false,api_key_masked:"",testnet:false,updated_at:null}},
         ]};
       }
       if (path === "/accounts") return {accounts:[{account_id:"gate_testnet",mode:"TESTNET",venue:"gate"}]};

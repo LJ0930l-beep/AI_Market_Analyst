@@ -1,0 +1,58 @@
+{
+  "schema_version": "aima-research-partitions-v1",
+  "source": {
+    "commit": "608ee0083b9e7912c02fd3bf53d05087378f944f",
+    "path": "core/replay/gemini_research.py",
+    "symbol": "research_plan",
+    "sha256": "66ab46fb740cc6d130388a0455023af5715ee8ff937ba22ace8852eabf38b821"
+  },
+  "archive_window": {
+    "start": "2025-10-01T00:00:00+00:00",
+    "end": "2026-10-01T00:00:00+00:00"
+  },
+  "boundary_semantics": "HALF_OPEN_START_INCLUSIVE_END_EXCLUSIVE",
+  "optimization_window_hours": 12,
+  "partitions": [
+    {
+      "id": "optimization",
+      "start": "2025-10-01T00:00:00+00:00",
+      "end": "2026-04-01T00:00:00+00:00"
+    },
+    {
+      "id": "validation",
+      "start": "2026-04-01T00:00:00+00:00",
+      "end": "2026-07-01T00:00:00+00:00"
+    },
+    {
+      "id": "untouched_test",
+      "start": "2026-07-01T00:00:00+00:00",
+      "end": "2026-10-01T00:00:00+00:00"
+    }
+  ],
+  "pilot_windows": [
+    {
+      "id": "pilot-1",
+      "start": "2025-10-15T00:00:00+00:00",
+      "end": "2025-10-15T12:00:00+00:00",
+      "partition": "optimization"
+    },
+    {
+      "id": "pilot-2",
+      "start": "2025-12-14T00:00:00+00:00",
+      "end": "2025-12-14T12:00:00+00:00",
+      "partition": "optimization"
+    },
+    {
+      "id": "pilot-3",
+      "start": "2026-02-12T00:00:00+00:00",
+      "end": "2026-02-12T12:00:00+00:00",
+      "partition": "optimization"
+    }
+  ],
+  "heldout_protocol": {
+    "window_hours": 48,
+    "calendar_offsets_days": [14, 44, 74],
+    "minimum_closed_trades_per_strategy": 30,
+    "scope": "PREREGISTERED_BEFORE_HELDOUT_RESULTS_SAMPLE_THRESHOLD_STILL_REQUIRED"
+  }
+}

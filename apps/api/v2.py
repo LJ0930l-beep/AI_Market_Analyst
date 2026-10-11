@@ -134,6 +134,9 @@ class GateConnectionTestBody(BaseModel):
 class GateTestnetE2EBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     account_id: str = Field(min_length=1, max_length=100)
+    # The frontend confirmation is a hard server-side boundary too. A missing
+    # field must never make this mutating TestNet diagnostic executable.
+    confirm_testnet: bool = Field(default=False, strict=True)
     symbol: str = Field(min_length=1, max_length=40)
     side: str = Field(pattern="^(LONG|SHORT)$")
     # Gate futures use contract counts.  Omit to use the exchange-reported
@@ -1886,6 +1889,12 @@ def router_for(get_store, get_runtime, get_translation):
         This endpoint does not call Gemini or the strategy engine.  It is a
         TestNet-only transport check and never substitutes a local fill.
         """
+
+        if body.confirm_testnet is not True:
+            raise HTTPException(
+                status_code=422,
+                detail="TESTNET_CONFIRMATION_REQUIRED: explicitly confirm the Gate TestNet order check.",
+            )
 
         try:
             account_id = require_registered_account(store, body.account_id)

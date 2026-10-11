@@ -4,7 +4,7 @@ from threading import Event, RLock
 import sqlite3
 import pytest
 from core.storage import SQLiteStore
-from core.trading.ai_strategy_book import AIStrategyBook, TEMPLATES
+from core.trading.ai_strategy_book import ACTIVE_TEMPLATES, AIStrategyBook, TEMPLATES
 from core.trading.strategy_execution import normalize_execution
 from core.trading.strategy_schedule import StrategySchedule, aligned_at
 from core.trading.market_universe import MarketUniverse
@@ -45,22 +45,14 @@ def test_candidate_refresh_plan_keeps_normal_scan_small_and_refills_with_a_budge
 
 def test_original_four_templates_keep_cadence_and_price_action_is_an_additive_profile():
     original_ids = {'aggressive_impulse', 'aggressive_breakout', 'conservative_pullback', 'conservative_defense'}
-    original_templates = [item for item in TEMPLATES if item['id'] in original_ids]
-    assert len(original_templates) == 4
-    assert {item['id'] for item in original_templates} == original_ids
-    assert [t['style'] for t in original_templates].count('AGGRESSIVE') == 2
-    assert [t['style'] for t in original_templates].count('CONSERVATIVE') == 2
-    assert sorted(t['scan_interval_minutes'] for t in original_templates) == [5, 15, 15, 15]
-    decision_text = " ".join(t['sections']['decision_process'] for t in original_templates)
-    assert '75~85' not in decision_text
-    assert '75~82' not in decision_text
-    assert all('名义金额' in t['sections']['decision_process'] for t in original_templates)
-    assert all('限价' in t['sections']['decision_process'] for t in original_templates)
-    price_action = next(item for item in TEMPLATES if item['id'] == 'price_action_structure')
+    assert original_ids <= {item['id'] for item in TEMPLATES}
+    assert {item['id'] for item in ACTIVE_TEMPLATES} == {'price_action_structure'}
+    assert not original_ids.intersection(item['id'] for item in ACTIVE_TEMPLATES)
+    price_action = ACTIVE_TEMPLATES[0]
     assert price_action['style'] == 'PRICE_ACTION'
     assert price_action['scan_interval_minutes'] == 15
     assert price_action['profile']['signal_timeframe'] == '15m'
-    assert price_action['profile']['context_timeframes'] == ['1h']
+    assert price_action['profile']['context_timeframes'] == ['1h', '4h']
     assert strategy_frames(5) == (('5m',5),('15m',15),('1h',60))
 
 
@@ -104,17 +96,18 @@ def test_aggressive_five_minute_template_drives_coordinator_cadence(tmp_path):
     book = AIStrategyBook(store)
     active = book.active('a')
     impulse = next(item for item in TEMPLATES if item['id'] == 'aggressive_impulse')
-    saved = book.save(
-        'a', name=impulse['name'], sections=impulse['sections'],
-        expected_revision=active['revision'], template_id='aggressive_impulse',
-        execution=impulse['execution_defaults'],
-    )
+    with pytest.raises(ValueError, match='STRATEGY_TEMPLATE_RETIRED'):
+        book.save(
+            'a', name=impulse['name'], sections=impulse['sections'],
+            expected_revision=active['revision'], template_id='aggressive_impulse',
+            execution=impulse['execution_defaults'],
+        )
     worker = object.__new__(AISessionCoordinator)
     worker.store = store
-    assert saved['execution']['scan_interval_minutes'] == 5
-    assert worker._strategy_scan_minutes('a') == 5
+    assert book.active('a')['template_id'] == 'price_action_structure'
+    assert worker._strategy_scan_minutes('a') == 15
     point = datetime(2026,9,13,8,4,30,tzinfo=timezone.utc)
-    assert worker._next_aligned_scan(point, worker._strategy_scan_minutes('a')) == datetime(2026,9,13,8,5,tzinfo=timezone.utc)
+    assert worker._next_aligned_scan(point, worker._strategy_scan_minutes('a')) == datetime(2026,9,13,8,15,tzinfo=timezone.utc)
 
 
 def test_active_strategy_profile_is_the_prompt_and_scanner_contract(tmp_path):
@@ -123,29 +116,23 @@ def test_active_strategy_profile_is_the_prompt_and_scanner_contract(tmp_path):
     store = SQLiteStore(tmp_path / 'active-strategy-contract.db'); store.initialize()
     book = AIStrategyBook(store)
     active = book.active('a')
-    impulse = next(item for item in TEMPLATES if item['id'] == 'aggressive_impulse')
-    active = book.save(
-        'a', name=impulse['name'], sections=impulse['sections'],
-        expected_revision=active['revision'], template_id=impulse['id'],
-        execution=impulse['execution_defaults'],
-    )
     coordinator = _coordinator_for_symbols(store)
     coordinator._strategy_book = book
 
-    assert coordinator._strategy_scan_minutes('a') == 5
+    assert coordinator._strategy_scan_minutes('a') == 15
     signal, context, strategies = coordinator._strategy_scan_contract(active)
-    assert signal == '5m'
-    assert context == ('15m', '1h')
-    assert strategies == ('liquidity_sweep', 'ema_trend')
+    assert signal == active['profile']['signal_timeframe'] == '15m'
+    assert context == ('5m', '1h', '4h')
+    assert strategies == tuple(active['profile']['candidate_strategy_ids'])
     prompt = build_strategy_system_prompt(active)
-    assert '当前策略：闪电动量 · 5m 激进' in prompt
-    assert 'signal_timeframe":"5m"' in prompt
+    assert active['name'] in prompt
+    assert 'signal_timeframe":"15m"' in prompt
     compact_prompt = build_strategy_system_prompt(active, context_length=8192)
     assert active['sections']['entry_standards'] in compact_prompt
+    assert active['sections']['decision_process'] in compact_prompt
     assert active['sections']['custom_prompt'] in compact_prompt
     assert 'LIMIT' in compact_prompt
-    assert '不要把某个固定指标或置信分数当作唯一开仓门槛' in compact_prompt
-    assert '不得擅自增加大周期同向门槛' in compact_prompt
+    assert active['profile']['strategy_id'] == 'price_action_structure'
 
 
 def test_five_minute_profile_drives_ai_technical_context(monkeypatch):

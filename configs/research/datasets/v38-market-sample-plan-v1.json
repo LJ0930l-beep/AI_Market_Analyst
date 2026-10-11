@@ -1,0 +1,73 @@
+{
+  "schema_version": "pa-market-only-v38/sample-plan-1",
+  "plan_id": "V38_BINANCE_BTC_ETH_MARKET_CONTEXTS_20261009_V1",
+  "frozen_on_utc_date": "2026-10-08",
+  "frozen_before_first_dataset_materialization": true,
+  "base_commit": "64a5c4206a5073e0c44e9d5cc4178705ffa24664",
+  "partition_policy_sha256": "5169daa812c643cb35b40e3c5327bfbadf30b0c6b9c7db78b172de5c561f7ac7",
+  "a3_policy_sha256_for_provenance_only": "6d88b00b8fe6e37bb51efc7aa820542db7cc8c9f753837ebf4416707af8736e1",
+  "data": {
+    "source": "BINANCE_UM_OFFICIAL_MONTHLY_ARCHIVES",
+    "source_window_start_utc": "2025-10-01T00:00:00Z",
+    "source_window_end_utc_exclusive": "2026-10-01T00:00:00Z",
+    "warmup_start_utc": "2025-09-21T00:00:00Z",
+    "symbols": ["BTCUSDT", "ETHUSDT"],
+    "price_evidence_grade": "VERIFIED_ARCHIVE_RECONSTRUCTION",
+    "availability_evidence_grade": "ASSUMED_PROXY",
+    "availability_basis": "BAR_END_PLUS_60_SECONDS_PROXY",
+    "availability_delay_seconds": 60,
+    "volume_unit": "BINANCE_BASE_ASSET_VOLUME",
+    "not_gate_data": true,
+    "not_historical_gate_availability": true
+  },
+  "partitions": [
+    {"id": "optimization", "start_utc_inclusive": "2025-10-01T00:00:00Z", "end_utc_exclusive": "2026-04-01T00:00:00Z", "points_per_symbol": 30, "points_per_month": 5},
+    {"id": "validation", "start_utc_inclusive": "2026-04-01T00:00:00Z", "end_utc_exclusive": "2026-07-01T00:00:00Z", "points_per_symbol": 30, "points_per_month": 10},
+    {"id": "untouched_test", "start_utc_inclusive": "2026-07-01T00:00:00Z", "end_utc_exclusive": "2026-10-01T00:00:00Z", "points_per_symbol": 30, "points_per_month": 10}
+  ],
+  "selection": {
+    "seed": "V38-SHA256-CALENDAR-DAY-SEED-20261009-V1",
+    "candidate_schedule": "Every UTC calendar date at 12:00:00 is eligible if it is inside the half-open partition and within the verified archive window.",
+    "ranking": "Ascending SHA256(seed|symbol|partition|YYYY-MM-DD); resolve ties by UTC timestamp.",
+    "minimum_decision_gap_hours_within_symbol_partition": 48,
+    "outcome_based_selection": false,
+    "a3_trigger_based_selection": false,
+    "model_output_based_selection": false,
+    "market_direction_or_volatility_based_selection": false,
+    "randomness_source": "Deterministic SHA256 ranking; no runtime PRNG state.",
+    "maximum_decisions": 180
+  },
+  "context": {
+    "decision_time_utc": "12:00:00",
+    "timeframes": ["15m", "5m", "1h", "4h"],
+    "main_timeframe": "15m",
+    "entry_confirmation_timeframe": "5m",
+    "background_timeframes": ["1h", "4h"],
+    "history_window_days": 8,
+    "available_data_must_be_strictly_before_decision": true,
+    "available_at_must_not_precede_bar_confirmation": true,
+    "overlap_handling": "Record 8-day input-window overlap flags and connected overlap-cluster IDs; do not count rows as independent trades."
+  },
+  "untouched_test_handling": {
+    "persist_market_input_payloads": false,
+    "persist_only_decision_hash_and_coverage": true,
+    "run_model_or_rule_outcome_evaluation": false,
+    "allow_prompt_or_sample_tuning": false,
+    "one_time_evaluation_required_for_unsealing": true
+  },
+  "labels_and_calls": {
+    "future_outcome_labels_created": false,
+    "blind_annotations_created": false,
+    "gemini_calls_authorized": false,
+    "model_calls_used": 0,
+    "orders_created": 0,
+    "a0_v25_exact_recovered": 0,
+    "a0_v25_relabeling_permitted": false,
+    "b0_new_baseline_included": false
+  },
+  "known_limits": [
+    "The 60-second bar availability delay is a proxy and not historical Gate receive-time evidence.",
+    "The dataset contains market contexts, not account state, order-book quotes, contract snapshots, model outputs, fills, or complete closes.",
+    "A market-context row is not an independent trade or a Gate-executable sample."
+  ]
+}

@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from core.instruments import instrument_for
+from core.model_routing import DEFAULT_SMART_MODEL
 from core.providers.base import Bar, Quote
 from core.storage import SQLiteStore
 from core.trading.qwen_market_scanner import QwenMarketScanner
@@ -30,13 +31,13 @@ class _News:
 class _Model:
     def health(self, *, model_name=None):
         return {
-            "available": True, "model_available": True, "model_id": model_name,
-            "actual_model_id": r"D:\RJ\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
-            "model_identity_source": "verified_manifest", "weight_digest": "sha256:test",
+            "available": True, "model_available": True, "model_id": DEFAULT_SMART_MODEL,
+            "actual_model_id": DEFAULT_SMART_MODEL,
+            "model_identity_source": "verified_manifest", "models": [DEFAULT_SMART_MODEL],
         }
 
     def generate_json(self, messages, *, model_name, prompt_version, input_hash, temperature, schema):
-        assert model_name == "Bonsai-2-27B-PTQ1_0"
+        assert model_name == DEFAULT_SMART_MODEL
         assert "strategy" not in messages[1]["content"].lower()
         return (
             {
@@ -48,11 +49,13 @@ class _Model:
             },
             "{}",
             {
-                "model_id": model_name,
-                "model_version": r"D:\RJ\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
-                "actual_model_id": r"D:\RJ\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
-                "model_identity_source": "request_bound_to_verified_manifest",
-                "verified_manifest_model_id": r"D:\RJ\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+                "model_id": DEFAULT_SMART_MODEL,
+                "model_version": DEFAULT_SMART_MODEL,
+                "actual_model_id": DEFAULT_SMART_MODEL,
+                "model_identity_source": "completion_response",
+                "verified_manifest_model_id": DEFAULT_SMART_MODEL,
+                "prompt_version": prompt_version,
+                "input_hash": input_hash,
                 "latency_ms": 1.0, "schema_enforcement": "fixture", "parse_status": "valid",
             },
         )

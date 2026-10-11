@@ -4,9 +4,9 @@ import json
 
 import pytest
 
-import core.model_client as client_module
 import core.ai.ollama as provider_module
-from core.model_client import ModelClient, ModelSchemaError
+import core.model_client as client_module
+from core.model_client import ModelClient, ModelClientError, ModelSchemaError
 from core.model_routing import DEFAULT_MODEL
 
 
@@ -48,6 +48,52 @@ def test_actual_provider_collects_full_schema_constrained_stream_and_auditable_t
     assert 0 <= trace["first_stream_event_ms"] <= trace["elapsed_ms"]
     assert 0 <= trace["first_content_ms"] <= trace["elapsed_ms"]
     assert "fixture" not in json.dumps(trace) and "WAIT" not in json.dumps(trace)
+
+
+def test_nonstream_completion_can_use_durable_pre_dispatch_request_id(monkeypatch):
+    request_id = "a" * 32
+    captured = []
+
+    def fake_open(request, *, timeout):
+        captured.append(request)
+        body = {
+            "model": DEFAULT_MODEL,
+            "choices": [{"message": {"content": "{}"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6},
+        }
+        return Response(json.dumps(body).encode("utf-8"))
+
+    monkeypatch.setattr(client_module, "urlopen", fake_open)
+    client = ModelClient(model_name=DEFAULT_MODEL, retries=0)
+    result = client.chat_completion(
+        [{"role": "user", "content": "fixture"}],
+        model_name=DEFAULT_MODEL,
+        retries=0,
+        stream=False,
+        request_id=request_id,
+    )
+
+    assert result["model"] == DEFAULT_MODEL
+    assert len(captured) == 1
+    assert captured[0].get_header("X-ai-request-id") == request_id
+    assert captured[0].get_header("X-ai-correlation-id") == request_id
+    assert client.last_transport_trace["request_id"] == request_id
+
+
+def test_invalid_pre_dispatch_request_id_is_rejected_before_network(monkeypatch):
+    calls = []
+    monkeypatch.setattr(client_module, "urlopen", lambda *_args, **_kwargs: calls.append(True))
+    client = ModelClient(model_name=DEFAULT_MODEL, retries=0)
+
+    with pytest.raises(ModelClientError, match="MODEL_REQUEST_ID_INVALID"):
+        client.chat_completion(
+            [{"role": "user", "content": "fixture"}],
+            model_name=DEFAULT_MODEL,
+            retries=0,
+            request_id="not-a-request-id",
+        )
+
+    assert calls == []
 
 
 def test_actual_client_wire_schema_matches_prompt_and_retains_raw_ttl(monkeypatch):
@@ -100,7 +146,7 @@ def test_structured_client_never_returns_tradable_json_from_incomplete_stream(mo
     assert len(calls) == 1 and client.last_response_model is None
     assert failure.value.transport_trace["failed_phase"] == "READING_RESPONSE_BODY"
     assert failure.value.transport_trace["phase"] == "FAILED"
-    assert "stream_done" not in failure.value.transport_trace
+    assert failure.value.transport_trace["stream_done"] is False
 
 
 def test_invalid_final_json_does_not_trigger_hidden_repair_when_disabled(monkeypatch):

@@ -364,7 +364,7 @@ class NewsTranslationService:
         health = provider.health(model_name=DEFAULT_FAST_MODEL)
         models = health.get("models") if isinstance(health, Mapping) else None
         manifest_matches = isinstance(models, list) and any(is_configured_model_identity(item) for item in models)
-        health_confirms_bonsai = (
+        health_confirms_gemini = (
             isinstance(health, Mapping)
             and health.get("available") is True
             and health.get("model_available") is True
@@ -373,7 +373,7 @@ class NewsTranslationService:
             and is_configured_model_identity(health.get("actual_model_id"))
             and manifest_matches
         )
-        if not health_confirms_bonsai:
+        if not health_confirms_gemini:
             raise RuntimeError("Gemini translation model is unavailable")
         call_options: dict[str, object] = {
             "model_name": DEFAULT_FAST_MODEL,

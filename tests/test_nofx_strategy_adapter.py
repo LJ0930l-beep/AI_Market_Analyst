@@ -34,12 +34,12 @@ def test_nofx_nested_export_maps_prompt_sections_and_primary_timeframe_only():
             "ai_config": {
                 "prompt_sections": {
                     "role_definition": "Trade price action with the selected strategy.",
-                    "trading_frequency": "Assess each closed 5m candle.",
+                    "trading_frequency": "Assess each closed 15m candle.",
                     "entry_standards": "Look for a confirmed breakout and retest with sufficient liquidity.",
                     "decision_process": "Review positions first, compare candidates, then choose one setup.",
                 },
                 "custom_prompt": "Prefer passive limit entries.",
-                "indicators": {"klines": {"primary_timeframe": "5m"}},
+                "indicators": {"klines": {"primary_timeframe": "15m"}},
                 "risk_control": {"btc_eth_max_leverage": 125},
                 "coin_source": {"static_coins": ["BTCUSDT"]},
             },
@@ -47,11 +47,11 @@ def test_nofx_nested_export_maps_prompt_sections_and_primary_timeframe_only():
         current_strategy=current,
     )
 
-    assert adapted["template_id"] == "aggressive_impulse"
-    assert adapted["scan_interval_minutes"] == 5
+    assert adapted["template_id"] == "conservative_pullback"
+    assert adapted["scan_interval_minutes"] == 15
     assert adapted["execution"] == original_execution
     assert adapted["sections"]["role"] == "Trade price action with the selected strategy."
-    assert adapted["sections"]["frequency"] == "Assess each closed 5m candle."
+    assert adapted["sections"]["frequency"] == "Assess each closed 15m candle."
     assert adapted["sections"]["custom_prompt"] == "Prefer passive limit entries."
     assert set(adapted["imported_fields"]) == {
         "role", "frequency", "entry_standards", "decision_process", "custom_prompt",
@@ -69,9 +69,9 @@ def test_nofx_runtime_maps_supported_contexts_indicators_and_exclusions_without_
                 "prompt_sections": {"entry_standards": "Use the imported indicators as evidence."},
                 "indicators": {
                     "klines": {
-                        "primary_timeframe": "5m",
+                        "primary_timeframe": "15m",
                         "enable_multi_timeframe": True,
-                        "selected_timeframes": ["5m", "15m", "1h", "4h"],
+                        "selected_timeframes": ["15m", "1h", "4h"],
                     },
                     "enable_ema": True,
                     "ema_periods": [20, 300, 50],
@@ -92,15 +92,15 @@ def test_nofx_runtime_maps_supported_contexts_indicators_and_exclusions_without_
     )
 
     runtime = adapted["nofx_runtime"]
-    assert runtime["signal_timeframe"] == "5m"
-    assert runtime["context_timeframes"] == ["15m", "1h"]
+    assert runtime["signal_timeframe"] == "15m"
+    assert runtime["context_timeframes"] == ["1h", "4h"]
     assert runtime["indicators"]["ema"] == {"enabled": True, "periods": [20, 50]}
     assert runtime["indicators"]["rsi"] == {"enabled": True, "periods": [14]}
     assert runtime["indicators"]["open_interest"] == {"enabled": True, "status": "CONFIGURED"}
     assert runtime["indicators"]["funding_rate"] == {"enabled": True, "status": "CONFIGURED"}
     assert runtime["candidate_sources"] == ["gate_active_usdt_perpetuals"]
     assert runtime["excluded_symbols"] == ["BTCUSDT", "ETHUSDT"]
-    assert any(item.startswith("timeframe:4h") for item in runtime["unsupported_sources"])
+    assert not any(item.startswith("timeframe:4h") for item in runtime["unsupported_sources"])
     assert any(item.startswith("coin_source:OI_TOP") for item in runtime["unsupported_sources"])
     assert any(item.startswith("indicators.external_data_sources") for item in runtime["unsupported_sources"])
     assert "NEVER_IMPORT" not in json.dumps(adapted, ensure_ascii=False)

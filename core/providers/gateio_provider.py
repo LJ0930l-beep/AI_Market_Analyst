@@ -23,7 +23,7 @@ from .base import Bar, ProviderError, Quote
 
 GATE_PUBLIC_API_BASE_URL = "https://api.gateio.ws/api/v4"
 GATE_TESTNET_PUBLIC_API_BASE_URL = "https://api-testnet.gateapi.io/api/v4"
-_TIMEFRAME_SECONDS = {"5m": 300, "15m": 900, "1h": 3600, "1d": 86400}
+_TIMEFRAME_SECONDS = {"5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}
 
 
 def _iso(value: datetime) -> str:
@@ -251,18 +251,49 @@ class GatePublicProvider:
         if timeframe not in _TIMEFRAME_SECONDS:
             raise ValueError("unsupported timeframe")
         fetched_at = datetime.now(timezone.utc)
-        params: dict[str, Any] = {"contract": self._contract_id(symbol), "interval": timeframe, "limit": max(1, min(int(limit), 1000))}
+        requested = max(1, min(int(limit), 1000))
+        base_params: dict[str, Any] = {"contract": self._contract_id(symbol), "interval": timeframe}
         if price_type in {"mark", "index"}:
-            params["price_type"] = price_type
-        payload = self._request("/futures/usdt/candlesticks", params)
-        if not isinstance(payload, list):
-            raise ProviderError("Gate candlestick response is not a list", code="schema_invalid", provider="gate")
-        rows: dict[float, Bar] = {}
-        for row in payload:
-            if not isinstance(row, dict):
-                raise ProviderError("Gate candlestick row is not an object", code="schema_invalid", provider="gate")
-            bar = self._bar_from_row(row, timeframe, fetched_at=fetched_at, price_type=price_type)
-            rows[bar.timestamp.timestamp()] = bar
+            base_params["price_type"] = price_type
+
+        def parse_rows(payload: Any) -> dict[float, Bar]:
+            if not isinstance(payload, list):
+                raise ProviderError("Gate candlestick response is not a list", code="schema_invalid", provider="gate")
+            parsed: dict[float, Bar] = {}
+            for row in payload:
+                if not isinstance(row, dict):
+                    raise ProviderError("Gate candlestick row is not an object", code="schema_invalid", provider="gate")
+                bar = self._bar_from_row(row, timeframe, fetched_at=fetched_at, price_type=price_type)
+                parsed[bar.timestamp.timestamp()] = bar
+            return parsed
+
+        payload = self._request("/futures/usdt/candlesticks", {**base_params, "limit": requested})
+        rows = parse_rows(payload)
+        # Some Gate environments cap a limit-based response below the
+        # requested value. Backfill only the missing older interval using
+        # Gate's mutually exclusive from/to parameters. This keeps the most
+        # recent candles and their exact venue timestamps; it never fabricates
+        # bars or substitutes another environment's data.
+        seconds = _TIMEFRAME_SECONDS[timeframe]
+        for _ in range(4):
+            if len(rows) >= requested or not rows:
+                break
+            earliest = min(rows)
+            missing = requested - len(rows)
+            page_from = max(1, int(earliest - (missing + 2) * seconds))
+            page_to = int(earliest) - 1
+            if page_to <= page_from:
+                break
+            older_payload = self._request(
+                "/futures/usdt/candlesticks",
+                {**base_params, "from": page_from, "to": page_to},
+            )
+            older_rows = parse_rows(older_payload)
+            older_rows = {timestamp: bar for timestamp, bar in older_rows.items() if timestamp < earliest}
+            if not older_rows:
+                break
+            rows.update(older_rows)
+
         bars = sorted(rows.values(), key=lambda item: item.timestamp)
         if not bars:
             raise ProviderError("Gate returned no candlesticks", code="empty_data", provider="gate")
@@ -387,7 +418,7 @@ class GatePublicProvider:
         symbol: str,
         *,
         instrument: Instrument | None = None,
-        timeframes: tuple[str, ...] = ("5m", "15m", "1h", "1d"),
+        timeframes: tuple[str, ...] = ("5m", "15m", "1h", "4h", "1d"),
         min_15m: int = 600,
     ) -> dict[str, Any]:
         """Fetch bounded native Gate bars and derivative context for readiness."""
@@ -403,7 +434,9 @@ class GatePublicProvider:
         bars: dict[str, list[Bar]] = {}
         required = max(1, int(min_15m))
         for timeframe in normalized:
-            limit = required if timeframe == "15m" else (240 if timeframe == "5m" else 120 if timeframe == "1h" else 60)
+            limit = required if timeframe == "15m" else (
+                240 if timeframe == "5m" else 120 if timeframe in {"1h", "4h"} else 60
+            )
             bars[timeframe] = self._native_bars(symbol, timeframe, limit, price_type="last")
         if len(bars.get("15m", [])) < required:
             raise ProviderError("Gate 15m bootstrap sample is incomplete", code="bootstrap_insufficient", provider="gate")

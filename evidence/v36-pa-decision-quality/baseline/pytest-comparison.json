@@ -1,0 +1,34 @@
+{
+  "status": "PASS",
+  "complete_runs": true,
+  "same_environment": true,
+  "missing_nodeids": [],
+  "extra_nodeids": [],
+  "lost_passes": [],
+  "missing_phases": [],
+  "new_phase_failures": [],
+  "added": {
+    "passed": [],
+    "failed": [],
+    "errors": [],
+    "skipped": [],
+    "xfail": [],
+    "xpass": [],
+    "collection_errors": [],
+    "collection_skipped": []
+  },
+  "removed": {
+    "passed": [],
+    "failed": [],
+    "errors": [],
+    "skipped": [],
+    "xfail": [],
+    "xpass": [],
+    "collection_errors": [],
+    "collection_skipped": []
+  },
+  "exit_codes": [
+    1,
+    1
+  ]
+}

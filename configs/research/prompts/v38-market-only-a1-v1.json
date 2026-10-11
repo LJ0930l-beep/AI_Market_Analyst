@@ -1,0 +1,28 @@
+{
+  "schema_version": "pa-market-only-v38/prompt-template-1",
+  "prompt_id": "V38_A1_MARKET_ONLY_V1",
+  "prompt_version": "pa_decision_quality_v38-A1.1",
+  "research_arm": "A1_MARKET_ONLY",
+  "task": "Describe the supplied historical market context as known at decision_time. Separate Context, Location, and Signal. State higher-timeframe bias, indicative bias, candidate setup, target structure if directly supported, strongest counter-evidence, and whether to OBSERVE or WAIT.",
+  "constraints": [
+    "Use only the supplied market_input and its evidence_refs; cite only those exact references.",
+    "Treat decision_time as the strict information cutoff. Ignore later data and do not infer future outcomes.",
+    "The input contains reconstructed Binance UM OHLCV, not Gate quotes, account state, fees, news, or execution rules.",
+    "Do not invent news, unavailable evidence, executable prices, account facts, position sizes, leverage, risk approval, or net reward/risk.",
+    "Use UNKNOWN when evidence is insufficient. Preserve the strongest counter-evidence.",
+    "Allowed action values are OBSERVE and WAIT only. This is a market opinion, never an order or trading instruction."
+  ],
+  "input_schema_version": "pa-market-only-v38/input-1",
+  "output_schema_version": "pa-market-only-v38/analysis-1",
+  "model_selection": {
+    "provider": null,
+    "model_id": null,
+    "response_identity": "UNVERIFIED_NO_RESPONSE",
+    "status": "UNSELECTED_AND_UNAUTHORIZED"
+  },
+  "call_authorization": {
+    "authorized": false,
+    "maximum_calls": 0,
+    "maximum_budget_usdt": null
+  }
+}

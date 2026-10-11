@@ -1,0 +1,415 @@
+{
+  "schema_version": "pa-market-only-v38/blind-reference-protocol-2",
+  "protocol_id": "V38_PA_REFERENCE_BLIND_LABELS_20261009_V2",
+  "frozen_on_utc_date": "2026-10-09",
+  "purpose": "Create independent price-action reference annotations for market-only contexts. An annotation is not a future-outcome label, model score, trade proposal, fill, or profitability result.",
+  "eligible_datasets": [
+    "V38_BINANCE_BTC_ETH_STRATIFIED_PURGED_CONTEXTS_20261009_V1"
+  ],
+  "allowed_partitions": [
+    "optimization",
+    "validation"
+  ],
+  "forbidden_partitions": [
+    "untouched_test"
+  ],
+  "rater_controls": {
+    "minimum_independent_raters_per_context": 2,
+    "rater_ids_must_be_pseudonymous": true,
+    "hide_model_outputs": true,
+    "hide_experiment_arm": true,
+    "hide_future_prices_and_outcomes": true,
+    "hide_untouched_test_payloads_and_labels": true,
+    "raters_may_see_only_frozen_market_input_and_provenance": true,
+    "disagreement_policy": "Preserve every independent annotation. Report raw disagreement. A third blinded adjudicator may add a separate adjudication record; never overwrite either original annotation or force a consensus label.",
+    "unknown_policy": "UNKNOWN is a valid explicit label. Do not impute, drop, or convert UNKNOWN to a directional value. Report UNKNOWN coverage separately."
+  },
+  "label_fields": {
+    "context_regime": [
+      "BULL_TREND",
+      "BEAR_TREND",
+      "TRADING_RANGE",
+      "BREAKOUT_TRANSITION",
+      "UNCERTAIN"
+    ],
+    "higher_timeframe_bias": [
+      "BULLISH",
+      "BEARISH",
+      "NEUTRAL",
+      "UNCERTAIN"
+    ],
+    "location": [
+      "TREND_PULLBACK",
+      "RANGE_UPPER",
+      "RANGE_LOWER",
+      "RANGE_MIDDLE",
+      "STRUCTURE_LEVEL",
+      "BREAKOUT_RETEST",
+      "EXTENDED",
+      "OTHER",
+      "UNKNOWN"
+    ],
+    "signal_setup": [
+      "H1",
+      "H2",
+      "L1",
+      "L2",
+      "BREAKOUT",
+      "BREAKOUT_PULLBACK",
+      "FAILED_BREAKOUT",
+      "REVERSAL",
+      "WEDGE",
+      "TRADING_RANGE_REVERSAL",
+      "NONE",
+      "OTHER",
+      "UNKNOWN"
+    ],
+    "signal_quality": [
+      "STRONG",
+      "CONDITIONAL",
+      "WEAK",
+      "NO_SIGNAL",
+      "UNKNOWN"
+    ],
+    "supported_market_bias": [
+      "LONG",
+      "SHORT",
+      "NEUTRAL",
+      "UNKNOWN"
+    ],
+    "wait_reference": [
+      "WAIT_REQUIRED",
+      "WAIT_ACCEPTABLE",
+      "OBSERVE_SUPPORTED",
+      "UNKNOWN"
+    ],
+    "target_structure": [
+      "PRIOR_SWING",
+      "RANGE_EXTREME",
+      "TREND_MEASURED_MOVE",
+      "NONE",
+      "UNKNOWN"
+    ],
+    "evidence_refs": "One or more references from the exact frozen market_input.",
+    "target_evidence_refs": "Subset of evidence_refs; non-empty when target_structure is PRIOR_SWING, RANGE_EXTREME, or TREND_MEASURED_MOVE.",
+    "counter_evidence_refs": "Subset of evidence_refs; empty only when no specific counter-evidence can be cited.",
+    "rationale": "Concise evidence-grounded explanation; maximum 2000 characters."
+  },
+  "evidence_contract": {
+    "market_input_schema_version": "pa-market-only-v38/input-1",
+    "availability_must_be_strictly_before_decision_time": true,
+    "reference_membership_must_match_frozen_input": true,
+    "auxiliary_news_or_unavailable_historical_data": "UNKNOWN; never backfill or synthesize",
+    "future_outcomes_or_post_decision_bars": "Forbidden"
+  },
+  "agreement_reporting": {
+    "report_raw_agreement_per_field": true,
+    "report_unknown_fraction_per_field": true,
+    "two_raters": "Report Cohen kappa per categorical field where estimable, alongside raw agreement and class prevalence.",
+    "more_than_two_raters": "Report a declared nominal multi-rater coefficient such as Krippendorff alpha only when estimable; retain individual ratings.",
+    "insufficient_or_single_class_data": "Mark metric NOT_ESTIMABLE; do not substitute zero or perfect agreement."
+  },
+  "evaluation_metrics": {
+    "planned_decision_denominator": "All preregistered visible optimization and validation decisions, including model ERROR/TIMEOUT rows in future model runs.",
+    "wait_quality": "Among valid market-only analyses with an OBSERVE/WAIT value and non-UNKNOWN reference, report WAIT_REQUIRED, WAIT_ACCEPTABLE, OBSERVE_SUPPORTED concordance separately; errors and UNKNOWN remain separately counted.",
+    "evidence_integrity": "Report invalid evidence-reference count over all emitted references and semantically unsupported claim rate from blinded review; never omit malformed records from the denominator.",
+    "target_support": "For target-bearing A2 claims, report cited structural support and unsupported-target rate against independent reference labels; UNKNOWN is separate.",
+    "provider_reliability": "Report COMPLETED, CACHE_MATCH, ERROR, TIMEOUT and other terminal statuses against all planned calls; include observed latency and token/cost only when returned by verified provider telemetry.",
+    "lifecycle": "Keep proposal, gateway acceptance, venue fill, and complete close counts and denominators separate; market-only arms must produce zero for all execution lifecycle stages.",
+    "trading_performance": "Not estimable from this market-only dataset; requires a separately authorized, preregistered economic replay and at least 30 verified complete closes for a strategy-level minimum."
+  },
+  "authorization": {
+    "labels_generated": false,
+    "model_calls_authorized": false,
+    "orders_authorized": false,
+    "untouched_test_reveal_authorized": false
+  },
+  "eligible_dataset_manifest_sha256": {
+    "V38_BINANCE_BTC_ETH_STRATIFIED_PURGED_CONTEXTS_20261009_V1": "1f9e157bad2df4c32f863c2ae7a779b7d9ed573ad09d37f49ca44590eca4352a"
+  },
+  "diagnostic_only_datasets": {
+    "V38_BINANCE_BTC_ETH_MARKET_CONTEXTS_20261009_V1": {
+      "manifest_sha256": "ca0786a4acdec7a7410b7df89e947bc2b698377fed69a13fd865fe4d1187bd99",
+      "reason": "Seeded primary predecessor has cross-partition overlapping windows and is not eligible for optimization/validation blind-score claims."
+    },
+    "V38_BINANCE_BTC_ETH_NONOVERLAP_CONTEXTS_20261009_V1": {
+      "manifest_sha256": "1d76f1cd0e2eaa658eb8d32decc434a10e151cb7119a6b2a4f85801639537785",
+      "reason": "Nonoverlap sensitivity predecessor uses a fixed grid rather than the frozen monthly-stratified random selector; do not pool it with the primary sample."
+    }
+  },
+  "supersedes_protocol_id": "V38_PA_REFERENCE_BLIND_LABELS_20261009_V1",
+  "eligible_input_bindings": {
+    "V38_BINANCE_BTC_ETH_STRATIFIED_PURGED_CONTEXTS_20261009_V1": [
+      {
+        "decision_id": "v38sp-optimization-20251010-s1-1200z-btcusdt",
+        "market_input_sha256": "7b70153bc27d4051af7821cf9f3518610d7487687f4f9b7edddf9f6dd5bf176a",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20251010-s1-1200z-ethusdt",
+        "market_input_sha256": "4b25fc339922e7f1930fbb3703ff3dd6e61157182a899bea09b42ffe421f29a9",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20251019-s2-1200z-btcusdt",
+        "market_input_sha256": "8273b6e62858c720294161c3d977c4b626e1aefc4824d809a33c54519a9eb0a8",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20251019-s2-1200z-ethusdt",
+        "market_input_sha256": "3e12eb5f1ed89a2f35d19c918fae58b3a7dda404c3dca2c93a4c0aa2c8590467",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20251027-s3-1200z-btcusdt",
+        "market_input_sha256": "8da2c4bf696d7b62e95bc2922ce7b3bc59374173796fafa2c0b448e634db88c4",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20251027-s3-1200z-ethusdt",
+        "market_input_sha256": "838761b75a6183e378306f129e2947fa0fbe014c3b957a7a75ab908ef64e68ff",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20251107-s1-1200z-btcusdt",
+        "market_input_sha256": "3f21348a64994012c6f11f0824457f2d3d2e1bac9bd16cff9d0351cb3865b40b",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20251107-s1-1200z-ethusdt",
+        "market_input_sha256": "6bfe28a74139b61aaa5deb487a97a88923f5540bd968a80092b57d64127ac9f8",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20251117-s2-1200z-btcusdt",
+        "market_input_sha256": "e3a89f2d1c051a2f2634ce4e2b0d235d6f42cd16b1544b99d09886b0fccdefee",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20251117-s2-1200z-ethusdt",
+        "market_input_sha256": "71880aacf75d2e3e47bb0df0fd8d272df59f5c6116e6c32e9d9f6ee955d03f64",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20251125-s3-1200z-btcusdt",
+        "market_input_sha256": "b52170a5c976eb3a14b60786eaa73962b831ddab348a492c23ee47a387b0daec",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20251125-s3-1200z-ethusdt",
+        "market_input_sha256": "b0837fed1b02d826c2be9ee9bbccd5f6162d8f112d308f611de09ec33a151af2",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20251207-s1-1200z-btcusdt",
+        "market_input_sha256": "e43b25ff68c710b34410d1b225083307f304af8dbbb37eb80704b6814c3eb261",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20251207-s1-1200z-ethusdt",
+        "market_input_sha256": "a88d07b102b20452e51deef1f550e48031818c88b3b7eb1eabde786f54122c85",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20251216-s2-1200z-btcusdt",
+        "market_input_sha256": "2a3a287f86a604fb4ed918749121183984421e9973fc2074237320217529298b",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20251216-s2-1200z-ethusdt",
+        "market_input_sha256": "2fcc9170fc3b0884fddd2e2c0e069f59ca0621d0443d528f05a44da44c01329e",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20251225-s3-1200z-btcusdt",
+        "market_input_sha256": "e64bb0a2149c475e10a3380205341d23d134d46062d28f73a45b733b216ecd43",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20251225-s3-1200z-ethusdt",
+        "market_input_sha256": "029d9e3f8e997c86cd68579ef86152f85e85c30c4c1a1f4b7cd5a0017ddabe74",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20260108-s1-1200z-btcusdt",
+        "market_input_sha256": "7a9e4cd993383fd8c2ca5198fec8fcc61140e5e321861bc38fb1008154995f07",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20260108-s1-1200z-ethusdt",
+        "market_input_sha256": "b81d5b6ce3e901d29ec06710967893d2ca92dba02c99cc819698658ac705f5ae",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20260116-s2-1200z-btcusdt",
+        "market_input_sha256": "61722bd4308bf916b77419c9dae317ba88fcf45496fc2f2276784655da8021b7",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20260116-s2-1200z-ethusdt",
+        "market_input_sha256": "2a30f958202672f02ecccfbaa63043f8ccbcadf9b31ff3fe62a4c26771126f02",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20260125-s3-1200z-btcusdt",
+        "market_input_sha256": "9bf9f393f322badfc129ecbf3c3a441692ab0853d113c855701ff493d33dd4d9",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20260125-s3-1200z-ethusdt",
+        "market_input_sha256": "8319a1263304530f2f023c187e243b59c5f7bf89c39eafb3fb82a0cb70c4c4ab",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20260207-s1-1200z-btcusdt",
+        "market_input_sha256": "9435fa2a29b17c458f1dad93314b938759989bff5ab920a8d93bdc21f5c9a88e",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20260207-s1-1200z-ethusdt",
+        "market_input_sha256": "ef6ebc7dcbf800c5e3ed2aae90d9a505eaaea0640e3a5532388d4d39c43f0ecf",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20260216-s2-1200z-btcusdt",
+        "market_input_sha256": "fcf23dce0f3ae10c4a8cdf1f55db4011f98cd71c3cdad1b7d6c4c54429eb7346",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20260216-s2-1200z-ethusdt",
+        "market_input_sha256": "6019ff15f137d42b7b406998d46c2c2bb7aaddc54b26061f315878a2009694e9",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20260225-s3-1200z-btcusdt",
+        "market_input_sha256": "108c8c46776f482a45f28f7049f714036dcc2e7d6fb1bb12a2c5b6889c1271f7",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20260225-s3-1200z-ethusdt",
+        "market_input_sha256": "a66f3ff23921e8c811be516000fef5d40abecc679905268051ff86d919e659a8",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20260308-s1-1200z-btcusdt",
+        "market_input_sha256": "7c8cbf063ce31965b34b52624d80c007c4b59f0c5cc6817c3ed918ea1ec1e606",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20260308-s1-1200z-ethusdt",
+        "market_input_sha256": "051efa5332c2ca6eca56b35a26414238d09d47f42ff71e3d2dc99ac95d451fd9",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20260316-s2-1200z-btcusdt",
+        "market_input_sha256": "db567675794be42e7dd36c783b13800c24cba9d33efdd347069b5603e24e00a3",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20260316-s2-1200z-ethusdt",
+        "market_input_sha256": "72475c400ad9b9862d1f6114a3c96ced682b3503c15cf60a8da0c7c2b008e9b0",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20260325-s3-1200z-btcusdt",
+        "market_input_sha256": "7a87e88e2f73089fa4dc16744615059359ec213e9470ef01892839e0e4d3481d",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-optimization-20260325-s3-1200z-ethusdt",
+        "market_input_sha256": "0ddc48239e48df02dd9654727da74c7c5e99fa179a1fa16389b80b55996e0638",
+        "partition": "optimization"
+      },
+      {
+        "decision_id": "v38sp-validation-20260409-s1-1200z-btcusdt",
+        "market_input_sha256": "5335586d7b11215ceccd47f3c5e77988fe414c008835bb07c7457c3fd1f8bfc1",
+        "partition": "validation"
+      },
+      {
+        "decision_id": "v38sp-validation-20260409-s1-1200z-ethusdt",
+        "market_input_sha256": "131f407f964a9b262d38d954d933611d68a2eaf3cdb4eeb74ef50f5255df027a",
+        "partition": "validation"
+      },
+      {
+        "decision_id": "v38sp-validation-20260419-s2-1200z-btcusdt",
+        "market_input_sha256": "a610ac92fd1043a418f2ad581992b9f0f7e4806b962ae0a82968a80bac1d46b5",
+        "partition": "validation"
+      },
+      {
+        "decision_id": "v38sp-validation-20260419-s2-1200z-ethusdt",
+        "market_input_sha256": "7eeb0a3848d25c524d425c2dfd10196b3fd79de13797bb1892501e0b3ace9a5b",
+        "partition": "validation"
+      },
+      {
+        "decision_id": "v38sp-validation-20260427-s3-1200z-btcusdt",
+        "market_input_sha256": "3b22bf399a414e281de62271c4fdcf2552e7853f6a235d9a7d466481d4a58cb6",
+        "partition": "validation"
+      },
+      {
+        "decision_id": "v38sp-validation-20260427-s3-1200z-ethusdt",
+        "market_input_sha256": "2b9a249f56ba60d1c639e1117b3b6cb04401cc5f06b08cfdc9da4aa374374ab4",
+        "partition": "validation"
+      },
+      {
+        "decision_id": "v38sp-validation-20260507-s1-1200z-btcusdt",
+        "market_input_sha256": "7d94aa4521e1feffe26b5a4ec386a45385fd07f38646907ad8e142ef647b5bf9",
+        "partition": "validation"
+      },
+      {
+        "decision_id": "v38sp-validation-20260507-s1-1200z-ethusdt",
+        "market_input_sha256": "0047551ba32be1c2fa014038c42ccc97ec9c1c348db173685728f5a21876cc59",
+        "partition": "validation"
+      },
+      {
+        "decision_id": "v38sp-validation-20260516-s2-1200z-btcusdt",
+        "market_input_sha256": "1ee7780e133b67689d50c300ca6eb7d64fb1c1ca03230b532c8ddbe6bb9cff30",
+        "partition": "validation"
+      },
+      {
+        "decision_id": "v38sp-validation-20260516-s2-1200z-ethusdt",
+        "market_input_sha256": "123c3797117ac4fda042a162387678659ea5f9a93bf40c0533e60a2f508bbd8c",
+        "partition": "validation"
+      },
+      {
+        "decision_id": "v38sp-validation-20260526-s3-1200z-btcusdt",
+        "market_input_sha256": "581ffe9af3ec6973c6863bd681466f1ee0b2daf1c2719dd3a9d226e81a856ab2",
+        "partition": "validation"
+      },
+      {
+        "decision_id": "v38sp-validation-20260526-s3-1200z-ethusdt",
+        "market_input_sha256": "76f2248d11cb4ccacee7571d981cbecfd76cd9228ed2a76eaf787bb6d21c1972",
+        "partition": "validation"
+      },
+      {
+        "decision_id": "v38sp-validation-20260607-s1-1200z-btcusdt",
+        "market_input_sha256": "599bfbde9e831e85533369aebbb8e7721fa5f3168c8c7a42021820891396df12",
+        "partition": "validation"
+      },
+      {
+        "decision_id": "v38sp-validation-20260607-s1-1200z-ethusdt",
+        "market_input_sha256": "97c82163c7b36b7f70c9f5946859552e356e786a0cac1cd8edc20447598ebca8",
+        "partition": "validation"
+      },
+      {
+        "decision_id": "v38sp-validation-20260616-s2-1200z-btcusdt",
+        "market_input_sha256": "d4754eff61ec792fc386d84901307b91105421aff7802d347266c8372a8b7237",
+        "partition": "validation"
+      },
+      {
+        "decision_id": "v38sp-validation-20260616-s2-1200z-ethusdt",
+        "market_input_sha256": "77e152a7b78bf22377d809109cce69c4b66c1906f63494c5adb40a1703078c93",
+        "partition": "validation"
+      },
+      {
+        "decision_id": "v38sp-validation-20260626-s3-1200z-btcusdt",
+        "market_input_sha256": "801f2853086cf18d37de4ce5a8a59ccd1d454e7d48b86806fecee59b340c6800",
+        "partition": "validation"
+      },
+      {
+        "decision_id": "v38sp-validation-20260626-s3-1200z-ethusdt",
+        "market_input_sha256": "f32ed207960becdb9f05d2ce01801ee5600c09cac432f413cb09eb389949437b",
+        "partition": "validation"
+      }
+    ]
+  }
+}
