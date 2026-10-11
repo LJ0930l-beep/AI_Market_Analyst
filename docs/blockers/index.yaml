@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V1
-updated_at_utc: 2026-10-11T07:44:00Z
+updated_at_utc: 2026-10-11T08:38:33Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -14,7 +14,7 @@ blockers:
     component: model
     file: docs/blockers/B-20261010-002-model-response-capability.md
     trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
-    next_owner_action: Keep provider dispatch disabled and issue no model calls. PR #27 exact head 0ceb0f038a23da7879276769a386f4b2918b6b92 passed offline run 38121493732; obtain human review of Draft PR #26/#27 before any G2 proposal. CI does not verify remote response_format, model identity/weights, billing, or quota. G2 still requires fresh explicit bounded authorization.
+    next_owner_action: Keep provider dispatch disabled. PR #27 exact head bf265d27d01ec75bb7dcc94c80bd86ddcf132989 passed offline run 38122906585 (quick 286, full 2600); obtain independent review of Draft PR #26/#27 before G2. Remote response_format, model identity/weights, billing, and quota remain unknown; any G2 run needs a fresh bounded authorization.
   - id: B-20261010-003
     severity: S1
     status: OPEN

@@ -166,3 +166,12 @@ Independent API-contract review found that Gate price-trigger initial.size is a 
 The failure-first regression now passes. Gate account/TestNet/protection targeted tests passed 67/67. The local hard gate passed 2,599 with 1 skipped; exact PR #27 head CI run 38121493732 passed quick 286 and full 2,600, including 25 subtests and one existing deprecation warning. The original PR #23 failure, individual #1–#11 check gaps, and all historical snapshots remain unchanged.
 
 Current owner action: obtain independent human review of Draft PR #26/#27 and record an explicit integration decision. Do not auto-merge. G0 remains FIX_IN_REVIEW. No model/provider call, Gate account/TestNet/Live request, order, historical ledger mutation, or production account-setting change occurred.
+## 2026-10-11 current-head verification update — 08:38Z
+
+- **Severity/status:** S1 / `FIX_IN_REVIEW`.
+- **Trigger and cause:** 27 open PRs form a dependent integration stack; missing checks on #1–#11, the red exact-head run for #23, and no independent review on #26/#27 require an explicit integration decision.
+- **Original/current evidence:** immutable prior snapshots remain intact. Current snapshot [`V2-G0-G1-live-state-20261011T083833Z.json`](../audits/V2-G0-G1-live-state-20261011T083833Z.json), SHA-256 `ae90124b1f2cb3f4184eefc64c91509fc280f65cc6ae8bc23d81650ccfbb2247`; PR #26 run 38107795624 passed quick/full, and PR #27 exact head `bf265d27d01ec75bb7dcc94c80bd86ddcf132989` run 38122906585 passed quick 286 and full 2,600.
+- **Temporary containment:** leave #26/#27 OPEN/Draft, keep auto-merge off and main unchanged; do not erase #1–#11 NO_CHECKS or #23 failure.
+- **Repair / acceptance:** maintain PR #26 as the integration candidate and #27 as its child. All #1–#25 current heads were rechecked as ancestors of #26. Require independent review of both candidates and a recorded integration decision before G0 ACCEPT.
+- **Rollback:** if review finds a defect or omitted branch, keep main untouched and revise or close the candidate PRs with ordinary commits; preserve this and all earlier snapshots.
+- **External effects:** none. No model, private exchange, TestNet/Live, order, or account-settings operation occurred.
