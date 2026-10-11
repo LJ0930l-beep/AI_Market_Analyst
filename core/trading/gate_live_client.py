@@ -18,6 +18,14 @@ logger = logging.getLogger("gate_live_client")
 
 GATE_TESTNET_API_BASE_URL = "https://api-testnet.gateapi.io/api/v4"
 GATE_LIVE_API_BASE_URL = "https://api.gateio.ws/api/v4"
+GATE_PROTECTION_ORDER_TYPES = frozenset({
+    "close-long-order",
+    "close-short-order",
+    "close-long-position",
+    "close-short-position",
+    "plan-close-long-position",
+    "plan-close-short-position",
+})
 
 
 class GateProtectionPlacementError(RuntimeError):
@@ -1760,7 +1768,7 @@ class GateLiveTrader:
         reduced = bool(
             (native_reduce_values and native_reduce_values[0] is True)
             or _optional_bool(initial.get("is_close")) is True
-            or "close-" in str(raw.get("order_type") or "")
+            or str(raw.get("order_type") or "").strip().lower() in GATE_PROTECTION_ORDER_TYPES
         )
         if not reduced:
             raise ValueError("GATE_PROTECTION_NOT_REDUCE_ONLY")
