@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V1
-updated_at_utc: 2026-10-11T06:44:56Z
+updated_at_utc: 2026-10-11T07:44:00Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -7,14 +7,14 @@ blockers:
     component: integration
     file: docs/blockers/B-20261010-001-pr-branch-integration.md
     trigger_signature: PR_COMBINATION_CANDIDATE_AWAITS_HUMAN_REVIEW
-    next_owner_action: After adding the 06:44Z snapshot to PR #27, verify the resulting exact head has hosted quick/full CI, then obtain human review of Draft PR #26/#27 and an explicit merge decision. Preserve PR #1-11 NO_CHECKS and PR #23's historical failure. Do not auto-merge.
+    next_owner_action: Obtain independent human review of Draft PR #26/#27 and record an explicit integration decision. Preserve PR #1-11 NO_CHECKS and PR #23's historical failure. Do not auto-merge.
   - id: B-20261010-002
     severity: S1
     status: BLOCKED_WITH_EVIDENCE
     component: model
     file: docs/blockers/B-20261010-002-model-response-capability.md
     trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
-    next_owner_action: Keep provider dispatch disabled and issue no model calls. Strict JSON and Gate trigger classification repairs are included in PR #27 exact-head run 38118351684; obtain human review of Draft PRs #26/#27 before any G2 proposal. CI does not verify remote response_format, model identity/weights, billing, or quota. G2 still requires fresh explicit bounded authorization.
+    next_owner_action: Keep provider dispatch disabled and issue no model calls. PR #27 exact head 0ceb0f038a23da7879276769a386f4b2918b6b92 passed offline run 38121493732; obtain human review of Draft PR #26/#27 before any G2 proposal. CI does not verify remote response_format, model identity/weights, billing, or quota. G2 still requires fresh explicit bounded authorization.
   - id: B-20261010-003
     severity: S1
     status: OPEN
