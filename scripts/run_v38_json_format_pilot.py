@@ -14,7 +14,9 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from core.replay.pa_decision_quality_v38 import authorization_guard
 from core.replay.pa_decision_quality_v38.format_pilot import (
+    FORMAT_PILOT_AUTHORIZATION_ID,
     _write_report_exclusive,
     run_format_pilot,
     validate_format_pilot_authorization,
@@ -113,6 +115,7 @@ def main(argv: list[str] | None = None) -> int:
             ledger_root=shared_root,
         )
         if args.run:
+            authorization_guard.require_authorization_not_revoked(FORMAT_PILOT_AUTHORIZATION_ID)
             from scripts.run_market_only_gemini_v38 import (
                 _model_caller,
                 _provider_route_reauthorization_evidence,
@@ -137,6 +140,9 @@ def main(argv: list[str] | None = None) -> int:
             "status": report["status"],
             "pilot_kind": report["pilot_kind"],
             "authorization_id": report["authorization_id"],
+            "authorization_execution_status": authorization_guard.authorization_execution_status(
+                report["authorization_id"],
+            ),
             "dispatch_intent_count": report["dispatch_intent_count"],
             "terminal_result_count": report["terminal_result_count"],
             "quality_sample_eligible": report["quality_sample_eligible"],

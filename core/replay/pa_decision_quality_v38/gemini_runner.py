@@ -21,6 +21,7 @@ from typing import Any
 
 from core.ai.transport_diagnostics import safe_transport_trace
 from core.model_routing import DEFAULT_MODEL
+from core.replay.pa_decision_quality_v38 import authorization_guard
 from core.replay.pa_decision_quality_v38.market_only import (
     ANALYSIS_SCHEMA_VERSION,
     INPUT_SCHEMA_VERSION,
@@ -956,6 +957,7 @@ def execute_authorized_optimization(
     if not callable(call_model):
         raise MarketOnlyError("GEMINI_RUN_MODEL_CALLER_REQUIRED")
     _validate_authorization(authorization)
+    authorization_guard.require_authorization_not_revoked(authorization["authorization_id"])
     schedule = _planned_schedule(inputs, prompts)
     run_id = uuid.uuid4().hex
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
