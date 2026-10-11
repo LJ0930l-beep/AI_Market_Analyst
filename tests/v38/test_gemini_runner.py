@@ -89,6 +89,13 @@ def _fixture_call(messages: list[dict[str, str]], request_id: str) -> ProviderCa
     )
 
 
+def _duplicate_action_json(analysis: dict) -> str:
+    raw = json.dumps(analysis)
+    needle = '"action": "WAIT"'
+    assert needle in raw
+    return raw.replace(needle, '"action": "OBSERVE", "action": "WAIT"', 1)
+
+
 def _route_reauthorization_evidence() -> dict[str, object]:
     catalog_bytes = json.dumps([DEFAULT_MODEL], separators=(",", ":")).encode("utf-8")
     return {
@@ -503,6 +510,58 @@ def test_invalid_analysis_is_preserved_and_not_silently_repaired_or_resized(
     events = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines()]
     results = [event for event in events if event["event_type"] == "RESULT"]
     assert all("MARKET_ONLY_ACTION_INVALID" in event["validation_errors"] for event in results)
+
+
+def test_executor_rejects_duplicate_json_keys_in_provider_analysis(tmp_path, market_point_factory):
+    root = Path(__file__).resolve().parents[2]
+    auth, prompts, market_input = _setup(root, market_point_factory)
+    ledger = tmp_path / "duplicate-json-ledger.jsonl"
+
+    def duplicate_key_response(messages, request_id):
+        fixture = _fixture_call(messages, request_id)
+        payload = deepcopy(fixture.payload)
+        analysis = json.loads(payload["choices"][0]["message"]["content"])
+        payload["choices"][0]["message"]["content"] = _duplicate_action_json(analysis)
+        return ProviderCallResult(payload, fixture.response_model_id, fixture.transport_trace)
+
+    report = execute_authorized_optimization(
+        [market_input], prompts, authorization=auth, ledger_path=ledger,
+        call_model=duplicate_key_response, max_contexts=1,
+    )
+
+    assert report["status_counts"] == {"INVALID_JSON": 2}
+    assert report["valid_analysis_records"] == 0
+    assert report["orders_created"] == 0
+    assert report["proposals_created"] == 0
+
+
+def test_ledger_reviewer_rejects_rehashed_valid_result_with_duplicate_json_keys(
+    tmp_path, market_point_factory,
+):
+    root = Path(__file__).resolve().parents[2]
+    auth, prompts, market_input = _setup(root, market_point_factory)
+    ledger = tmp_path / "duplicate-json-review-ledger.jsonl"
+    execute_authorized_optimization(
+        [market_input], prompts, authorization=auth, ledger_path=ledger,
+        call_model=_fixture_call, max_contexts=1,
+    )
+    events = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines()]
+    for event in events:
+        if event["event_type"] == "RESULT":
+            raw = _duplicate_action_json(event["analysis"])
+            event["raw_response_text"] = raw
+            event["raw_response_chars"] = len(raw)
+            event["raw_response_sha256"] = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    previous_digest = "0" * 64
+    for event in events:
+        event["previous_event_sha256"] = previous_digest
+        unsigned = {key: value for key, value in event.items() if key != "event_sha256"}
+        event["event_sha256"] = canonical_sha256(unsigned)
+        previous_digest = event["event_sha256"]
+
+    with pytest.raises(ValueError, match="GEMINI_RUN_VALID_ANALYSIS_JSON_INVALID"):
+        review_gemini_ledger([market_input], prompts, events)
 
 
 def test_ledger_corruption_and_concurrent_lock_fail_closed_without_model_call(

@@ -22,6 +22,7 @@ from typing import Any
 from core.ai.transport_diagnostics import safe_transport_trace
 from core.model_routing import DEFAULT_MODEL
 from core.replay.pa_decision_quality_v38 import authorization_guard
+from core.replay.pa_decision_quality_v38.json_response import RAW_JSON_ONLY_V1, parse_json_completion
 from core.replay.pa_decision_quality_v38.market_only import (
     ANALYSIS_SCHEMA_VERSION,
     INPUT_SCHEMA_VERSION,
@@ -612,8 +613,8 @@ def _result_event(
         common.update(status="INVALID_PROVIDER_RESPONSE", error_code="COMPLETION_CONTENT_TOO_LARGE")
         return common
     try:
-        analysis = json.loads(content)
-    except json.JSONDecodeError:
+        analysis = parse_json_completion(content, parser_version=RAW_JSON_ONLY_V1)
+    except MarketOnlyError:
         common.update(status="INVALID_JSON", error_code="COMPLETION_CONTENT_NOT_JSON")
         return common
     errors = validate_market_only_analysis(analysis, valid_evidence_refs=set(intent["valid_evidence_refs"]))
@@ -861,8 +862,8 @@ def _validate_valid_analysis_result(result: dict[str, Any], intent: dict[str, An
     ):
         raise MarketOnlyError("GEMINI_RUN_VALID_ANALYSIS_PROVENANCE_INVALID")
     try:
-        parsed = json.loads(raw_text)
-    except json.JSONDecodeError as exc:
+        parsed = parse_json_completion(raw_text, parser_version=RAW_JSON_ONLY_V1)
+    except MarketOnlyError as exc:
         raise MarketOnlyError("GEMINI_RUN_VALID_ANALYSIS_JSON_INVALID") from exc
     analysis = result.get("analysis")
     if (parsed != analysis
