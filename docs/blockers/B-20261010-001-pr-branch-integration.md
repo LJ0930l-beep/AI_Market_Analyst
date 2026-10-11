@@ -117,6 +117,14 @@ The full local suite on the PR #27 worktree passed **2,590 / skipped 1 / failed 
 
 Status remains `FIX_IN_REVIEW`; do not merge until human review and an explicit integration decision are recorded.
 
+## 2026-10-11 PR #23 failure root-cause closure — 04:34Z
+
+The earlier 04:02Z snapshot correctly recorded PR #23's red check as a historical branch status. Follow-up inspection of run [37963206552](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37963206552) found three failures in `tests/test_macro_actuals.py`, all caused by test fixtures using an injected historical `now` while leaving the scheduler clock and status reads on host wall time. The fixed 2026-10-02 rows had aged beyond the seven-day lookback by the 2026-10-09 run. The exact failing node IDs, evidence, PR #24 patch, rollback, and boundary are recorded in [`V2-G0-PR23-CI-failure-resolution-20261011T043402Z.md`](../audits/V2-G0-PR23-CI-failure-resolution-20261011T043402Z.md).
+
+PR #24 commit `5e9ef37` threads the effective clock into calendar status and fixes all three test fixtures. Current local macro-calendar tests pass 16/16; the three original failure nodes pass 3/3; PR #24 exact-head CI passed. Both integrated candidates also have exact-head full CI success, including PR #27 head `5346f0375a649e78123221ab57d1e55b759bb1ab` run [38111025018](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38111025018).
+
+PRs #1–11 remain `NO_CHECKS` as individual historical PR statuses. Fresh ancestry checks confirm all PR #1–25 heads are included in PR #26, and the integrated full CI passed; retain the individual status in the matrix without treating it as uncovered candidate code. The original PR #23 failed run remains unchanged. G0 remains `FIX_IN_REVIEW` pending human review and an explicit integration decision.
+
 
 ## 2026-10-10 live exact-head refresh — 20261010T221231Z
 

@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V1
-updated_at_utc: 2026-10-11T04:08:15Z
+updated_at_utc: 2026-10-11T04:34:02Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -7,14 +7,14 @@ blockers:
     component: integration
     file: docs/blockers/B-20261010-001-pr-branch-integration.md
     trigger_signature: PR_COMBINATION_CANDIDATE_AWAITS_HUMAN_REVIEW
-    next_owner_action: Human review Draft PR #26 at 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 and Draft PR #27 at 2cfc8f0ecdac401fc102202d8d3b3f9efa3f53ad; exact-head runs 38107795624 and 38108665836 passed, and local node-ID comparison found zero new failures. Resolve PR #1-11 missing checks and retain PR #23 failure for review. No auto-merge. See ../audits/V2-G0-G1-live-refresh-20261011T040254Z.md.
+    next_owner_action: Human review Draft PR #26 at 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 and Draft PR #27 at 5346f0375a649e78123221ab57d1e55b759bb1ab. All PR #1-25 heads are in PR #26 and its full CI passed; PR #1-11 have no standalone checks. PR #23's historical three-test clock failure is fixed in child PR #24 and passes on the current candidate; preserve its original red run. No auto-merge. See ../audits/V2-G0-PR23-CI-failure-resolution-20261011T043402Z.md.
   - id: B-20261010-002
     severity: S1
     status: BLOCKED_WITH_EVIDENCE
     component: model
     file: docs/blockers/B-20261010-002-model-response-capability.md
     trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
-    next_owner_action: Keep provider dispatch disabled and issue no model calls. PR #27 exact head 2cfc8f0ecdac401fc102202d8d3b3f9efa3f53ad passed offline run 38108665836; this does not verify remote response_format, model identity/weights, billing, or quota. After human G0 review, require fresh explicit bounded G2 authorization. See ../audits/V2-G0-G1-live-refresh-20261011T040254Z.md.
+    next_owner_action: Keep provider dispatch disabled and issue no model calls. PR #27 exact head 5346f0375a649e78123221ab57d1e55b759bb1ab passed offline run 38111025018; this does not verify remote response_format, model identity/weights, billing, or quota. After human G0 review, require fresh explicit bounded G2 authorization. See ../audits/V2-G0-G1-live-refresh-20261011T040254Z.md.
   - id: B-20261010-003
     severity: S1
     status: OPEN
