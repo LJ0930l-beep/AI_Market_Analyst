@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V1
-updated_at_utc: 2026-10-10T22:12:42.556769Z
+updated_at_utc: 2026-10-11T02:30:50.655Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -7,14 +7,14 @@ blockers:
     component: integration
     file: docs/blockers/B-20261010-001-pr-branch-integration.md
     trigger_signature: PR_COMBINATION_CANDIDATE_AWAITS_HUMAN_REVIEW
-    next_owner_action: Human review PR #26 and #27; keep both Draft and unmerged; rerun exact-head CI after requested changes. Current heads and ancestry are revalidated in the additive V2 G0/G1 live snapshot.
+    next_owner_action: Human review PR #26 at be78861c454714fe4310c24b84b699475110ec3e and PR #27 at a947b594ed74dc4b16660e97a697ec1b8e727e8f; both exact-head CI runs pass, both remain Draft and unmerged; rerun exact-head CI after requested changes. See V2-G0-G1-live-refresh-20261011T023050Z.md.
   - id: B-20261010-002
     severity: S1
     status: BLOCKED_WITH_EVIDENCE
     component: model
     file: docs/blockers/B-20261010-002-model-response-capability.md
     trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
-    next_owner_action: Keep provider capability blocked and issue no model calls; after human G0 review, require a fresh explicit bounded G2 scope. Latest PR #27 exact-head run 38088943367 passes; provider capability and identity remain unverified.
+    next_owner_action: Keep provider capability blocked and issue no model calls; PR #27 exact head a947b594ed74dc4b16660e97a697ec1b8e727e8f passes run 38103964442; after human G0 review, require a fresh explicit bounded G2 scope. Provider capability, identity and billing remain unverified.
   - id: B-20261010-003
     severity: S1
     status: OPEN
