@@ -49,3 +49,38 @@ jobs:
       - name: Run complete offline test suite
         shell: pwsh
         run: python -m pytest -q
+
+  web:
+    name: Web tests, lint, and production build
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Install locked web dependencies
+        shell: pwsh
+        working-directory: web
+        run: npm ci --no-audit --no-fund
+
+      - name: Run web unit tests
+        shell: pwsh
+        working-directory: web
+        run: npm test -- --run
+
+      - name: Lint web app
+        shell: pwsh
+        working-directory: web
+        run: npm run lint
+
+      - name: Type-check and build web app
+        shell: pwsh
+        working-directory: web
+        run: npm run build
