@@ -1,0 +1,29 @@
+{
+  "schema_version": "pa-market-only-v38/authorization-revocations-1",
+  "revocations": [
+    {
+      "authorization_id": "V38_GEMINI_OPTIMIZATION_A1_A2_20261010_V1",
+      "status": "CONSUMED_REVOKED",
+      "reason_code": "AUTHORIZED_INTENT_CAP_EXHAUSTED",
+      "maximum_dispatch_intents": 72,
+      "observed_dispatch_intents": 72,
+      "observed_terminal_results": 71,
+      "authorization_record_path": "configs/research/authorizations/v38-gemini-optimization-run-20261010-v1.json",
+      "authorization_record_sha256": "cbb67684cb36b20d5103ef84be083938faae43f99a7b6768832504d2a9d706c3",
+      "source_ledger_path": "reports/v38+/runs/v38-gemini-call-intent-ledger-v1.jsonl",
+      "source_ledger_sha256": "820212a5699b718c922232c584fcfdcb4f79b675ea8653b1898a0d4025b837a7"
+    },
+    {
+      "authorization_id": "V38_GEMINI_JSON_FORMAT_PILOT_20261010_V1",
+      "status": "CONSUMED_REVOKED",
+      "reason_code": "AUTHORIZED_INTENT_CAP_EXHAUSTED",
+      "maximum_dispatch_intents": 1,
+      "observed_dispatch_intents": 1,
+      "observed_terminal_results": 1,
+      "authorization_record_path": "configs/research/authorizations/v38-gemini-json-format-pilot-20261010-v1.json",
+      "authorization_record_sha256": "8d244a409d79a66d6c7766dba73ad0dc01a60d6cafb96bc8699c91a69b418354",
+      "source_ledger_path": "reports/v38+/runs/v38-gemini-json-format-pilot-ledger-20261010-v1.jsonl",
+      "source_ledger_sha256": "4852f2f893f3f68fca325d5ff07621958c42336861dc3ced2d59da423aebdf19"
+    }
+  ]
+}

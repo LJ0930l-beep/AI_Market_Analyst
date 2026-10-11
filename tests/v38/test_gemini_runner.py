@@ -10,6 +10,7 @@ import pytest
 
 from core.ai.transport_diagnostics import CompletionTransportTrace
 from core.model_routing import DEFAULT_MODEL
+from core.replay.pa_decision_quality_v38 import authorization_guard
 from core.replay.pa_decision_quality_v38.gemini_runner import (
     ANALYSIS_JSON_SCHEMA,
     AUTHORIZATION_ID,
@@ -27,6 +28,12 @@ from core.replay.pa_decision_quality_v38.gemini_runner import (
     review_gemini_ledger,
 )
 from core.replay.pa_decision_quality_v38.market_only import build_market_only_input
+
+
+@pytest.fixture(autouse=True)
+def enable_fake_provider_runs_for_legacy_runner_tests(monkeypatch):
+    """Keep executor unit tests offline; revocation behavior has dedicated tests."""
+    monkeypatch.setattr(authorization_guard, "require_authorization_not_revoked", lambda _authorization_id: None)
 
 
 def _valid_analysis(evidence_refs: list[str]) -> dict:

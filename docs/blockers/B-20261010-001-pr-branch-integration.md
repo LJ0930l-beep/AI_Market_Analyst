@@ -49,3 +49,14 @@ PR #23 exact-head run `37963206552` 有 3 个 `tests/test_macro_actuals.py` 失�
 ## 当前状态
 
 `OPEN`。本地候选已合并 #20/#21/#22/#25 并通过同环境完整测试和基线差集；仍待 draft PR 上相同 candidate SHA 的 hosted quick/full CI 与人工审查。PR #25 自身的旧 head 绿灯不替代组合候选验收。
+
+## Addendum 2026-10-11 — 已耗尽研究授权可在空克隆重放
+
+- 严重度：S1；状态仍为 `OPEN`，因为修复后的 PR head hosted CI 和组合审查尚未完成。
+- 根因：campaign 与 format-pilot 的去重账本按本地 Git clone 隔离，旧授权文件没有跨 clone 的已耗尽状态。
+- 影响：V38 A1/A2 的 72 个调用意图（71 个终态）及已完成的单次格式 pilot，在新的空账本克隆中可重新进入执行路径。没有实际重放；原文件和 ledger 摘要见 [`V2-G0-authorization-replay-review-20261011.md`](../audits/V2-G0-authorization-replay-review-20261011.md)。
+- 临时方案：不再执行两个旧授权；不重试任何模型调用，不修改原始账本。
+- 修复：candidate 新增 fail-closed 撤销登记，覆盖两个执行库和两个 CLI；登记/代码缺失或损坏时拒绝执行。新回归测试用 fake provider 与空临时 ledger 验证拒绝发生在 provider 初始化/调用前。
+- 验收：`tests/v38` 154 passed；提交钩子全仓 pytest 为 2528 passed、1 skipped、1 warning；ruff 与 diff 检查通过。仍要求修复后 exact-head hosted quick/full CI 及组合候选审查。
+- 回滚：允许撤回执行 guard 代码以恢复其他功能时，必须保留两个撤销记录；不得恢复旧 ID 的可执行状态。不得改写旧研究结果。
+- 外部效果：本次没有模型/API、交易所、订单或实盘操作。

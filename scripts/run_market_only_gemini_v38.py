@@ -13,6 +13,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from core.replay.pa_decision_quality_v38 import authorization_guard
 from core.replay.pa_decision_quality_v38.gemini_runner import (
     AUTHORIZATION_ID,
     MAX_CALLS,
@@ -218,6 +219,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         authorization = load_authorization(args.authorization)
+        if args.execute:
+            authorization_guard.require_authorization_not_revoked(
+                authorization.get("authorization_id"),
+            )
         prompts = load_prompt_templates(ROOT)
         inputs = load_authorized_optimization_inputs(args.input, args.manifest)
         if not 1 <= args.max_contexts <= MAX_CONTEXTS:
@@ -236,6 +241,9 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps({
                 "status": "DRY_RUN_READY_NO_MODEL_CALL",
                 "authorization_id": authorization["authorization_id"],
+                "authorization_execution_status": authorization_guard.authorization_execution_status(
+                    authorization["authorization_id"],
+                ),
                 "model_id": authorization["model_id"],
                 "dataset_id": preflight["dataset_id"],
                 "dataset_manifest_sha256": preflight["dataset_manifest_sha256"],

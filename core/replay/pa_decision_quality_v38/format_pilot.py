@@ -13,6 +13,7 @@ from typing import Any
 
 from core.ai.transport_diagnostics import safe_transport_trace
 from core.model_routing import DEFAULT_MODEL
+from core.replay.pa_decision_quality_v38 import authorization_guard
 
 from .gemini_runner import (
     MAX_RECORDED_RESPONSE_CHARS,
@@ -551,6 +552,8 @@ def run_format_pilot(
         raise MarketOnlyError("FORMAT_PILOT_EXECUTE_FLAG_INVALID")
     if execute and not callable(call_model):
         raise MarketOnlyError("FORMAT_PILOT_MODEL_CALLER_REQUIRED")
+    if execute:
+        authorization_guard.require_authorization_not_revoked(spec.authorization_id)
     if (len(canonical_json_bytes({"messages": messages})) > spec.max_wire_prompt_bytes
             or market_input.get("decision_id") != spec.decision_id
             or market_input.get("market_input_sha256") != spec.market_input_sha256
