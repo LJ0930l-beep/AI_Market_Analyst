@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V1
-updated_at_utc: 2026-10-11T08:38:33Z
+updated_at_utc: 2026-10-11T09:14:03Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -7,14 +7,14 @@ blockers:
     component: integration
     file: docs/blockers/B-20261010-001-pr-branch-integration.md
     trigger_signature: PR_COMBINATION_CANDIDATE_AWAITS_HUMAN_REVIEW
-    next_owner_action: Obtain independent human review of Draft PR #26/#27 and record an explicit integration decision. Preserve PR #1-11 NO_CHECKS and PR #23's historical failure. Do not auto-merge.
+    next_owner_action: Obtain independent human review of Draft PR #26 head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 and PR #27 head e30551fa22125413afe364de3932b9ddf5cfe880; exact-head runs 38107795624 and 38125994063 passed. Record the integration decision. Preserve PR #1-11 NO_CHECKS and PR #23's failure. Do not auto-merge.
   - id: B-20261010-002
     severity: S1
     status: BLOCKED_WITH_EVIDENCE
     component: model
     file: docs/blockers/B-20261010-002-model-response-capability.md
     trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
-    next_owner_action: Keep provider dispatch disabled. PR #27 exact head bf265d27d01ec75bb7dcc94c80bd86ddcf132989 passed offline run 38122906585 (quick 286, full 2600); obtain independent review of Draft PR #26/#27 before G2. Remote response_format, model identity/weights, billing, and quota remain unknown; any G2 run needs a fresh bounded authorization.
+    next_owner_action: Keep provider dispatch disabled. PR #27 exact head e30551fa22125413afe364de3932b9ddf5cfe880 passed offline run 38125994063 (quick 286, full 2600); obtain independent review of Draft PR #26/#27 before G2. Remote response_format, model identity/weights, billing, and quota remain unknown; any G2 run needs a fresh bounded authorization.
   - id: B-20261010-003
     severity: S1
     status: OPEN

@@ -5,8 +5,8 @@ severity: S1
 status: BLOCKED_WITH_EVIDENCE
 component: model
 mode: RESEARCH_OFFLINE
-g0_base_sha: ffc265be9bdcb1f97aef5c80d572636ca9cef035
-branch_sha: 732a77ee415461caa7c74b6faba2a9807b45ba77
+g0_base_sha: 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1
+branch_sha: e30551fa22125413afe364de3932b9ddf5cfe880
 g1_working_branch: codex/v2-g1-offline-20261010
 trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
 first_seen_at_utc: 2026-10-10T09:27:00Z
@@ -186,3 +186,13 @@ This closes only the offline parser subfinding. Parent B-002 remains `BLOCKED_WI
 - **Acceptance/unblock criteria:** offline contract is verified at the exact candidate head. Remote `response_format`, authenticated model/weight identity, billing and quota remain unknown. G2 requires G0 review plus a newly frozen 2–4 request scope, request ceiling, cost/quota limit and stop rule.
 - **Rollback:** revert only the additive offline parser/validator implementation and its regression tests if a regression is found; preserve V1, historical statuses/denominators, all frozen datasets, V35 risk controls, and production defaults.
 - **External effects:** no Gemini/Antigravity or Gate request, TestNet/Live order, or charge was attempted by this refresh.
+
+## 2026-10-11 baseline and offline regression refresh — 09:14Z
+
+The handbook's 2026-10-10 baseline of 25 open PRs is historical: current GitHub state is 27 open and 0 merged, with `main` unchanged at `8642639a78ca9aa56fbad1e88aea4b82169ea433`. PR #27 is now at exact head `e30551fa22125413afe364de3932b9ddf5cfe880`; hosted run [38125994063](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38125994063) passed quick 286 and full 2,600 tests. Local `tests/v38/test_response_contract_v2.py`, `tests/v38/test_authorization_revocation.py`, and `tests/test_gate_account_chain.py` passed 81 tests with one existing Starlette/httpx deprecation warning.
+
+The ledger remains 144 lines / 512,044 bytes / SHA-256 `820212a5699b718c922232c584fcfdcb4f79b675ea8653b1898a0d4025b837a7`. The two reported classification JSON hashes are reconciled: `4ba18a5bbb41ad8525e334cf44bcad98ab6d5d98ac76823b49f0f6c871785db7` is the canonical LF Git blob; `c02a1d3eccff68b3cb1a8ac57125c82cd8bd7beba1636183c2de6daf6254b2cc` is the Windows CRLF worktree byte hash with `core.autocrlf=true`. LF-normalizing the worktree reproduces the Git blob SHA exactly. No report or source ledger was changed.
+
+The full refreshed PR/head/check and ledger record is [`V2-G0-G1-live-state-20261011T091403Z.json`](../audits/V2-G0-G1-live-state-20261011T091403Z.json), Git blob SHA-256 `8dfe75e1afad571e763de2b5353c76c2ae9b23537d964609cc3257b4e31fb302` (Windows CRLF worktree SHA-256 `3e6dd6b0dc874c58cc883d3bd917ce50e908b31f04d602d3733bca11225b2594`); the readable report is [`V2-G0-G1-live-refresh-20261011T091403Z.md`](../audits/V2-G0-G1-live-refresh-20261011T091403Z.md).
+
+This verifies the offline response contract only. Remote provider-native `response_format`, authenticated underlying model/weights, billing and quota remain UNKNOWN. Keep dispatch disabled; G2 remains `NOT_AUTHORIZED` until G0 review and a fresh bounded authorization.

@@ -6,7 +6,7 @@ severity: S1
 status: FIX_IN_REVIEW
 component: integration
 mode: RESEARCH_OFFLINE
-branch_sha: 732a77ee415461caa7c74b6faba2a9807b45ba77
+branch_sha: 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1
 trigger_signature: PR_COMBINATION_CANDIDATE_AWAITS_HUMAN_REVIEW
 first_seen_at_utc: 2026-10-10T09:27:00Z
 user_authorization: DOCUMENTED_SCOPE_ONLY
@@ -27,7 +27,7 @@ candidate_branch: codex/v2-g0-integration-20261010
 candidate_source_heads: origin/main@8642639a78ca9aa56fbad1e88aea4b82169ea433; PR20@43eb1835ef76b8c39f9b560ceaa3cac1b436d1bf; PR21@941e38372a0c0f96d1aaecd4a4ca2faf62dd3070; PR22@cb03f8e34cedca18d735187fdab41cda388eaa99; PR25@97d138fc3f8072668af1bbeada3475d612f55a7d
 candidate_local_verification: targeted 38 passed; quick gate 222 passed; full 2517 passed, 1 skipped, 0 failed; baseline 2113 passed, 103 failed, 1 skipped; node-id comparison 0 new failures, 0 missing baseline nodes.
 candidate_junit_sha256: baseline ec187fb87f395a5bb3949d358b13614b73dacfbfa873dc7d8a451ef54374ca9b; candidate dad101a071100b00d9071936e13233f1efcfa8813e82a1acd3d29fbbe9c0a733
-remote_ci_status: PR26 exact head ffc265be9bdcb1f97aef5c80d572636ca9cef035 run 38043671492 passed quick/full; PR27 exact head 732a77ee415461caa7c74b6faba2a9807b45ba77 run 38046845072 passed quick/full; PR23 exact head remains failed on run 37963206552 and is not rewritten by green descendants.
+remote_ci_status: PR26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 run 38107795624 passed (quick 231; full 2538); PR27 exact head e30551fa22125413afe364de3932b9ddf5cfe880 run 38125994063 passed (quick 286; full 2600); PR23 exact head remains failed on run 37963206552 and is not rewritten by green descendants.
 next_owner_action: Human review PR26 and PR27; keep both Draft and unmerged; if review requests changes, patch the isolated candidate and rerun same-head CI.
 ```
 
@@ -175,3 +175,11 @@ Current owner action: obtain independent human review of Draft PR #26/#27 and re
 - **Repair / acceptance:** maintain PR #26 as the integration candidate and #27 as its child. All #1–#25 current heads were rechecked as ancestors of #26. Require independent review of both candidates and a recorded integration decision before G0 ACCEPT.
 - **Rollback:** if review finds a defect or omitted branch, keep main untouched and revise or close the candidate PRs with ordinary commits; preserve this and all earlier snapshots.
 - **External effects:** none. No model, private exchange, TestNet/Live, order, or account-settings operation occurred.
+
+## 2026-10-11 baseline refresh — 09:14Z
+
+GitHub REST/API and current-head checks were re-read. `main` remains `8642639a78ca9aa56fbad1e88aea4b82169ea433`; all 27 PRs remain open, none are merged. Exact-head CI inventory is 15 success (#12–#22, #24–#27), #23 failure, #1–#11 with no current-head checks, and none in progress. PR #1–#25 current heads are all verified ancestors of PR #26 head `00d1c4405a513b9e5cdee9f6fa15808b4386d8b1`; PR #27 is based on that exact head.
+
+PR #26 run [38107795624](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38107795624) passed quick 231 and full 2,538 tests. PR #27 current head `e30551fa22125413afe364de3932b9ddf5cfe880` run [38125994063](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38125994063) passed quick 286 and full 2,600 tests. Both are still OPEN/Draft with zero reviews and no auto-merge. The exact machine snapshot is [`V2-G0-G1-live-state-20261011T091403Z.json`](../audits/V2-G0-G1-live-state-20261011T091403Z.json), Git blob SHA-256 `8dfe75e1afad571e763de2b5353c76c2ae9b23537d964609cc3257b4e31fb302` (Windows CRLF worktree SHA-256 `3e6dd6b0dc874c58cc883d3bd917ce50e908b31f04d602d3733bca11225b2594`); the readable refresh is [`V2-G0-G1-live-refresh-20261011T091403Z.md`](../audits/V2-G0-G1-live-refresh-20261011T091403Z.md).
+
+G0 remains `FIX_IN_REVIEW`; CI does not replace independent human review or an explicit integration decision. Keep both candidates unmerged and preserve PR #23's failure and PR #1–#11's missing-check state.
