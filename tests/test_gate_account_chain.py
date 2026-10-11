@@ -66,6 +66,13 @@ def _v3_client(store: SQLiteStore) -> TestClient:
             "AVAILABLE",
         ),
         (
+            "close-long-order",
+            {"contract": "BTC_USDT", "size": "100"},
+            "SELL",
+            True,
+            "AVAILABLE",
+        ),
+        (
             "close-short-order",
             {"contract": "BTC_USDT", "size": "0"},
             "BUY",

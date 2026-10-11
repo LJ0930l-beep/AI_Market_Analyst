@@ -834,12 +834,16 @@ class GateLiveTrader:
                 trigger = raw.get("trigger") if isinstance(raw.get("trigger"), dict) else {}
                 size = _optional_float(initial.get("amount", initial.get("size")))
                 order_type = str(raw.get("order_type") or "").strip().lower()
-                if size is not None and size != 0:
-                    side = "BUY" if size > 0 else "SELL"
-                elif order_type in GATE_CLOSE_SHORT_ORDER_TYPES:
+                # Gate price-order size is the closing quantity, not always
+                # the resulting order side (e.g. close-long-order accepts a
+                # positive size while closing a long position). The exact
+                # protective order type is authoritative when it is known.
+                if order_type in GATE_CLOSE_SHORT_ORDER_TYPES:
                     side = "BUY"
                 elif order_type in GATE_CLOSE_LONG_ORDER_TYPES:
                     side = "SELL"
+                elif size is not None and size != 0:
+                    side = "BUY" if size > 0 else "SELL"
                 else:
                     side = "UNKNOWN"
 
