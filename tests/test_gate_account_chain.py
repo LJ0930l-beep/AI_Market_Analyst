@@ -48,6 +48,91 @@ def _v3_client(store: SQLiteStore) -> TestClient:
     return TestClient(app)
 
 
+@pytest.mark.parametrize(
+    ("order_type", "initial", "expected_side", "expected_reduce_only", "expected_status"),
+    [
+        (
+            "close-undocumented-order",
+            {"contract": "BTC_USDT", "size": "0"},
+            "UNKNOWN",
+            False,
+            "DEGRADED",
+        ),
+        (
+            "close-long-order",
+            {"contract": "BTC_USDT", "size": "0"},
+            "SELL",
+            True,
+            "AVAILABLE",
+        ),
+        (
+            "close-short-order",
+            {"contract": "BTC_USDT", "size": "0"},
+            "BUY",
+            True,
+            "AVAILABLE",
+        ),
+        (
+            "close-undocumented-order",
+            {
+                "contract": "BTC_USDT",
+                "size": "-1",
+                "reduce_only": "false",
+                "is_close": "false",
+            },
+            "SELL",
+            False,
+            "DEGRADED",
+        ),
+        (
+            "close-long-order",
+            {"contract": "BTC_USDT", "size": "-1", "reduce_only": "false"},
+            "SELL",
+            False,
+            "DEGRADED",
+        ),
+        (
+            "close-long-order",
+            {
+                "contract": "BTC_USDT",
+                "size": "-1",
+                "reduce_only": True,
+                "is_reduce_only": False,
+            },
+            "SELL",
+            False,
+            "DEGRADED",
+        ),
+    ],
+)
+def test_gate_open_trigger_order_classification_fails_closed(
+    order_type, initial, expected_side, expected_reduce_only, expected_status
+):
+    class Exchange:
+        def privateFuturesGetSettlePriceOrders(self, params):
+            assert params == {"settle": "usdt", "status": "open", "limit": 100}
+            return [
+                {
+                    "id": 123456,
+                    "status": "open",
+                    "order_type": order_type,
+                    "initial": initial,
+                    "trigger": {"price": "60000"},
+                }
+            ]
+
+    trader = GateLiveTrader(
+        "testnet-key", "testnet-secret", testnet=True, exchange=Exchange()
+    )
+
+    orders = trader.get_open_trigger_orders()
+
+    assert orders[0]["side"] == expected_side
+    assert orders[0]["reduce_only"] is expected_reduce_only
+    assert orders[0]["is_protection"] is expected_reduce_only
+    assert trader.last_trigger_orders_status == expected_status
+
+
 def test_manual_live_lock_is_persisted_and_enforced_by_order_api(tmp_path):
     store = SQLiteStore(tmp_path / "manual-live-lock.sqlite3")
     store.initialize()

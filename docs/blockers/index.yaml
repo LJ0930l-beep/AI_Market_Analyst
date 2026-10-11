@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V1
-updated_at_utc: 2026-10-11T05:30:03Z
+updated_at_utc: 2026-10-11T06:20:37Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -7,14 +7,14 @@ blockers:
     component: integration
     file: docs/blockers/B-20261010-001-pr-branch-integration.md
     trigger_signature: PR_COMBINATION_CANDIDATE_AWAITS_HUMAN_REVIEW
-    next_owner_action: Review the latest exact heads of Draft PR #26 and PR #27 and their matching hosted CI; the 2026-10-11 05:00Z snapshot in ../audits/V2-G1-legacy-runner-strict-json-20261011T050014Z.md predates its new repair commit. PR #1-11 have no standalone checks; PR #23's historical three-test clock failure is fixed in child PR #24, while its original red run remains preserved. No auto-merge.
+    next_owner_action: Review the 2026-10-11 06:20Z snapshot in ../audits/V2-G0-G1-live-refresh-20261011T062037Z.md; verify the Gate trigger-order fix is on PR #27's current head and its hosted CI matches that exact SHA, then obtain human review of Draft PR #26/#27. Preserve PR #1-11 NO_CHECKS and PR #23's historical failure. Do not auto-merge.
   - id: B-20261010-002
     severity: S1
     status: BLOCKED_WITH_EVIDENCE
     component: model
     file: docs/blockers/B-20261010-002-model-response-capability.md
     trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
-    next_owner_action: Keep provider dispatch disabled and issue no model calls. The duplicate-key parser repair passed exact-head run 38114167230; obtain human review of Draft PRs #26/#27 before any G2 proposal. CI does not verify remote response_format, model identity/weights, billing, or quota. G2 still requires fresh explicit bounded authorization.
+    next_owner_action: Keep provider dispatch disabled and issue no model calls. Strict JSON repair is included in PR #27 exact-head run 38115375371; obtain human review of Draft PRs #26/#27 before any G2 proposal. CI does not verify remote response_format, model identity/weights, billing, or quota. G2 still requires fresh explicit bounded authorization.
   - id: B-20261010-003
     severity: S1
     status: OPEN

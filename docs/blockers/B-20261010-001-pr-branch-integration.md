@@ -140,3 +140,13 @@ Current read-only state: [`V2-G0-G1-live-state-20261010T221231Z.json`](../audits
 - 验收：`tests/v38` 154 passed；提交钩子全仓 pytest 为 2528 passed、1 skipped、1 warning；ruff 与 diff 检查通过。仍要求修复后 exact-head hosted quick/full CI 及组合候选审查。
 - 回滚：允许撤回执行 guard 代码以恢复其他功能时，必须保留两个撤销记录；不得恢复旧 ID 的可执行状态。不得改写旧研究结果。
 - 外部效果：本次没有模型/API、交易所、订单或实盘操作。
+
+## 2026-10-11 current-head refresh and Gate trigger classification review — 06:20Z
+
+The additive live snapshot is [`V2-G0-G1-live-refresh-20261011T062037Z.md`](../audits/V2-G0-G1-live-refresh-20261011T062037Z.md), with per-PR exact head/base/check/review data in [`V2-G0-G1-live-state-20261011T062037Z.json`](../audits/V2-G0-G1-live-state-20261011T062037Z.json). GitHub currently reports 27 open PRs, 0 merged, 0 submitted reviews, and no pending checks. PRs #12–#22 and #24–#27 have exact-head successful checks; PR #23's exact current head remains failed on run `37963206552`; #1–#11 have no checks on their own heads. All PR #1–#25 heads are ancestors of PR #26, and PR #27 is based exactly on #26.
+
+PR #26 head `00d1c4405a513b9e5cdee9f6fa15808b4386d8b1` passed hosted run `38107795624` (quick 231, full 2,538). PR #27 head `ae6ca628d1238be7eaf8e8e5fe49996a746e7460` passed hosted run `38115375371` (quick 286, full 2,593). Both remain Draft and without reviews. The current remote #27 head does not contain the new local patch described below.
+
+Offline code review found that `GateLiveTrader.get_open_trigger_orders()` used a `"close-"` substring and Python truthiness to classify account trigger orders. This could mark an undocumented order type or the string `"false"` as a confirmed protection order. Failure-first fixtures reproduced two misclassifications. The local fix maps sides only from the six exact Gate protection order enums, parses native flags explicitly, and reports malformed, conflicting, or unknown evidence as degraded. Targeted Gate regressions pass 66 tests; the full local suite passes 2,598 with 1 skipped and 0 failures. `git diff --check` passes. Ruff still reports file-level pre-existing diagnostics; none point to the modified lines.
+
+**Status remains `FIX_IN_REVIEW`.** The local patch is uncommitted and has no hosted run. Incorporate it into the candidate, run exact-head hosted quick/full CI, and obtain human review before considering acceptance. No model or Gate account API was called, no order was sent, Live remained untouched, and no historical ledger or frozen sample was modified.
