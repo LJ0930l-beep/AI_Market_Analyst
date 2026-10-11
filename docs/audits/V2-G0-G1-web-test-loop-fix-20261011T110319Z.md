@@ -36,3 +36,19 @@ This closes the local frontend-loop finding only. V2 G0/G1 acceptance remains pe
 ## Rollback
 
 Revert the repair commit if it introduces a regression. Preserve the discovery-time timeout record and all earlier V2/V25–V39 evidence.
+
+## Hosted UTC follow-up — 2026-10-11
+
+The exact-head hosted run `38134595746` completed after the loop repair. Its Python job passed (`2600 passed, 1 warning, 25 subtests passed`), while the web job reported 160/161 tests passed. The single failure was the pre-existing analysis date-filter assertion in `renders authoritative strategy fills once and exposes scoped pending filters`: it hard-coded the UTC+8 conversion of a `datetime-local` value.
+
+The failure was reproduced locally with `TZ=UTC`; the request correctly used `2030-01-02T11:00:00.000Z`, so the test's fixed `03:00Z` expectation could not match. The assertion now derives its expected query value with `new Date(input).toISOString()` and `encodeURIComponent`, preserving the browser-local datetime contract without changing application behavior.
+
+Follow-up verification on this revision:
+
+- Focused date-filter test with `TZ=UTC`: passed.
+- Full web suite: 29 files, 161 tests passed.
+- `npm run lint`: passed with zero warnings.
+- `npm run build`: passed; existing 615.51 kB main-chunk advisory remains.
+- `git diff --check`: passed.
+
+The new revision's hosted exact-head checks are pending. This timezone correction is test-only; the Gate mock-account refresh fix, production execution path, account settings, risk rules, model routing, and historical evidence are unchanged. No model or exchange API was called and no order was submitted.

@@ -334,7 +334,8 @@ describe("V2 task workspace",()=>{
     expect(screen.getByText("intent-pending-ui")).toBeInTheDocument();
     expect(screen.getByText("NOT_FILLED_PENDING")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Analysis start time"), {target:{value:"2030-01-02T11:00"}});
-    await waitFor(()=>expect(apiClient.v2).toHaveBeenCalledWith(expect.stringContaining("from_at=2030-01-02T03%3A00%3A00.000Z"),"GET",undefined,expect.any(AbortSignal)));
+    const expectedFromAt = encodeURIComponent(new Date("2030-01-02T11:00").toISOString());
+    await waitFor(()=>expect(apiClient.v2).toHaveBeenCalledWith(expect.stringContaining(`from_at=${expectedFromAt}`),"GET",undefined,expect.any(AbortSignal)));
   });
   it("shows separate Gate TestNet and Live account profiles without remote access",async()=>{
       vi.mocked(apiClient.v2).mockImplementation(async (path: string) => {
