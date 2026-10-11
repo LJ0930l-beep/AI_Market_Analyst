@@ -936,6 +936,70 @@ def test_gate_protection_readback_normalizes_gate_is_reduce_only_without_reduce_
     assert result["initial"]["is_reduce_only"] is True
 
 
+@pytest.mark.parametrize(
+    "order_type",
+    [
+        "close-long-order",
+        "close-short-order",
+        "close-long-position",
+        "close-short-position",
+        "plan-close-long-position",
+        "plan-close-short-position",
+    ],
+)
+def test_gate_protection_readback_accepts_documented_close_order_types(order_type):
+    class Exchange:
+        def privateFuturesGetSettlePriceOrdersOrderId(self, _params):
+            return {
+                "id": "9001", "status": "open",
+                "initial": {"contract": "BTC_USDT", "size": -1},
+                "order_type": order_type,
+            }
+
+    trader = GateLiveTrader("key", "secret", testnet=True, exchange=Exchange())
+
+    result = trader.fetch_protection_order("9001", "BTCUSDT")
+
+    assert result["reduce_only"] is True
+    assert result["raw"]["order_type"] == order_type
+
+
+@pytest.mark.parametrize("order_type", ["not-close-long-order", "close-undocumented-order"])
+def test_gate_protection_readback_rejects_undocumented_close_order_type_substrings(order_type):
+    class Exchange:
+        def privateFuturesGetSettlePriceOrdersOrderId(self, _params):
+            return {
+                "id": "9001", "status": "open",
+                "initial": {"contract": "BTC_USDT", "size": -1},
+                "order_type": order_type,
+            }
+
+    trader = GateLiveTrader("key", "secret", testnet=True, exchange=Exchange())
+
+    with pytest.raises(ValueError, match="GATE_PROTECTION_NOT_REDUCE_ONLY"):
+        trader.fetch_protection_order("9001", "BTCUSDT")
+
+
+def test_gate_protection_readback_allows_partial_reduce_only_when_not_full_close():
+    class Exchange:
+        def privateFuturesGetSettlePriceOrdersOrderId(self, _params):
+            return {
+                "id": "9001", "status": "open",
+                "initial": {
+                    "contract": "BTC_USDT", "size": -1,
+                    "is_reduce_only": True, "is_close": False,
+                },
+            }
+
+    trader = GateLiveTrader("key", "secret", testnet=True, exchange=Exchange())
+
+    result = trader.fetch_protection_order("9001", "BTCUSDT")
+
+    assert result["reduce_only"] is True
+    assert result["initial"]["is_reduce_only"] is True
+    assert result["initial"]["is_close"] is False
+
+
 @pytest.mark.parametrize("is_close", [True, False])
 def test_gate_protection_readback_uses_native_is_close_flag_fail_closed(is_close):
     class Exchange:
