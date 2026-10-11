@@ -1615,7 +1615,11 @@ export function V2WorkspacePage({
           ? accountResponse.accounts.filter((item) => item && typeof item.account_id === "string")
           : [];
         setTradingAccounts(nextAccounts);
-        if (!nextAccounts.some((item) => item.account_id === selectedTradingAccount)) {
+        if (surface === "gate-live" && apiSubTab === "mock") {
+          if (selectedTradingAccount !== GATE_TESTNET_ACCOUNT_ID) {
+            setSelectedTradingAccount(GATE_TESTNET_ACCOUNT_ID);
+          }
+        } else if (!nextAccounts.some((item) => item.account_id === selectedTradingAccount)) {
           setSelectedTradingAccount(nextAccounts[0]?.account_id || "");
         }
         setWorkspace(state);
@@ -1628,7 +1632,7 @@ export function V2WorkspacePage({
           setError(e instanceof Error ? e.message : "unavailable");
       }
     },
-    [selected, timeframe, selectedTradingAccount],
+    [apiSubTab, selected, selectedTradingAccount, surface, timeframe],
   );
 
   const refreshGateRemote = useCallback(async () => {

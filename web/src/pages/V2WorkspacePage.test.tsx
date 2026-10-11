@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiClient } from "../api/client";
@@ -15,7 +15,10 @@ beforeEach(()=>{
   vi.spyOn(apiClient,"chartBars").mockImplementation(fake.chartBars);
   vi.spyOn(apiClient,"v2").mockResolvedValue({watchlist:[{symbol:"BTCUSDT"}],subscriptions:[],runtime:{state:"stopped"},decisions:[],positions:[],allow_unknown_macro:false});
 });
-afterEach(()=>vi.restoreAllMocks());
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 describe("V2 task workspace",()=>{
   it("keeps the AI trading cockpit above the chart and market radar",async()=>{
     show();
@@ -204,7 +207,9 @@ describe("V2 task workspace",()=>{
           : { watchlist: [{ symbol: "BTCUSDT" }], subscriptions: [], runtime: { state: "stopped" }, decisions: [], positions: [], allow_unknown_macro: false },
     );
     show("gate-live");
-    const cockpit = await screen.findByRole("region", { name: "Account risk cockpit" });
+    const cockpit = screen.getByRole("region", { name: "Account risk cockpit" });
+    await waitFor(() => expect(cockpit).toHaveTextContent("NOT SELECTED · NOT REPORTED"));
+    expect(vi.mocked(apiClient.v2).mock.calls.filter(([path]) => path === "/workspace?account_id=gate_testnet")).toHaveLength(1);
     expect(cockpit).toHaveTextContent("NOT SELECTED · NOT REPORTED");
     expect(cockpit).toHaveTextContent("UNVERIFIED");
     expect(cockpit).toHaveTextContent("READ-ONLY SNAPSHOT");

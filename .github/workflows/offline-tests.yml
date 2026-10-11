@@ -73,7 +73,7 @@ jobs:
       - name: Run web unit tests
         shell: pwsh
         working-directory: web
-        run: npm test -- --run
+        run: npm test -- --run --reporter=verbose
 
       - name: Lint web app
         shell: pwsh
