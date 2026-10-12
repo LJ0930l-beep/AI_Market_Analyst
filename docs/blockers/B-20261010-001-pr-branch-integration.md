@@ -242,3 +242,14 @@ The immutable machine and prose refresh are docs/audits/V2-G0-G1-live-state-2026
 PR #26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 passed run 38107795624. PR #27 exact head 952d38a8e4d6aa800c507f6c54ee9477d744181b passed run 38309564947: quick 289, full 2,605, 25 subtests, one existing deprecation warning; Web/lint/type-check/build passed. Both PRs remain OPEN/Draft with zero reviews and requests and no auto-merge.
 
 The latest offline increment adds Gate 4h pagination coverage and a calibration missing-digest/no-model-call regression. It does not cover the required positive calibration remote mode. The G0/G4 dependency conflict is tracked as B-20261013-006. G0 remains not accepted; do not merge, open G2, or rewrite PR #23's failure. Rollback remains limited to the test-only commit 952d38a if it causes a regression; retain all prior snapshots and ledgers.
+
+## 2026-10-12T23:38:26Z exact-head and all-PR refresh
+
+- **Severity/status:** S1 / `FIX_IN_REVIEW`; integrated PR review and recorded G0 acceptance are still absent.
+- **Original evidence:** [current prose audit](../audits/V2-G0-G1-live-refresh-20261012T233826Z.md) and [machine snapshot](../audits/V2-G0-G1-live-state-20261012T233826Z.json), SHA-256 `A2200D337DCFDDAAF07183F74CD1E1D875AD7D5977FED9621D46EE3F2AA66EB6`. Handbook SHA-256 remains `A31A70795C02B9F5BE3ED505361AA3133ADFE82DA09DDD18DE8FE5D482841B4D`; `main` remains `8642639a78ca9aa56fbad1e88aea4b82169ea433`.
+- **Current inventory:** 27 OPEN, 0 merged; 15 current heads pass, PR #23 fails, PR #1–#11 have no reported checks, 0 pending. Only PR #27 head changed since the 21:46 snapshot; its base and PR #1–#26 base/head SHAs did not change.
+- **Candidate evidence:** PR #26 exact head `00d1c4405a513b9e5cdee9f6fa15808b4386d8b1` remains green. PR #27 exact head `86ab6fe124b2541fd7f73482dbabe2dd23f63b48` passed run `38320355179` (quick 289, full 2,605 / 25 subtests, Web/lint/type-check/build). Both remain OPEN/Draft with no review requests and auto-merge off.
+- **Root cause and containment:** Historical #23 failure and #1–#11 no-check state are retained as evidence, not edited away. Keep both candidate PRs unmerged and remote dispatch disabled. The B-006 ordering decision is resolved; G0 remains unaccepted pending independent review and remaining G0 criteria.
+- **Repair/acceptance:** PR #26/#27 remain the review candidate; acceptance still requires an independent review and a recorded G0 decision on the integrated SHA. No direct merge or `main` update is authorized.
+- **Rollback:** If this snapshot is inaccurate, revert only the new audit/blocker documentation and add a correction snapshot; preserve source PRs, prior matrices, code, ledgers, and `main`.
+- **External effects:** No Gemini/Antigravity/Gate request, order, production setting change, or automatic merge occurred. Ledger files were only rehashed; contents were not read or changed.

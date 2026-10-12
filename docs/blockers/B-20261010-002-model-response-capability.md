@@ -238,3 +238,7 @@ PR #27 exact head `f4461a72486b8aba132eb23045e03c9b1ffe0ba3` run `38298606199` p
 The V2 prompt configurations still set remote_dispatch_enabled=false, call_authorization.authorized=false, and maximum_calls=0. The new exact-head PR #27 run 38309564947 verifies only offline fixtures: quick 289 passed, full 2,605 passed with 25 subtests and one existing deprecation warning; Web/lint/type-check/build passed. No provider request was made.
 
 Antigravity/Gemini structured response_format support, authenticated actual response identity/weights, billing, and quota settlement remain unknown. Keep BLOCKED_WITH_EVIDENCE, provider dispatch disabled, and G2 unauthorized until the manual's earlier gates and a fresh bounded authorization are satisfied. See docs/audits/V2-G0-G1-live-refresh-20261012T214604Z.md.
+
+## 2026-10-12T23:38:26Z current exact-head refresh
+
+PR #27 head `86ab6fe124b2541fd7f73482dbabe2dd23f63b48` passed hosted run `38320355179` (quick 289; full 2,605, 25 subtests; Web/lint/type-check/build). This is offline verification only. The V2 prompt files still set `remote_dispatch_enabled=false`, `authorized=false`, and `maximum_calls=0`. No provider request was made; `response_format` support, authenticated response/weight evidence, billing, and quota remain unverified. Keep this S1 blocker open with its existing safe fallback.
