@@ -234,3 +234,11 @@ Both candidates remain OPEN/Draft with zero review events and auto-merge disable
 - **测试结果：** Python quick 289 passed；full 2,603 passed、25 subtests、1 Starlette/httpx deprecation warning；Web 29 个文件/161 tests、lint、type-check 与 build 通过。远端 full pytest 用时 1,033.02s。
 - **结论：** B-20261012-005 修复在精确 head 的自动化 CI 中通过。PR #26/#27 仍 OPEN/Draft、无 reviews/requests；G0 仍需独立人工 review 和集成决定。
 - **安全边界：** 未调用模型或交易所 API、未下单、未更改真实账户配置；历史样本和 ledger 未修改。保留 PR #23 failure 与 #1–#11 `NO_REPORTED_CHECKS`。
+
+## 2026-10-12T21:46:04Z live refresh
+
+The immutable machine and prose refresh are docs/audits/V2-G0-G1-live-state-20261012T214604Z.json and docs/audits/V2-G0-G1-live-refresh-20261012T214604Z.md. The matrix comparison found only PR #27 head changed since the 20:29 snapshot; all other PR base/head SHAs stayed the same. Fresh inventory remains 27 open / 0 merged: 15 current heads pass, #23 fails, #1–#11 have no reported checks, and 0 are pending. PR #1–#25 ancestry into #26 was rechecked at 25/25; #26 remains an ancestor of #27.
+
+PR #26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 passed run 38107795624. PR #27 exact head 952d38a8e4d6aa800c507f6c54ee9477d744181b passed run 38309564947: quick 289, full 2,605, 25 subtests, one existing deprecation warning; Web/lint/type-check/build passed. Both PRs remain OPEN/Draft with zero reviews and requests and no auto-merge.
+
+The latest offline increment adds Gate 4h pagination coverage and a calibration missing-digest/no-model-call regression. It does not cover the required positive calibration remote mode. The G0/G4 dependency conflict is tracked as B-20261013-006. G0 remains not accepted; do not merge, open G2, or rewrite PR #23's failure. Rollback remains limited to the test-only commit 952d38a if it causes a regression; retain all prior snapshots and ledgers.

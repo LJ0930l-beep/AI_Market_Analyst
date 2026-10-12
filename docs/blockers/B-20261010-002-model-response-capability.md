@@ -232,3 +232,9 @@ PR #27 exact head `5f70d186d169261f0f337232c70e246a2e88b4e6` run `38293103442` p
 ## 2026-10-12T19:54:50Z 精确 head CI 更新
 
 PR #27 exact head `f4461a72486b8aba132eb23045e03c9b1ffe0ba3` run `38298606199` passed: Python quick 289, full 2,603 / 25 subtests, Web 161, lint, type-check, and build. This verifies the offline code at that head only. Remote provider structured-output support, authenticated model/weight identity, billing, and quota remain unknown; dispatch stays disabled and G2 remains unauthorized.
+
+## 2026-10-12T21:46:04Z offline state refresh
+
+The V2 prompt configurations still set remote_dispatch_enabled=false, call_authorization.authorized=false, and maximum_calls=0. The new exact-head PR #27 run 38309564947 verifies only offline fixtures: quick 289 passed, full 2,605 passed with 25 subtests and one existing deprecation warning; Web/lint/type-check/build passed. No provider request was made.
+
+Antigravity/Gemini structured response_format support, authenticated actual response identity/weights, billing, and quota settlement remain unknown. Keep BLOCKED_WITH_EVIDENCE, provider dispatch disabled, and G2 unauthorized until the manual's earlier gates and a fresh bounded authorization are satisfied. See docs/audits/V2-G0-G1-live-refresh-20261012T214604Z.md.

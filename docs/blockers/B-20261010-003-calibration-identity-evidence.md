@@ -31,3 +31,9 @@ next_owner_action: After upstream G0/G1 review and authorized G2/G3 evidence, de
 This is a confirmed fail-closed code-path limitation found by static review, not a provider incident or an observed calibration attempt. The manual's B05 requires distinct evidence for local application artifacts and remote model identity/weights, plus an explicit `REMOTE_WEIGHTS_NOT_EXPOSED` mode restricted to Research/Paper/TestNet. The current calibrator requires a model-weight digest and returns `NOT_READY` if it is missing; no explicit remote-identity calibration mode is present. Provider availability of an authenticated digest is unknown.
 
 Do not weaken the guard or introduce a model call here. G4 implementation depends on upstream G0–G3 acceptance. Preserve the current `NOT_READY` fallback until the offline contract and negative tests are reviewed.
+
+## 2026-10-12T21:46:04Z fail-closed regression and sequencing review
+
+The new offline regression tests/test_ai_calibration_identity_gate.py confirms that a missing verified weight digest returns NOT_READY / MODEL_DIGEST_UNAVAILABLE, invokes generate_json zero times, and creates no active calibration profile. The exact PR #27 head passed run 38309564947. This verifies only fail-closed behavior; AICalibrationService still has no REMOTE_WEIGHTS_NOT_EXPOSED identity mode.
+
+Handbook §5.1 also requires calibration remote mode in its G0 combination test, while handbook G4 defines that mode and this blocker defers implementation until G0/G1/G2/G3. The conflict is separately recorded in B-20261013-006. Keep this blocker OPEN and the guard unchanged until the dependency is adjudicated; no model call or order was attempted.
