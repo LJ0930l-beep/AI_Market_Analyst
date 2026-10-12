@@ -6,7 +6,7 @@ status: BLOCKED_WITH_EVIDENCE
 component: model
 mode: RESEARCH_OFFLINE
 g0_base_sha: 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1
-branch_sha: "66ef1f707652c322eb5c33778485a529b52804e3"
+branch_sha: "72dd60b19b1b3a75baed47f44a029e1382d87c38"
 g1_working_branch: codex/v2-g1-offline-20261010
 trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
 first_seen_at_utc: 2026-10-10T09:27:00Z
@@ -24,7 +24,7 @@ patch_pr: Stacked G1 offline branch codex/v2-g1-offline-20261010 based on G0 can
 negative_tests: Empty/partial/truncated body; finish_reason length/error/missing; missing/mismatched model ID with payload/adapter source separation; malformed/multiple fence; invalid/unknown/future top-level and nested evidence refs; offline fake provider ignores a submitted json_schema request and capability remains unknown; duplicate JSON key; usage mismatch; NaN/infinite/non-positive transport byte counts; duplicate intent in existing pilot tests.
 unblock_criteria: Offline contract PR and same-head full CI pass; any G2 remote capability probe requires separate explicit user authorization, a new frozen scope, request ceiling, budget/stop rule, and provider/route identity evidence.
 needs_human_decision: true
-next_owner_action: "Keep provider dispatch disabled. PR #27 exact head 66ef1f707652c322eb5c33778485a529b52804e3 passed hosted run 38286178147 (quick 286; full 2600 with 25 subtests; Web 161 plus lint/type-check/build). Remote response_format, authenticated model/weight identity, billing, and quota remain unknown. G2 requires G0 human review and a fresh explicitly bounded authorization."
+next_owner_action: "Keep provider dispatch disabled. PR #27 exact head 72dd60b19b1b3a75baed47f44a029e1382d87c38 passed run 38289819059 (quick 286; full 2600 with 25 subtests; Web 161 plus lint/type-check/build). Remote response_format, authenticated model/weight identity, billing and quota remain unknown. G2 requires G0 human review and a fresh bounded authorization."
 
 ## 已证实与仍未知
 
@@ -212,3 +212,14 @@ The V2 dispatch flag remains false and max_calls remains zero. Provider response
 - **未解除原因：** provider 原生 `response_format`、响应模型/权重真实性、计费和 quota 仍 UNKNOWN。G2 需要 G0 独立审查及新的明确 bounded scope、调用上限、费用/额度上限和 stop rules。
 - **回滚：** 本轮为文档证据刷新；如事实有误，回退本次文档提交并新增更正记录，不改写历史 ledger 或旧审计。代码行为异常时仍保持 dispatch 关闭并按对应代码 PR 的回滚范围处理。
 - **外部影响：** 无模型或交易所 API 调用、订单、费用、生产账户设置变化。
+
+
+## 2026-10-12T18:38:22Z 当前离线证据刷新
+
+- **严重度/状态：** S1 / `BLOCKED_WITH_EVIDENCE`；离线契约通过不证明远端 provider 能力、模型身份或账单结算。
+- **证据：** [`V2-G0-G1-live-refresh-20261012T183822Z.md`](../audits/V2-G0-G1-live-refresh-20261012T183822Z.md) 与 [`V2-G0-G1-live-state-20261012T183822Z.json`](../audits/V2-G0-G1-live-state-20261012T183822Z.json)；PR #27 exact-head run 38289819059 全绿。历史 67 个 `INVALID_JSON` 仍未重试、重标或改写；ledger 哈希不变。
+- **临时遏制：** `remote_dispatch_allowed=false`、`max_calls=0`；不重试旧 intent，不用 hosted CI 推断 response_format 支持。
+- **修复/验收：** 当前 head Python quick 286，full 2600 / 25 subtests；Web 161，lint、type-check/build 通过。它只验证离线 V2 schema/parser/evidence 与回归。
+- **未解除原因：** provider 原生 response_format、响应模型/权重身份、计费和 quota 仍未知。G2 仍需要 G0 review 及新的明确有界调用、费用/额度上限和停止规则授权。
+- **回滚：** 本轮只有审计文档变更；如状态字段错误，撤销本次文档提交并新增更正，不改历史 ledger/报告；运行时仍保持 remote dispatch 关闭。
+- **外部影响：** 无模型/交易所/TestNet/Live 请求、订单、费用或账户设置变化。

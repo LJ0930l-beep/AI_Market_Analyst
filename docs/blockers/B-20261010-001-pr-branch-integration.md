@@ -27,8 +27,8 @@ candidate_branch: codex/v2-g0-integration-20261010
 candidate_source_heads: origin/main@8642639a78ca9aa56fbad1e88aea4b82169ea433; PR20@43eb1835ef76b8c39f9b560ceaa3cac1b436d1bf; PR21@941e38372a0c0f96d1aaecd4a4ca2faf62dd3070; PR22@cb03f8e34cedca18d735187fdab41cda388eaa99; PR25@97d138fc3f8072668af1bbeada3475d612f55a7d
 candidate_local_verification: targeted 38 passed; quick gate 222 passed; full 2517 passed, 1 skipped, 0 failed; baseline 2113 passed, 103 failed, 1 skipped; node-id comparison 0 new failures, 0 missing baseline nodes.
 candidate_junit_sha256: baseline ec187fb87f395a5bb3949d358b13614b73dacfbfa873dc7d8a451ef54374ca9b; candidate dad101a071100b00d9071936e13233f1efcfa8813e82a1acd3d29fbbe9c0a733
-remote_ci_status: "PR26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 run 38107795624 passed; PR27 exact head 66ef1f707652c322eb5c33778485a529b52804e3 run 38286178147 passed (quick 286; full 2600; Web 161 plus lint/type-check/build); PR23 current head failure retained."
-next_owner_action: "Current 2026-10-12T18:07:29Z: PR #26 and PR #27 remain OPEN/Draft with zero reviews/review requests and no auto-merge; obtain independent human review and record an integration decision. Preserve PR #1-11 NO_REPORTED_CHECKS and PR #23 failure. Do not auto-merge."
+remote_ci_status: "PR26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 run 38107795624 passed; PR27 exact head 72dd60b19b1b3a75baed47f44a029e1382d87c38 run 38289819059 passed (quick 286; full 2600; web 29 files/161 tests and lint/type-check/build); PR23 current-head failure retained."
+next_owner_action: "Current 2026-10-12T18:38:22Z: PR #26 and PR #27 remain OPEN/Draft with zero reviews/review requests and no auto-merge. Obtain independent human review and record an integration decision. Preserve PR #1-11 NO_REPORTED_CHECKS and PR #23 failure. Do not auto-merge."
 ```
 
 ## 故障原因与原始证据
@@ -211,3 +211,12 @@ Both candidates remain OPEN/Draft with zero review events and auto-merge disable
 - **修复/下一步：** 候选组合和测试证据已刷新；由独立人工 reviewer 检查集成和重叠文件，并记录明确的集成决定。若有意见，只在隔离候选追加普通修复提交并跑精确 head CI。
 - **回滚：** 如本次记录事实错误，回退该次审计文档提交并新增更正快照；不得改写既有矩阵/历史记录或 main。
 - **外部影响：** 无模型或交易所 API 调用、订单、费用、账户或生产参数变更。
+
+## 2026-10-12T18:38:22Z 当前状态刷新
+
+- **严重度/状态：** S1 / `FIX_IN_REVIEW`；根因仍是 stacked PR 集成等待独立人工审查与明确决定。
+- **原始证据：** [`V2-G0-G1-live-refresh-20261012T183822Z.md`](../audits/V2-G0-G1-live-refresh-20261012T183822Z.md) 与 [`V2-G0-G1-live-state-20261012T183822Z.json`](../audits/V2-G0-G1-live-state-20261012T183822Z.json)；27 个 PR head、检查、review/request 已刷新；PR #26/#27 reviews 与 requests 为空。
+- **临时遏制：** PR #26/#27 保持 OPEN/Draft，main 不变、auto-merge 关闭；保留 #23 failure 与 #1–#11 NO_REPORTED_CHECKS。
+- **候选修复与验收：** #1–#25 heads 为 #26 head 的祖先；#26 exact-head run 38107795624 成功，#27 exact head `72dd60b19b1b3a75baed47f44a029e1382d87c38` run 38289819059 成功（quick 286/full 2600、25 subtests、Web 161、lint/type-check/build）。以上不替代 reviewer 与集成批准。
+- **回滚：** 如本快照字段不准确，撤销仅本次审计文档变更并新增更正快照；不改写历史结果、旧快照、来源 PR 或 main。
+- **外部影响：** 无模型、交易所、TestNet/Live 请求或订单；无账户参数和研究样本变更。
