@@ -23,7 +23,7 @@ patch_pr: https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/27 (stacked G1 
 negative_tests: Multiple choices with conflicting/truncated second content; invalid choice count; non-object choice; all existing V2 schema, evidence_refs, finish_reason, identity, empty/truncated-response and offline-runner tests.
 unblock_criteria: Push the repair to PR #27; require quick, full, and Web/lint/type-check/build hosted checks to pass on the exact updated head; confirm immutable V38 ledger/sample hashes remain unchanged. This does not establish remote response_format, model identity, billing, quota, or G0 integration approval.
 needs_human_decision: true
-next_owner_action: "Push the local fail-closed repair and require new exact-head hosted CI; keep provider dispatch disabled pending G0 review and separate G2 authorization."
+next_owner_action: "Record independent review and G0 integration decision; keep provider dispatch disabled and G2 unauthorized."
 rollback: Revert only the multiple-choice evaluator and regression-test change if exact-head review or CI rejects it; retain this blocker history, prior audit snapshots, V35 risk controls, and immutable research records.
 ```
 
@@ -35,6 +35,10 @@ The local repair accepts exactly one object in `choices`; missing, empty, multip
 
 ## Local verification and remaining checks
 
-Latest local verification: the complete V38 suite passed 212 tests in 28.94s, and the repository quick gate passed 289 tests in 31.11s. These local results do not replace hosted checks. PR #27 base head `5f70d186d169261f0f337232c70e246a2e88b4e6` passed run `38293103442` before this repair; new exact-head CI is pending.
+Latest local verification: the complete V38 suite passed 212 tests in 28.94s, the repository quick gate passed 289 tests in 31.11s, and the commit hook passed 2,602 tests / 1 skip. PR #27 exact head `f4461a72486b8aba132eb23045e03c9b1ffe0ba3` passed hosted run [38298606199](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38298606199): quick 289; full 2,603 / 25 subtests / 1 warning; Web 29 files / 161 tests; lint, type-check, and build succeeded. This does not replace independent human review or establish remote model/provider capability.
 
 The frozen V38 ledger, historical samples, V35 risk controls, and production configuration were not modified. No Gemini, Gate, TestNet, or Live API was called; no order was submitted. The provider's structured-output capability, authenticated model/weight identity, billing, and quota remain unknown.
+
+## 2026-10-12T19:54:50Z Hosted verification
+
+The repair passed all automated checks on PR #27 exact head `f4461a72486b8aba132eb23045e03c9b1ffe0ba3` in run [38298606199](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38298606199). B005 remains `FIX_IN_REVIEW` because PR #27 is still Draft and independent human review/G0 integration approval have not occurred. No model or exchange call, order, production setting change, or historical evidence rewrite occurred.

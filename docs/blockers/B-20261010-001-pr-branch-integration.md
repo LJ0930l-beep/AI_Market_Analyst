@@ -27,8 +27,8 @@ candidate_branch: codex/v2-g0-integration-20261010
 candidate_source_heads: origin/main@8642639a78ca9aa56fbad1e88aea4b82169ea433; PR20@43eb1835ef76b8c39f9b560ceaa3cac1b436d1bf; PR21@941e38372a0c0f96d1aaecd4a4ca2faf62dd3070; PR22@cb03f8e34cedca18d735187fdab41cda388eaa99; PR25@97d138fc3f8072668af1bbeada3475d612f55a7d
 candidate_local_verification: targeted 38 passed; quick gate 222 passed; full 2517 passed, 1 skipped, 0 failed; baseline 2113 passed, 103 failed, 1 skipped; node-id comparison 0 new failures, 0 missing baseline nodes.
 candidate_junit_sha256: baseline ec187fb87f395a5bb3949d358b13614b73dacfbfa873dc7d8a451ef54374ca9b; candidate dad101a071100b00d9071936e13233f1efcfa8813e82a1acd3d29fbbe9c0a733
-remote_ci_status: "PR26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 run 38107795624 passed; PR27 exact head 5f70d186d169261f0f337232c70e246a2e88b4e6 run 38293103442 passed (quick 286; full 2600; web 29 files/161 tests and lint/type-check/build); PR23 current-head failure retained."
-next_owner_action: "Current 2026-10-12T19:21:18Z: PR #26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 run 38107795624 passed; PR #27 exact head 5f70d186d169261f0f337232c70e246a2e88b4e6 run 38293103442 passed before the local multiple-choice repair. Both OPEN/Draft with zero reviews/requests and no auto-merge. Push the repair and verify hosted CI at its exact head; obtain independent human review and record an integration decision. Preserve #1-#11 NO_REPORTED_CHECKS and #23 failure. Do not auto-merge."
+remote_ci_status: "PR26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 run 38107795624 passed; PR27 exact head f4461a72486b8aba132eb23045e03c9b1ffe0ba3 run 38298606199 passed (quick 289; full 2603/25 subtests; web 29 files/161 tests and lint/type-check/build); PR23 current-head failure retained."
+next_owner_action: "Current 2026-10-12T19:54:50Z: PR #26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 run 38107795624 passed; PR #27 exact head f4461a72486b8aba132eb23045e03c9b1ffe0ba3 run 38298606199 passed. Both remain OPEN/Draft with zero reviews/requests and no auto-merge. Obtain independent human review and record the G0 integration decision. Preserve #1-#11 NO_REPORTED_CHECKS and #23 failure. Do not auto-merge."
 ```
 
 ## 故障原因与原始证据
@@ -227,3 +227,10 @@ Both candidates remain OPEN/Draft with zero review events and auto-merge disable
 - **新增独立问题：** 在 #27 基线复现 V38 evaluator 对多个 provider choices 静默读取第一条并返回有效；本地现要求 choices 恰为一个对象，修复与回归测试见 B-20261012-005。推送后的精确 head hosted CI 待验证。
 - **G0 状态：** 仍待独立人工集成审查与明确决策。保留 #23 failure、#1–#11 `NO_REPORTED_CHECKS`，不得自动合并。
 - **安全边界：** 本轮未调用 Gemini、Gate/TestNet/Live API，未提交订单，未改生产配置、历史账本或样本。
+
+## 2026-10-12T19:54:50Z G1 修复精确 head CI 完成
+
+- **精确提交：** PR #27 head `f4461a72486b8aba132eb23045e03c9b1ffe0ba3`；run [38298606199](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38298606199) 全部成功。
+- **测试结果：** Python quick 289 passed；full 2,603 passed、25 subtests、1 Starlette/httpx deprecation warning；Web 29 个文件/161 tests、lint、type-check 与 build 通过。远端 full pytest 用时 1,033.02s。
+- **结论：** B-20261012-005 修复在精确 head 的自动化 CI 中通过。PR #26/#27 仍 OPEN/Draft、无 reviews/requests；G0 仍需独立人工 review 和集成决定。
+- **安全边界：** 未调用模型或交易所 API、未下单、未更改真实账户配置；历史样本和 ledger 未修改。保留 PR #23 failure 与 #1–#11 `NO_REPORTED_CHECKS`。

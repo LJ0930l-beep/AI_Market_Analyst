@@ -6,7 +6,7 @@ status: BLOCKED_WITH_EVIDENCE
 component: model
 mode: RESEARCH_OFFLINE
 g0_base_sha: 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1
-branch_sha: "5f70d186d169261f0f337232c70e246a2e88b4e6"
+branch_sha: "f4461a72486b8aba132eb23045e03c9b1ffe0ba3"
 g1_working_branch: codex/v2-g1-offline-20261010
 trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
 first_seen_at_utc: 2026-10-10T09:27:00Z
@@ -24,7 +24,7 @@ patch_pr: Stacked G1 offline branch codex/v2-g1-offline-20261010 based on G0 can
 negative_tests: Empty/partial/truncated body; finish_reason length/error/missing; missing/mismatched model ID with payload/adapter source separation; malformed/multiple fence; invalid/unknown/future top-level and nested evidence refs; offline fake provider ignores a submitted json_schema request and capability remains unknown; duplicate JSON key; usage mismatch; NaN/infinite/non-positive transport byte counts; duplicate intent in existing pilot tests.
 unblock_criteria: Offline contract PR and same-head full CI pass; any G2 remote capability probe requires separate explicit user authorization, a new frozen scope, request ceiling, budget/stop rule, and provider/route identity evidence.
 needs_human_decision: true
-next_owner_action: "Keep provider dispatch disabled. PR #27 exact head 5f70d186d169261f0f337232c70e246a2e88b4e6 passed run 38293103442 (quick 286; full 2600 with 25 subtests; Web 161 plus lint/type-check/build); that run predates the local multiple-choice repair. Require a new exact-head hosted run after push. Remote response_format, authenticated model/weight identity, billing and quota remain unknown. G2 requires G0 human review and a fresh bounded authorization."
+next_owner_action: "Keep provider dispatch disabled. PR #27 exact head f4461a72486b8aba132eb23045e03c9b1ffe0ba3 passed run 38298606199 (quick 289; full 2603 with 25 subtests; Web 161 plus lint/type-check/build). Remote response_format, authenticated model/weight identity, billing and quota remain unknown. G2 requires G0 human review and a fresh bounded authorization."
 
 ## 已证实与仍未知
 
@@ -228,3 +228,7 @@ The V2 dispatch flag remains false and max_calls remains zero. Provider response
 ## 2026-10-12T19:21:18Z 当前依赖状态
 
 PR #27 exact head `5f70d186d169261f0f337232c70e246a2e88b4e6` run `38293103442` passed, but predates the local B-20261012-005 multiple-choice repair. Provider dispatch stays disabled until the repair passes new exact-head CI. Remote structured-output capability, authenticated model/weight identity, billing, and quota remain unknown; G2 still requires G0 human review and separate bounded authorization.
+
+## 2026-10-12T19:54:50Z 精确 head CI 更新
+
+PR #27 exact head `f4461a72486b8aba132eb23045e03c9b1ffe0ba3` run `38298606199` passed: Python quick 289, full 2,603 / 25 subtests, Web 161, lint, type-check, and build. This verifies the offline code at that head only. Remote provider structured-output support, authenticated model/weight identity, billing, and quota remain unknown; dispatch stays disabled and G2 remains unauthorized.
