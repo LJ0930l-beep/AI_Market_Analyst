@@ -110,9 +110,14 @@ def test_gate_bootstrap_includes_1h_and_4h_background_by_default():
     assert ("BTCUSDT", "4h", 120, "last") in calls
 
 
-def test_gate_native_bars_backfills_older_rows_with_testnet_range_query():
+@pytest.mark.parametrize(
+    ("interval_name", "interval"),
+    [("15m", 15 * 60), ("4h", 4 * 60 * 60)],
+)
+def test_gate_native_bars_backfills_older_rows_with_testnet_range_query(
+    interval_name, interval
+):
     now = datetime.now(timezone.utc)
-    interval = 15 * 60
     base = int((now - timedelta(hours=12)).timestamp()) // interval * interval
 
     def row(timestamp):
@@ -140,7 +145,7 @@ def test_gate_native_bars_backfills_older_rows_with_testnet_range_query():
 
     provider = PaginatedGateProvider()
 
-    bars = provider._native_bars("BTCUSDT", "15m", 4)
+    bars = provider._native_bars("BTCUSDT", interval_name, 4)
 
     assert len(bars) == 4
     assert [int(bar.timestamp.timestamp()) for bar in bars] == [
@@ -152,12 +157,12 @@ def test_gate_native_bars_backfills_older_rows_with_testnet_range_query():
     assert all(bar.source == "gate_native_rest:last" for bar in bars)
     assert provider.requests[0][1] == {
         "contract": "BTC_USDT",
-        "interval": "15m",
+        "interval": interval_name,
         "limit": 4,
     }
     assert provider.requests[1][1] == {
         "contract": "BTC_USDT",
-        "interval": "15m",
+        "interval": interval_name,
         "from": base - 2 * interval,
         "to": base + 2 * interval - 1,
     }
