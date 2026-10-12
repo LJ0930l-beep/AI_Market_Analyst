@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V1
-updated_at_utc: 2026-10-12T21:46:04Z
+updated_at_utc: 2026-10-12T22:32:31Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -7,7 +7,7 @@ blockers:
     component: integration
     file: docs/blockers/B-20261010-001-pr-branch-integration.md
     trigger_signature: PR_COMBINATION_CANDIDATE_AWAITS_HUMAN_REVIEW
-    next_owner_action: 'At 2026-10-12T21:46:04Z: PR #26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 passed run 38107795624; PR #27 exact head 952d38a8e4d6aa800c507f6c54ee9477d744181b passed run 38309564947 (quick 289, full 2605 / 25 subtests, Web/lint/type-check/build). Both OPEN/Draft, no reviews or requests, no auto-merge. Current inventory: 27 open, 0 merged, 15 pass, #23 failed, #1-#11 no checks, 0 pending. Keep G0 unaccepted for human review and B-20261013-006 sequencing conflict; do not merge.'
+    next_owner_action: 'At 2026-10-12T22:32:31Z: PR #26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 passed run 38107795624; PR #27 exact head 34f09e717b6303019c873ef274781fcadec079c9 passed run 38314459575 (quick 289, full 2605 / 25 subtests, Web/lint/type-check/build). Both OPEN/Draft, no reviews or requests, no auto-merge. Keep G0 unaccepted pending independent review and remaining criteria; B-006 sequencing conflict is adjudicated. Do not merge.'
   - id: B-20261010-002
     severity: S1
     status: BLOCKED_WITH_EVIDENCE
@@ -21,7 +21,7 @@ blockers:
     component: model
     file: docs/blockers/B-20261010-003-calibration-identity-evidence.md
     trigger_signature: CALIBRATION_REMOTE_WEIGHT_DIGEST_REQUIRED
-    next_owner_action: 'Keep calibration fail-closed. New no-call regression proves missing digest returns NOT_READY and creates no profile; no remote identity mode exists. Resolve the G0/G4 dependency conflict in B-20261013-006 before implementation.'
+    next_owner_action: 'Keep calibration fail-closed. Missing-digest no-call regression returns NOT_READY and creates no profile. G0/G4 sequencing is resolved: positive remote identity mode remains a G4 item after G0-G3; no remote identity mode exists yet.'
   - id: B-20261011-004
     severity: S1
     status: VERIFIED
@@ -39,8 +39,8 @@ blockers:
 
   - id: B-20261013-006
     severity: S1
-    status: OPEN
+    status: RESOLVED
     component: integration
     file: docs/blockers/B-20261013-006-g0-g4-calibration-sequence-conflict.md
     trigger_signature: G0_G4_CALIBRATION_REMOTE_MODE_SEQUENCE_CONFLICT
-    next_owner_action: 'Obtain independent G0 review and record whether an offline-only calibration identity contract is allowed before G0 or the calibration-mode combo assertion moves to G4; keep G0 unaccepted and G2 unauthorized meanwhile.'
+    next_owner_action: 'Sequencing adjudication recorded: calibration fail-closed behavior is the G0 requirement; the positive remote-mode assertion belongs to G4 after G0-G3. Keep G0 unaccepted pending independent PR review and remaining criteria; keep G2 unauthorized.'

@@ -200,3 +200,9 @@ G1 offline response-contract work is accepted on the current candidate; provider
 - GitHub has 27 open PRs, `main@8642639a78ca9aa56fbad1e88aea4b82169ea433`, zero reviews; #26/#27 remain Draft and unmerged. Current-head CI: 15 all-success, #23 failure, #1–#11 no checks.
 - PR #26 `fa5832f7f81c8cb5438aecc5b8bead9e02ce9cfc` covers current PR #1–#25 ancestry; PR #27 `d124c1597fcc4ce8655845eb7d68afc4c6552002` is stacked on it. Exact-head hosted quick/full suites pass for both candidates.
 - G0 remains `FIX_IN_REVIEW` pending human review. G1 offline validation passes; B-002/G2 remains blocked without fresh bounded authorization and external provider evidence. No Gemini/Gate/TestNet/Live request or order was made.
+
+## V2.0 G0/G4 calibration dependency adjudication — 2026-10-12
+
+At the user's instruction to decide directly, the calibration sequence conflict in B-20261013-006 is resolved as follows: G0 requires the fail-closed calibration guard when verified model identity or weight evidence is absent (NOT_READY, zero provider calls, and no active profile). G0 does not require the positive REMOTE_WEIGHTS_NOT_EXPOSED mode. That mode and its positive combination assertion remain a G4 deliverable after G0-G3 acceptance. See the additive evidence in [`V2-G0-G1-gate-adjudication-20261012T223231Z.md`](../audits/V2-G0-G1-gate-adjudication-20261012T223231Z.md).
+
+This sequencing decision resolves a circular dependency only. It does not accept G0, authorize G2, change production behavior, or authorize model/exchange requests. B-20261010-003 stays open until the G4 identity contract and negative-test matrix are designed and reviewed.

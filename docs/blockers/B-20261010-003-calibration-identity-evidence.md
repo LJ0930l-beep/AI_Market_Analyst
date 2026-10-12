@@ -36,4 +36,8 @@ Do not weaken the guard or introduce a model call here. G4 implementation depend
 
 The new offline regression tests/test_ai_calibration_identity_gate.py confirms that a missing verified weight digest returns NOT_READY / MODEL_DIGEST_UNAVAILABLE, invokes generate_json zero times, and creates no active calibration profile. The exact PR #27 head passed run 38309564947. This verifies only fail-closed behavior; AICalibrationService still has no REMOTE_WEIGHTS_NOT_EXPOSED identity mode.
 
-Handbook §5.1 also requires calibration remote mode in its G0 combination test, while handbook G4 defines that mode and this blocker defers implementation until G0/G1/G2/G3. The conflict is separately recorded in B-20261013-006. Keep this blocker OPEN and the guard unchanged until the dependency is adjudicated; no model call or order was attempted.
+Handbook §5.1 also requires calibration remote mode in its G0 combination test, while handbook G4 defines that mode and this blocker defers implementation until G0/G1/G2/G3. The conflict is separately recorded in B-20261013-006. At the time of this entry, keep this blocker OPEN and the guard unchanged until the dependency is adjudicated; no model call or order was attempted. The 22:32Z addendum below records the later adjudication.
+
+## 2026-10-12T22:32:31Z gate-sequence adjudication
+
+The G0/G4 ordering conflict is resolved in [`B-20261013-006`](B-20261013-006-g0-g4-calibration-sequence-conflict.md) and the additive audit [`V2-G0-G1-gate-adjudication-20261012T223231Z.md`](../audits/V2-G0-G1-gate-adjudication-20261012T223231Z.md): G0 verifies fail-closed behavior only; the positive remote identity mode remains a G4 deliverable after upstream G0-G3. This blocker remains OPEN because the G4 contract and its negative-test matrix are still unimplemented. Preserve NOT_READY and do not dispatch a model call absent verified evidence and authorization.
