@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V1
-updated_at_utc: 2026-10-12T18:38:22Z
+updated_at_utc: 2026-10-12T19:27:23Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -7,14 +7,14 @@ blockers:
     component: integration
     file: docs/blockers/B-20261010-001-pr-branch-integration.md
     trigger_signature: PR_COMBINATION_CANDIDATE_AWAITS_HUMAN_REVIEW
-    next_owner_action: "Current 2026-10-12T18:38:22Z: PR #26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 run 38107795624 passed; PR #27 exact head 72dd60b19b1b3a75baed47f44a029e1382d87c38 run 38289819059 passed. Both OPEN/Draft; zero reviews/requests; no auto-merge. Obtain independent human review and record an integration decision. Preserve #1-#11 NO_REPORTED_CHECKS and #23 failure. Do not auto-merge."
+    next_owner_action: "GitHub state last refreshed 2026-10-12T19:21:18Z: PR #26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 run 38107795624 passed; PR #27 exact head 5f70d186d169261f0f337232c70e246a2e88b4e6 run 38293103442 passed before the local repair. Local V38 212 and quick 289 tests now pass; push and verify hosted CI on the updated exact head. Both PRs OPEN/Draft with zero reviews/requests and no auto-merge; independent human integration review remains required. Preserve #1-#11 NO_REPORTED_CHECKS and #23 failure. Do not auto-merge."
   - id: B-20261010-002
     severity: S1
     status: BLOCKED_WITH_EVIDENCE
     component: model
     file: docs/blockers/B-20261010-002-model-response-capability.md
     trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
-    next_owner_action: "Keep provider dispatch disabled. PR #27 exact head 72dd60b19b1b3a75baed47f44a029e1382d87c38 passed run 38289819059 (quick 286; full 2600 with 25 subtests; Web 161; lint/type-check/build). Remote response_format, model identity/weights, billing and quota remain unknown. G2 requires G0 human review and a fresh bounded authorization."
+    next_owner_action: "Keep provider dispatch disabled. PR #27 exact head 5f70d186d169261f0f337232c70e246a2e88b4e6 passed run 38293103442 (quick 286; full 2600 with 25 subtests; Web 161; lint/type-check/build); that run predates the local multiple-choice repair. Require a new exact-head hosted run after push. Remote response_format, model identity/weights, billing and quota remain unknown. G2 requires G0 human review and a fresh bounded authorization."
   - id: B-20261010-003
     severity: S1
     status: OPEN
@@ -29,3 +29,10 @@ blockers:
     file: docs/blockers/B-20261011-004-datetime-local-timezone-ci.md
     trigger_signature: DATETIME_LOCAL_TEST_EXPECTATION_ASSUMES_UTC_PLUS_8
     next_owner_action: 'Keep the timezone-neutral assertion; retain the original failing run and repair evidence as historical records.'
+  - id: B-20261012-005
+    severity: S1
+    status: FIX_IN_REVIEW
+    component: model
+    file: docs/blockers/B-20261012-005-v38-multiple-choice-ambiguity.md
+    trigger_signature: V38_RESPONSE_CHOICES_MULTIPLE_SILENTLY_FIRST
+    next_owner_action: "Local V38 212 and quick 289 tests pass; push the fail-closed multiple-choice repair and require new exact-head hosted CI. Keep provider dispatch disabled pending G0 review and separate G2 authorization."

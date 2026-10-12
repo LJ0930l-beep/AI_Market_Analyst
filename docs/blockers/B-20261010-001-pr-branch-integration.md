@@ -27,8 +27,8 @@ candidate_branch: codex/v2-g0-integration-20261010
 candidate_source_heads: origin/main@8642639a78ca9aa56fbad1e88aea4b82169ea433; PR20@43eb1835ef76b8c39f9b560ceaa3cac1b436d1bf; PR21@941e38372a0c0f96d1aaecd4a4ca2faf62dd3070; PR22@cb03f8e34cedca18d735187fdab41cda388eaa99; PR25@97d138fc3f8072668af1bbeada3475d612f55a7d
 candidate_local_verification: targeted 38 passed; quick gate 222 passed; full 2517 passed, 1 skipped, 0 failed; baseline 2113 passed, 103 failed, 1 skipped; node-id comparison 0 new failures, 0 missing baseline nodes.
 candidate_junit_sha256: baseline ec187fb87f395a5bb3949d358b13614b73dacfbfa873dc7d8a451ef54374ca9b; candidate dad101a071100b00d9071936e13233f1efcfa8813e82a1acd3d29fbbe9c0a733
-remote_ci_status: "PR26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 run 38107795624 passed; PR27 exact head 72dd60b19b1b3a75baed47f44a029e1382d87c38 run 38289819059 passed (quick 286; full 2600; web 29 files/161 tests and lint/type-check/build); PR23 current-head failure retained."
-next_owner_action: "Current 2026-10-12T18:38:22Z: PR #26 and PR #27 remain OPEN/Draft with zero reviews/review requests and no auto-merge. Obtain independent human review and record an integration decision. Preserve PR #1-11 NO_REPORTED_CHECKS and PR #23 failure. Do not auto-merge."
+remote_ci_status: "PR26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 run 38107795624 passed; PR27 exact head 5f70d186d169261f0f337232c70e246a2e88b4e6 run 38293103442 passed (quick 286; full 2600; web 29 files/161 tests and lint/type-check/build); PR23 current-head failure retained."
+next_owner_action: "Current 2026-10-12T19:21:18Z: PR #26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 run 38107795624 passed; PR #27 exact head 5f70d186d169261f0f337232c70e246a2e88b4e6 run 38293103442 passed before the local multiple-choice repair. Both OPEN/Draft with zero reviews/requests and no auto-merge. Push the repair and verify hosted CI at its exact head; obtain independent human review and record an integration decision. Preserve #1-#11 NO_REPORTED_CHECKS and #23 failure. Do not auto-merge."
 ```
 
 ## 故障原因与原始证据
@@ -220,3 +220,10 @@ Both candidates remain OPEN/Draft with zero review events and auto-merge disable
 - **候选修复与验收：** #1–#25 heads 为 #26 head 的祖先；#26 exact-head run 38107795624 成功，#27 exact head `72dd60b19b1b3a75baed47f44a029e1382d87c38` run 38289819059 成功（quick 286/full 2600、25 subtests、Web 161、lint/type-check/build）。以上不替代 reviewer 与集成批准。
 - **回滚：** 如本快照字段不准确，撤销仅本次审计文档变更并新增更正快照；不改写历史结果、旧快照、来源 PR 或 main。
 - **外部影响：** 无模型、交易所、TestNet/Live 请求或订单；无账户参数和研究样本变更。
+
+## 2026-10-12T19:21:18Z G1 本地修复待远端验证
+
+- **只读状态刷新：** PR #26/#27 仍 OPEN/Draft、无 reviews/requests、未启用 auto-merge；PR #27 exact head `5f70d186d169261f0f337232c70e246a2e88b4e6` 的 run `38293103442` 成功。该 run 早于本地多 choice 修复，不能作为修复验收证据。
+- **新增独立问题：** 在 #27 基线复现 V38 evaluator 对多个 provider choices 静默读取第一条并返回有效；本地现要求 choices 恰为一个对象，修复与回归测试见 B-20261012-005。推送后的精确 head hosted CI 待验证。
+- **G0 状态：** 仍待独立人工集成审查与明确决策。保留 #23 failure、#1–#11 `NO_REPORTED_CHECKS`，不得自动合并。
+- **安全边界：** 本轮未调用 Gemini、Gate/TestNet/Live API，未提交订单，未改生产配置、历史账本或样本。

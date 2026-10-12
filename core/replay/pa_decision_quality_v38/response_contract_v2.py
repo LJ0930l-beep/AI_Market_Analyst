@@ -399,10 +399,14 @@ def evaluate_response_v2(
     result["usage_receipt_status"] = _usage_status(payload.get("usage"))
 
     choices = payload.get("choices")
-    first = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else None
-    message = first.get("message") if isinstance(first, dict) else None
+    if not isinstance(choices, list) or len(choices) != 1:
+        return reject("INVALID_PROVIDER_RESPONSE", "COMPLETION_CHOICE_COUNT_INVALID")
+    first = choices[0]
+    if not isinstance(first, dict):
+        return reject("INVALID_PROVIDER_RESPONSE", "COMPLETION_CHOICE_INVALID")
+    message = first.get("message")
     content = message.get("content") if isinstance(message, dict) else None
-    finish_reason = first.get("finish_reason") if isinstance(first, dict) else None
+    finish_reason = first.get("finish_reason")
     result["finish_reason"] = finish_reason if isinstance(finish_reason, str) else None
     if isinstance(content, str):
         raw = content.encode("utf-8", errors="replace")

@@ -1,0 +1,748 @@
+{
+  "schema_version": "V2_G0_G1_LIVE_STATE_V1",
+  "captured_at_utc": "2026-10-12T19:15:10Z",
+  "repository": "LJ0930l-beep/AI_Market_Analyst",
+  "audit_checkout_sha": "5f70d186d169261f0f337232c70e246a2e88b4e6",
+  "audit_worktree_was_clean_before_refresh": false,
+  "worktree_changes_at_capture": [
+    "core/replay/pa_decision_quality_v38/response_contract_v2.py",
+    "tests/v38/test_response_contract_v2.py"
+  ],
+  "source_handbook": {
+    "path": "C:/Users/baicha/Downloads/AI_Market_Analyst_V2_0_%E5%BC%80%E5%8F%91%E6%80%BB%E7%BA%B2_%E9%98%BB%E5%A1%9E%E5%A4%84%E7%BD%AE%E6%89%8B%E5%86%8C.md",
+    "sha256": "a31a70795c02b9f5be3ed505361aa3133adfe82da09ddd18de8fe5d482841b4d"
+  },
+  "main_sha": "8642639a78ca9aa56fbad1e88aea4b82169ea433",
+  "pull_request_counts": {
+    "total": 27,
+    "open": 27,
+    "merged": 0,
+    "closed_unmerged": 0
+  },
+  "exact_head_check_categories": {
+    "SUCCESS": 15,
+    "FAILURE": 1,
+    "NO_REPORTED_CHECKS": 11,
+    "PENDING": 0,
+    "OTHER_NON_SUCCESS": 0
+  },
+  "prs_without_reported_checks": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+  ],
+  "prs_with_failed_current_head_checks": [
+    23
+  ],
+  "lineage_recheck": {
+    "pr26_base_matches_current_main": true,
+    "pr27_base_matches_pr26_head": true,
+    "pr1_through_25_heads_ancestor_of_pr26_head": true,
+    "head_ancestry_evidence": [
+      {
+        "pr": 1,
+        "head_commit_present_locally": true,
+        "head_is_ancestor_of_pr26_head": true
+      },
+      {
+        "pr": 2,
+        "head_commit_present_locally": true,
+        "head_is_ancestor_of_pr26_head": true
+      },
+      {
+        "pr": 3,
+        "head_commit_present_locally": true,
+        "head_is_ancestor_of_pr26_head": true
+      },
+      {
+        "pr": 4,
+        "head_commit_present_locally": true,
+        "head_is_ancestor_of_pr26_head": true
+      },
+      {
+        "pr": 5,
+        "head_commit_present_locally": true,
+        "head_is_ancestor_of_pr26_head": true
+      },
+      {
+        "pr": 6,
+        "head_commit_present_locally": true,
+        "head_is_ancestor_of_pr26_head": true
+      },
+      {
+        "pr": 7,
+        "head_commit_present_locally": true,
+        "head_is_ancestor_of_pr26_head": true
+      },
+      {
+        "pr": 8,
+        "head_commit_present_locally": true,
+        "head_is_ancestor_of_pr26_head": true
+      },
+      {
+        "pr": 9,
+        "head_commit_present_locally": true,
+        "head_is_ancestor_of_pr26_head": true
+      },
+      {
+        "pr": 10,
+        "head_commit_present_locally": true,
+        "head_is_ancestor_of_pr26_head": true
+      },
+      {
+        "pr": 11,
+        "head_commit_present_locally": true,
+        "head_is_ancestor_of_pr26_head": true
+      },
+      {
+        "pr": 12,
+        "head_commit_present_locally": true,
+        "head_is_ancestor_of_pr26_head": true
+      },
+      {
+        "pr": 13,
+        "head_commit_present_locally": true,
+        "head_is_ancestor_of_pr26_head": true
+      },
+      {
+        "pr": 14,
+        "head_commit_present_locally": true,
+        "head_is_ancestor_of_pr26_head": true
+      },
+      {
+        "pr": 15,
+        "head_commit_present_locally": true,
+        "head_is_ancestor_of_pr26_head": true
+      },
+      {
+        "pr": 16,
+        "head_commit_present_locally": true,
+        "head_is_ancestor_of_pr26_head": true
+      },
+      {
+        "pr": 17,
+        "head_commit_present_locally": true,
+        "head_is_ancestor_of_pr26_head": true
+      },
+      {
+        "pr": 18,
+        "head_commit_present_locally": true,
+        "head_is_ancestor_of_pr26_head": true
+      },
+      {
+        "pr": 19,
+        "head_commit_present_locally": true,
+        "head_is_ancestor_of_pr26_head": true
+      },
+      {
+        "pr": 20,
+        "head_commit_present_locally": true,
+        "head_is_ancestor_of_pr26_head": true
+      },
+      {
+        "pr": 21,
+        "head_commit_present_locally": true,
+        "head_is_ancestor_of_pr26_head": true
+      },
+      {
+        "pr": 22,
+        "head_commit_present_locally": true,
+        "head_is_ancestor_of_pr26_head": true
+      },
+      {
+        "pr": 23,
+        "head_commit_present_locally": true,
+        "head_is_ancestor_of_pr26_head": true
+      },
+      {
+        "pr": 24,
+        "head_commit_present_locally": true,
+        "head_is_ancestor_of_pr26_head": true
+      },
+      {
+        "pr": 25,
+        "head_commit_present_locally": true,
+        "head_is_ancestor_of_pr26_head": true
+      }
+    ]
+  },
+  "candidates": {
+    "pr26": {
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/26",
+      "head_sha": "00d1c4405a513b9e5cdee9f6fa15808b4386d8b1",
+      "base_sha": "8642639a78ca9aa56fbad1e88aea4b82169ea433",
+      "state": "OPEN",
+      "draft": true,
+      "review_count": 0,
+      "review_request_count": 0,
+      "auto_merge_enabled": false,
+      "check_category": "SUCCESS"
+    },
+    "pr27": {
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/27",
+      "head_sha": "5f70d186d169261f0f337232c70e246a2e88b4e6",
+      "base_sha": "00d1c4405a513b9e5cdee9f6fa15808b4386d8b1",
+      "state": "OPEN",
+      "draft": true,
+      "review_count": 0,
+      "review_request_count": 0,
+      "auto_merge_enabled": false,
+      "check_category": "SUCCESS"
+    }
+  },
+  "pull_requests": [
+    {
+      "number": 1,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/1",
+      "state": "OPEN",
+      "draft": false,
+      "base_ref": "main",
+      "base_sha": "8642639a78ca9aa56fbad1e88aea4b82169ea433",
+      "head_sha": "2a5d7b9992a7909a6a597917e409ecb0737f9c89",
+      "check_category": "NO_REPORTED_CHECKS",
+      "checks": [],
+      "review_count": 0,
+      "review_request_count": 0
+    },
+    {
+      "number": 2,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/2",
+      "state": "OPEN",
+      "draft": false,
+      "base_ref": "codex/v35-feasibility",
+      "base_sha": "2a5d7b9992a7909a6a597917e409ecb0737f9c89",
+      "head_sha": "191ae39f0c4ce3a6aab88a95a004056c981a57b8",
+      "check_category": "NO_REPORTED_CHECKS",
+      "checks": [],
+      "review_count": 0,
+      "review_request_count": 0
+    },
+    {
+      "number": 3,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/3",
+      "state": "OPEN",
+      "draft": false,
+      "base_ref": "codex/v36-pa-decision-quality",
+      "base_sha": "191ae39f0c4ce3a6aab88a95a004056c981a57b8",
+      "head_sha": "23ca359082193033d9c40ee282c41a074eee53a2",
+      "check_category": "NO_REPORTED_CHECKS",
+      "checks": [],
+      "review_count": 0,
+      "review_request_count": 0
+    },
+    {
+      "number": 4,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/4",
+      "state": "OPEN",
+      "draft": false,
+      "base_ref": "codex/v36.1-research-integrity",
+      "base_sha": "23ca359082193033d9c40ee282c41a074eee53a2",
+      "head_sha": "608ee0083b9e7912c02fd3bf53d05087378f944f",
+      "check_category": "NO_REPORTED_CHECKS",
+      "checks": [],
+      "review_count": 0,
+      "review_request_count": 0
+    },
+    {
+      "number": 5,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/5",
+      "state": "OPEN",
+      "draft": false,
+      "base_ref": "codex/v37-historical-evidence",
+      "base_sha": "608ee0083b9e7912c02fd3bf53d05087378f944f",
+      "head_sha": "64a5c4206a5073e0c44e9d5cc4178705ffa24664",
+      "check_category": "NO_REPORTED_CHECKS",
+      "checks": [],
+      "review_count": 0,
+      "review_request_count": 0
+    },
+    {
+      "number": 6,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/6",
+      "state": "OPEN",
+      "draft": false,
+      "base_ref": "codex/v37.1-research-fixes",
+      "base_sha": "64a5c4206a5073e0c44e9d5cc4178705ffa24664",
+      "head_sha": "b2bb544daf258461ce653db904de95e185f9449e",
+      "check_category": "NO_REPORTED_CHECKS",
+      "checks": [],
+      "review_count": 0,
+      "review_request_count": 0
+    },
+    {
+      "number": 7,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7",
+      "state": "OPEN",
+      "draft": false,
+      "base_ref": "codex/v38-research-readiness",
+      "base_sha": "b2bb544daf258461ce653db904de95e185f9449e",
+      "head_sha": "dfcc777d19f61ccba8ab18aa20627f0f21107eae",
+      "check_category": "NO_REPORTED_CHECKS",
+      "checks": [],
+      "review_count": 0,
+      "review_request_count": 0
+    },
+    {
+      "number": 8,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/8",
+      "state": "OPEN",
+      "draft": false,
+      "base_ref": "codex/v41-current-gemini-test-contract",
+      "base_sha": "dfcc777d19f61ccba8ab18aa20627f0f21107eae",
+      "head_sha": "3108b9377f822bb1164f6f2054be9b0efc95692c",
+      "check_category": "NO_REPORTED_CHECKS",
+      "checks": [],
+      "review_count": 0,
+      "review_request_count": 0
+    },
+    {
+      "number": 9,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/9",
+      "state": "OPEN",
+      "draft": false,
+      "base_ref": "codex/v38-gate2-blind-eval",
+      "base_sha": "3108b9377f822bb1164f6f2054be9b0efc95692c",
+      "head_sha": "1bfb4dc06b1ef1161adb20e4e0d1e40dc3e73779",
+      "check_category": "NO_REPORTED_CHECKS",
+      "checks": [],
+      "review_count": 0,
+      "review_request_count": 0
+    },
+    {
+      "number": 10,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/10",
+      "state": "OPEN",
+      "draft": false,
+      "base_ref": "codex/v39-offline-fault-injection",
+      "base_sha": "1bfb4dc06b1ef1161adb20e4e0d1e40dc3e73779",
+      "head_sha": "df97590645889dee44b382f0ce5e8309a1922265",
+      "check_category": "NO_REPORTED_CHECKS",
+      "checks": [],
+      "review_count": 0,
+      "review_request_count": 0
+    },
+    {
+      "number": 11,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/11",
+      "state": "OPEN",
+      "draft": false,
+      "base_ref": "codex/v40-duplicate-bar-replay",
+      "base_sha": "df97590645889dee44b382f0ce5e8309a1922265",
+      "head_sha": "d02bdabeb163897fe29ce9aa4f4c0f3928e9ec27",
+      "check_category": "NO_REPORTED_CHECKS",
+      "checks": [],
+      "review_count": 0,
+      "review_request_count": 0
+    },
+    {
+      "number": 12,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/12",
+      "state": "OPEN",
+      "draft": false,
+      "base_ref": "codex/v38-gate2-recheck",
+      "base_sha": "d02bdabeb163897fe29ce9aa4f4c0f3928e9ec27",
+      "head_sha": "38dfe62cd7c81671eaaab6ea5eaa32e6478e118c",
+      "check_category": "SUCCESS",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37869988925/job/113625612026",
+          "started_at": "2026-10-09T01:29:09Z",
+          "completed_at": "2026-10-09T01:50:56Z"
+        }
+      ],
+      "review_count": 0,
+      "review_request_count": 0
+    },
+    {
+      "number": 13,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/13",
+      "state": "OPEN",
+      "draft": false,
+      "base_ref": "codex/v38-v42-ci-baseline",
+      "base_sha": "38dfe62cd7c81671eaaab6ea5eaa32e6478e118c",
+      "head_sha": "42c425fddfdb220cbb7d407083ad65b1fa28d369",
+      "check_category": "SUCCESS",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37874867434/job/113641025006",
+          "started_at": "2026-10-09T02:30:12Z",
+          "completed_at": "2026-10-09T02:44:17Z"
+        }
+      ],
+      "review_count": 0,
+      "review_request_count": 0
+    },
+    {
+      "number": 14,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/14",
+      "state": "OPEN",
+      "draft": false,
+      "base_ref": "codex/v38-blind-annotation-packets",
+      "base_sha": "42c425fddfdb220cbb7d407083ad65b1fa28d369",
+      "head_sha": "3fda7909eeff95ef2e707419824e93105a790fae",
+      "check_category": "SUCCESS",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37879468194/job/113655574119",
+          "started_at": "2026-10-09T03:28:59Z",
+          "completed_at": "2026-10-09T03:50:40Z"
+        }
+      ],
+      "review_count": 0,
+      "review_request_count": 0
+    },
+    {
+      "number": 15,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/15",
+      "state": "OPEN",
+      "draft": false,
+      "base_ref": "codex/v38-label-agreement-metrics",
+      "base_sha": "3fda7909eeff95ef2e707419824e93105a790fae",
+      "head_sha": "a08c61c2d828a959553dcab32ee728e80f250923",
+      "check_category": "SUCCESS",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37883680491/job/113668805399",
+          "started_at": "2026-10-09T04:23:52Z",
+          "completed_at": "2026-10-09T04:46:14Z"
+        }
+      ],
+      "review_count": 0,
+      "review_request_count": 0
+    },
+    {
+      "number": 16,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/16",
+      "state": "OPEN",
+      "draft": false,
+      "base_ref": "codex/product-roadmap-v38-current-state",
+      "base_sha": "a08c61c2d828a959553dcab32ee728e80f250923",
+      "head_sha": "2931f80e96086dd85a021ab2af6b54119917b14a",
+      "check_category": "SUCCESS",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37888482628/job/113683783727",
+          "started_at": "2026-10-09T05:25:18Z",
+          "completed_at": "2026-10-09T05:43:30Z"
+        }
+      ],
+      "review_count": 0,
+      "review_request_count": 0
+    },
+    {
+      "number": 17,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/17",
+      "state": "OPEN",
+      "draft": false,
+      "base_ref": "codex/v38-independent-gate2-audit",
+      "base_sha": "2931f80e96086dd85a021ab2af6b54119917b14a",
+      "head_sha": "8511e56ed9803671c3d363a766a5896c6049749c",
+      "check_category": "SUCCESS",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37895756221/job/113706613450",
+          "started_at": "2026-10-09T06:51:39Z",
+          "completed_at": "2026-10-09T07:05:42Z"
+        }
+      ],
+      "review_count": 0,
+      "review_request_count": 0
+    },
+    {
+      "number": 18,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/18",
+      "state": "OPEN",
+      "draft": false,
+      "base_ref": "codex/v38-source-archive-verification",
+      "base_sha": "8511e56ed9803671c3d363a766a5896c6049749c",
+      "head_sha": "3852be25f9f95a0f693a1fa6f2e31bfbc900b1c2",
+      "check_category": "SUCCESS",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37906365567/job/113740688697",
+          "started_at": "2026-10-09T08:40:06Z",
+          "completed_at": "2026-10-09T09:00:53Z"
+        }
+      ],
+      "review_count": 0,
+      "review_request_count": 0
+    },
+    {
+      "number": 19,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/19",
+      "state": "OPEN",
+      "draft": false,
+      "base_ref": "codex/v38-independent-market-input-audit",
+      "base_sha": "3852be25f9f95a0f693a1fa6f2e31bfbc900b1c2",
+      "head_sha": "ffb2b29397ee388583332e18b3002d2a20f5e30a",
+      "check_category": "SUCCESS",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37909584178/job/113751236404",
+          "started_at": "2026-10-09T09:10:42Z",
+          "completed_at": "2026-10-09T09:31:24Z"
+        }
+      ],
+      "review_count": 0,
+      "review_request_count": 0
+    },
+    {
+      "number": 20,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/20",
+      "state": "OPEN",
+      "draft": false,
+      "base_ref": "codex/product-contract-v1-supplement",
+      "base_sha": "ffb2b29397ee388583332e18b3002d2a20f5e30a",
+      "head_sha": "43eb1835ef76b8c39f9b560ceaa3cac1b436d1bf",
+      "check_category": "SUCCESS",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37940625375/job/113853767137",
+          "started_at": "2026-10-09T13:57:48Z",
+          "completed_at": "2026-10-09T14:23:32Z"
+        }
+      ],
+      "review_count": 0,
+      "review_request_count": 0
+    },
+    {
+      "number": 21,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/21",
+      "state": "OPEN",
+      "draft": false,
+      "base_ref": "codex/gate-testnet-credential-entry",
+      "base_sha": "43eb1835ef76b8c39f9b560ceaa3cac1b436d1bf",
+      "head_sha": "941e38372a0c0f96d1aaecd4a4ca2faf62dd3070",
+      "check_category": "SUCCESS",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37946041859/job/113872423578",
+          "started_at": "2026-10-09T14:41:22Z",
+          "completed_at": "2026-10-09T15:04:18Z"
+        }
+      ],
+      "review_count": 0,
+      "review_request_count": 0
+    },
+    {
+      "number": 22,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/22",
+      "state": "OPEN",
+      "draft": false,
+      "base_ref": "codex/gate-testnet-credential-entry",
+      "base_sha": "43eb1835ef76b8c39f9b560ceaa3cac1b436d1bf",
+      "head_sha": "cb03f8e34cedca18d735187fdab41cda388eaa99",
+      "check_category": "SUCCESS",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37959069121/job/113917187049",
+          "started_at": "2026-10-09T16:26:34Z",
+          "completed_at": "2026-10-09T16:49:36Z"
+        }
+      ],
+      "review_count": 0,
+      "review_request_count": 0
+    },
+    {
+      "number": 23,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/23",
+      "state": "OPEN",
+      "draft": false,
+      "base_ref": "codex/product-contract-v1-supplement",
+      "base_sha": "ffb2b29397ee388583332e18b3002d2a20f5e30a",
+      "head_sha": "5831f9785e5f8b09d6a819c562949beceb6db4b0",
+      "check_category": "FAILURE",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37963206552/job/113930956243",
+          "started_at": "2026-10-09T17:00:43Z",
+          "completed_at": "2026-10-09T17:22:32Z"
+        }
+      ],
+      "review_count": 0,
+      "review_request_count": 0
+    },
+    {
+      "number": 24,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/24",
+      "state": "OPEN",
+      "draft": false,
+      "base_ref": "codex/v38-testnet-paper-run",
+      "base_sha": "5831f9785e5f8b09d6a819c562949beceb6db4b0",
+      "head_sha": "5e9ef3781a06cdab1f70353242fdd8124bf2ad11",
+      "check_category": "SUCCESS",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37966405672/job/113941735085",
+          "started_at": "2026-10-09T17:27:36Z",
+          "completed_at": "2026-10-09T17:47:55Z"
+        }
+      ],
+      "review_count": 0,
+      "review_request_count": 0
+    },
+    {
+      "number": 25,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/25",
+      "state": "OPEN",
+      "draft": false,
+      "base_ref": "codex/v41-macro-actuals-clock-fixtures",
+      "base_sha": "5e9ef3781a06cdab1f70353242fdd8124bf2ad11",
+      "head_sha": "97d138fc3f8072668af1bbeada3475d612f55a7d",
+      "check_category": "SUCCESS",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38042151994/job/114184367588",
+          "started_at": "2026-10-10T09:39:24Z",
+          "completed_at": "2026-10-10T09:58:17Z"
+        }
+      ],
+      "review_count": 0,
+      "review_request_count": 0
+    },
+    {
+      "number": 26,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/26",
+      "state": "OPEN",
+      "draft": true,
+      "base_ref": "main",
+      "base_sha": "8642639a78ca9aa56fbad1e88aea4b82169ea433",
+      "head_sha": "00d1c4405a513b9e5cdee9f6fa15808b4386d8b1",
+      "check_category": "SUCCESS",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38107795624/job/114376883698",
+          "started_at": "2026-10-11T03:15:30Z",
+          "completed_at": "2026-10-11T03:35:59Z"
+        }
+      ],
+      "review_count": 0,
+      "review_request_count": 0
+    },
+    {
+      "number": 27,
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/27",
+      "state": "OPEN",
+      "draft": true,
+      "base_ref": "codex/v2-g0-integration-20261010",
+      "base_sha": "00d1c4405a513b9e5cdee9f6fa15808b4386d8b1",
+      "head_sha": "5f70d186d169261f0f337232c70e246a2e88b4e6",
+      "check_category": "SUCCESS",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38293103442/job/114957641164",
+          "started_at": "2026-10-12T18:45:54Z",
+          "completed_at": "2026-10-12T19:06:49Z"
+        },
+        {
+          "name": "Web tests, lint, and production build",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38293103442/job/114957640845",
+          "started_at": "2026-10-12T18:45:52Z",
+          "completed_at": "2026-10-12T18:47:39Z"
+        }
+      ],
+      "review_count": 0,
+      "review_request_count": 0
+    }
+  ],
+  "latest_pr27_ci": {
+    "run_id": 38293103442,
+    "head_sha": "5f70d186d169261f0f337232c70e246a2e88b4e6",
+    "conclusion": "SUCCESS",
+    "quick_passed": 286,
+    "quick_seconds": 37.59,
+    "full_passed": 2600,
+    "subtests_passed": 25,
+    "full_seconds": 1139.4,
+    "web_files_passed": 29,
+    "web_tests_passed": 161,
+    "web_lint_typecheck_build": "SUCCESS",
+    "warnings": [
+      "existing Starlette/httpx deprecation",
+      "existing Vite chunk-size advisory"
+    ]
+  },
+  "g1_offline_finding": {
+    "signature": "V38_RESPONSE_CHOICES_MULTIPLE_SILENTLY_FIRST",
+    "severity": "S1",
+    "reproduced_on_base_head": "5f70d186d169261f0f337232c70e246a2e88b4e6",
+    "failure_first_test": "tests/v38/test_response_contract_v2.py::test_v2_rejects_multiple_provider_choices_instead_of_silently_selecting_the_first",
+    "base_reproduction": "Base evaluator returned VALID_LOCAL_CONTRACT for two choices although the second was conflicting/truncated.",
+    "local_repair": "Require exactly one choice and fail closed otherwise; targeted response-contract/runner 77 passed, tests/v38 210 passed, repository quick gate 287 passed.",
+    "candidate_hosted_ci": "PENDING_FOR_NEW_REPAIR",
+    "remote_dispatch_allowed": false,
+    "historical_ledger_or_sample_changed": false
+  },
+  "scope": {
+    "read_only_github_inventory": true,
+    "model_or_exchange_api_called": false,
+    "orders_submitted": false,
+    "account_or_production_configuration_changed": false,
+    "historical_ledger_or_sample_changed": false
+  },
+  "supersedes_snapshot": "V2-G0-G1-live-state-20261012T183822Z.json",
+  "limitations": [
+    "Point-in-time GitHub status snapshot; the local G1 patch is not in the captured remote PR head.",
+    "CI verifies tests/build only and is not human integration approval.",
+    "Provider-native response_format, authenticated model/weight identity, billing and quota remain unknown.",
+    "G0 human review remains required; G2 remains unauthorized."
+  ]
+}

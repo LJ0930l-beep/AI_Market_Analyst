@@ -6,7 +6,7 @@ status: BLOCKED_WITH_EVIDENCE
 component: model
 mode: RESEARCH_OFFLINE
 g0_base_sha: 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1
-branch_sha: "72dd60b19b1b3a75baed47f44a029e1382d87c38"
+branch_sha: "5f70d186d169261f0f337232c70e246a2e88b4e6"
 g1_working_branch: codex/v2-g1-offline-20261010
 trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
 first_seen_at_utc: 2026-10-10T09:27:00Z
@@ -24,7 +24,7 @@ patch_pr: Stacked G1 offline branch codex/v2-g1-offline-20261010 based on G0 can
 negative_tests: Empty/partial/truncated body; finish_reason length/error/missing; missing/mismatched model ID with payload/adapter source separation; malformed/multiple fence; invalid/unknown/future top-level and nested evidence refs; offline fake provider ignores a submitted json_schema request and capability remains unknown; duplicate JSON key; usage mismatch; NaN/infinite/non-positive transport byte counts; duplicate intent in existing pilot tests.
 unblock_criteria: Offline contract PR and same-head full CI pass; any G2 remote capability probe requires separate explicit user authorization, a new frozen scope, request ceiling, budget/stop rule, and provider/route identity evidence.
 needs_human_decision: true
-next_owner_action: "Keep provider dispatch disabled. PR #27 exact head 72dd60b19b1b3a75baed47f44a029e1382d87c38 passed run 38289819059 (quick 286; full 2600 with 25 subtests; Web 161 plus lint/type-check/build). Remote response_format, authenticated model/weight identity, billing and quota remain unknown. G2 requires G0 human review and a fresh bounded authorization."
+next_owner_action: "Keep provider dispatch disabled. PR #27 exact head 5f70d186d169261f0f337232c70e246a2e88b4e6 passed run 38293103442 (quick 286; full 2600 with 25 subtests; Web 161 plus lint/type-check/build); that run predates the local multiple-choice repair. Require a new exact-head hosted run after push. Remote response_format, authenticated model/weight identity, billing and quota remain unknown. G2 requires G0 human review and a fresh bounded authorization."
 
 ## 已证实与仍未知
 
@@ -53,6 +53,7 @@ G0 候选 PR #26 的同 head hosted quick/full CI 已通过，但候选仍 Draft
 - **Repair:** move strict positive-integer validation before envelope/body comparisons. Add parameterized negatives for `None`, string, bool, zero, negative, and float values. Only `response_contract_v2.py` and `tests/v38/test_response_contract_v2.py` change in code.
 - **Local acceptance evidence:** `python -m pytest -q tests/v38/test_response_contract_v2.py` — 40 passed; the repository quick-gate command — 262 passed; Ruff check/format and `git diff --check` passed. The frozen call ledger remains 144 lines with SHA-256 `820212A5699B718C922232C584FCFDCB4F79B675EA8653B1898A0D4025B837A7`. These are local results only; the base `c56c542` hosted run does not cover the patch.
 - **Unblock criteria:** new PR #27 exact head must pass quick and full hosted CI; rerun the response-contract test on that head; confirm the V38 ledger SHA remains unchanged. Provider capability remains blocked separately until an explicitly authorized G2 probe.
+
 - **Rollback:** revert only this parameter-check move and its six-case test. Keep PR #27 open and G1 blocked if the new CI or review fails; no changes to V1, production execution, V35 risk controls, frozen samples, or historical ledger.
 
 ## 2026-10-10 exact-head CI acceptance addendum — 13:18Z
@@ -223,3 +224,7 @@ The V2 dispatch flag remains false and max_calls remains zero. Provider response
 - **未解除原因：** provider 原生 response_format、响应模型/权重身份、计费和 quota 仍未知。G2 仍需要 G0 review 及新的明确有界调用、费用/额度上限和停止规则授权。
 - **回滚：** 本轮只有审计文档变更；如状态字段错误，撤销本次文档提交并新增更正，不改历史 ledger/报告；运行时仍保持 remote dispatch 关闭。
 - **外部影响：** 无模型/交易所/TestNet/Live 请求、订单、费用或账户设置变化。
+
+## 2026-10-12T19:21:18Z 当前依赖状态
+
+PR #27 exact head `5f70d186d169261f0f337232c70e246a2e88b4e6` run `38293103442` passed, but predates the local B-20261012-005 multiple-choice repair. Provider dispatch stays disabled until the repair passes new exact-head CI. Remote structured-output capability, authenticated model/weight identity, billing, and quota remain unknown; G2 still requires G0 human review and separate bounded authorization.

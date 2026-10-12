@@ -134,6 +134,36 @@ def test_v2_minimal_and_full_contracts_accept_causal_offline_fixtures(tier, anal
     assert result["remote_dispatch_allowed"] is False
 
 
+def test_v2_rejects_multiple_provider_choices_instead_of_silently_selecting_the_first():
+    envelope = _envelope(_minimal())
+    first_choice = envelope["payload"]["choices"][0]
+    envelope["payload"]["choices"] = [
+        first_choice,
+        {"message": {"content": "conflicting second response"}, "finish_reason": "length"},
+    ]
+
+    result = _evaluate(envelope)
+
+    assert result["status"] == "INVALID_PROVIDER_RESPONSE"
+    assert result["error_code"] == "COMPLETION_CHOICE_COUNT_INVALID"
+    assert result["normalized_analysis"] is None
+
+
+@pytest.mark.parametrize(
+    ("choices", "error_code"),
+    [([], "COMPLETION_CHOICE_COUNT_INVALID"), ([None], "COMPLETION_CHOICE_INVALID")],
+)
+def test_v2_rejects_empty_or_malformed_provider_choices(choices, error_code):
+    envelope = _envelope(_minimal())
+    envelope["payload"]["choices"] = choices
+
+    result = _evaluate(envelope)
+
+    assert result["status"] == "INVALID_PROVIDER_RESPONSE"
+    assert result["error_code"] == error_code
+    assert result["normalized_analysis"] is None
+
+
 def test_v2_fence_compatibility_keeps_raw_and_normalized_response_separate():
     fence = chr(96) * 3
     raw = fence + "json\n" + json.dumps(_minimal(), separators=(",", ":")) + "\n" + fence
