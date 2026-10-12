@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V1
-updated_at_utc: 2026-10-11T12:29:59Z
+updated_at_utc: 2026-10-12T18:07:29Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -7,14 +7,14 @@ blockers:
     component: integration
     file: docs/blockers/B-20261010-001-pr-branch-integration.md
     trigger_signature: PR_COMBINATION_CANDIDATE_AWAITS_HUMAN_REVIEW
-    next_owner_action: 'Current 2026-10-11T12:29:59Z snapshot: PR #26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 run 38107795624 passed; PR #27 exact head 230550b87abccb1530bc34e9997a8afee46732c4 run 38136662102 passed. Both remain Draft/Open with zero reviews and no auto-merge. Obtain independent human review and record an integration decision; preserve PR #1-11 NO_REPORTED_CHECKS and PR #23 failure. Do not auto-merge.'
+    next_owner_action: "Current 2026-10-12T18:07:29Z: PR #26 head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 run 38107795624 passed; PR #27 head 66ef1f707652c322eb5c33778485a529b52804e3 run 38286178147 passed. Both remain OPEN/Draft with zero reviews/requests and no auto-merge. Obtain independent human review and record an integration decision; preserve PR #1-11 NO_REPORTED_CHECKS and PR #23 failure. Do not auto-merge."
   - id: B-20261010-002
     severity: S1
     status: BLOCKED_WITH_EVIDENCE
     component: model
     file: docs/blockers/B-20261010-002-model-response-capability.md
     trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
-    next_owner_action: 'Keep provider dispatch disabled. PR #27 exact head 230550b87abccb1530bc34e9997a8afee46732c4 passed hosted Python and web checks; local same-environment differential found 0 new failures and 0 missing baseline nodes. Remote response_format, model identity/weights, billing, and quota remain unknown. G2 requires G0 human review and a fresh bounded authorization.'
+    next_owner_action: "Keep provider dispatch disabled. PR #27 exact head 66ef1f707652c322eb5c33778485a529b52804e3 passed run 38286178147 (quick 286; full 2600, 25 subtests; Web 161 and lint/type-check/build). Remote response_format, model identity/weights, billing, and quota remain unknown. G2 requires G0 human review and a fresh bounded authorization."
   - id: B-20261010-003
     severity: S1
     status: OPEN

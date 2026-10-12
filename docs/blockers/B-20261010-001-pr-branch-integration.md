@@ -27,8 +27,8 @@ candidate_branch: codex/v2-g0-integration-20261010
 candidate_source_heads: origin/main@8642639a78ca9aa56fbad1e88aea4b82169ea433; PR20@43eb1835ef76b8c39f9b560ceaa3cac1b436d1bf; PR21@941e38372a0c0f96d1aaecd4a4ca2faf62dd3070; PR22@cb03f8e34cedca18d735187fdab41cda388eaa99; PR25@97d138fc3f8072668af1bbeada3475d612f55a7d
 candidate_local_verification: targeted 38 passed; quick gate 222 passed; full 2517 passed, 1 skipped, 0 failed; baseline 2113 passed, 103 failed, 1 skipped; node-id comparison 0 new failures, 0 missing baseline nodes.
 candidate_junit_sha256: baseline ec187fb87f395a5bb3949d358b13614b73dacfbfa873dc7d8a451ef54374ca9b; candidate dad101a071100b00d9071936e13233f1efcfa8813e82a1acd3d29fbbe9c0a733
-remote_ci_status: PR26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 run 38107795624 passed (quick 231; full 2538); PR27 exact head e30551fa22125413afe364de3932b9ddf5cfe880 run 38125994063 passed (quick 286; full 2600); PR23 exact head remains failed on run 37963206552 and is not rewritten by green descendants.
-next_owner_action: Human review PR26 and PR27; keep both Draft and unmerged; if review requests changes, patch the isolated candidate and rerun same-head CI.
+remote_ci_status: "PR26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 run 38107795624 passed; PR27 exact head 66ef1f707652c322eb5c33778485a529b52804e3 run 38286178147 passed (quick 286; full 2600; Web 161 plus lint/type-check/build); PR23 current head failure retained."
+next_owner_action: "Current 2026-10-12T18:07:29Z: PR #26 and PR #27 remain OPEN/Draft with zero reviews/review requests and no auto-merge; obtain independent human review and record an integration decision. Preserve PR #1-11 NO_REPORTED_CHECKS and PR #23 failure. Do not auto-merge."
 ```
 
 ## 故障原因与原始证据
@@ -201,3 +201,13 @@ The read-only GitHub refresh at 2026-10-11T12:29:59Z still shows 27 OPEN PRs and
 PR #26 exact-head run 38107795624 passed its Python quick/full checks (231 / 2,538). PR #27 exact-head run 38136662102 passed Python quick/full (286 / 2,600) and Web tests (29 files / 161 tests), lint, and build. Same-host JUnit comparison against the frozen baseline found 103 baseline failure nodes now passing, zero new failures, and zero missing baseline nodes. The machine snapshot is docs/audits/PR-INTEGRATION-MATRIX-20261011.json; the readable report is docs/audits/V2-G0-G1-live-refresh-20261011T122959Z.md.
 
 Both candidates remain OPEN/Draft with zero review events and auto-merge disabled. Status remains FIX_IN_REVIEW. Required owner action is independent human review and a recorded integration decision. Preserve PR #23's failed check and PR #1–#11's no-check state; do not auto-merge or modify main. No model, exchange, TestNet, Live, order, or account-setting operation occurred.
+
+## 2026-10-12T18:07:29Z 当前状态刷新
+
+- **严重度/状态：** S1 / `FIX_IN_REVIEW`；根因仍是 stacked PR 集成需要独立人工审查和明确决策。
+- **最新证据：** [`V2-G0-G1-live-refresh-20261012T180729Z.md`](../audits/V2-G0-G1-live-refresh-20261012T180729Z.md) 与 [`V2-G0-G1-live-state-20261012T180729Z.json`](../audits/V2-G0-G1-live-state-20261012T180729Z.json)。GitHub 仍有 27 个 OPEN、0 个 merged PR；精确 head 检查为 15 成功、#23 失败、#1–#11 无报告检查、0 pending。main `8642639a78ca9aa56fbad1e88aea4b82169ea433` 未变；#26 head `00d1c4405a513b9e5cdee9f6fa15808b4386d8b1`，#27 head `66ef1f707652c322eb5c33778485a529b52804e3`，#27 基于 #26；#1–#25 heads 均是 #26 的祖先。
+- **验收证据：** PR #26 run 38107795624 在其精确 head 通过；PR #27 run [38286178147](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38286178147) 在 `66ef1f707652c322eb5c33778485a529b52804e3` 通过（Python quick 286；full 2,600、25 subtests；Web 161、lint、type-check/build 通过）。PR #26/#27 仍 OPEN/Draft、无 review/request、auto-merge 关闭，所以尚未达到 G0 ACCEPT。
+- **临时方案：** 保持候选分支隔离、#26/#27 Draft/open、main 不变、不自动合并；保留 #23 红色结果和 #1–#11 NO_REPORTED_CHECKS。
+- **修复/下一步：** 候选组合和测试证据已刷新；由独立人工 reviewer 检查集成和重叠文件，并记录明确的集成决定。若有意见，只在隔离候选追加普通修复提交并跑精确 head CI。
+- **回滚：** 如本次记录事实错误，回退该次审计文档提交并新增更正快照；不得改写既有矩阵/历史记录或 main。
+- **外部影响：** 无模型或交易所 API 调用、订单、费用、账户或生产参数变更。

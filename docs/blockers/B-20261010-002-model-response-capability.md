@@ -6,7 +6,7 @@ status: BLOCKED_WITH_EVIDENCE
 component: model
 mode: RESEARCH_OFFLINE
 g0_base_sha: 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1
-branch_sha: e30551fa22125413afe364de3932b9ddf5cfe880
+branch_sha: "66ef1f707652c322eb5c33778485a529b52804e3"
 g1_working_branch: codex/v2-g1-offline-20261010
 trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
 first_seen_at_utc: 2026-10-10T09:27:00Z
@@ -24,7 +24,7 @@ patch_pr: Stacked G1 offline branch codex/v2-g1-offline-20261010 based on G0 can
 negative_tests: Empty/partial/truncated body; finish_reason length/error/missing; missing/mismatched model ID with payload/adapter source separation; malformed/multiple fence; invalid/unknown/future top-level and nested evidence refs; offline fake provider ignores a submitted json_schema request and capability remains unknown; duplicate JSON key; usage mismatch; NaN/infinite/non-positive transport byte counts; duplicate intent in existing pilot tests.
 unblock_criteria: Offline contract PR and same-head full CI pass; any G2 remote capability probe requires separate explicit user authorization, a new frozen scope, request ceiling, budget/stop rule, and provider/route identity evidence.
 needs_human_decision: true
-next_owner_action: Keep provider capability blocked and do not issue model requests; await independent G2 authorization after human review of G0/G1 PRs.
+next_owner_action: "Keep provider dispatch disabled. PR #27 exact head 66ef1f707652c322eb5c33778485a529b52804e3 passed hosted run 38286178147 (quick 286; full 2600 with 25 subtests; Web 161 plus lint/type-check/build). Remote response_format, authenticated model/weight identity, billing, and quota remain unknown. G2 requires G0 human review and a fresh explicitly bounded authorization."
 
 ## 已证实与仍未知
 
@@ -202,3 +202,13 @@ This verifies the offline response contract only. Remote provider-native `respon
 PR #27 exact head 230550b87abccb1530bc34e9997a8afee46732c4 passed hosted run 38136662102: Python quick 286, full 2,600, Web 29 files / 161 tests, lint, and build. A same-host JUnit node-ID comparison against the frozen baseline recorded 2,599 passed, 1 Windows symlink-capability skip, and zero failures on the candidate; 103 baseline failures now pass, no baseline nodes are missing, and no new failures appear. This is local/offline evidence only; details and report hashes are in docs/audits/V2-G0-G1-live-refresh-20261011T122959Z.md and docs/audits/PR-INTEGRATION-MATRIX-20261011.json.
 
 The V2 dispatch flag remains false and max_calls remains zero. Provider response_format behavior, authenticated response model/weight identity, billing and quota settlement are still unknown. Keep G2 NOT_AUTHORIZED until independent G0 human review and a fresh bounded authorization. No provider, exchange, TestNet, Live, order, ledger, or production account configuration was used or changed.
+
+## 2026-10-12T18:07:29Z 当前离线证据刷新
+
+- **严重度/状态：** S1 / `BLOCKED_WITH_EVIDENCE`；离线契约通过不能证明远端 provider 能力、模型身份或实际结算。
+- **证据：** 快照 [`V2-G0-G1-live-refresh-20261012T180729Z.md`](../audits/V2-G0-G1-live-refresh-20261012T180729Z.md) 与 [`V2-G0-G1-live-state-20261012T180729Z.json`](../audits/V2-G0-G1-live-state-20261012T180729Z.json)；PR #27 exact head `66ef1f707652c322eb5c33778485a529b52804e3` 的 run [38286178147](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38286178147) 通过。冻结 ledger 和 67 个 `INVALID_JSON` 分类未读取或改写；既有 SHA 保持冻结。
+- **临时遏制：** `remote_dispatch_allowed=false`、`max_calls=0`；不重试任何旧 intent，不把 green CI 当作 provider 能力证据。
+- **修复/离线验收：** 当前 head Python quick 286、full 2,600 / 25 subtests；Web 161、lint、类型检查与构建通过。只证明离线 schema/parser/evidence contract 及回归。
+- **未解除原因：** provider 原生 `response_format`、响应模型/权重真实性、计费和 quota 仍 UNKNOWN。G2 需要 G0 独立审查及新的明确 bounded scope、调用上限、费用/额度上限和 stop rules。
+- **回滚：** 本轮为文档证据刷新；如事实有误，回退本次文档提交并新增更正记录，不改写历史 ledger 或旧审计。代码行为异常时仍保持 dispatch 关闭并按对应代码 PR 的回滚范围处理。
+- **外部影响：** 无模型或交易所 API 调用、订单、费用、生产账户设置变化。
