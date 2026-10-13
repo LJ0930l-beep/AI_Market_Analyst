@@ -207,6 +207,93 @@ def test_small_open_order_snapshots_remain_available(count):
     assert trader.last_trigger_orders_status == "AVAILABLE"
 
 
+@pytest.mark.parametrize("field", ["reduceOnly", "info.reduce_only", "info.is_reduce_only"])
+@pytest.mark.parametrize("value", [2, -1, 1.5, float("inf"), float("nan"), "2"])
+def test_open_order_reduce_only_rejects_noncanonical_values(field, value):
+    order = {"id": "order-1", "status": "open"}
+    if field == "reduceOnly":
+        order[field] = value
+    else:
+        _, native_field = field.split(".")
+        order["info"] = {native_field: value}
+
+    class Exchange:
+        def fetch_open_orders(self, _symbol, limit):
+            assert limit == 100
+            return [order]
+
+    trader = GateLiveTrader("testnet-key", "testnet-secret", testnet=True, exchange=Exchange())
+
+    open_orders = trader.get_open_orders()
+
+    assert open_orders[0]["reduce_only"] is False
+    assert trader.last_open_orders_status == "DEGRADED"
+    assert trader.last_open_orders_error_code == "GATE_OPEN_ORDER_REDUCE_ONLY_UNVERIFIED"
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected"),
+    [
+        ("reduceOnly", True, True),
+        ("reduceOnly", False, False),
+        ("reduceOnly", 1, True),
+        ("reduceOnly", 0, False),
+        ("info.reduce_only", "true", True),
+        ("info.reduce_only", "false", False),
+        ("info.is_reduce_only", "1", True),
+        ("info.is_reduce_only", "0", False),
+    ],
+)
+def test_open_order_reduce_only_accepts_canonical_values(field, value, expected):
+    order = {"id": "order-1", "status": "open"}
+    if field == "reduceOnly":
+        order[field] = value
+    else:
+        _, native_field = field.split(".")
+        order["info"] = {native_field: value}
+
+    class Exchange:
+        def fetch_open_orders(self, _symbol, limit):
+            assert limit == 100
+            return [order]
+
+    trader = GateLiveTrader("testnet-key", "testnet-secret", testnet=True, exchange=Exchange())
+
+    open_orders = trader.get_open_orders()
+
+    assert open_orders[0]["reduce_only"] is expected
+    assert trader.last_open_orders_status == "AVAILABLE"
+    assert trader.last_open_orders_error_code is None
+
+
+def test_open_order_reduce_only_conflicts_degrade_the_account_truth():
+    class Exchange:
+        def fetch_open_orders(self, _symbol, limit):
+            assert limit == 100
+            return [{"id": "order-1", "status": "open", "reduceOnly": True,
+                     "info": {"reduce_only": False}}]
+
+        def privateFuturesGetSettlePriceOrders(self, params):
+            assert params == {"settle": "usdt", "status": "open", "limit": 100}
+            return []
+
+    trader = GateLiveTrader("testnet-key", "testnet-secret", testnet=True, exchange=Exchange())
+    trader.get_account_balance = lambda: {
+        "data_status": "AVAILABLE", "equity": 1000, "free": 1000, "used": 0,
+        "order_margin": 0, "observed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    trader.get_positions = lambda: []
+    trader.last_positions_status = "AVAILABLE"
+
+    truth = trader.get_account_truth()
+
+    assert truth["status"] == "DEGRADED"
+    assert truth["pending_orders_status"] == "DEGRADED"
+    assert truth["pending_margin_status"] == "UNVERIFIED"
+    assert truth["pending_orders"][0]["reduce_only"] is False
+    assert truth["error_code"] == "GATE_OPEN_ORDER_REDUCE_ONLY_CONFLICT"
+
+
 @pytest.mark.parametrize(
     ("full_snapshot", "expected_error"),
     [

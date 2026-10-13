@@ -821,6 +821,36 @@ class GateLiveTrader:
                 if not order_id:
                     degraded = True
                     continue
+                info = order.get("info") if isinstance(order.get("info"), dict) else {}
+                reduce_only_values: list[bool] = []
+                reduce_only_unverified = False
+                for raw_flag in (
+                    order.get("reduceOnly"),
+                    info.get("reduce_only"),
+                    info.get("is_reduce_only"),
+                ):
+                    if raw_flag is None:
+                        continue
+                    parsed_flag = _optional_gate_native_bool(raw_flag)
+                    if parsed_flag is None:
+                        reduce_only_unverified = True
+                    else:
+                        reduce_only_values.append(parsed_flag)
+                reduce_only_conflict = len(set(reduce_only_values)) > 1
+                if reduce_only_unverified or reduce_only_conflict:
+                    degraded = True
+                    if self.last_open_orders_error_code is None:
+                        self.last_open_orders_error_code = (
+                            "GATE_OPEN_ORDER_REDUCE_ONLY_CONFLICT"
+                            if reduce_only_conflict
+                            else "GATE_OPEN_ORDER_REDUCE_ONLY_UNVERIFIED"
+                        )
+                reduce_only = bool(
+                    reduce_only_values
+                    and not reduce_only_unverified
+                    and not reduce_only_conflict
+                    and reduce_only_values[0]
+                )
                 results.append(
                     {
                         "order_id": str(order_id),
@@ -836,11 +866,7 @@ class GateLiveTrader:
                         "stop_price": _optional_float(order.get("triggerPrice") or order.get("stopPrice")),
                         "timestamp": order.get("timestamp"),
                         "datetime": order.get("datetime"),
-                        "reduce_only": _optional_bool(
-                            order.get("reduceOnly")
-                            if order.get("reduceOnly") is not None
-                            else ((order.get("info") or {}).get("reduce_only") if isinstance(order.get("info"), dict) else None)
-                        ) is True,
+                        "reduce_only": reduce_only,
                     }
                 )
             self.last_open_orders_status = "DEGRADED" if degraded else "AVAILABLE"

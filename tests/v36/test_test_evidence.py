@@ -59,6 +59,54 @@ def test_compare_accepts_identical_complete_runs():
     assert compare(baseline, baseline)["status"] == "PASS"
 
 
+def test_compare_accepts_additional_tests_when_every_added_test_passes():
+    baseline = _report(phases=(_phase("test_a", "call", "passed"),))
+    candidate = _report(
+        collected=("test_a", "test_new"),
+        phases=(
+            _phase("test_a", "call", "passed"),
+            _phase("test_new", "call", "passed"),
+        ),
+    )
+
+    result = compare(baseline, candidate)
+
+    assert result["status"] == "PASS"
+    assert result["extra_nodeids"] == ["test_new"]
+    assert result["added"]["passed"] == ["test_new"]
+
+
+def test_compare_rejects_added_node_without_execution_record():
+    baseline = _report(phases=(_phase("test_a", "call", "passed"),))
+    candidate = _report(collected=("test_a", "test_new"))
+
+    result = compare(baseline, candidate)
+
+    assert result["status"] == "FAIL"
+    assert result["unreported_added_nodeids"] == ["test_new"]
+
+
+@pytest.mark.parametrize(
+    ("outcome", "exit_code", "added_group"),
+    [("failed", 1, "failed"), ("skipped", 0, "skipped")],
+)
+def test_compare_rejects_nonpassing_additional_tests(outcome, exit_code, added_group):
+    baseline = _report(phases=(_phase("test_a", "call", "passed"),))
+    candidate = _report(
+        collected=("test_a", "test_new"),
+        phases=(
+            _phase("test_a", "call", "passed"),
+            _phase("test_new", "call", outcome),
+        ),
+        exit_code=exit_code,
+    )
+
+    result = compare(baseline, candidate)
+
+    assert result["status"] == "FAIL"
+    assert result["added"][added_group] == ["test_new"]
+
+
 @pytest.mark.parametrize(
     "after,field,expected",
     [

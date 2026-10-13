@@ -147,6 +147,9 @@ def compare(before, after):
     before_phases = Counter((r["nodeid"], r["phase"]) for r in before["phases"])
     after_phases = Counter((r["nodeid"], r["phase"]) for r in after["phases"])
     missing_phases = sorted((before_phases - after_phases).elements())
+    after_observed_nodes = {row["nodeid"] for row in after["phases"]}
+    after_observed_nodes.update(row["nodeid"] for row in after["collection"])
+    unreported_added_nodes = sorted(set(extra) - after_observed_nodes)
     # A teardown error moving to setup on the same node is still a new error.
     left_errors = {(r["nodeid"], r["phase"]) for r in before["phases"] if r["outcome"] == "failed"}
     right_errors = {(r["nodeid"], r["phase"]) for r in after["phases"] if r["outcome"] == "failed"}
@@ -154,15 +157,16 @@ def compare(before, after):
     complete = all(d.get("session_finished") and d.get("exit_code") in (0, 1)
                    and not d["internal_errors"] and not d["interruptions"] for d in (before, after))
     same_environment = before["environment"] == after["environment"]
-    ok = (complete and same_environment and not missing and not extra and not lost_passes
-          and not missing_phases and not new_phase_failures
+    ok = (complete and same_environment and not missing and not lost_passes
+          and not missing_phases and not unreported_added_nodes and not new_phase_failures
           and before["deselected"] == after["deselected"]
           and not any(added[key] for key in ("failed", "errors", "skipped", "xfail", "xpass",
                                             "collection_errors", "collection_skipped")))
     return {
         "status": "PASS" if ok else "FAIL", "complete_runs": complete,
         "same_environment": same_environment, "missing_nodeids": sorted(missing),
-        "extra_nodeids": sorted(extra), "lost_passes": lost_passes,
+        "extra_nodeids": sorted(extra), "unreported_added_nodeids": unreported_added_nodes,
+        "lost_passes": lost_passes,
         "missing_phases": missing_phases, "new_phase_failures": new_phase_failures,
         "added": added, "removed": removed,
         "exit_codes": [before["exit_code"], after["exit_code"]],
