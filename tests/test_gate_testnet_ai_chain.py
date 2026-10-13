@@ -933,6 +933,46 @@ def test_gate_protection_readback_rejects_malformed_is_close_even_for_known_clos
         trader.fetch_protection_order("9001", "BTCUSDT")
 
 
+@pytest.mark.parametrize("value", [2, -1, 1.5, float("inf"), float("nan"), "2"])
+@pytest.mark.parametrize("field", ["reduce_only", "is_reduce_only", "is_close"])
+def test_gate_protection_readback_rejects_noncanonical_native_boolean_numbers(field, value):
+    class Exchange:
+        def privateFuturesGetSettlePriceOrdersOrderId(self, _params):
+            return {
+                "id": "9001", "status": "open", "order_type": "close-long-order",
+                "initial": {"contract": "BTC_USDT", "size": -1, field: value},
+            }
+
+    trader = GateLiveTrader("key", "secret", testnet=True, exchange=Exchange())
+    expected_code = (
+        "GATE_PROTECTION_IS_CLOSE_UNVERIFIED"
+        if field == "is_close"
+        else "GATE_PROTECTION_REDUCE_ONLY_UNVERIFIED"
+    )
+
+    with pytest.raises(ValueError, match=expected_code):
+        trader.fetch_protection_order("9001", "BTCUSDT")
+
+
+@pytest.mark.parametrize("value", [2, -1, 1.5, float("inf"), float("nan")])
+def test_gate_trigger_snapshot_rejects_noncanonical_native_boolean_numbers(value):
+    class Exchange:
+        def privateFuturesGetSettlePriceOrders(self, _params):
+            return [{
+                "id": "9001", "status": "open", "order_type": "close-long-order",
+                "initial": {"contract": "BTC_USDT", "size": -1, "is_reduce_only": value},
+                "trigger": {"price": "89.0"},
+            }]
+
+    trader = GateLiveTrader("key", "secret", testnet=True, exchange=Exchange())
+
+    orders = trader.get_open_trigger_orders()
+
+    assert orders[0]["reduce_only"] is False
+    assert orders[0]["is_protection"] is False
+    assert trader.last_trigger_orders_status == "DEGRADED"
+
+
 def test_gate_protection_readback_rejects_conflicting_close_and_reduce_only_flags():
     class Exchange:
         def privateFuturesGetSettlePriceOrdersOrderId(self, _params):

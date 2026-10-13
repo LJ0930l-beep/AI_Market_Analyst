@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V1
-updated_at_utc: 2026-10-13T04:41:39Z
+updated_at_utc: 2026-10-13T05:01:06Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -51,3 +51,10 @@ blockers:
     file: docs/blockers/B-20261013-007-gate-cleanup-baseline-preservation.md
     trigger_signature: GATE_E2E_CLEANUP_BASELINE_MISMATCH_FALSE_COMPLETION
     next_owner_action: 'Verify exact-head full offline and Web CI for the baseline equality repair, then obtain independent review. No TestNet call is authorized.'
+  - id: B-20261013-008
+    severity: S1
+    status: FIX_IN_REVIEW
+    component: gate_account_truth
+    file: docs/blockers/B-20261013-008-gate-order-truth-completeness.md
+    trigger_signature: GATE_FULL_ORDER_PAGE_MISREPORTED_AVAILABLE
+    next_owner_action: 'Run exact-head offline and Web CI for strict native-flag parsing and full-page degradation; obtain an independent GitHub review. Do not make Gate/TestNet requests or merge.'
