@@ -24,6 +24,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.api.v2 import router_for
+from core.model_routing import DEFAULT_SMART_MODEL
 from core.monitoring_runtime import MonitoringRuntime
 from core.providers import Bar
 from core.realtime import RealtimeConnectionState
@@ -81,9 +82,9 @@ def fresh_market(symbol: str, price: float, *, now: datetime | None = None, cont
 
 
 def _synthetic_closed_history(now: datetime) -> dict[str, list[Bar]]:
-    """Build explicitly synthetic closed history for the default 15m/1h scan contract."""
+    """Build explicitly synthetic closed history for the active PA frame contract."""
     result: dict[str, list[Bar]] = {}
-    for timeframe, interval_minutes in {"15m": 15, "1h": 60}.items():
+    for timeframe, interval_minutes in {"5m": 5, "15m": 15, "1h": 60, "4h": 240}.items():
         interval_seconds = interval_minutes * 60
         latest_end = datetime.fromtimestamp(
             int(now.timestamp()) // interval_seconds * interval_seconds,
@@ -372,7 +373,7 @@ def test_production_ai_coordinator_uses_explicit_smart_model_and_persists_cycles
 
     class FakeLocalSmartModel:
         provider_name = "fake_local_model_for_trace"
-        model_id = "Bonsai-2-27B-PTQ1_0"
+        model_id = DEFAULT_SMART_MODEL
         context_length = 8192
         max_tokens = 1000
         # The institutional coordinator requires an actual model-weight
@@ -386,7 +387,7 @@ def test_production_ai_coordinator_uses_explicit_smart_model_and_persists_cycles
             self.wrote_late_bars = False
 
         def health(self):
-            return {"available": True, "model_available": True, "models": [r"D:\RJ\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"], "model_id": "Bonsai-2-27B-PTQ1_0", "actual_model_id": r"D:\RJ\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf", "model_identity_source": "verified_manifest", "context_length": self.context_length}
+            return {"available": True, "model_available": True, "models": [DEFAULT_SMART_MODEL], "model_id": DEFAULT_SMART_MODEL, "actual_model_id": DEFAULT_SMART_MODEL, "model_identity_source": "completion_probe", "context_length": self.context_length}
 
         def generate_json(self, _messages, **kwargs):
             self.calls.append(kwargs)
@@ -434,8 +435,17 @@ def test_production_ai_coordinator_uses_explicit_smart_model_and_persists_cycles
                 }
             else:
                 answer = {"action": "WAIT", "instrument_id": "BTCUSDT", "reason": "local coordinator trace"}
-            actual = r"D:\RJ\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"
-            return answer, json.dumps(answer), {"model_id": "Bonsai-2-27B-PTQ1_0", "model_version": actual, "actual_model_id": actual, "model_identity_source": "request_bound_to_verified_manifest", "verified_manifest_model_id": actual}
+            actual = DEFAULT_SMART_MODEL
+            return answer, json.dumps(answer), {
+                "model_id": DEFAULT_SMART_MODEL,
+                "model_version": DEFAULT_SMART_MODEL,
+                "actual_model_id": actual,
+                "model_identity_source": "completion_response",
+                "verified_manifest_model_id": actual,
+                "prompt_version": kwargs.get("prompt_version"),
+                "input_hash": kwargs.get("input_hash"),
+                "parse_status": "valid",
+            }
 
     ledger = AccountLedger(repair_store)
     ledger.create_account("ai_account", mode="PAPER", initial_deposit=Decimal("10000.00"))
@@ -460,9 +470,9 @@ def test_production_ai_coordinator_uses_explicit_smart_model_and_persists_cycles
         },
         now=now,
     )
-    # The PAPER coordinator requires 32 contiguous, fresh closed bars on its
-    # 15m signal and 1h context frames. These are explicitly synthetic local
-    # fixtures, not Gate market evidence.
+    # The PAPER coordinator requires closed 5m entry-confirmation bars plus
+    # 15m signal and 1h/4h background frames. These are explicitly synthetic
+    # local fixtures, not Gate market evidence.
     for timeframe, bars in _synthetic_closed_history(now).items():
         repair_store.upsert_market_bars(
             "BTCUSDT",
@@ -532,7 +542,7 @@ def test_production_ai_coordinator_uses_explicit_smart_model_and_persists_cycles
         assert first_context.technical_context["BTCUSDT"]["status"] == "READY"
         assert all(
             first_context.technical_context["BTCUSDT"]["timeframes"][timeframe]["status"] == "READY"
-            for timeframe in ("15m", "1h")
+            for timeframe in ("5m", "15m", "1h", "4h")
         )
         if calibration_delay_seconds >= INTENT_TTL_SECONDS:
             assert "Cycle timeout" in first.reason
@@ -544,13 +554,13 @@ def test_production_ai_coordinator_uses_explicit_smart_model_and_persists_cycles
         else:
             coordinator.run_cycle_once()
             assert len(provider.calls) >= 2
-        assert all(call["model_name"] == "Bonsai-2-27B-PTQ1_0" for call in provider.calls)
+        assert all(call["model_name"] == DEFAULT_SMART_MODEL for call in provider.calls)
         with repair_store._connect() as db:
             rows = db.execute("SELECT account_id, session_id, generation, authorization_id, market_snapshot_hash FROM ai_led_cycles WHERE account_id='ai_account'").fetchall()
         assert len(rows) >= (1 if calibration_delay_seconds >= INTENT_TTL_SECONDS else 2)
         assert all(row["authorization_id"] is None for row in rows)
         assert all(row["market_snapshot_hash"] for row in rows)
-        assert coordinator.status()["model"]["required_model"] == "Bonsai-2-27B-PTQ1_0"
+        assert coordinator.status()["model"]["required_model"] == DEFAULT_SMART_MODEL
     finally:
         coordinator.stop()
         coordinator.close()

@@ -1,0 +1,29 @@
+{
+  "schema_version": "pa-market-only-v38/prompt-template-3",
+  "prompt_id": "V38_A1_MARKET_ONLY_MINIMAL_V2",
+  "prompt_version": "pa_decision_quality_v38-A1-minimal-v2",
+  "research_arm": "A1_MARKET_ONLY",
+  "output_tier": "MINIMAL",
+  "input_schema_version": "pa-market-only-v38/input-1",
+  "output_schema_version": "pa-market-only-v38/analysis-minimal-2",
+  "output_schema_registry_symbol": "SCHEMA_MINIMAL_V2",
+  "response_parser_version": "RAW_OR_SINGLE_JSON_FENCE_V2",
+  "response_format_capability": "unknown_unverified",
+  "remote_dispatch_enabled": false,
+  "call_authorization": {
+    "authorized": false,
+    "maximum_calls": 0,
+    "study_scope": "OFFLINE_CONTRACT_FIXTURES_ONLY"
+  },
+  "system_prompt": "Analyze only the supplied market context. Return exactly one JSON object matching the named output schema. Do not use Markdown fences, prose outside JSON, account data, orders, execution fields, or information not present in the supplied evidence. If evidence is insufficient, choose WAIT or an uncertain/neutral classification and cite only supplied evidence_refs.",
+  "task": "Produce the minimal V2 market opinion fields: schema_version, action, market_regime, bias, evidence_refs. This template is frozen for offline contract tests. It does not authorize or dispatch a model request.",
+  "response_format_contract": {
+    "preferred_request": {
+      "schema_registry_symbol": "SCHEMA_MINIMAL_V2",
+      "strict": true,
+      "type": "json_schema"
+    },
+    "capability_status": "unknown_unverified",
+    "remote_dispatch_allowed": false
+  }
+}

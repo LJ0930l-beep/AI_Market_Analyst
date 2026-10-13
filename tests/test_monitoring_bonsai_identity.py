@@ -34,18 +34,18 @@ class _HealthProvider:
         )
 
 
-def _healthy_manifest() -> dict[str, object]:
+def _healthy_gemini_probe() -> dict[str, object]:
     return {
         "available": True,
         "model_available": True,
         "model_id": DEFAULT_MODEL,
-        "actual_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
-        "model_identity_source": "verified_manifest",
+        "actual_model_id": DEFAULT_MODEL,
+        "model_identity_source": "completion_probe",
     }
 
 
 def test_monitoring_rejects_non_bonsai_models_and_alias_only_health() -> None:
-    with pytest.raises(ValueError, match="Bonsai 2 27B"):
+    with pytest.raises(ValueError, match="Gemini 3.8 Flash"):
         SmartOpportunityAnalyzer(None, smart_model="qwen3.5:9b")
 
     provider = _HealthProvider({"available": True, "models": [DEFAULT_MODEL], "model_id": DEFAULT_MODEL})
@@ -57,7 +57,7 @@ def test_monitoring_rejects_non_bonsai_models_and_alias_only_health() -> None:
 def test_monitoring_requires_manifest_bound_completion_receipt() -> None:
     now = datetime.now(timezone.utc)
     bar = Bar(now, 100.0, 101.0, 99.0, 100.5, 10.0)
-    analyzer = SmartOpportunityAnalyzer(_HealthProvider(_healthy_manifest()))
+    analyzer = SmartOpportunityAnalyzer(_HealthProvider(_healthy_gemini_probe()))
     with pytest.raises(MonitoringError) as caught:
         analyzer.analyze(
             {"trigger_event_id": "trigger-1"},
@@ -70,11 +70,26 @@ def test_monitoring_requires_manifest_bound_completion_receipt() -> None:
 
     receipt = {
         "model_id": DEFAULT_MODEL,
-        "actual_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
-        "verified_manifest_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
-        "model_identity_source": "request_bound_to_verified_manifest",
+        "actual_model_id": DEFAULT_MODEL,
+        "model_version": DEFAULT_MODEL,
+        "verified_manifest_model_id": DEFAULT_MODEL,
+        "model_identity_source": "completion_response",
     }
-    analyzer = SmartOpportunityAnalyzer(_HealthProvider(_healthy_manifest(), receipt))
+    request_bound_receipt = {**receipt, "model_identity_source": "request_bound_to_verified_manifest"}
+    request_bound_analyzer = SmartOpportunityAnalyzer(
+        _HealthProvider(_healthy_gemini_probe(), request_bound_receipt)
+    )
+    with pytest.raises(MonitoringError) as unverified:
+        request_bound_analyzer.analyze(
+            {"trigger_event_id": "trigger-1"},
+            [bar],
+            symbol="BTCUSDT",
+            timeframe="15m",
+            data_as_of=now,
+        )
+    assert unverified.value.code == "SMART_MODEL_IDENTITY_UNVERIFIED"
+
+    analyzer = SmartOpportunityAnalyzer(_HealthProvider(_healthy_gemini_probe(), receipt))
     analysis, _metadata = analyzer.analyze(
         {"trigger_event_id": "trigger-1"},
         [bar],

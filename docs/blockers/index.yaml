@@ -1,0 +1,124 @@
+schema_version: V2_BLOCKER_INDEX_V2
+updated_at_utc: 2026-10-13T14:14:44Z
+blockers:
+  - id: B-20261010-001
+    severity: S1
+    status: FIX_IN_REVIEW
+    component: integration
+    file: docs/blockers/B-20261010-001-pr-branch-integration.md
+    trigger_signature: PR_COMBINATION_CANDIDATE_AWAITS_HUMAN_REVIEW
+    playbook_codes: B21,B22
+    next_owner_action: 'PR #27 exact head 132ad6b8a11b66fa17ee86f21fa4a3923c07b945 passed hosted run 38403593249. Obtain a complete independent semantic review and record the human G0 decision. Keep PR #26/#27 unmerged; preserve PR #23 failure and PR #1-#11 no-check records.'
+  - id: B-20261010-002
+    severity: S1
+    status: BLOCKED_WITH_EVIDENCE
+    component: model
+    file: docs/blockers/B-20261010-002-model-response-capability.md
+    trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
+    playbook_codes: B01,B02,B03,B04,B06,B07,B08
+    next_owner_action: 'Keep both V2 prompt configs remote_dispatch_enabled=false, authorized=false, maximum_calls=0. Provider response_format, authenticated model/weight identity, billing, quota and deduplication remain UNKNOWN_UNVERIFIED; do not enter G2 without fresh explicit authorization.'
+  - id: B-20261010-003
+    severity: S1
+    status: OPEN
+    component: model
+    file: docs/blockers/B-20261010-003-calibration-identity-evidence.md
+    trigger_signature: CALIBRATION_REMOTE_WEIGHT_DIGEST_REQUIRED
+    playbook_codes: B05
+    next_owner_action: 'Keep calibration fail-closed. Missing-digest no-call regression returns NOT_READY and creates no profile. G0/G4 sequencing is resolved: positive remote identity mode remains a G4 item after G0-G3; no remote identity mode exists yet.'
+  - id: B-20261011-004
+    severity: S1
+    status: VERIFIED
+    component: ci
+    file: docs/blockers/B-20261011-004-datetime-local-timezone-ci.md
+    trigger_signature: DATETIME_LOCAL_TEST_EXPECTATION_ASSUMES_UTC_PLUS_8
+    playbook_codes: B21
+    next_owner_action: 'Keep the timezone-neutral assertion; retain the original failing run and repair evidence as historical records.'
+  - id: B-20261012-005
+    severity: S1
+    status: FIX_IN_REVIEW
+    component: model
+    file: docs/blockers/B-20261012-005-v38-multiple-choice-ambiguity.md
+    trigger_signature: V38_RESPONSE_CHOICES_MULTIPLE_SILENTLY_FIRST
+    playbook_codes: B01
+    next_owner_action: 'The V38 response-path repair is included in PR #27 exact head 132ad6b8a11b66fa17ee86f21fa4a3923c07b945, which passed hosted run 38403593249. Obtain current-candidate independent review; keep provider dispatch disabled and preserve historical response classifications.'
+
+  - id: B-20261013-006
+    severity: S1
+    status: VERIFIED
+    component: integration
+    file: docs/blockers/B-20261013-006-g0-g4-calibration-sequence-conflict.md
+    trigger_signature: G0_G4_CALIBRATION_REMOTE_MODE_SEQUENCE_CONFLICT
+    playbook_codes: B05
+    next_owner_action: 'Sequencing adjudication recorded: calibration fail-closed behavior is the G0 requirement; the positive remote-mode assertion belongs to G4 after G0-G3. Keep G0 unaccepted pending independent PR review and remaining criteria; keep G2 unauthorized.'
+  - id: B-20261013-007
+    severity: S1
+    status: FIX_IN_REVIEW
+    component: gate
+    file: docs/blockers/B-20261013-007-gate-cleanup-baseline-preservation.md
+    trigger_signature: GATE_E2E_CLEANUP_BASELINE_MISMATCH_FALSE_COMPLETION
+    playbook_codes: B18
+    next_owner_action: 'Obtain independent review of baseline-preservation and final reconciliation on PR #27; keep FIX_IN_REVIEW until review and the G0 decision. No TestNet request is authorized.'
+  - id: B-20261013-008
+    severity: S1
+    status: FIX_IN_REVIEW
+    component: gate
+    file: docs/blockers/B-20261013-008-gate-order-truth-completeness.md
+    trigger_signature: GATE_FULL_ORDER_PAGE_MISREPORTED_AVAILABLE
+    playbook_codes: B16,B18
+    next_owner_action: 'Obtain independent review of order snapshot completeness and strict protection evidence; keep FIX_IN_REVIEW until review and the G0 decision. Do not make Gate/TestNet requests or merge.'
+  - id: B-20261013-009
+    severity: S1
+    status: FIX_IN_REVIEW
+    component: gate
+    file: docs/blockers/B-20261013-009-open-order-flag-integrity.md
+    trigger_signature: GATE_OPEN_ORDER_REDUCE_ONLY_FLAG_UNVERIFIED
+    playbook_codes: B16
+    next_owner_action: 'Obtain independent review of ordinary-order flag normalization and record the G0 decision. Do not use incomplete account truth for execution.'
+  - id: B-20261013-010
+    severity: S1
+    status: FIX_IN_REVIEW
+    component: ci
+    file: docs/blockers/B-20261013-010-test-evidence-incomplete-added-node.md
+    trigger_signature: V36_TEST_EVIDENCE_ADDED_NODE_PHASES_INCOMPLETE
+    playbook_codes: B21
+    next_owner_action: 'Obtain independent review of the complete-phase evidence comparator and record the G0 decision. Keep model/exchange dispatch disabled and do not merge.'
+  - id: B-20261013-011
+    severity: S1
+    status: FIX_IN_REVIEW
+    component: model
+    file: docs/blockers/B-20261013-011-format-pilot-accepts-fractional-byte-count.md
+    trigger_signature: V38_FORMAT_PILOT_ACCEPTS_FRACTIONAL_TRANSPORT_BYTES
+    playbook_codes: B03
+    next_owner_action: 'The shared exact-positive-integer transport repair passed focused local tests and PR #27 exact-head hosted run 38403593249. Obtain current-candidate independent review; keep G2 unauthorized and the pilot ledger immutable.'
+  - id: B-20261013-012
+    severity: S1
+    status: FIX_IN_REVIEW
+    component: model
+    file: docs/blockers/B-20261013-012-v2-accepts-oversized-request-byte-count.md
+    trigger_signature: V2_RESPONSE_CONTRACT_ACCEPTS_OVERSIZED_TRANSPORT_BYTES
+    playbook_codes: B03
+    next_owner_action: 'The bounded shared validator passed PR #27 exact-head hosted run 38403593249. Include B-012 in the current-candidate independent review; keep G2 unauthorized and make no provider or exchange requests.'
+  - id: B-20261013-013
+    severity: S2
+    status: FIX_IN_REVIEW
+    component: ci
+    file: docs/blockers/B-20261013-013-ci-scheduler-tempfile-lock.md
+    trigger_signature: WINDOWS_SCHEDULER_TEST_TEMPFILE_PERMISSIONERROR
+    playbook_codes: B21
+    next_owner_action: 'Preserve the historical Windows tempfile-lock failure. PR #27 exact-head run 38403593249 passed the complete suite; obtain current-candidate independent review. If the lock recurs, identify the handle owner and repair teardown without skipping the test.'
+  - id: B-20261013-014
+    severity: S1
+    status: FIX_IN_REVIEW
+    component: risk
+    file: docs/blockers/B-20261013-014-fixed-notional-mismatch-marked-eligible.md
+    trigger_signature: FIXED_NOTIONAL_PROPOSAL_MISMATCH_MARKED_ELIGIBLE
+    playbook_codes: B14
+    next_owner_action: 'The shared fixed-notional mismatch rejection passed PR #27 exact-head run 38403593249, including the full offline suite. Obtain current-candidate independent review; keep production sizing and all execution permissions unchanged.'
+  - id: B-20261013-015
+    severity: S1
+    status: FIX_IN_REVIEW
+    component: model
+    file: docs/blockers/B-20261013-015-v2-concrete-claims-require-evidence-refs.md
+    trigger_signature: V2_CONCRETE_NESTED_CLAIM_WITHOUT_EVIDENCE_REFS
+    playbook_codes: B01,B10
+    next_owner_action: 'The V2 validator now rejects concrete nested claims without claim-specific refs; focused response-contract tests pass 58/58. Require exact-head full CI and include B-015 in current-candidate review; keep V2 dispatch disabled.'

@@ -46,11 +46,12 @@ class FakeSmartProvider:
             "available": True,
             "model_available": True,
             "model_id": DEFAULT_MODEL,
-            "actual_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+            "actual_model_id": DEFAULT_MODEL,
             "model_identity_source": "verified_manifest",
+            "models": [DEFAULT_MODEL],
         }
 
-    def generate_json(self, _messages, **_kwargs):
+    def generate_json(self, _messages, **kwargs):
         return {
             "bias": "LONG_WATCH",
             "confidence": 0.84,
@@ -67,9 +68,13 @@ class FakeSmartProvider:
         }, "{}", {
             "latency_ms": 1.0,
             "model_id": DEFAULT_MODEL,
-            "actual_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
-            "verified_manifest_model_id": r"D:\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
-            "model_identity_source": "request_bound_to_verified_manifest",
+            "model_version": DEFAULT_MODEL,
+            "actual_model_id": DEFAULT_MODEL,
+            "verified_manifest_model_id": DEFAULT_MODEL,
+            "model_identity_source": "completion_response",
+            "prompt_version": kwargs.get("prompt_version"),
+            "input_hash": kwargs.get("input_hash"),
+            "parse_status": "valid",
         }
 
 
@@ -133,8 +138,8 @@ def test_v12_crypto_api_is_explicit_and_uses_persisted_cache(tmp_path: Path) -> 
     assert any(event["status"] == "ANALYZED" for event in client.get("/triggers").json()["events"])
     opportunities = client.get("/monitoring/opportunities", params={"symbol": "BTCUSDT"})
     assert opportunities.status_code == 200
-    assert opportunities.json()["model_tier"] == "bonsai_27b_only"
-    assert opportunities.json()["analyses"][0]["model_id"] == "Bonsai-2-27B-PTQ1_0"
+    assert opportunities.json()["model_tier"] == "gemini_flash_high_only"
+    assert opportunities.json()["analyses"][0]["model_id"] == DEFAULT_MODEL
 
     chart = client.get("/chart/BTCUSDT/bars", params={"timeframe": "15m", "limit": 60})
     assert chart.status_code == 200

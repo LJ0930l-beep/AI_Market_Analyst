@@ -1,0 +1,33 @@
+{
+  "schema_version": "aima-a3-signal-policy-v2",
+  "rule_id": "FAILED_BREAKOUT_20X15M_5M_REENTRY_FRESH_V2",
+  "provenance": {
+    "introduced_by": "V37.1",
+    "frozen_before_new_outcome_analysis": true,
+    "policy_scope": "OFFLINE_RESEARCH_ONLY_NO_PRODUCTION_AUTHORITY"
+  },
+  "signal": {
+    "breakout_time": "outside_5m_bar_end",
+    "confirmation_time": "reentry_5m_bar_end_after_full_bar_close",
+    "signal_available_time": "reentry_5m_bar_available_at",
+    "signal_available_at_must_not_precede_confirmation_time": true,
+    "maximum_age_seconds": 600,
+    "expiration_condition": "decision_time_greater_than_or_equal_to_signal_available_time_plus_maximum_age",
+    "invalidation_conditions": [
+      "A later available closed 5m bar closes back outside the frozen 20-bar 15m range in breakout direction",
+      "A later available closed 5m bar touches or passes the protective stop or frozen range target before the current quote"
+    ]
+  },
+  "execution": {
+    "earliest_eligible_time": "signal_available_time",
+    "entry_trigger": "After confirmation, a post-confirmation point-in-time best-bid/best-ask quote must be strictly inside the frozen range and strictly before the protective stop and target.",
+    "quote_observed_at_must_be_at_or_after_signal_available_time": true,
+    "quote_observed_at_must_be_strictly_before_decision_time": true,
+    "maximum_quote_age_seconds": 60,
+    "long_entry_side": "best_ask",
+    "short_entry_side": "best_bid",
+    "historical_confirmation_close_field": "historical_confirmation_close",
+    "historical_confirmation_close_is_executable_entry": false,
+    "missing_or_invalid_quote": "LEAVE_ENTRY_PRICE_NULL_AND_BLOCK_ECONOMICS"
+  }
+}

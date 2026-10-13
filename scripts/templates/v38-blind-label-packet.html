@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>V38 盲评标注工作包</title>
+  <style>
+    :root { color-scheme: light; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; color: #18212f; background: #f3f6fa; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    header { padding: 24px max(20px, calc((100vw - 1260px) / 2)); color: #f7fafc; background: #17263d; }
+    header h1 { margin: 0 0 8px; font-size: 23px; }
+    header p { max-width: 1040px; margin: 6px 0; color: #d2dbea; line-height: 1.55; }
+    main { max-width: 1260px; padding: 20px; margin: 0 auto; }
+    .banner { padding: 14px 16px; margin-bottom: 16px; border-left: 4px solid #bf7b12; border-radius: 7px; background: #fff4db; line-height: 1.55; }
+    .toolbar, .subtoolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+    .toolbar { padding: 12px; margin-bottom: 16px; border: 1px solid #d9e1eb; border-radius: 10px; background: #fff; }
+    button, .file-button { border: 1px solid #9cacc0; border-radius: 7px; padding: 9px 13px; color: #16253b; background: #fff; cursor: pointer; font: inherit; }
+    button.primary { color: #fff; border-color: #2759a5; background: #2759a5; }
+    button:disabled { opacity: .45; cursor: default; }
+    #progress { min-width: 210px; font-weight: 650; }
+    #status { margin-left: auto; color: #305b41; }
+    #item { padding: 18px; border: 1px solid #d9e1eb; border-radius: 12px; background: #fff; box-shadow: 0 5px 20px #1c35520b; }
+    h2 { margin: 0 0 5px; font-size: 20px; }
+    h3 { margin: 18px 0 9px; font-size: 16px; }
+    .meta { color: #53657d; font-size: 13px; line-height: 1.5; }
+    .badges { display: flex; flex-wrap: wrap; gap: 7px; margin: 12px 0; }
+    .badge { padding: 4px 8px; color: #344e6c; border: 1px solid #d8e2ee; border-radius: 999px; background: #f4f7fb; font-size: 12px; }
+    .chart-wrap { padding: 12px; border: 1px solid #d9e1eb; border-radius: 9px; background: #fbfcfe; }
+    .timeframes { display: flex; gap: 7px; margin-bottom: 8px; }
+    .timeframes button.active { color: #fff; border-color: #2759a5; background: #2759a5; }
+    svg.chart { display: block; width: 100%; height: auto; min-height: 240px; }
+    .chart-hint { margin-top: 5px; color: #6a788a; font-size: 12px; }
+    .label-grid { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 12px; }
+    label.field { display: flex; flex-direction: column; gap: 5px; font-size: 13px; font-weight: 650; }
+    select, textarea { width: 100%; padding: 9px 10px; color: #18212f; border: 1px solid #b9c6d5; border-radius: 7px; background: #fff; font: inherit; }
+    textarea { min-height: 96px; resize: vertical; }
+    details.refs { padding: 9px 11px; margin: 9px 0; border: 1px solid #e0e6ee; border-radius: 8px; background: #fbfcfe; }
+    details.refs summary { cursor: pointer; font-weight: 650; }
+    .ref-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 5px 10px; padding-top: 9px; }
+    .ref-row { display: flex; gap: 7px; align-items: flex-start; font: 12px ui-monospace, Consolas, monospace; overflow-wrap: anywhere; }
+    .ref-row input { margin-top: 1px; }
+    .rationale { margin-top: 12px; }
+    .item-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 14px; }
+    .empty { padding: 30px; color: #53657d; text-align: center; }
+    @media (max-width: 700px) { .label-grid { grid-template-columns: 1fr; } #status { width: 100%; margin-left: 0; } #progress { min-width: 0; } main { padding: 12px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>V38 独立价格行为参考标注</h1>
+    <p>离线单页工作包。行情仅供市场结构标注；不会生成交易建议、模型评分或盈利标签。</p>
+    <p>标注者代号：<strong id="rater"></strong>　·　工作包：<code id="packet"></code></p>
+  </header>
+  <main>
+    <div class="banner" id="instructions"></div>
+    <div class="toolbar">
+      <button id="previous">上一样本</button>
+      <div id="progress"></div>
+      <button id="next">下一样本</button>
+      <button class="primary" id="download">下载已完成标注</button>
+      <label class="file-button" for="load-file">载入已保存进度</label>
+      <input id="load-file" type="file" accept="application/json,.json" hidden>
+      <span id="status" role="status"></span>
+    </div>
+    <section id="item" aria-live="polite"></section>
+  </main>
+  <script id="packet-data" type="application/octet-stream">__V38_PACKET_BASE64__</script>
+  <script>
+  (() => {
+    "use strict";
+    const bytes = Uint8Array.from(atob(document.getElementById("packet-data").textContent.trim()), ch => ch.charCodeAt(0));
+    const packet = JSON.parse(new TextDecoder().decode(bytes));
+    const enumFields = packet.label_field_order;
+    const targetWithEvidence = new Set(["PRIOR_SWING", "RANGE_EXTREME", "TREND_MEASURED_MOVE"]);
+    const answers = new Map();
+    let index = 0;
+    let activeTimeframe = "15m";
+    const itemRoot = document.getElementById("item");
+    const status = document.getElementById("status");
+    document.getElementById("rater").textContent = packet.rater_id;
+    document.getElementById("packet").textContent = packet.packet_id;
+    document.getElementById("instructions").textContent = packet.reviewer_instructions.join(" ");
+
+    const element = (name, text, cls) => {
+      const node = document.createElement(name);
+      if (text !== undefined) node.textContent = text;
+      if (cls) node.className = cls;
+      return node;
+    };
+    const currentItem = () => packet.items[index];
+    const blankLabel = () => ({
+      context_regime: "", higher_timeframe_bias: "", location: "", signal_setup: "",
+      signal_quality: "", supported_market_bias: "", wait_reference: "", target_structure: "",
+      evidence_refs: [], target_evidence_refs: [], counter_evidence_refs: [], rationale: ""
+    });
+    const cloneAnswer = value => JSON.parse(JSON.stringify(value));
+    function updateProgress() {
+      const completed = [...answers.values()].filter(row => row.completed).length;
+      document.getElementById("progress").textContent = `样本 ${index + 1} / ${packet.items.length}　·　已完成 ${completed} / ${packet.items.length}`;
+      document.getElementById("previous").disabled = index === 0;
+      document.getElementById("next").disabled = index === packet.items.length - 1;
+    }
+    function formLabel() {
+      const label = blankLabel();
+      for (const field of enumFields) {
+        const node = itemRoot.querySelector(`[data-label-field="${field}"]`);
+        label[field] = node ? node.value : "";
+      }
+      const refs = role => [...itemRoot.querySelectorAll(`input[data-ref-role="${role}"]:checked`)].map(node => node.value);
+      const primary = refs("evidence_refs");
+      label.target_evidence_refs = refs("target_evidence_refs");
+      label.counter_evidence_refs = refs("counter_evidence_refs");
+      label.evidence_refs = [...new Set([...primary, ...label.target_evidence_refs, ...label.counter_evidence_refs])];
+      label.rationale = itemRoot.querySelector("textarea")?.value ?? "";
+      return label;
+    }
+    function syncForm(markIncomplete = false) {
+      if (!currentItem() || !itemRoot.querySelector("[data-label-field]")) return;
+      const id = currentItem().packet_item_id;
+      const old = answers.get(id);
+      answers.set(id, {
+        label: formLabel(),
+        completed: markIncomplete ? false : Boolean(old?.completed),
+        labelled_at: markIncomplete ? null : (old?.labelled_at ?? null)
+      });
+      updateProgress();
+    }
+    function selectedRefs(role) {
+      return new Set([...itemRoot.querySelectorAll(`input[data-ref-role="${role}"]:checked`)].map(node => node.value));
+    }
+    function makeReferenceGroup(item, title, role, selected) {
+      const details = element("details", undefined, "refs");
+      const summary = element("summary", title);
+      details.append(summary);
+      const grid = element("div", undefined, "ref-grid");
+      for (const entry of item.evidence_catalog) {
+        const row = element("label", undefined, "ref-row");
+        const input = element("input");
+        input.type = "checkbox";
+        input.value = entry.evidence_ref;
+        input.dataset.refRole = role;
+        input.checked = selected.has(entry.evidence_ref);
+        input.addEventListener("change", () => syncForm(true));
+        const text = element("span", `${entry.evidence_ref}　${entry.timeframe}　${entry.bar_end}`);
+        row.append(input, text);
+        grid.append(row);
+      }
+      details.append(grid);
+      return details;
+    }
+    function renderChart(item, timeframe, svg) {
+      svg.replaceChildren();
+      const bars = item.bars_by_timeframe[timeframe] || [];
+      const width = 1120, height = 370, left = 64, right = 18, top = 18, bottom = 46;
+      svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+      svg.setAttribute("role", "img");
+      svg.setAttribute("aria-label", `${timeframe} candlestick chart`);
+      const plotWidth = width - left - right, plotHeight = height - top - bottom;
+      if (!bars.length) return;
+      const minValue = Math.min(...bars.map(bar => Number(bar.low)));
+      const maxValue = Math.max(...bars.map(bar => Number(bar.high)));
+      const range = Math.max(maxValue - minValue, Math.abs(maxValue) * 0.000001, 0.000001);
+      const y = value => top + ((maxValue - Number(value)) / range) * plotHeight;
+      const x = i => left + (i + 0.5) * plotWidth / bars.length;
+      const ns = "http://www.w3.org/2000/svg";
+      const line = (x1, y1, x2, y2, stroke, strokeWidth = 1) => {
+        const node = document.createElementNS(ns, "line");
+        for (const [key, value] of Object.entries({x1,y1,x2,y2,stroke,"stroke-width":strokeWidth})) node.setAttribute(key, String(value));
+        svg.append(node);
+      };
+      for (let tick = 0; tick <= 4; tick++) {
+        const value = maxValue - range * tick / 4;
+        const yy = top + plotHeight * tick / 4;
+        line(left, yy, width - right, yy, "#e5eaf1");
+        const label = document.createElementNS(ns, "text");
+        label.setAttribute("x", String(left - 8)); label.setAttribute("y", String(yy + 4)); label.setAttribute("text-anchor", "end");
+        label.setAttribute("fill", "#617187"); label.setAttribute("font-size", "11"); label.textContent = value.toLocaleString(undefined, {maximumFractionDigits: 4});
+        svg.append(label);
+      }
+      const candleWidth = Math.max(2, Math.min(12, plotWidth / bars.length * 0.62));
+      bars.forEach((bar, i) => {
+        const cx = x(i), openY = y(bar.open), closeY = y(bar.close), color = Number(bar.close) >= Number(bar.open) ? "#17815b" : "#c64a4a";
+        const group = document.createElementNS(ns, "g");
+        group.setAttribute("class", "candle");
+        line(cx, y(bar.high), cx, y(bar.low), color, 1.4);
+        const body = document.createElementNS(ns, "rect");
+        body.setAttribute("x", String(cx - candleWidth / 2)); body.setAttribute("y", String(Math.min(openY, closeY)));
+        body.setAttribute("width", String(candleWidth)); body.setAttribute("height", String(Math.max(1.5, Math.abs(closeY - openY))));
+        body.setAttribute("fill", color); body.setAttribute("stroke", color); group.append(body);
+        if (bar.evidence_ref) {
+          group.style.cursor = "pointer";
+          group.dataset.evidenceRef = bar.evidence_ref;
+          const general = selectedRefs("evidence_refs").has(bar.evidence_ref);
+          if (general) { body.setAttribute("stroke", "#183f91"); body.setAttribute("stroke-width", "2"); }
+          const title = document.createElementNS(ns, "title");
+          title.textContent = `${timeframe} ${bar.bar_end}　O ${bar.open} H ${bar.high} L ${bar.low} C ${bar.close}　${bar.evidence_ref}`;
+          group.append(title);
+          group.addEventListener("click", () => {
+            const input = [...itemRoot.querySelectorAll('input[data-ref-role="evidence_refs"]')].find(node => node.value === bar.evidence_ref);
+            if (input) { input.checked = !input.checked; syncForm(true); renderChart(item, timeframe, svg); }
+          });
+        }
+        svg.append(group);
+        if (i % 8 === 0 || i === bars.length - 1) {
+          const label = document.createElementNS(ns, "text");
+          label.setAttribute("x", String(cx)); label.setAttribute("y", String(height - 19)); label.setAttribute("text-anchor", "middle");
+          label.setAttribute("fill", "#617187"); label.setAttribute("font-size", "10"); label.textContent = bar.bar_end.slice(5, 16).replace("T", " "); svg.append(label);
+        }
+      });
+    }
+    function renderCurrent() {
+      itemRoot.replaceChildren();
+      const item = currentItem();
+      const saved = answers.get(item.packet_item_id) || {label: blankLabel(), completed: false, labelled_at: null};
+      const heading = element("h2", `${index + 1}　${item.symbol}　${item.decision_time}`);
+      itemRoot.append(heading, element("div", "决策时点固定；样本顺序已随机。明确的研究分区与原决策 ID 对评审者隐藏。", "meta"));
+      const badges = element("div", undefined, "badges");
+      for (const [name, value] of Object.entries(item.provenance)) badges.append(element("span", `${name}: ${Array.isArray(value) ? value.join(", ") : value}`, "badge"));
+      itemRoot.append(badges);
+      itemRoot.append(element("h3", "因果行情图"));
+      const chartWrap = element("div", undefined, "chart-wrap");
+      const tabs = element("div", undefined, "timeframes");
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.classList.add("chart");
+      for (const timeframe of ["15m", "5m", "1h", "4h"]) {
+        const button = element("button", timeframe);
+        button.type = "button"; button.classList.toggle("active", timeframe === activeTimeframe);
+        button.addEventListener("click", () => {
+          syncForm(false); activeTimeframe = timeframe;
+          for (const child of tabs.children) child.classList.toggle("active", child.textContent === timeframe);
+          renderChart(item, timeframe, svg);
+        });
+        tabs.append(button);
+      }
+      chartWrap.append(tabs, svg, element("div", "图中可点击带证据引用的 K 线，将其加入一般证据。成交量仅为图表来源提供的原始单位。", "chart-hint"));
+      itemRoot.append(chartWrap);
+      renderChart(item, activeTimeframe, svg);
+
+      itemRoot.append(element("h3", "价格行为参考标签"));
+      const grid = element("div", undefined, "label-grid");
+      for (const field of enumFields) {
+        const wrapper = element("label", field, "field");
+        const select = element("select"); select.dataset.labelField = field;
+        const placeholder = element("option", "请选择；不确定时使用 UNCERTAIN / UNKNOWN"); placeholder.value = ""; select.append(placeholder);
+        for (const value of packet.label_enum_options[field]) { const option = element("option", value); option.value = value; select.append(option); }
+        select.value = saved.label[field] || "";
+        select.addEventListener("change", () => syncForm(true));
+        wrapper.append(select); grid.append(wrapper);
+      }
+      itemRoot.append(grid);
+      const allRefs = new Set(saved.label.evidence_refs || []);
+      itemRoot.append(element("h3", "证据引用（必须引用至少一项）"));
+      itemRoot.append(makeReferenceGroup(item, "一般证据", "evidence_refs", allRefs));
+      itemRoot.append(makeReferenceGroup(item, "目标结构证据（必须是一般证据的子集）", "target_evidence_refs", new Set(saved.label.target_evidence_refs || [])));
+      itemRoot.append(makeReferenceGroup(item, "反向证据（必须是一般证据的子集；没有具体反证时可留空）", "counter_evidence_refs", new Set(saved.label.counter_evidence_refs || [])));
+      const rationaleLabel = element("label", "简短理由（最多 2000 字）", "field rationale");
+      const rationale = element("textarea"); rationale.maxLength = 2000; rationale.value = saved.label.rationale || "";
+      rationale.addEventListener("input", () => syncForm(true)); rationaleLabel.append(rationale); itemRoot.append(rationaleLabel);
+      const actions = element("div", undefined, "item-actions");
+      const done = element("button", saved.completed ? "已完成；再次点击更新完成时间" : "标记此样本完成"); done.type = "button"; done.className = "primary";
+      done.addEventListener("click", () => {
+        syncForm(true);
+        const label = answers.get(item.packet_item_id).label;
+        const missing = enumFields.filter(field => !label[field]);
+        if (missing.length || !label.evidence_refs.length || !label.rationale.trim()) {
+          status.textContent = `未完成：检查 ${missing.join(", ") || "证据引用/理由"}`; return;
+        }
+        if (targetWithEvidence.has(label.target_structure) && !label.target_evidence_refs.length) {
+          status.textContent = "此目标类型需要目标结构证据引用。"; return;
+        }
+        answers.set(item.packet_item_id, {label, completed: true, labelled_at: new Date().toISOString()});
+        status.textContent = "已保存于当前页面；请定期下载进度文件。"; updateProgress(); renderCurrent();
+      });
+      actions.append(done); itemRoot.append(actions);
+      if (saved.completed) status.textContent = "此样本已标记完成。";
+      updateProgress();
+    }
+    function makeSubmission() {
+      syncForm(false);
+      const annotations = [];
+      for (const item of packet.items) {
+        const answer = answers.get(item.packet_item_id);
+        if (answer?.completed) annotations.push({packet_item_id: item.packet_item_id, labelled_at: answer.labelled_at, label: cloneAnswer(answer.label)});
+      }
+      return {
+        schema_version: "pa-market-only-v38/blind-reference-submission-1",
+        packet_id: packet.packet_id, packet_sha256: packet.packet_sha256, rater_id: packet.rater_id,
+        protocol_id: packet.protocol_id, protocol_sha256: packet.protocol_sha256,
+        dataset_id: packet.dataset_id, dataset_manifest_sha256: packet.dataset_manifest_sha256,
+        time_display_policy_id: packet.time_display_policy_id,
+        annotations
+      };
+    }
+    function downloadProgress() {
+      const submission = makeSubmission();
+      const blob = new Blob([JSON.stringify(submission, null, 2)], {type: "application/json"});
+      const link = document.createElement("a"); link.href = URL.createObjectURL(blob);
+      link.download = `v38-blind-submission-${packet.rater_id}-${packet.packet_id}.json`;
+      document.body.append(link); link.click(); link.remove(); URL.revokeObjectURL(link.href);
+      status.textContent = `${submission.annotations.length} 条已完成标注已下载。未完成项目不会被当成有效标注。`;
+    }
+    document.getElementById("previous").addEventListener("click", () => { syncForm(false); index -= 1; status.textContent = ""; renderCurrent(); });
+    document.getElementById("next").addEventListener("click", () => { syncForm(false); index += 1; status.textContent = ""; renderCurrent(); });
+    document.getElementById("download").addEventListener("click", downloadProgress);
+    document.getElementById("load-file").addEventListener("change", event => {
+      const file = event.target.files?.[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const submission = JSON.parse(String(reader.result));
+          const expectedKeys = ["schema_version","packet_id","packet_sha256","rater_id","protocol_id","protocol_sha256","dataset_id","dataset_manifest_sha256","time_display_policy_id","annotations"].sort();
+          if (JSON.stringify(Object.keys(submission).sort()) !== JSON.stringify(expectedKeys)
+              || submission.schema_version !== "pa-market-only-v38/blind-reference-submission-1"
+              || submission.packet_id !== packet.packet_id || submission.packet_sha256 !== packet.packet_sha256
+              || submission.rater_id !== packet.rater_id || submission.protocol_id !== packet.protocol_id
+              || submission.protocol_sha256 !== packet.protocol_sha256 || submission.dataset_id !== packet.dataset_id
+              || submission.dataset_manifest_sha256 !== packet.dataset_manifest_sha256
+              || submission.time_display_policy_id !== packet.time_display_policy_id
+              || !Array.isArray(submission.annotations)) throw new Error("工作包或字段不匹配");
+          const itemById = new Map(packet.items.map(item => [item.packet_item_id, item]));
+          const known = new Set(itemById.keys());
+          const expectedLabelKeys = [...enumFields, "evidence_refs", "target_evidence_refs", "counter_evidence_refs", "rationale"].sort();
+          const loaded = new Map();
+          for (const annotation of submission.annotations) {
+            if (!annotation || Object.keys(annotation).sort().join("|") !== ["label","labelled_at","packet_item_id"].sort().join("|")
+                || !known.has(annotation.packet_item_id) || loaded.has(annotation.packet_item_id)
+                || !annotation.label || typeof annotation.label !== "object"
+                || Object.keys(annotation.label).sort().join("|") !== expectedLabelKeys.join("|")) throw new Error("标注记录无效");
+            const item = itemById.get(annotation.packet_item_id);
+            const validRefs = new Set(item.evidence_catalog.map(row => row.evidence_ref));
+            const label = annotation.label;
+            for (const field of enumFields) if (!packet.label_enum_options[field].includes(label[field])) throw new Error(`标签无效：${field}`);
+            for (const field of ["evidence_refs", "target_evidence_refs", "counter_evidence_refs"]) {
+              if (!Array.isArray(label[field]) || label[field].some(ref => !validRefs.has(ref)) || new Set(label[field]).size !== label[field].length) throw new Error(`证据引用无效：${field}`);
+            }
+            if (!label.evidence_refs.length || !label.target_evidence_refs.every(ref => label.evidence_refs.includes(ref))
+                || !label.counter_evidence_refs.every(ref => label.evidence_refs.includes(ref))
+                || (targetWithEvidence.has(label.target_structure) && !label.target_evidence_refs.length)
+                || typeof label.rationale !== "string" || !label.rationale.trim() || label.rationale.length > 2000
+                || typeof annotation.labelled_at !== "string" || Number.isNaN(Date.parse(annotation.labelled_at))) throw new Error("标注内容或时间无效");
+            loaded.set(annotation.packet_item_id, {label: annotation.label, completed: true, labelled_at: annotation.labelled_at});
+          }
+          for (const [id, value] of loaded) answers.set(id, value);
+          status.textContent = `已载入 ${loaded.size} 条已完成标注。`; renderCurrent();
+        } catch (error) { status.textContent = `无法载入进度：${error.message}`; }
+        event.target.value = "";
+      };
+      reader.readAsText(file, "utf-8");
+    });
+    renderCurrent();
+  })();
+  </script>
+</body>
+</html>

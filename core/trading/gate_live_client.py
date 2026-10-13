@@ -18,6 +18,17 @@ logger = logging.getLogger("gate_live_client")
 
 GATE_TESTNET_API_BASE_URL = "https://api-testnet.gateapi.io/api/v4"
 GATE_LIVE_API_BASE_URL = "https://api.gateio.ws/api/v4"
+GATE_CLOSE_LONG_ORDER_TYPES = frozenset({
+    "close-long-order",
+    "close-long-position",
+    "plan-close-long-position",
+})
+GATE_CLOSE_SHORT_ORDER_TYPES = frozenset({
+    "close-short-order",
+    "close-short-position",
+    "plan-close-short-position",
+})
+GATE_PROTECTION_ORDER_TYPES = GATE_CLOSE_LONG_ORDER_TYPES | GATE_CLOSE_SHORT_ORDER_TYPES
 
 
 class GateProtectionPlacementError(RuntimeError):
@@ -101,14 +112,23 @@ def _execute_with_retry(fn, max_retries: int = 2, delay_seconds: float = 0.5):
         raise last_exc
 
 
-def _validation_failure(exc: BaseException, *, environment: str, endpoint: str) -> Dict[str, Any]:
+def _validation_failure(
+    exc: BaseException,
+    *,
+    environment: str,
+    endpoint: str,
+    secrets: tuple[str, ...] = (),
+) -> Dict[str, Any]:
     mapped = _map_gate_error(exc)
+    diagnostic = _error_text(exc)
+    for secret in sorted({value for value in secrets if value}, key=len, reverse=True):
+        diagnostic = diagnostic.replace(secret, "[REDACTED]")
     return {
         "valid": False,
         "status": "VERIFICATION_FAILED",
         "code": mapped["code"],
         "message_zh": mapped["message_zh"],
-        "reason": f"{mapped['code']}: {_error_text(exc)}",
+        "reason": f"{mapped['code']}: {diagnostic}",
         "api_environment": environment,
         "endpoint": endpoint,
     }
@@ -135,6 +155,27 @@ def _optional_bool(value: Any) -> Optional[bool]:
         return True
     if text in {"false", "0", "no", "n", "off"}:
         return False
+    return None
+
+
+def _optional_gate_native_bool(value: Any) -> Optional[bool]:
+    """Parse Gate native protection flags without accepting truthy numbers."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        if isinstance(value, float) and not math.isfinite(value):
+            return None
+        if value == 1:
+            return True
+        if value == 0:
+            return False
+        return None
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in {"true", "1"}:
+            return True
+        if text in {"false", "0"}:
+            return False
     return None
 
 
@@ -173,6 +214,7 @@ class GateLiveTrader:
         self.last_positions_error_code: Optional[str] = None
         self.last_trades_error_code: Optional[str] = None
         self.last_open_orders_error_code: Optional[str] = None
+        self.last_trigger_orders_error_code: Optional[str] = None
 
     @property
     def is_configured(self) -> bool:
@@ -459,7 +501,12 @@ class GateLiveTrader:
                 "endpoint": endpoint,
             }
         except Exception as exc:
-            return _validation_failure(exc, environment=self.api_environment, endpoint=endpoint)
+            return _validation_failure(
+                exc,
+                environment=self.api_environment,
+                endpoint=endpoint,
+                secrets=(self.api_key, self.api_secret),
+            )
 
     def get_account_balance(self) -> Dict[str, Any]:
         """Retrieve real futures USDT balance."""
@@ -756,11 +803,16 @@ class GateLiveTrader:
                 self.last_open_orders_error_code = "GATE_OPEN_ORDERS_UNSUPPORTED"
                 return []
             target_symbol = self._exchange_symbol(ex, symbol) if symbol else None
-            raw_orders = _execute_with_retry(lambda: fetcher(target_symbol, limit=max(1, min(int(limit), 100))))
+            page_limit = max(1, min(int(limit), 100))
+            raw_orders = _execute_with_retry(lambda: fetcher(target_symbol, limit=page_limit))
             if not isinstance(raw_orders, list):
                 raise ValueError("GATE_OPEN_ORDERS_RESPONSE_SCHEMA_INVALID")
             results: list[dict[str, Any]] = []
-            degraded = False
+            degraded = len(raw_orders) >= page_limit
+            if degraded:
+                # No pagination cursor is exposed by this CCXT path. A full
+                # page cannot prove that the account has no additional orders.
+                self.last_open_orders_error_code = "GATE_OPEN_ORDERS_TRUNCATED"
             for order in raw_orders:
                 if not isinstance(order, dict):
                     degraded = True
@@ -769,6 +821,36 @@ class GateLiveTrader:
                 if not order_id:
                     degraded = True
                     continue
+                info = order.get("info") if isinstance(order.get("info"), dict) else {}
+                reduce_only_values: list[bool] = []
+                reduce_only_unverified = False
+                for raw_flag in (
+                    order.get("reduceOnly"),
+                    info.get("reduce_only"),
+                    info.get("is_reduce_only"),
+                ):
+                    if raw_flag is None:
+                        continue
+                    parsed_flag = _optional_gate_native_bool(raw_flag)
+                    if parsed_flag is None:
+                        reduce_only_unverified = True
+                    else:
+                        reduce_only_values.append(parsed_flag)
+                reduce_only_conflict = len(set(reduce_only_values)) > 1
+                if reduce_only_unverified or reduce_only_conflict:
+                    degraded = True
+                    if self.last_open_orders_error_code is None:
+                        self.last_open_orders_error_code = (
+                            "GATE_OPEN_ORDER_REDUCE_ONLY_CONFLICT"
+                            if reduce_only_conflict
+                            else "GATE_OPEN_ORDER_REDUCE_ONLY_UNVERIFIED"
+                        )
+                reduce_only = bool(
+                    reduce_only_values
+                    and not reduce_only_unverified
+                    and not reduce_only_conflict
+                    and reduce_only_values[0]
+                )
                 results.append(
                     {
                         "order_id": str(order_id),
@@ -784,11 +866,7 @@ class GateLiveTrader:
                         "stop_price": _optional_float(order.get("triggerPrice") or order.get("stopPrice")),
                         "timestamp": order.get("timestamp"),
                         "datetime": order.get("datetime"),
-                        "reduce_only": _optional_bool(
-                            order.get("reduceOnly")
-                            if order.get("reduceOnly") is not None
-                            else ((order.get("info") or {}).get("reduce_only") if isinstance(order.get("info"), dict) else None)
-                        ) is True,
+                        "reduce_only": reduce_only,
                     }
                 )
             self.last_open_orders_status = "DEGRADED" if degraded else "AVAILABLE"
@@ -802,28 +880,78 @@ class GateLiveTrader:
 
     def get_open_trigger_orders(self, limit: int = 100) -> List[Dict[str, Any]]:
         """Read Gate native price-trigger orders, including protective SL/TP."""
+        self.last_trigger_orders_error_code = None
         if not self.is_configured:
             self.last_trigger_orders_status = "NOT_CONFIGURED"
+            self.last_trigger_orders_error_code = "GATE_CREDENTIALS_REQUIRED"
             return []
         try:
             exchange = self._get_exchange()
             fetcher = getattr(exchange, "privateFuturesGetSettlePriceOrders", None)
             if not callable(fetcher):
                 self.last_trigger_orders_status = "UNSUPPORTED"
+                self.last_trigger_orders_error_code = "GATE_TRIGGER_ORDERS_UNSUPPORTED"
                 return []
-            raw_orders = _execute_with_retry(lambda: fetcher({"settle": "usdt", "status": "open", "limit": max(1, min(int(limit), 100))}))
+            page_limit = max(1, min(int(limit), 100))
+            raw_orders = _execute_with_retry(lambda: fetcher({"settle": "usdt", "status": "open", "limit": page_limit}))
             if not isinstance(raw_orders, list):
                 raise ValueError("GATE_TRIGGER_ORDERS_RESPONSE_INVALID")
             results: list[dict[str, Any]] = []
+            degraded = len(raw_orders) >= page_limit
+            if degraded:
+                # The native endpoint call has no verified pagination
+                # continuation evidence, so a full page is incomplete truth.
+                self.last_trigger_orders_error_code = "GATE_TRIGGER_ORDERS_TRUNCATED"
             for raw in raw_orders:
                 if not isinstance(raw, dict) or not raw.get("id"):
                     raise ValueError("GATE_TRIGGER_ORDER_ID_MISSING")
                 initial = raw.get("initial") if isinstance(raw.get("initial"), dict) else {}
                 trigger = raw.get("trigger") if isinstance(raw.get("trigger"), dict) else {}
                 size = _optional_float(initial.get("amount", initial.get("size")))
-                order_type = str(raw.get("order_type") or "").lower()
-                side = "BUY" if (size is not None and size > 0) or "close-short" in order_type else "SELL"
-                reduced = bool(initial.get("reduce_only") or initial.get("is_reduce_only") or initial.get("is_close") or "close-" in order_type)
+                order_type = str(raw.get("order_type") or "").strip().lower()
+                # Gate price-order size is the closing quantity, not always
+                # the resulting order side (e.g. close-long-order accepts a
+                # positive size while closing a long position). The exact
+                # protective order type is authoritative when it is known.
+                if order_type in GATE_CLOSE_SHORT_ORDER_TYPES:
+                    side = "BUY"
+                elif order_type in GATE_CLOSE_LONG_ORDER_TYPES:
+                    side = "SELL"
+                elif size is not None and size != 0:
+                    side = "BUY" if size > 0 else "SELL"
+                else:
+                    side = "UNKNOWN"
+
+                native_reduce_values = []
+                invalid_native_flag = False
+                for key in ("reduce_only", "is_reduce_only"):
+                    if key in initial and initial[key] is not None:
+                        parsed = _optional_gate_native_bool(initial[key])
+                        if parsed is None:
+                            invalid_native_flag = True
+                        else:
+                            native_reduce_values.append(parsed)
+                is_close = None
+                if "is_close" in initial and initial["is_close"] is not None:
+                    is_close = _optional_gate_native_bool(initial["is_close"])
+                    invalid_native_flag = invalid_native_flag or is_close is None
+
+                conflicting_native_flags = len(set(native_reduce_values)) > 1
+                if order_type not in GATE_PROTECTION_ORDER_TYPES:
+                    degraded = True
+                if native_reduce_values and native_reduce_values[0] is False and (
+                    is_close is True or order_type in GATE_PROTECTION_ORDER_TYPES
+                ):
+                    degraded = True
+                if invalid_native_flag or conflicting_native_flags:
+                    degraded = True
+                if invalid_native_flag or conflicting_native_flags:
+                    reduced = False
+                elif native_reduce_values:
+                    # Explicit native false wins over order-type inference.
+                    reduced = native_reduce_values[0] is True
+                else:
+                    reduced = is_close is True or order_type in GATE_PROTECTION_ORDER_TYPES
                 results.append({
                     "order_id": str(raw["id"]), "symbol": _symbol_compact(initial.get("contract")),
                     "side": side, "type": "trigger", "status": str(raw.get("status") or "UNKNOWN").upper(),
@@ -833,11 +961,13 @@ class GateLiveTrader:
                     "reduce_only": reduced, "is_protection": reduced,
                     "timestamp": raw.get("create_time"),
                 })
-            self.last_trigger_orders_status = "AVAILABLE"
+            self.last_trigger_orders_status = "DEGRADED" if degraded else "AVAILABLE"
             return results
         except Exception as exc:
-            logger.warning("Failed to fetch Gate %s trigger orders (%s)", self.api_environment, _map_gate_error(exc)["code"])
+            mapped = _map_gate_error(exc)
+            logger.warning("Failed to fetch Gate %s trigger orders (%s)", self.api_environment, mapped["code"])
             self.last_trigger_orders_status = "UNAVAILABLE"
+            self.last_trigger_orders_error_code = mapped["code"]
             return []
 
     def get_market_metadata(self, symbol: str) -> Dict[str, Any]:
@@ -1093,7 +1223,7 @@ class GateLiveTrader:
             "trigger_orders_status": self.last_trigger_orders_status,
             "pending_margin_status": "UNVERIFIED" if pending_margin_unverified else "AVAILABLE",
             "fills_status": self.last_trades_status if include_trades else "NOT_REQUESTED",
-            "error_code": next((getattr(self, attr, None) for attr in ("last_positions_error_code", "last_open_orders_error_code", "last_trades_error_code") if getattr(self, attr, None)), None),
+            "error_code": next((getattr(self, attr, None) for attr in ("last_positions_error_code", "last_open_orders_error_code", "last_trigger_orders_error_code", "last_trades_error_code") if getattr(self, attr, None)), None),
             "remote_truth": True,
         }
 
@@ -1749,18 +1879,25 @@ class GateLiveTrader:
         native_reduce_values = []
         for key in ("reduce_only", "is_reduce_only"):
             if key in initial and initial[key] is not None:
-                parsed = _optional_bool(initial[key])
+                parsed = _optional_gate_native_bool(initial[key])
                 if parsed is None:
                     raise ValueError("GATE_PROTECTION_REDUCE_ONLY_UNVERIFIED")
                 native_reduce_values.append(parsed)
         if len(set(native_reduce_values)) > 1:
             raise ValueError("GATE_PROTECTION_REDUCE_ONLY_CONFLICT")
+        is_close = None
+        if "is_close" in initial and initial["is_close"] is not None:
+            is_close = _optional_gate_native_bool(initial["is_close"])
+            if is_close is None:
+                raise ValueError("GATE_PROTECTION_IS_CLOSE_UNVERIFIED")
+        if is_close is True and native_reduce_values and native_reduce_values[0] is False:
+            raise ValueError("GATE_PROTECTION_REDUCE_ONLY_CONFLICT")
         if native_reduce_values and native_reduce_values[0] is not True:
             raise ValueError("GATE_PROTECTION_NOT_REDUCE_ONLY")
         reduced = bool(
             (native_reduce_values and native_reduce_values[0] is True)
-            or _optional_bool(initial.get("is_close")) is True
-            or "close-" in str(raw.get("order_type") or "")
+            or is_close is True
+            or str(raw.get("order_type") or "").strip().lower() in GATE_PROTECTION_ORDER_TYPES
         )
         if not reduced:
             raise ValueError("GATE_PROTECTION_NOT_REDUCE_ONLY")

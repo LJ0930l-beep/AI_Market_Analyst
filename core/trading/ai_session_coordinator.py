@@ -1216,6 +1216,8 @@ def _fit_prompt_payload(
                     continue
                 keep_news = ("revision_id", "scope", "symbol", "title", "summary", "source", "impact", "published_at", "known_at", "macro_releases", "macro_release_encoding")
                 compact_item = {key: item[key] for key in keep_news if key in item}
+                if not compact_item.get("symbol") and isinstance(item.get("symbols"), list):
+                    compact_item["symbols"] = item["symbols"][:8]
                 if isinstance(item.get("macro_releases"), list):
                     compact_item["macro_releases"] = _compact_news_revision(item)["macro_releases"]
                 changed = changed or compact_item != item

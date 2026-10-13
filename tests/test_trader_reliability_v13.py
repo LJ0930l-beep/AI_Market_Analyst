@@ -20,9 +20,10 @@ from fastapi.testclient import TestClient
 
 from apps.api.v2 import router_for
 from core.analysis.ai_trade_analytics import analyze_ai_trading_ledger
-from core.news_revision import NewsRevisionRegistry
+from core.model_routing import DEFAULT_SMART_MODEL
 from core.monitoring import MonitoringRunResult
 from core.monitoring_runtime import MonitoringRuntime
+from core.news_revision import NewsRevisionRegistry
 from core.providers.base import Bar
 from core.storage import SQLiteStore
 from core.trading.execution_gateway import (
@@ -150,9 +151,9 @@ def _bar(
 
 
 def _synthetic_closed_history(now: datetime) -> dict[str, list[Bar]]:
-    """Build synthetic closed bars for the coordinator's default 15m/1h frames."""
+    """Build synthetic closed bars for the coordinator's PA signal/entry/context frames."""
     result: dict[str, list[Bar]] = {}
-    for timeframe, interval_minutes in {"15m": 15, "1h": 60}.items():
+    for timeframe, interval_minutes in {"5m": 5, "15m": 15, "1h": 60, "4h": 240}.items():
         interval_seconds = interval_minutes * 60
         latest_end = datetime.fromtimestamp(
             int(now.timestamp()) // interval_seconds * interval_seconds,
@@ -566,9 +567,10 @@ def test_v13_c_runtime_lease_loss_cancels_ai_and_pauses_session(v13_store: SQLit
         now=now,
     )
     # The PAPER coordinator requires 32 contiguous, fresh closed bars on its
-    # 15m signal and 1h context frames before it reaches the in-flight model
-    # call. These explicitly synthetic rows satisfy only this local fixture;
-    # they are not Gate market evidence and do not lower calibration.
+    # 15m signal, 5m entry confirmation, and 1h/4h context frames before it
+    # reaches the in-flight model call. These synthetic rows satisfy only this
+    # local fixture; they are not Gate market evidence and do not lower
+    # calibration.
     for timeframe, bars in _synthetic_closed_history(now).items():
         v13_store.upsert_market_bars(
             "BTCUSDT",
@@ -596,7 +598,7 @@ def test_v13_c_runtime_lease_loss_cancels_ai_and_pauses_session(v13_store: SQLit
 
     class BlockingProvider:
         provider_name = "local-test-provider"
-        model_id = "Bonsai-2-27B-PTQ1_0"
+        model_id = DEFAULT_SMART_MODEL
         context_length = 8192
         max_tokens = 1000
         # A deterministic fixture digest satisfies the calibration identity
@@ -612,10 +614,10 @@ def test_v13_c_runtime_lease_loss_cancels_ai_and_pauses_session(v13_store: SQLit
             return {
                 "available": True,
                 "model_available": True,
-                "model_id": "Bonsai-2-27B-PTQ1_0",
-                "actual_model_id": r"D:\RJ\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf",
-                "model_identity_source": "verified_manifest",
-                "models": [r"D:\RJ\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"],
+                "model_id": DEFAULT_SMART_MODEL,
+                "actual_model_id": DEFAULT_SMART_MODEL,
+                "model_identity_source": "completion_probe",
+                "models": [DEFAULT_SMART_MODEL],
                 "context_length": self.context_length,
             }
 
@@ -628,8 +630,8 @@ def test_v13_c_runtime_lease_loss_cancels_ai_and_pauses_session(v13_store: SQLit
                     "max_concurrent_positions": 1,
                     "notes_zh": "deterministic calibration fixture",
                 }
-                actual = r"D:\RJ\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"
-                return answer, json.dumps(answer), {"model_id": "Bonsai-2-27B-PTQ1_0", "model_version": actual, "actual_model_id": actual, "model_identity_source": "request_bound_to_verified_manifest", "verified_manifest_model_id": actual}
+                actual = DEFAULT_SMART_MODEL
+                return answer, json.dumps(answer), {"model_id": DEFAULT_SMART_MODEL, "model_version": actual, "actual_model_id": actual, "model_identity_source": "completion_response", "verified_manifest_model_id": actual}
             self.entered.set()
             self.release.wait(5)
             answer = {
@@ -639,8 +641,8 @@ def test_v13_c_runtime_lease_loss_cancels_ai_and_pauses_session(v13_store: SQLit
                 "stop_price": 90.0,
                 "evidence_refs": ["local-fixture"],
             }
-            actual = r"D:\RJ\models\Ternary-Bonsai-2-27B-PTQ1_0.gguf"
-            return answer, json.dumps(answer), {"model_id": "Bonsai-2-27B-PTQ1_0", "model_version": actual, "actual_model_id": actual, "model_identity_source": "request_bound_to_verified_manifest", "verified_manifest_model_id": actual}
+            actual = DEFAULT_SMART_MODEL
+            return answer, json.dumps(answer), {"model_id": DEFAULT_SMART_MODEL, "model_version": actual, "actual_model_id": actual, "model_identity_source": "completion_response", "verified_manifest_model_id": actual}
 
         def cancel_generation(self, *_args, **_kwargs):
             self.cancelled.set()
@@ -667,7 +669,7 @@ def test_v13_c_runtime_lease_loss_cancels_ai_and_pauses_session(v13_store: SQLit
         from threading import Thread
         cycle_thread = Thread(target=runtime.ai_coordinator.run_cycle_once)
         cycle_thread.start()
-        assert provider.entered.wait(8), "AI provider did not enter an in-flight generation"
+        assert provider.entered.wait(8), f"AI provider did not enter an in-flight generation; runtime={runtime.status()!r}"
         time.sleep(1.2)
         assert lease_b.acquire("monitoring_runtime", "external-takeover", ttl_seconds=2)
 

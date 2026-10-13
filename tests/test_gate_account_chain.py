@@ -31,6 +31,7 @@ from core.trading.gate_accounts import (
 )
 from core.trading.gate_account_truth import GateAccountTruthService
 from core.trading.gate_live_client import GateLiveTrader
+from core.trading.gate_testnet_e2e import GateTestnetE2EService
 from core.trading.ledger import AccountLedger
 from core.trading.decision_memory import record_decision_memory, update_memory_outcome
 from core.trading.trader_capabilities import TraderCapabilityError, TraderCapabilityService
@@ -46,6 +47,292 @@ def _v3_client(store: SQLiteStore) -> TestClient:
     app = FastAPI()
     app.include_router(v3_router_for(lambda: store))
     return TestClient(app)
+
+
+@pytest.mark.parametrize(
+    ("order_type", "initial", "expected_side", "expected_reduce_only", "expected_status"),
+    [
+        (
+            "close-undocumented-order",
+            {"contract": "BTC_USDT", "size": "0"},
+            "UNKNOWN",
+            False,
+            "DEGRADED",
+        ),
+        (
+            "close-long-order",
+            {"contract": "BTC_USDT", "size": "0"},
+            "SELL",
+            True,
+            "AVAILABLE",
+        ),
+        (
+            "close-long-order",
+            {"contract": "BTC_USDT", "size": "100"},
+            "SELL",
+            True,
+            "AVAILABLE",
+        ),
+        (
+            "close-short-order",
+            {"contract": "BTC_USDT", "size": "0"},
+            "BUY",
+            True,
+            "AVAILABLE",
+        ),
+        (
+            "close-undocumented-order",
+            {
+                "contract": "BTC_USDT",
+                "size": "-1",
+                "reduce_only": "false",
+                "is_close": "false",
+            },
+            "SELL",
+            False,
+            "DEGRADED",
+        ),
+        (
+            "close-long-order",
+            {"contract": "BTC_USDT", "size": "-1", "reduce_only": "false"},
+            "SELL",
+            False,
+            "DEGRADED",
+        ),
+        (
+            "close-long-order",
+            {
+                "contract": "BTC_USDT",
+                "size": "-1",
+                "reduce_only": True,
+                "is_reduce_only": False,
+            },
+            "SELL",
+            False,
+            "DEGRADED",
+        ),
+    ],
+)
+def test_gate_open_trigger_order_classification_fails_closed(
+    order_type, initial, expected_side, expected_reduce_only, expected_status
+):
+    class Exchange:
+        def privateFuturesGetSettlePriceOrders(self, params):
+            assert params == {"settle": "usdt", "status": "open", "limit": 100}
+            return [
+                {
+                    "id": 123456,
+                    "status": "open",
+                    "order_type": order_type,
+                    "initial": initial,
+                    "trigger": {"price": "60000"},
+                }
+            ]
+
+    trader = GateLiveTrader(
+        "testnet-key", "testnet-secret", testnet=True, exchange=Exchange()
+    )
+
+    orders = trader.get_open_trigger_orders()
+
+    assert orders[0]["side"] == expected_side
+    assert orders[0]["reduce_only"] is expected_reduce_only
+    assert orders[0]["is_protection"] is expected_reduce_only
+    assert trader.last_trigger_orders_status == expected_status
+
+
+@pytest.mark.parametrize("count", [100, 101])
+def test_gate_full_page_open_orders_is_degraded_as_potentially_truncated(count):
+    class Exchange:
+        def fetch_open_orders(self, symbol, limit):
+            assert symbol is None
+            assert limit == 100
+            return [{"id": str(index), "status": "open"} for index in range(count)]
+
+    trader = GateLiveTrader("testnet-key", "testnet-secret", testnet=True, exchange=Exchange())
+
+    orders = trader.get_open_orders()
+
+    assert len(orders) == count
+    assert trader.last_open_orders_status == "DEGRADED"
+    assert trader.last_open_orders_error_code == "GATE_OPEN_ORDERS_TRUNCATED"
+
+
+@pytest.mark.parametrize("count", [100, 101])
+def test_gate_full_page_trigger_orders_is_degraded_as_potentially_truncated(count):
+    class Exchange:
+        def privateFuturesGetSettlePriceOrders(self, params):
+            assert params["limit"] == 100
+            return [
+                {
+                    "id": str(index), "status": "open", "order_type": "close-long-order",
+                    "initial": {"contract": "BTC_USDT", "size": -1},
+                    "trigger": {"price": "89.0"},
+                }
+                for index in range(count)
+            ]
+
+    trader = GateLiveTrader("testnet-key", "testnet-secret", testnet=True, exchange=Exchange())
+
+    orders = trader.get_open_trigger_orders()
+
+    assert len(orders) == count
+    assert trader.last_trigger_orders_status == "DEGRADED"
+    assert trader.last_trigger_orders_error_code == "GATE_TRIGGER_ORDERS_TRUNCATED"
+
+
+@pytest.mark.parametrize("count", [1, 2])
+def test_small_open_order_snapshots_remain_available(count):
+    class Exchange:
+        def fetch_open_orders(self, _symbol, limit):
+            assert limit == 100
+            return [{"id": str(index), "status": "open"} for index in range(count)]
+
+        def privateFuturesGetSettlePriceOrders(self, params):
+            assert params["limit"] == 100
+            return [
+                {
+                    "id": str(index), "status": "open", "order_type": "close-long-order",
+                    "initial": {"contract": "BTC_USDT", "size": -1},
+                    "trigger": {"price": "89.0"},
+                }
+                for index in range(count)
+            ]
+
+    trader = GateLiveTrader("testnet-key", "testnet-secret", testnet=True, exchange=Exchange())
+
+    assert len(trader.get_open_orders()) == count
+    assert trader.last_open_orders_status == "AVAILABLE"
+    assert len(trader.get_open_trigger_orders()) == count
+    assert trader.last_trigger_orders_status == "AVAILABLE"
+
+
+@pytest.mark.parametrize("field", ["reduceOnly", "info.reduce_only", "info.is_reduce_only"])
+@pytest.mark.parametrize("value", [2, -1, 1.5, float("inf"), float("nan"), "2"])
+def test_open_order_reduce_only_rejects_noncanonical_values(field, value):
+    order = {"id": "order-1", "status": "open"}
+    if field == "reduceOnly":
+        order[field] = value
+    else:
+        _, native_field = field.split(".")
+        order["info"] = {native_field: value}
+
+    class Exchange:
+        def fetch_open_orders(self, _symbol, limit):
+            assert limit == 100
+            return [order]
+
+    trader = GateLiveTrader("testnet-key", "testnet-secret", testnet=True, exchange=Exchange())
+
+    open_orders = trader.get_open_orders()
+
+    assert open_orders[0]["reduce_only"] is False
+    assert trader.last_open_orders_status == "DEGRADED"
+    assert trader.last_open_orders_error_code == "GATE_OPEN_ORDER_REDUCE_ONLY_UNVERIFIED"
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected"),
+    [
+        ("reduceOnly", True, True),
+        ("reduceOnly", False, False),
+        ("reduceOnly", 1, True),
+        ("reduceOnly", 0, False),
+        ("info.reduce_only", "true", True),
+        ("info.reduce_only", "false", False),
+        ("info.is_reduce_only", "1", True),
+        ("info.is_reduce_only", "0", False),
+    ],
+)
+def test_open_order_reduce_only_accepts_canonical_values(field, value, expected):
+    order = {"id": "order-1", "status": "open"}
+    if field == "reduceOnly":
+        order[field] = value
+    else:
+        _, native_field = field.split(".")
+        order["info"] = {native_field: value}
+
+    class Exchange:
+        def fetch_open_orders(self, _symbol, limit):
+            assert limit == 100
+            return [order]
+
+    trader = GateLiveTrader("testnet-key", "testnet-secret", testnet=True, exchange=Exchange())
+
+    open_orders = trader.get_open_orders()
+
+    assert open_orders[0]["reduce_only"] is expected
+    assert trader.last_open_orders_status == "AVAILABLE"
+    assert trader.last_open_orders_error_code is None
+
+
+def test_open_order_reduce_only_conflicts_degrade_the_account_truth():
+    class Exchange:
+        def fetch_open_orders(self, _symbol, limit):
+            assert limit == 100
+            return [{"id": "order-1", "status": "open", "reduceOnly": True,
+                     "info": {"reduce_only": False}}]
+
+        def privateFuturesGetSettlePriceOrders(self, params):
+            assert params == {"settle": "usdt", "status": "open", "limit": 100}
+            return []
+
+    trader = GateLiveTrader("testnet-key", "testnet-secret", testnet=True, exchange=Exchange())
+    trader.get_account_balance = lambda: {
+        "data_status": "AVAILABLE", "equity": 1000, "free": 1000, "used": 0,
+        "order_margin": 0, "observed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    trader.get_positions = lambda: []
+    trader.last_positions_status = "AVAILABLE"
+
+    truth = trader.get_account_truth()
+
+    assert truth["status"] == "DEGRADED"
+    assert truth["pending_orders_status"] == "DEGRADED"
+    assert truth["pending_margin_status"] == "UNVERIFIED"
+    assert truth["pending_orders"][0]["reduce_only"] is False
+    assert truth["error_code"] == "GATE_OPEN_ORDER_REDUCE_ONLY_CONFLICT"
+
+
+@pytest.mark.parametrize(
+    ("full_snapshot", "expected_error"),
+    [
+        ("open", "GATE_OPEN_ORDERS_TRUNCATED"),
+        ("trigger", "GATE_TRIGGER_ORDERS_TRUNCATED"),
+    ],
+)
+def test_gate_account_truth_rejects_unproven_full_order_page(full_snapshot, expected_error):
+    class Exchange:
+        def fetch_open_orders(self, _symbol, limit):
+            assert limit == 100
+            count = 100 if full_snapshot == "open" else 0
+            return [{"id": str(index), "status": "open"} for index in range(count)]
+
+        def privateFuturesGetSettlePriceOrders(self, params):
+            assert params["limit"] == 100
+            count = 100 if full_snapshot == "trigger" else 0
+            return [
+                {
+                    "id": str(index), "status": "open", "order_type": "close-long-order",
+                    "initial": {"contract": "BTC_USDT", "size": -1},
+                    "trigger": {"price": "89.0"},
+                }
+                for index in range(count)
+            ]
+
+    trader = GateLiveTrader("testnet-key", "testnet-secret", testnet=True, exchange=Exchange())
+    trader.get_account_balance = lambda: {
+        "data_status": "AVAILABLE", "equity": 1000, "free": 1000, "used": 0,
+        "order_margin": 0, "observed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    trader.get_positions = lambda: []
+    trader.last_positions_status = "AVAILABLE"
+
+    truth = trader.get_account_truth()
+
+    assert truth["status"] == "DEGRADED"
+    assert truth["error_code"] == expected_error
+    assert not GateTestnetE2EService._account_truth_complete(truth)
 
 
 def test_manual_live_lock_is_persisted_and_enforced_by_order_api(tmp_path):
@@ -432,7 +719,6 @@ def test_gate_testnet_account_does_not_read_local_ledger_or_route_paper_order(tm
     assert account.json()["data_status"] == "NOT_CONFIGURED_NO_TESTNET_CREDENTIALS"
     assert account.json()["balance"]["total"] is None
     assert account.json()["private_api_access"] == "NOT_ATTEMPTED_NO_CREDENTIALS"
-
     trades = client.get(f"/v2/gate/trades?account_id={GATE_PAPER_ACCOUNT_ID}")
     assert trades.status_code == 200, trades.text
     assert trades.json()["summary"]["source"] == "NOT_CONFIGURED_NO_TESTNET_CREDENTIALS"
@@ -443,6 +729,55 @@ def test_gate_testnet_account_does_not_read_local_ledger_or_route_paper_order(tm
             "SELECT COUNT(*) FROM trade_fills WHERE account_id=?",
             (GATE_PAPER_ACCOUNT_ID,),
         ).fetchone()[0] == 0
+
+
+def test_gate_testnet_order_test_requires_explicit_server_confirmation(tmp_path, monkeypatch):
+    store = SQLiteStore(tmp_path / "gate-testnet-explicit-confirmation.db")
+    store.initialize()
+    provision_default_gate_accounts(store)
+    calls = []
+
+    def build_trader(_store, account_id):
+        calls.append(("build_trader", account_id))
+        return object()
+
+    def run_e2e(_service, request, trader):
+        calls.append(("run_e2e", request, trader))
+        return {"status": "COMPLETED", "account_id": request["account_id"]}
+
+    monkeypatch.setattr("apps.api.v2.build_gate_trader", build_trader)
+    monkeypatch.setattr("apps.api.v2.GateTestnetE2EService.run", run_e2e)
+    client = _v2_client(store)
+    payload = {
+        "account_id": GATE_PAPER_ACCOUNT_ID,
+        "symbol": "BTCUSDT",
+        "side": "LONG",
+        "stop_type": "PERCENT",
+        "stop_value": 1,
+        "take_profit_type": "PERCENT",
+        "take_profit_value": 3,
+        "leverage": 1,
+        "cleanup": True,
+        "idempotency_key": "confirmation-required-test",
+    }
+
+    blocked = client.post("/v2/gate/testnet/order-test", json=payload)
+
+    assert blocked.status_code == 422
+    assert "TESTNET_CONFIRMATION_REQUIRED" in blocked.json()["detail"]
+    assert calls == []
+
+    confirmed = client.post(
+        "/v2/gate/testnet/order-test",
+        json={**payload, "confirm_testnet": True},
+    )
+
+    assert confirmed.status_code == 200, confirmed.text
+    assert confirmed.json() == {"status": "COMPLETED", "account_id": GATE_PAPER_ACCOUNT_ID}
+    assert len(calls) == 2
+    assert calls[0] == ("build_trader", GATE_PAPER_ACCOUNT_ID)
+    assert calls[1][0] == "run_e2e"
+    assert calls[1][1]["confirm_testnet"] is True
 
 
 def test_gate_live_account_is_account_scoped_not_release_locked(tmp_path):
@@ -744,30 +1079,42 @@ def test_ai_strategy_api_get_and_put(tmp_path):
     data = response.json()
     assert "active" in data
     assert "templates" in data
-    assert len(data["templates"]) == 5
+    assert len(data["templates"]) == 1
     template_ids = [t["id"] for t in data["templates"]]
-    assert "aggressive_impulse" in template_ids
-    assert "aggressive_breakout" in template_ids
-    assert "conservative_pullback" in template_ids
-    assert "conservative_defense" in template_ids
-    assert "price_action_structure" in template_ids
+    assert template_ids == ["price_action_structure"]
 
-    # 2. PUT update strategy
+    # Retired profiles fail closed and preserve the active revision.
     active = data["active"]
-    put_res = client.put(
+    retired = client.put(
         "/v2/ai-strategy?account_id=gate_testnet",
         json={
             "name": active["name"],
             "sections": active["sections"],
-            "execution": {**active["execution"], "leverage": 5},
+            "execution": active["execution"],
             "template_id": "aggressive_breakout",
+            "expected_revision": active["revision"],
+        },
+    )
+    assert retired.status_code == 400
+    assert retired.json()["detail"] == "STRATEGY_TEMPLATE_RETIRED"
+
+    sections = dict(active["sections"])
+    sections["custom_prompt"] = "Use closed market evidence and preserve independent risk review."
+    put_res = client.put(
+        "/v2/ai-strategy?account_id=gate_testnet",
+        json={
+            "name": active["name"],
+            "sections": sections,
+            "execution": active["execution"],
+            "template_id": active["template_id"],
             "expected_revision": active["revision"],
         },
     )
     assert put_res.status_code == 200
     updated = put_res.json()["active"]
     assert updated["revision"] == active["revision"] + 1
-    assert updated["execution"]["leverage"] == 5
+    assert updated["execution"] == active["execution"]
+    assert updated["sections"]["custom_prompt"] == sections["custom_prompt"]
 
 
 def test_ai_decision_memory_api_exposes_only_saved_strategy_attribution(tmp_path):

@@ -124,6 +124,13 @@ def test_client_uses_relay_and_maps_legacy_no_thinking_to_supported_low(monkeypa
     assert ModelClient(base_url="http://evil.example:8045/v1")._configuration_error() == "MODEL_ENDPOINT_NOT_ALLOWED"
 
 
+def test_gemini_clients_default_to_one_attempt():
+    from core.ai.ollama import OllamaProvider
+
+    assert ModelClient().retries == 0
+    assert OllamaProvider().retries == 0
+
+
 @pytest.mark.parametrize("returned", [None, "gemini-3.5-flash-low", "Bonsai-2-27B-PTQ1_0"])
 def test_success_http_cannot_hide_missing_or_downgraded_model(monkeypatch, returned):
     monkeypatch.setattr("core.model_client.urlopen", lambda *args, **kwargs: Response(json.dumps({"model": returned, "choices": []}).encode()))
@@ -140,5 +147,5 @@ def test_region_failure_is_named_and_never_retried_or_replaced(monkeypatch):
         raise HTTPError(request.full_url, 400, "Bad Request", {}, io.BytesIO(json.dumps({"error": {"message": "User location is not supported for the API use."}}).encode()))
     monkeypatch.setattr("core.model_client.urlopen", refuse)
     with pytest.raises(ModelClientError, match="MODEL_UPSTREAM_REGION_UNSUPPORTED"):
-        ModelClient(retries=2).chat_completion([{"role": "user", "content": "test"}])
+        ModelClient(retries=0).chat_completion([{"role": "user", "content": "test"}])
     assert calls == ["http://127.0.0.1:8045/v1/chat/completions"]

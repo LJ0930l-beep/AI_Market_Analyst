@@ -71,6 +71,30 @@ def test_gate_adapter_constructs_the_explicit_testnet_endpoint_and_maps_schema(m
     assert "testnet-secret" not in str(result)
 
 
+def test_gate_validation_paths_redact_credentials_echoed_by_provider_errors():
+    api_key = "fixture-private-api-key"
+    api_secret = "fixture-private-api-secret"
+
+    class Exchange:
+        def fetch_balance(self):
+            raise RuntimeError(f"provider echoed {api_key}/{api_secret}")
+
+    trader = GateLiveTrader(
+        api_key,
+        api_secret,
+        testnet=True,
+        live_trading_enabled=False,
+        exchange=Exchange(),
+    )
+
+    # Both payloads can reach the read-only /connection-test response path.
+    for result in (trader.validate_credentials(), trader.connection_test()):
+        serialized = str(result)
+        assert api_key not in serialized
+        assert api_secret not in serialized
+        assert "[REDACTED]" in result["reason"]
+
+
 def test_gate_testnet_remote_receipt_reconcile_cancel_and_symbol_mapping():
     class Exchange:
         def __init__(self):

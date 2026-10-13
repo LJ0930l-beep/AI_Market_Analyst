@@ -73,7 +73,12 @@ def test_declared_total_must_equal_all_window_scans(registration):
 def test_model_identity_is_bound_across_windows(tmp_path):
     database = tmp_path / "isolated.sqlite3"
     pin_path = tmp_path / "model-pin.json"
-    pin = {"actual_model_id": "TEST_FIXTURE", "weight_digest": "a" * 64, "context_length": 8192}
+    pin = {
+        "model_id": "gemini-3.8-flash-high",
+        "actual_model_id": "TEST_FIXTURE",
+        "weight_digest": "a" * 64,
+        "context_length": 8192,
+    }
     with sqlite3.connect(database) as connection:
         connection.execute("CREATE TABLE ai_template_replay_runs(config_json TEXT)")
         connection.execute("INSERT INTO ai_template_replay_runs VALUES (?)", (json.dumps({"model_pin": pin}),))

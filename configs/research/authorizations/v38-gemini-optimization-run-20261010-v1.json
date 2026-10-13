@@ -1,0 +1,50 @@
+{
+  "schema_version": "pa-market-only-v38/model-call-authorization-1",
+  "authorization_id": "V38_GEMINI_OPTIMIZATION_A1_A2_20261010_V1",
+  "authorized_by": "user_in_this_conversation",
+  "authorized_on": "2026-10-10",
+  "provider": "Antigravity Tools reverse proxy",
+  "model_id": "gemini-3.8-flash-high",
+  "quota_policy": "Use only the user's Antigravity weekly quota; stop when the provider rejects exhausted quota.",
+  "numeric_cost_limit_usdt": null,
+  "numeric_cost_limit_reason": "The user authorized use through weekly quota exhaustion but supplied no numeric USDT amount; provider quota and per-call prices are not independently observable here.",
+  "research_scope": {
+    "dataset_id": "V38_BINANCE_BTC_ETH_STRATIFIED_PURGED_CONTEXTS_20261009_V1",
+    "dataset_manifest_sha256": "1f9e157bad2df4c32f863c2ae7a779b7d9ed573ad09d37f49ca44590eca4352a",
+    "allowed_partition": "optimization",
+    "maximum_contexts": 36,
+    "arms": [
+      {
+        "arm_id": "A1_MARKET_ONLY",
+        "prompt_version": "pa_decision_quality_v38-A1.1",
+        "prompt_file_sha256": "b09bfbd1a9c58ef4e4d87feb3d35c2f49e24b1e7b5dd4d080d40273c760c32b4"
+      },
+      {
+        "arm_id": "A2_MARKET_ONLY",
+        "prompt_version": "pa_decision_quality_v38-A2.1",
+        "prompt_file_sha256": "040f3182f7ee36d483a3fe842a95acbea56d67cf1396816c766eee6239270b19"
+      }
+    ],
+    "maximum_model_request_intents": 72,
+    "maximum_output_tokens_per_request": 1024,
+    "maximum_wire_prompt_bytes": 32768,
+    "maximum_attempts_per_context_arm": 1,
+    "maximum_transport_attempts": 1,
+    "allow_automatic_retry": false,
+    "allow_syntax_repair_call": false,
+    "allow_health_completion_probe": false,
+    "allow_validation": false,
+    "allow_untouched_test": false,
+    "allow_orders_or_proposals": false,
+    "allow_account_or_risk_data": false,
+    "allow_production_or_livemode": false
+  },
+  "duplicate_cost_policy": {
+    "client_retries": 0,
+    "same_context_arm_reexecution": "NEVER within the canonical ledger shared by linked worktrees of this local clone; separate Git clones are not coordinated.",
+    "dedupe_ledger_scope": "ONE_PER_LINKED_WORKTREE_CLONE",
+    "provider_internal_deduplication": "UNVERIFIED",
+    "provider_billing_per_request": "UNVERIFIED",
+    "remaining_risk": "A provider-side duplicate or a lost response may consume quota without a usable analysis; the local runner retains an ambiguous status and never retries that context-arm pair."
+  }
+}

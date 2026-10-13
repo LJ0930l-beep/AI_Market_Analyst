@@ -99,6 +99,22 @@ def test_multiline_sse_data_and_comments_are_parsed_as_one_json_event():
     assert collect(raw)["choices"][0]["message"]["content"] == "{}"
 
 
+def test_exact_duplicate_explicit_sse_event_is_rejected_without_returning_partial_content():
+    repeated = b"id: relay-event-1\n" + event('{"action":"WAIT"}')
+    with pytest.raises(CompletionStreamError, match="DUPLICATE_EVENT"):
+        collect(repeated + repeated + event(finish="stop") + DONE)
+
+
+def test_identical_deltas_without_ids_and_reused_ids_with_different_data_are_preserved():
+    no_ids = event(" ") + event(" ") + event(finish="stop") + DONE
+    assert collect(no_ids)["choices"][0]["message"]["content"] == "  "
+
+    same_id_different_data = (b"id: relay-event-2\n" + event("a")
+                              + b"id: relay-event-2\n" + event("b")
+                              + event(finish="stop") + DONE)
+    assert collect(same_id_different_data)["choices"][0]["message"]["content"] == "ab"
+
+
 @pytest.mark.parametrize("data,code", [
     (event("{}"), "EOF_BEFORE_DONE"),
     (event("{}") + DONE, "INCOMPLETE"),

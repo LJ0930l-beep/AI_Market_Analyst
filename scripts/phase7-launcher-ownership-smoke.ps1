@@ -8,6 +8,7 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $Launcher = Join-Path $PSScriptRoot "phase7-local.ps1"
 $StatePath = Join-Path ([IO.Path]::GetTempPath()) "ai-market-analyst-phase7-launcher\state.json"
+$LocalBuildMarker = Join-Path $ProjectRoot "web\dist\.phase7-local-build.json"
 $database = Join-Path ([IO.Path]::GetTempPath()) ("ai-market-analyst-phase7-ownership-" + [guid]::NewGuid().ToString("N") + ".sqlite3")
 $shellCommand = Get-Command powershell -ErrorAction SilentlyContinue
 if ($null -eq $shellCommand) { $shellCommand = Get-Command pwsh -ErrorAction Stop }
@@ -75,9 +76,18 @@ try {
     if (Test-Path -LiteralPath $StatePath) {
         throw "launcher state already exists; refusing to overwrite it"
     }
+    # A generic Vite build can exist while pointing API requests at the
+    # desktop port. An invalid marker must make the launcher rebuild for /api.
+    New-Item -ItemType Directory -Path (Split-Path -Parent $LocalBuildMarker) -Force | Out-Null
+    '{"format_version":"invalid","api_base_url":"http://127.0.0.1:18765"}' |
+        Set-Content -LiteralPath $LocalBuildMarker -Encoding ascii
     $started = Invoke-Launcher "start"
     if ($started.exit_code -ne 0) { throw "normal launcher start failed: $($started.output -join ' ')" }
     $startedBySmoke = $true
+    $localBuild = Get-Content -LiteralPath $LocalBuildMarker -Raw | ConvertFrom-Json
+    if ($localBuild.format_version -ne "phase7_local_build_v1" -or $localBuild.api_base_url -ne "/api") {
+        throw "launcher did not rebuild the preview with its same-origin /api base"
+    }
     if (-not (Test-Path -LiteralPath $StatePath -PathType Leaf)) { throw "launcher did not create state" }
     $originalState = Get-Content -LiteralPath $StatePath -Raw
     $state = $originalState | ConvertFrom-Json

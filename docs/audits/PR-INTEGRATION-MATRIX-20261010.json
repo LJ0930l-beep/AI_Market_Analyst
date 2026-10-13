@@ -1,0 +1,2884 @@
+{
+  "schema_version": "V2_PR_INTEGRATION_MATRIX_V1",
+  "repository": "LJ0930l-beep/AI_Market_Analyst",
+  "observed_at_utc": "2026-10-10T09:26:57Z",
+  "main": {
+    "branch": "main",
+    "sha": "8642639a78ca9aa56fbad1e88aea4b82169ea433",
+    "remote_verified": true
+  },
+  "default_checkout": {
+    "path": "D:\\RJ\\codex\\ai-market-analyst",
+    "branch": "codex/v35-feasibility",
+    "head_sha": "2a5d7b9992a7909a6a597917e409ecb0737f9c89",
+    "preexisting_untracked_entries": 5,
+    "untracked_status": [
+      "?? .audit-temp/",
+      "?? docs/audits/audit-c63bf94-baseline-20261008.md",
+      "?? docs/audits/pytest-baseline-triage-c63bf94-20261008.json",
+      "?? docs/audits/pytest-postrepair-c63bf94-20261008.xml",
+      "?? docs/audits/pytest-v34-candidate-c63bf94-20261008.xml"
+    ]
+  },
+  "active_v38_worktree": {
+    "path": "C:\\Users\\baicha\\.codex\\worktrees\\v38-current-gates\\ai-market-analyst",
+    "branch": "codex/v38-authorized-gemini-runner",
+    "head_sha": "fcfc9ec37102d0ec4a09fc777fec0e44d20291cc",
+    "status_clean": true,
+    "diff_vs_main_shortstat": "195 files changed, 28286 insertions(+), 467 deletions(-)"
+  },
+  "pull_request_count": 25,
+  "pull_requests": [
+    {
+      "number": 1,
+      "title": "V35: add trade feasibility diagnostics and counterfactual study",
+      "state": "OPEN",
+      "draft": false,
+      "head": {
+        "branch": "codex/v35-feasibility",
+        "sha": "2a5d7b9992a7909a6a597917e409ecb0737f9c89"
+      },
+      "base": {
+        "branch": "main",
+        "sha": "8642639a78ca9aa56fbad1e88aea4b82169ea433",
+        "parent_pr": null
+      },
+      "merge_state": "CLEAN",
+      "checks": [],
+      "checks_disposition": "NO_REPORTED_CHECKS",
+      "changed_files": [
+        {
+          "path": "core/replay/ai_simulation.py",
+          "change_type": "MODIFIED",
+          "additions": 9,
+          "deletions": 1
+        },
+        {
+          "path": "core/replay/ai_template_runner.py",
+          "change_type": "MODIFIED",
+          "additions": 4,
+          "deletions": 0
+        },
+        {
+          "path": "core/trading/entry_economics.py",
+          "change_type": "MODIFIED",
+          "additions": 30,
+          "deletions": 7
+        },
+        {
+          "path": "core/trading/trade_feasibility.py",
+          "change_type": "ADDED",
+          "additions": 349,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V35-acceptance-report.md",
+          "change_type": "ADDED",
+          "additions": 73,
+          "deletions": 0
+        },
+        {
+          "path": "docs/plans/V35-development-plan.md",
+          "change_type": "ADDED",
+          "additions": 53,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/generate_v35_feasibility_reports.py",
+          "change_type": "ADDED",
+          "additions": 342,
+          "deletions": 0
+        },
+        {
+          "path": "tests/test_v35_trade_feasibility.py",
+          "change_type": "ADDED",
+          "additions": 264,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "title": "V36: add isolated price action research and review",
+      "state": "OPEN",
+      "draft": false,
+      "head": {
+        "branch": "codex/v36-pa-decision-quality",
+        "sha": "191ae39f0c4ce3a6aab88a95a004056c981a57b8"
+      },
+      "base": {
+        "branch": "codex/v35-feasibility",
+        "sha": "2a5d7b9992a7909a6a597917e409ecb0737f9c89",
+        "parent_pr": 1
+      },
+      "merge_state": "CLEAN",
+      "checks": [],
+      "checks_disposition": "NO_REPORTED_CHECKS",
+      "changed_files": [
+        {
+          "path": "configs/research/pa_decision_quality_v36.json",
+          "change_type": "ADDED",
+          "additions": 59,
+          "deletions": 0
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v36/__init__.py",
+          "change_type": "ADDED",
+          "additions": 9,
+          "deletions": 0
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v36/context.py",
+          "change_type": "ADDED",
+          "additions": 385,
+          "deletions": 0
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v36/experiments.py",
+          "change_type": "ADDED",
+          "additions": 299,
+          "deletions": 0
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v36/review.py",
+          "change_type": "ADDED",
+          "additions": 316,
+          "deletions": 0
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v36/runner.py",
+          "change_type": "ADDED",
+          "additions": 468,
+          "deletions": 0
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v36/schema.py",
+          "change_type": "ADDED",
+          "additions": 218,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V36-decision-quality-acceptance.md",
+          "change_type": "ADDED",
+          "additions": 56,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V36-decision-quality-pilot.md",
+          "change_type": "ADDED",
+          "additions": 36,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V36-price-action-input-audit.md",
+          "change_type": "ADDED",
+          "additions": 30,
+          "deletions": 0
+        },
+        {
+          "path": "docs/plans/V36-development-plan.md",
+          "change_type": "ADDED",
+          "additions": 44,
+          "deletions": 0
+        },
+        {
+          "path": "docs/research/v36-price-action-input-format.md",
+          "change_type": "ADDED",
+          "additions": 21,
+          "deletions": 0
+        },
+        {
+          "path": "evidence/v36-pa-decision-quality/baseline/pytest-comparison.json",
+          "change_type": "ADDED",
+          "additions": 34,
+          "deletions": 0
+        },
+        {
+          "path": "evidence/v36-pa-decision-quality/baseline/run_offline.py",
+          "change_type": "ADDED",
+          "additions": 192,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/review_pa_decision_quality_v36.py",
+          "change_type": "ADDED",
+          "additions": 174,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/run_pa_decision_quality_v36.py",
+          "change_type": "ADDED",
+          "additions": 97,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/v36_test_evidence.py",
+          "change_type": "ADDED",
+          "additions": 190,
+          "deletions": 0
+        },
+        {
+          "path": "tests/v36/conftest.py",
+          "change_type": "ADDED",
+          "additions": 86,
+          "deletions": 0
+        },
+        {
+          "path": "tests/v36/test_cli.py",
+          "change_type": "ADDED",
+          "additions": 54,
+          "deletions": 0
+        },
+        {
+          "path": "tests/v36/test_context.py",
+          "change_type": "ADDED",
+          "additions": 98,
+          "deletions": 0
+        },
+        {
+          "path": "tests/v36/test_review.py",
+          "change_type": "ADDED",
+          "additions": 109,
+          "deletions": 0
+        },
+        {
+          "path": "tests/v36/test_runner.py",
+          "change_type": "ADDED",
+          "additions": 313,
+          "deletions": 0
+        },
+        {
+          "path": "tests/v36/test_test_evidence.py",
+          "change_type": "ADDED",
+          "additions": 102,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "number": 3,
+      "title": "V36.1: repair offline cache and identity validation",
+      "state": "OPEN",
+      "draft": false,
+      "head": {
+        "branch": "codex/v36.1-research-integrity",
+        "sha": "23ca359082193033d9c40ee282c41a074eee53a2"
+      },
+      "base": {
+        "branch": "codex/v36-pa-decision-quality",
+        "sha": "191ae39f0c4ce3a6aab88a95a004056c981a57b8",
+        "parent_pr": 2
+      },
+      "merge_state": "CLEAN",
+      "checks": [],
+      "checks_disposition": "NO_REPORTED_CHECKS",
+      "changed_files": [
+        {
+          "path": "core/replay/pa_decision_quality_v36/experiments.py",
+          "change_type": "MODIFIED",
+          "additions": 14,
+          "deletions": 1
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v36/review.py",
+          "change_type": "MODIFIED",
+          "additions": 96,
+          "deletions": 8
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v36/runner.py",
+          "change_type": "MODIFIED",
+          "additions": 117,
+          "deletions": 22
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v36/validation.py",
+          "change_type": "ADDED",
+          "additions": 130,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V36.1-research-integrity-acceptance.md",
+          "change_type": "ADDED",
+          "additions": 49,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/run_pa_decision_quality_v36.py",
+          "change_type": "MODIFIED",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "tests/v36/test_cli.py",
+          "change_type": "MODIFIED",
+          "additions": 69,
+          "deletions": 0
+        },
+        {
+          "path": "tests/v36/test_review.py",
+          "change_type": "MODIFIED",
+          "additions": 76,
+          "deletions": 3
+        },
+        {
+          "path": "tests/v36/test_runner.py",
+          "change_type": "MODIFIED",
+          "additions": 206,
+          "deletions": 3
+        }
+      ]
+    },
+    {
+      "number": 4,
+      "title": "V37: Reconstruct auditable historical evidence",
+      "state": "OPEN",
+      "draft": false,
+      "head": {
+        "branch": "codex/v37-historical-evidence",
+        "sha": "608ee0083b9e7912c02fd3bf53d05087378f944f"
+      },
+      "base": {
+        "branch": "codex/v36.1-research-integrity",
+        "sha": "23ca359082193033d9c40ee282c41a074eee53a2",
+        "parent_pr": 3
+      },
+      "merge_state": "CLEAN",
+      "checks": [],
+      "checks_disposition": "NO_REPORTED_CHECKS",
+      "changed_files": [
+        {
+          "path": "configs/research/schemas/a0-v35-action-schema.json",
+          "change_type": "ADDED",
+          "additions": 419,
+          "deletions": 0
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v36/validation.py",
+          "change_type": "MODIFIED",
+          "additions": 2,
+          "deletions": 12
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v37/__init__.py",
+          "change_type": "ADDED",
+          "additions": 5,
+          "deletions": 0
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v37/evidence_builder.py",
+          "change_type": "ADDED",
+          "additions": 408,
+          "deletions": 0
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v37/inventory.py",
+          "change_type": "ADDED",
+          "additions": 280,
+          "deletions": 0
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v37/recovery.py",
+          "change_type": "ADDED",
+          "additions": 236,
+          "deletions": 0
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v37/schema.py",
+          "change_type": "ADDED",
+          "additions": 49,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V37-A0-recovery.md",
+          "change_type": "ADDED",
+          "additions": 27,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V37-acceptance-report.md",
+          "change_type": "ADDED",
+          "additions": 74,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V37-causal-market-reconstruction.md",
+          "change_type": "ADDED",
+          "additions": 39,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V37-small-sample-acceptance.md",
+          "change_type": "ADDED",
+          "additions": 34,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V37-source-inventory.md",
+          "change_type": "ADDED",
+          "additions": 36,
+          "deletions": 0
+        },
+        {
+          "path": "docs/plans/V37-development-plan.md",
+          "change_type": "ADDED",
+          "additions": 40,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/compare_v37_test_evidence.py",
+          "change_type": "ADDED",
+          "additions": 165,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/reconstruct_historical_evidence_v37.py",
+          "change_type": "ADDED",
+          "additions": 342,
+          "deletions": 0
+        },
+        {
+          "path": "tests/v37/test_historical_evidence.py",
+          "change_type": "ADDED",
+          "additions": 344,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "number": 5,
+      "title": "V37.1: fix research partitions and A3 signal freshness",
+      "state": "OPEN",
+      "draft": false,
+      "head": {
+        "branch": "codex/v37.1-research-fixes",
+        "sha": "64a5c4206a5073e0c44e9d5cc4178705ffa24664"
+      },
+      "base": {
+        "branch": "codex/v37-historical-evidence",
+        "sha": "608ee0083b9e7912c02fd3bf53d05087378f944f",
+        "parent_pr": 4
+      },
+      "merge_state": "CLEAN",
+      "checks": [],
+      "checks_disposition": "NO_REPORTED_CHECKS",
+      "changed_files": [
+        {
+          "path": "configs/research/partitions/gemini-year-research-v1.json",
+          "change_type": "ADDED",
+          "additions": 58,
+          "deletions": 0
+        },
+        {
+          "path": "configs/research/rules/a3-failed-breakout-freshness-v2.json",
+          "change_type": "ADDED",
+          "additions": 33,
+          "deletions": 0
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v36/runner.py",
+          "change_type": "MODIFIED",
+          "additions": 174,
+          "deletions": 13
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v37/a3_policy.py",
+          "change_type": "ADDED",
+          "additions": 42,
+          "deletions": 0
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v37/evidence_builder.py",
+          "change_type": "MODIFIED",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v37/partitioning.py",
+          "change_type": "ADDED",
+          "additions": 147,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V37.1-acceptance-report.md",
+          "change_type": "ADDED",
+          "additions": 91,
+          "deletions": 0
+        },
+        {
+          "path": "docs/plans/V37.1-development-plan.md",
+          "change_type": "ADDED",
+          "additions": 57,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/compare_v37_test_evidence.py",
+          "change_type": "MODIFIED",
+          "additions": 10,
+          "deletions": 3
+        },
+        {
+          "path": "scripts/reconstruct_historical_evidence_v37.py",
+          "change_type": "MODIFIED",
+          "additions": 95,
+          "deletions": 13
+        },
+        {
+          "path": "tests/v36/test_runner.py",
+          "change_type": "MODIFIED",
+          "additions": 212,
+          "deletions": 0
+        },
+        {
+          "path": "tests/v37/test_historical_evidence.py",
+          "change_type": "MODIFIED",
+          "additions": 10,
+          "deletions": 2
+        },
+        {
+          "path": "tests/v37_1/test_a3_signal_policy.py",
+          "change_type": "ADDED",
+          "additions": 35,
+          "deletions": 0
+        },
+        {
+          "path": "tests/v37_1/test_research_partitions.py",
+          "change_type": "ADDED",
+          "additions": 84,
+          "deletions": 0
+        },
+        {
+          "path": "tests/v37_1/test_test_evidence_comparison.py",
+          "change_type": "ADDED",
+          "additions": 22,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "number": 6,
+      "title": "V38 research readiness and multi-asset product roadmap",
+      "state": "OPEN",
+      "draft": false,
+      "head": {
+        "branch": "codex/v38-research-readiness",
+        "sha": "b2bb544daf258461ce653db904de95e185f9449e"
+      },
+      "base": {
+        "branch": "codex/v37.1-research-fixes",
+        "sha": "64a5c4206a5073e0c44e9d5cc4178705ffa24664",
+        "parent_pr": 5
+      },
+      "merge_state": "CLEAN",
+      "checks": [],
+      "checks_disposition": "NO_REPORTED_CHECKS",
+      "changed_files": [
+        {
+          "path": "configs/research/datasets/v38-market-sample-plan-v1.json",
+          "change_type": "ADDED",
+          "additions": 73,
+          "deletions": 0
+        },
+        {
+          "path": "configs/research/schemas/v38-market-only-analysis-v1.json",
+          "change_type": "ADDED",
+          "additions": 71,
+          "deletions": 0
+        },
+        {
+          "path": "configs/research/schemas/v38-market-only-input-v1.json",
+          "change_type": "ADDED",
+          "additions": 45,
+          "deletions": 0
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v38/__init__.py",
+          "change_type": "ADDED",
+          "additions": 21,
+          "deletions": 0
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v38/dataset.py",
+          "change_type": "ADDED",
+          "additions": 408,
+          "deletions": 0
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v38/market_only.py",
+          "change_type": "ADDED",
+          "additions": 539,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V38-V42-unattended-acceptance.md",
+          "change_type": "ADDED",
+          "additions": 56,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V38-dataset-preregistration.md",
+          "change_type": "ADDED",
+          "additions": 35,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V38-gate0-readiness.md",
+          "change_type": "ADDED",
+          "additions": 43,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V38-market-only-schema-and-safety.md",
+          "change_type": "ADDED",
+          "additions": 28,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V39-transport-reliability.md",
+          "change_type": "ADDED",
+          "additions": 22,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V40-simulation-economics.md",
+          "change_type": "ADDED",
+          "additions": 21,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V41-legacy-test-failure-census.md",
+          "change_type": "ADDED",
+          "additions": 25,
+          "deletions": 0
+        },
+        {
+          "path": "docs/plans/AI-Market-Analyst-Product-Contract-V1.md",
+          "change_type": "ADDED",
+          "additions": 105,
+          "deletions": 0
+        },
+        {
+          "path": "docs/plans/Multi-Asset-Trader-Terminal-Roadmap.md",
+          "change_type": "ADDED",
+          "additions": 111,
+          "deletions": 0
+        },
+        {
+          "path": "docs/plans/V38-V42-master-implementation-plan.md",
+          "change_type": "ADDED",
+          "additions": 48,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/build_v38_market_dataset.py",
+          "change_type": "ADDED",
+          "additions": 43,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/run_market_only_v38.py",
+          "change_type": "ADDED",
+          "additions": 113,
+          "deletions": 0
+        },
+        {
+          "path": "tests/v38/conftest.py",
+          "change_type": "ADDED",
+          "additions": 50,
+          "deletions": 0
+        },
+        {
+          "path": "tests/v38/test_dataset.py",
+          "change_type": "ADDED",
+          "additions": 64,
+          "deletions": 0
+        },
+        {
+          "path": "tests/v38/test_market_only.py",
+          "change_type": "ADDED",
+          "additions": 212,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "number": 7,
+      "title": "V41 Gate 5: audit inherited test failures",
+      "state": "OPEN",
+      "draft": false,
+      "head": {
+        "branch": "codex/v41-current-gemini-test-contract",
+        "sha": "dfcc777d19f61ccba8ab18aa20627f0f21107eae"
+      },
+      "base": {
+        "branch": "codex/v38-research-readiness",
+        "sha": "b2bb544daf258461ce653db904de95e185f9449e",
+        "parent_pr": 6
+      },
+      "merge_state": "CLEAN",
+      "checks": [],
+      "checks_disposition": "NO_REPORTED_CHECKS",
+      "changed_files": [
+        {
+          "path": "configs/research/datasets/v38-nonoverlap-sample-plan-v1.json",
+          "change_type": "ADDED",
+          "additions": 80,
+          "deletions": 0
+        },
+        {
+          "path": "core/ai/ollama.py",
+          "change_type": "MODIFIED",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "core/analysis/institutional_dashboard.py",
+          "change_type": "MODIFIED",
+          "additions": 6,
+          "deletions": 20
+        },
+        {
+          "path": "core/consult.py",
+          "change_type": "MODIFIED",
+          "additions": 47,
+          "deletions": 16
+        },
+        {
+          "path": "core/model_client.py",
+          "change_type": "MODIFIED",
+          "additions": 4,
+          "deletions": 2
+        },
+        {
+          "path": "core/news_translation.py",
+          "change_type": "MODIFIED",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v38/nonoverlap_dataset.py",
+          "change_type": "ADDED",
+          "additions": 523,
+          "deletions": 0
+        },
+        {
+          "path": "core/trading/ai_session_coordinator.py",
+          "change_type": "MODIFIED",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "core/trading/nofx_strategy_adapter.py",
+          "change_type": "MODIFIED",
+          "additions": 5,
+          "deletions": 2
+        },
+        {
+          "path": "docs/audits/V38-V42-gate-decision-panel.md",
+          "change_type": "ADDED",
+          "additions": 28,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V38-V42-unattended-acceptance.md",
+          "change_type": "MODIFIED",
+          "additions": 25,
+          "deletions": 16
+        },
+        {
+          "path": "docs/audits/V38-data-integrity-followup.md",
+          "change_type": "ADDED",
+          "additions": 64,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V38-nonoverlap-dataset-followup.md",
+          "change_type": "ADDED",
+          "additions": 56,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V39-single-attempt-retry-followup.md",
+          "change_type": "ADDED",
+          "additions": 43,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V40-simulation-economics.md",
+          "change_type": "MODIFIED",
+          "additions": 4,
+          "deletions": 2
+        },
+        {
+          "path": "docs/audits/V41-gate5-legacy-repair-followup.md",
+          "change_type": "ADDED",
+          "additions": 32,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V41-gate5-node-audit-addendum.md",
+          "change_type": "ADDED",
+          "additions": 38,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V41-node-remediation-register.json",
+          "change_type": "ADDED",
+          "additions": 2116,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V41-provider-identity-followup.md",
+          "change_type": "ADDED",
+          "additions": 31,
+          "deletions": 0
+        },
+        {
+          "path": "docs/plans/Multi-Asset-Trader-Terminal-Roadmap.md",
+          "change_type": "MODIFIED",
+          "additions": 3,
+          "deletions": 1
+        },
+        {
+          "path": "docs/plans/V38-V42-master-implementation-plan.md",
+          "change_type": "MODIFIED",
+          "additions": 20,
+          "deletions": 14
+        },
+        {
+          "path": "scripts/audit_v38_dataset_integrity.py",
+          "change_type": "ADDED",
+          "additions": 619,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/audit_v38_nonoverlap_dataset.py",
+          "change_type": "ADDED",
+          "additions": 516,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/build_v38_market_dataset.py",
+          "change_type": "MODIFIED",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/build_v38_nonoverlap_dataset.py",
+          "change_type": "ADDED",
+          "additions": 48,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/run_market_only_v38.py",
+          "change_type": "MODIFIED",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/v12-live-smoke.py",
+          "change_type": "MODIFIED",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "tests/test_ai_segment_registration.py",
+          "change_type": "MODIFIED",
+          "additions": 6,
+          "deletions": 1
+        },
+        {
+          "path": "tests/test_ai_session_observability.py",
+          "change_type": "MODIFIED",
+          "additions": 8,
+          "deletions": 16
+        },
+        {
+          "path": "tests/test_ai_strategy_validation.py",
+          "change_type": "MODIFIED",
+          "additions": 4,
+          "deletions": 3
+        },
+        {
+          "path": "tests/test_ai_template_runner.py",
+          "change_type": "MODIFIED",
+          "additions": 16,
+          "deletions": 0
+        },
+        {
+          "path": "tests/test_api_phase4.py",
+          "change_type": "MODIFIED",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "tests/test_autonomous_news_strategy.py",
+          "change_type": "MODIFIED",
+          "additions": 91,
+          "deletions": 65
+        },
+        {
+          "path": "tests/test_final_strategy_analysis.py",
+          "change_type": "MODIFIED",
+          "additions": 8,
+          "deletions": 4
+        },
+        {
+          "path": "tests/test_gate_account_chain.py",
+          "change_type": "MODIFIED",
+          "additions": 22,
+          "deletions": 10
+        },
+        {
+          "path": "tests/test_gemini_relay.py",
+          "change_type": "MODIFIED",
+          "additions": 8,
+          "deletions": 1
+        },
+        {
+          "path": "tests/test_model_and_remote_truth_regressions.py",
+          "change_type": "MODIFIED",
+          "additions": 7,
+          "deletions": 4
+        },
+        {
+          "path": "tests/test_model_client_stream.py",
+          "change_type": "MODIFIED",
+          "additions": 38,
+          "deletions": 14
+        },
+        {
+          "path": "tests/test_model_routing_bonsai.py",
+          "change_type": "MODIFIED",
+          "additions": 18,
+          "deletions": 17
+        },
+        {
+          "path": "tests/test_monitoring_bonsai_identity.py",
+          "change_type": "MODIFIED",
+          "additions": 24,
+          "deletions": 9
+        },
+        {
+          "path": "tests/test_nofx_strategy_adapter.py",
+          "change_type": "MODIFIED",
+          "additions": 10,
+          "deletions": 10
+        },
+        {
+          "path": "tests/test_nofx_strategy_import_api.py",
+          "change_type": "MODIFIED",
+          "additions": 32,
+          "deletions": 7
+        },
+        {
+          "path": "tests/test_ollama_provider_contract.py",
+          "change_type": "MODIFIED",
+          "additions": 67,
+          "deletions": 61
+        },
+        {
+          "path": "tests/test_performance_phase3.py",
+          "change_type": "MODIFIED",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "tests/test_post_v1_consult.py",
+          "change_type": "MODIFIED",
+          "additions": 69,
+          "deletions": 19
+        },
+        {
+          "path": "tests/test_prepared_price_action_swing_context.py",
+          "change_type": "MODIFIED",
+          "additions": 6,
+          "deletions": 2
+        },
+        {
+          "path": "tests/test_qwen_market_scanner.py",
+          "change_type": "MODIFIED",
+          "additions": 12,
+          "deletions": 9
+        },
+        {
+          "path": "tests/test_repair_v12_luna.py",
+          "change_type": "MODIFIED",
+          "additions": 22,
+          "deletions": 12
+        },
+        {
+          "path": "tests/test_strategy_cadence_universe.py",
+          "change_type": "MODIFIED",
+          "additions": 23,
+          "deletions": 36
+        },
+        {
+          "path": "tests/test_strategy_plan_contract.py",
+          "change_type": "MODIFIED",
+          "additions": 10,
+          "deletions": 0
+        },
+        {
+          "path": "tests/test_trader_reliability_v13.py",
+          "change_type": "MODIFIED",
+          "additions": 18,
+          "deletions": 16
+        },
+        {
+          "path": "tests/test_v12_api.py",
+          "change_type": "MODIFIED",
+          "additions": 12,
+          "deletions": 7
+        },
+        {
+          "path": "tests/test_v12_live_smoke_model_identity.py",
+          "change_type": "MODIFIED",
+          "additions": 10,
+          "deletions": 9
+        },
+        {
+          "path": "tests/test_v12_monitoring.py",
+          "change_type": "MODIFIED",
+          "additions": 9,
+          "deletions": 7
+        },
+        {
+          "path": "tests/test_v12_monitoring_runtime.py",
+          "change_type": "MODIFIED",
+          "additions": 8,
+          "deletions": 6
+        },
+        {
+          "path": "tests/test_v12_news_desktop.py",
+          "change_type": "MODIFIED",
+          "additions": 5,
+          "deletions": 5
+        },
+        {
+          "path": "tests/test_v2_bonsai_provenance.py",
+          "change_type": "MODIFIED",
+          "additions": 8,
+          "deletions": 10
+        },
+        {
+          "path": "tests/test_v2_execution.py",
+          "change_type": "MODIFIED",
+          "additions": 31,
+          "deletions": 7
+        },
+        {
+          "path": "tests/v38/test_dataset_integrity_audit.py",
+          "change_type": "ADDED",
+          "additions": 123,
+          "deletions": 0
+        },
+        {
+          "path": "tests/v38/test_nonoverlap_dataset.py",
+          "change_type": "ADDED",
+          "additions": 226,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "number": 8,
+      "title": "V38 Gate 2: freeze purged blind-evaluation sample",
+      "state": "OPEN",
+      "draft": false,
+      "head": {
+        "branch": "codex/v38-gate2-blind-eval",
+        "sha": "3108b9377f822bb1164f6f2054be9b0efc95692c"
+      },
+      "base": {
+        "branch": "codex/v41-current-gemini-test-contract",
+        "sha": "dfcc777d19f61ccba8ab18aa20627f0f21107eae",
+        "parent_pr": 7
+      },
+      "merge_state": "CLEAN",
+      "checks": [],
+      "checks_disposition": "NO_REPORTED_CHECKS",
+      "changed_files": [
+        {
+          "path": "configs/research/datasets/v38-stratified-purged-sample-plan-v1.json",
+          "change_type": "ADDED",
+          "additions": 94,
+          "deletions": 0
+        },
+        {
+          "path": "configs/research/experiments/v38-market-only-evaluation-v1.json",
+          "change_type": "ADDED",
+          "additions": 176,
+          "deletions": 0
+        },
+        {
+          "path": "configs/research/labels/v38-pa-reference-label-protocol-v2.json",
+          "change_type": "ADDED",
+          "additions": 415,
+          "deletions": 0
+        },
+        {
+          "path": "configs/research/prompts/v38-market-only-a1-v1.json",
+          "change_type": "ADDED",
+          "additions": 28,
+          "deletions": 0
+        },
+        {
+          "path": "configs/research/prompts/v38-market-only-a2-v1.json",
+          "change_type": "ADDED",
+          "additions": 29,
+          "deletions": 0
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v38/__init__.py",
+          "change_type": "MODIFIED",
+          "additions": 12,
+          "deletions": 0
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v38/blind_labels.py",
+          "change_type": "ADDED",
+          "additions": 261,
+          "deletions": 0
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v38/market_only.py",
+          "change_type": "MODIFIED",
+          "additions": 9,
+          "deletions": 0
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v38/stratified_purged_dataset.py",
+          "change_type": "ADDED",
+          "additions": 528,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V38-V42-gate-decision-panel.md",
+          "change_type": "MODIFIED",
+          "additions": 9,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V38-V42-unattended-acceptance.md",
+          "change_type": "MODIFIED",
+          "additions": 11,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V38-gate2-blind-evaluation-preregistration.md",
+          "change_type": "ADDED",
+          "additions": 57,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/audit_v38_stratified_purged_dataset.py",
+          "change_type": "ADDED",
+          "additions": 439,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/build_v38_stratified_purged_dataset.py",
+          "change_type": "ADDED",
+          "additions": 43,
+          "deletions": 0
+        },
+        {
+          "path": "tests/v38/test_blind_labels.py",
+          "change_type": "ADDED",
+          "additions": 276,
+          "deletions": 0
+        },
+        {
+          "path": "tests/v38/test_stratified_purged_dataset.py",
+          "change_type": "ADDED",
+          "additions": 155,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "number": 9,
+      "title": "V39: offline SSE fault injection and trace identity",
+      "state": "OPEN",
+      "draft": false,
+      "head": {
+        "branch": "codex/v39-offline-fault-injection",
+        "sha": "1bfb4dc06b1ef1161adb20e4e0d1e40dc3e73779"
+      },
+      "base": {
+        "branch": "codex/v38-gate2-blind-eval",
+        "sha": "3108b9377f822bb1164f6f2054be9b0efc95692c",
+        "parent_pr": 8
+      },
+      "merge_state": "CLEAN",
+      "checks": [],
+      "checks_disposition": "NO_REPORTED_CHECKS",
+      "changed_files": [
+        {
+          "path": "core/ai/transport_diagnostics.py",
+          "change_type": "MODIFIED",
+          "additions": 39,
+          "deletions": 3
+        },
+        {
+          "path": "core/completion_stream.py",
+          "change_type": "MODIFIED",
+          "additions": 25,
+          "deletions": 1
+        },
+        {
+          "path": "core/model_client.py",
+          "change_type": "MODIFIED",
+          "additions": 88,
+          "deletions": 18
+        },
+        {
+          "path": "docs/audits/V38-V42-gate-decision-panel.md",
+          "change_type": "MODIFIED",
+          "additions": 12,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V39-offline-fault-injection-followup.md",
+          "change_type": "ADDED",
+          "additions": 41,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V39-progressive-consult-stream-followup.md",
+          "change_type": "ADDED",
+          "additions": 39,
+          "deletions": 0
+        },
+        {
+          "path": "docs/plans/Multi-Asset-Trader-Terminal-Roadmap.md",
+          "change_type": "MODIFIED",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "docs/plans/V38-V42-master-implementation-plan.md",
+          "change_type": "MODIFIED",
+          "additions": 12,
+          "deletions": 2
+        },
+        {
+          "path": "tests/test_completion_stream.py",
+          "change_type": "MODIFIED",
+          "additions": 16,
+          "deletions": 0
+        },
+        {
+          "path": "tests/test_gemini_structured_stream.py",
+          "change_type": "MODIFIED",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "tests/test_gemini_transport_diagnostics.py",
+          "change_type": "MODIFIED",
+          "additions": 31,
+          "deletions": 0
+        },
+        {
+          "path": "tests/test_model_client_stream.py",
+          "change_type": "MODIFIED",
+          "additions": 50,
+          "deletions": 4
+        },
+        {
+          "path": "tests/test_post_v1_consult.py",
+          "change_type": "MODIFIED",
+          "additions": 33,
+          "deletions": 0
+        },
+        {
+          "path": "tests/test_v39_sse_fault_injection.py",
+          "change_type": "ADDED",
+          "additions": 138,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "number": 10,
+      "title": "V40: prove duplicate simulated fills stay idempotent after restore",
+      "state": "OPEN",
+      "draft": false,
+      "head": {
+        "branch": "codex/v40-duplicate-bar-replay",
+        "sha": "df97590645889dee44b382f0ce5e8309a1922265"
+      },
+      "base": {
+        "branch": "codex/v39-offline-fault-injection",
+        "sha": "1bfb4dc06b1ef1161adb20e4e0d1e40dc3e73779",
+        "parent_pr": 9
+      },
+      "merge_state": "CLEAN",
+      "checks": [],
+      "checks_disposition": "NO_REPORTED_CHECKS",
+      "changed_files": [
+        {
+          "path": "docs/audits/V38-V42-gate-decision-panel.md",
+          "change_type": "MODIFIED",
+          "additions": 4,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V38-V42-unattended-acceptance.md",
+          "change_type": "MODIFIED",
+          "additions": 23,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V40-simulation-economics.md",
+          "change_type": "MODIFIED",
+          "additions": 16,
+          "deletions": 0
+        },
+        {
+          "path": "docs/plans/V38-V42-master-implementation-plan.md",
+          "change_type": "MODIFIED",
+          "additions": 6,
+          "deletions": 2
+        },
+        {
+          "path": "tests/test_ai_simulation.py",
+          "change_type": "MODIFIED",
+          "additions": 20,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "number": 11,
+      "title": "V38 Gate 2: record fresh data recheck",
+      "state": "OPEN",
+      "draft": false,
+      "head": {
+        "branch": "codex/v38-gate2-recheck",
+        "sha": "d02bdabeb163897fe29ce9aa4f4c0f3928e9ec27"
+      },
+      "base": {
+        "branch": "codex/v40-duplicate-bar-replay",
+        "sha": "df97590645889dee44b382f0ce5e8309a1922265",
+        "parent_pr": 10
+      },
+      "merge_state": "CLEAN",
+      "checks": [],
+      "checks_disposition": "NO_REPORTED_CHECKS",
+      "changed_files": [
+        {
+          "path": "docs/audits/V38-V42-gate-decision-panel.md",
+          "change_type": "MODIFIED",
+          "additions": 4,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V38-V42-unattended-acceptance.md",
+          "change_type": "MODIFIED",
+          "additions": 4,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V38-gate2-independent-review-followup.md",
+          "change_type": "ADDED",
+          "additions": 42,
+          "deletions": 0
+        },
+        {
+          "path": "docs/plans/V38-V42-master-implementation-plan.md",
+          "change_type": "MODIFIED",
+          "additions": 4,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "number": 12,
+      "title": "CI: add offline quick and full test gates",
+      "state": "OPEN",
+      "draft": false,
+      "head": {
+        "branch": "codex/v38-v42-ci-baseline",
+        "sha": "38dfe62cd7c81671eaaab6ea5eaa32e6478e118c"
+      },
+      "base": {
+        "branch": "codex/v38-gate2-recheck",
+        "sha": "d02bdabeb163897fe29ce9aa4f4c0f3928e9ec27",
+        "parent_pr": 11
+      },
+      "merge_state": "CLEAN",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflow": "Offline test suite",
+          "started_at": "2026-10-09T01:29:09Z",
+          "completed_at": "2026-10-09T01:50:56Z",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37869988925/job/113625612026"
+        }
+      ],
+      "checks_disposition": "LATEST_REPORTED_CHECKS",
+      "changed_files": [
+        {
+          "path": ".gitattributes",
+          "change_type": "MODIFIED",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": ".github/workflows/offline-tests.yml",
+          "change_type": "ADDED",
+          "additions": 51,
+          "deletions": 0
+        },
+        {
+          "path": "docs/plans/Multi-Asset-Trader-Terminal-Roadmap.md",
+          "change_type": "MODIFIED",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "pyproject.toml",
+          "change_type": "MODIFIED",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "tests/test_v12_monitoring_runtime.py",
+          "change_type": "MODIFIED",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "tests/test_v2_execution.py",
+          "change_type": "MODIFIED",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "tests/test_v39_sse_fault_injection.py",
+          "change_type": "MODIFIED",
+          "additions": 5,
+          "deletions": 2
+        }
+      ]
+    },
+    {
+      "number": 13,
+      "title": "V38: add offline blind-label handoff tooling",
+      "state": "OPEN",
+      "draft": false,
+      "head": {
+        "branch": "codex/v38-blind-annotation-packets",
+        "sha": "42c425fddfdb220cbb7d407083ad65b1fa28d369"
+      },
+      "base": {
+        "branch": "codex/v38-v42-ci-baseline",
+        "sha": "38dfe62cd7c81671eaaab6ea5eaa32e6478e118c",
+        "parent_pr": 12
+      },
+      "merge_state": "CLEAN",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflow": "Offline test suite",
+          "started_at": "2026-10-09T02:30:12Z",
+          "completed_at": "2026-10-09T02:44:17Z",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37874867434/job/113641025006"
+        }
+      ],
+      "checks_disposition": "LATEST_REPORTED_CHECKS",
+      "changed_files": [
+        {
+          "path": "core/replay/pa_decision_quality_v38/blind_label_packets.py",
+          "change_type": "ADDED",
+          "additions": 640,
+          "deletions": 0
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v38/blind_labels.py",
+          "change_type": "MODIFIED",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "docs/audits/V38-blind-label-handoff-tooling.md",
+          "change_type": "ADDED",
+          "additions": 57,
+          "deletions": 0
+        },
+        {
+          "path": "docs/plans/V38-V42-master-implementation-plan.md",
+          "change_type": "MODIFIED",
+          "additions": 7,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/build_v38_blind_annotation_packet.py",
+          "change_type": "ADDED",
+          "additions": 85,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/import_v38_blind_annotation_submissions.py",
+          "change_type": "ADDED",
+          "additions": 73,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/templates/v38-blind-label-packet.html",
+          "change_type": "ADDED",
+          "additions": 355,
+          "deletions": 0
+        },
+        {
+          "path": "tests/v38/test_blind_label_packets.py",
+          "change_type": "ADDED",
+          "additions": 280,
+          "deletions": 0
+        },
+        {
+          "path": "tests/v38/test_blind_labels.py",
+          "change_type": "MODIFIED",
+          "additions": 13,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "number": 14,
+      "title": "V38: add preregistered blind-label agreement metrics",
+      "state": "OPEN",
+      "draft": false,
+      "head": {
+        "branch": "codex/v38-label-agreement-metrics",
+        "sha": "3fda7909eeff95ef2e707419824e93105a790fae"
+      },
+      "base": {
+        "branch": "codex/v38-blind-annotation-packets",
+        "sha": "42c425fddfdb220cbb7d407083ad65b1fa28d369",
+        "parent_pr": 13
+      },
+      "merge_state": "CLEAN",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflow": "Offline test suite",
+          "started_at": "2026-10-09T03:28:59Z",
+          "completed_at": "2026-10-09T03:50:40Z",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37879468194/job/113655574119"
+        }
+      ],
+      "checks_disposition": "LATEST_REPORTED_CHECKS",
+      "changed_files": [
+        {
+          "path": "core/replay/pa_decision_quality_v38/blind_label_metrics.py",
+          "change_type": "ADDED",
+          "additions": 378,
+          "deletions": 0
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v38/blind_label_packets.py",
+          "change_type": "MODIFIED",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "docs/audits/V38-blind-label-agreement-metrics.md",
+          "change_type": "ADDED",
+          "additions": 57,
+          "deletions": 0
+        },
+        {
+          "path": "docs/plans/V38-V42-master-implementation-plan.md",
+          "change_type": "MODIFIED",
+          "additions": 7,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/summarize_v38_blind_annotation_metrics.py",
+          "change_type": "ADDED",
+          "additions": 79,
+          "deletions": 0
+        },
+        {
+          "path": "tests/v38/test_blind_label_metrics.py",
+          "change_type": "ADDED",
+          "additions": 215,
+          "deletions": 0
+        },
+        {
+          "path": "tests/v38/test_blind_label_packets.py",
+          "change_type": "MODIFIED",
+          "additions": 38,
+          "deletions": 1
+        }
+      ]
+    },
+    {
+      "number": 15,
+      "title": "Docs: refresh product roadmap gate status",
+      "state": "OPEN",
+      "draft": false,
+      "head": {
+        "branch": "codex/product-roadmap-v38-current-state",
+        "sha": "a08c61c2d828a959553dcab32ee728e80f250923"
+      },
+      "base": {
+        "branch": "codex/v38-label-agreement-metrics",
+        "sha": "3fda7909eeff95ef2e707419824e93105a790fae",
+        "parent_pr": 14
+      },
+      "merge_state": "CLEAN",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflow": "Offline test suite",
+          "started_at": "2026-10-09T04:23:52Z",
+          "completed_at": "2026-10-09T04:46:14Z",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37883680491/job/113668805399"
+        }
+      ],
+      "checks_disposition": "LATEST_REPORTED_CHECKS",
+      "changed_files": [
+        {
+          "path": "docs/plans/Multi-Asset-Trader-Terminal-Roadmap.md",
+          "change_type": "MODIFIED",
+          "additions": 1,
+          "deletions": 1
+        }
+      ]
+    },
+    {
+      "number": 16,
+      "title": "V38: independently cross-check Gate 2 dataset evidence",
+      "state": "OPEN",
+      "draft": false,
+      "head": {
+        "branch": "codex/v38-independent-gate2-audit",
+        "sha": "2931f80e96086dd85a021ab2af6b54119917b14a"
+      },
+      "base": {
+        "branch": "codex/product-roadmap-v38-current-state",
+        "sha": "a08c61c2d828a959553dcab32ee728e80f250923",
+        "parent_pr": 15
+      },
+      "merge_state": "CLEAN",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflow": "Offline test suite",
+          "started_at": "2026-10-09T05:25:18Z",
+          "completed_at": "2026-10-09T05:43:30Z",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37888482628/job/113683783727"
+        }
+      ],
+      "checks_disposition": "LATEST_REPORTED_CHECKS",
+      "changed_files": [
+        {
+          "path": "docs/audits/V38-gate2-standalone-crosscheck.md",
+          "change_type": "ADDED",
+          "additions": 43,
+          "deletions": 0
+        },
+        {
+          "path": "docs/plans/V38-V42-master-implementation-plan.md",
+          "change_type": "MODIFIED",
+          "additions": 8,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/independent_verify_v38_gate2.py",
+          "change_type": "ADDED",
+          "additions": 597,
+          "deletions": 0
+        },
+        {
+          "path": "tests/v38/test_independent_gate2_audit.py",
+          "change_type": "ADDED",
+          "additions": 170,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "number": 17,
+      "title": "V38: independently verify frozen source archive bytes",
+      "state": "OPEN",
+      "draft": false,
+      "head": {
+        "branch": "codex/v38-source-archive-verification",
+        "sha": "8511e56ed9803671c3d363a766a5896c6049749c"
+      },
+      "base": {
+        "branch": "codex/v38-independent-gate2-audit",
+        "sha": "2931f80e96086dd85a021ab2af6b54119917b14a",
+        "parent_pr": 16
+      },
+      "merge_state": "CLEAN",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflow": "Offline test suite",
+          "started_at": "2026-10-09T06:51:39Z",
+          "completed_at": "2026-10-09T07:05:42Z",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37895756221/job/113706613450"
+        }
+      ],
+      "checks_disposition": "LATEST_REPORTED_CHECKS",
+      "changed_files": [
+        {
+          "path": "docs/audits/V38-V42-gate-decision-panel.md",
+          "change_type": "MODIFIED",
+          "additions": 6,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V38-V42-unattended-acceptance.md",
+          "change_type": "MODIFIED",
+          "additions": 16,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V38-gate2-standalone-crosscheck.md",
+          "change_type": "MODIFIED",
+          "additions": 17,
+          "deletions": 0
+        },
+        {
+          "path": "docs/plans/Multi-Asset-Trader-Terminal-Roadmap.md",
+          "change_type": "MODIFIED",
+          "additions": 5,
+          "deletions": 1
+        },
+        {
+          "path": "docs/plans/V38-V42-master-implementation-plan.md",
+          "change_type": "MODIFIED",
+          "additions": 8,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/independent_verify_v38_gate2.py",
+          "change_type": "MODIFIED",
+          "additions": 387,
+          "deletions": 11
+        },
+        {
+          "path": "tests/test_independent_verify_v38_source_archive.py",
+          "change_type": "ADDED",
+          "additions": 268,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "number": 18,
+      "title": "V38: independently reconstruct visible market inputs",
+      "state": "OPEN",
+      "draft": false,
+      "head": {
+        "branch": "codex/v38-independent-market-input-audit",
+        "sha": "3852be25f9f95a0f693a1fa6f2e31bfbc900b1c2"
+      },
+      "base": {
+        "branch": "codex/v38-source-archive-verification",
+        "sha": "8511e56ed9803671c3d363a766a5896c6049749c",
+        "parent_pr": 17
+      },
+      "merge_state": "CLEAN",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflow": "Offline test suite",
+          "started_at": "2026-10-09T08:40:06Z",
+          "completed_at": "2026-10-09T09:00:53Z",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37906365567/job/113740688697"
+        }
+      ],
+      "checks_disposition": "LATEST_REPORTED_CHECKS",
+      "changed_files": [
+        {
+          "path": "core/replay/pa_decision_quality_v38/market_only.py",
+          "change_type": "MODIFIED",
+          "additions": 4,
+          "deletions": 2
+        },
+        {
+          "path": "docs/audits/V38-V42-gate-decision-panel.md",
+          "change_type": "MODIFIED",
+          "additions": 4,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V38-V42-unattended-acceptance.md",
+          "change_type": "MODIFIED",
+          "additions": 8,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V38-derived-market-input-independent-audit.md",
+          "change_type": "ADDED",
+          "additions": 42,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V38-gate2-standalone-crosscheck.md",
+          "change_type": "MODIFIED",
+          "additions": 8,
+          "deletions": 0
+        },
+        {
+          "path": "docs/plans/V38-V42-master-implementation-plan.md",
+          "change_type": "MODIFIED",
+          "additions": 9,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/independent_verify_v38_market_inputs.py",
+          "change_type": "ADDED",
+          "additions": 787,
+          "deletions": 0
+        },
+        {
+          "path": "tests/v38/test_independent_market_input_audit.py",
+          "change_type": "ADDED",
+          "additions": 313,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "number": 19,
+      "title": "docs: align V1.0 product contract with research gates",
+      "state": "OPEN",
+      "draft": false,
+      "head": {
+        "branch": "codex/product-contract-v1-supplement",
+        "sha": "ffb2b29397ee388583332e18b3002d2a20f5e30a"
+      },
+      "base": {
+        "branch": "codex/v38-independent-market-input-audit",
+        "sha": "3852be25f9f95a0f693a1fa6f2e31bfbc900b1c2",
+        "parent_pr": 18
+      },
+      "merge_state": "CLEAN",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflow": "Offline test suite",
+          "started_at": "2026-10-09T09:10:42Z",
+          "completed_at": "2026-10-09T09:31:24Z",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37909584178/job/113751236404"
+        }
+      ],
+      "checks_disposition": "LATEST_REPORTED_CHECKS",
+      "changed_files": [
+        {
+          "path": "docs/plans/AI-Market-Analyst-Product-Contract-V1.md",
+          "change_type": "MODIFIED",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "docs/plans/Multi-Asset-Trader-Terminal-Roadmap.md",
+          "change_type": "MODIFIED",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "docs/plans/V38-V42-master-implementation-plan.md",
+          "change_type": "MODIFIED",
+          "additions": 8,
+          "deletions": 1
+        }
+      ]
+    },
+    {
+      "number": 20,
+      "title": "fix: scope Gate paper credentials to TestNet",
+      "state": "OPEN",
+      "draft": false,
+      "head": {
+        "branch": "codex/gate-testnet-credential-entry",
+        "sha": "43eb1835ef76b8c39f9b560ceaa3cac1b436d1bf"
+      },
+      "base": {
+        "branch": "codex/product-contract-v1-supplement",
+        "sha": "ffb2b29397ee388583332e18b3002d2a20f5e30a",
+        "parent_pr": 19
+      },
+      "merge_state": "CLEAN",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflow": "Offline test suite",
+          "started_at": "2026-10-09T13:57:48Z",
+          "completed_at": "2026-10-09T14:23:32Z",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37940625375/job/113853767137"
+        }
+      ],
+      "checks_disposition": "LATEST_REPORTED_CHECKS",
+      "changed_files": [
+        {
+          "path": "apps/api/v2.py",
+          "change_type": "MODIFIED",
+          "additions": 9,
+          "deletions": 0
+        },
+        {
+          "path": "core/macro_calendar.py",
+          "change_type": "MODIFIED",
+          "additions": 7,
+          "deletions": 6
+        },
+        {
+          "path": "core/trading/gate_testnet_e2e.py",
+          "change_type": "MODIFIED",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "docs/plans/AI-Market-Analyst-Product-Contract-V1.md",
+          "change_type": "MODIFIED",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "docs/plans/Multi-Asset-Trader-Terminal-Roadmap.md",
+          "change_type": "MODIFIED",
+          "additions": 3,
+          "deletions": 1
+        },
+        {
+          "path": "scripts/phase7-launcher-ownership-smoke.ps1",
+          "change_type": "MODIFIED",
+          "additions": 10,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/phase7-local.ps1",
+          "change_type": "MODIFIED",
+          "additions": 28,
+          "deletions": 4
+        },
+        {
+          "path": "tests/test_gate_account_chain.py",
+          "change_type": "MODIFIED",
+          "additions": 49,
+          "deletions": 1
+        },
+        {
+          "path": "tests/test_gate_testnet_ai_chain.py",
+          "change_type": "MODIFIED",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "tests/test_macro_actuals.py",
+          "change_type": "MODIFIED",
+          "additions": 8,
+          "deletions": 3
+        },
+        {
+          "path": "web/src/pages/V2WorkspacePage.test.tsx",
+          "change_type": "MODIFIED",
+          "additions": 45,
+          "deletions": 10
+        },
+        {
+          "path": "web/src/pages/V2WorkspacePage.tsx",
+          "change_type": "MODIFIED",
+          "additions": 118,
+          "deletions": 17
+        }
+      ]
+    },
+    {
+      "number": 21,
+      "title": "V39: verify authorized Gemini response identity",
+      "state": "OPEN",
+      "draft": false,
+      "head": {
+        "branch": "codex/v39-model-identity-evidence",
+        "sha": "941e38372a0c0f96d1aaecd4a4ca2faf62dd3070"
+      },
+      "base": {
+        "branch": "codex/gate-testnet-credential-entry",
+        "sha": "43eb1835ef76b8c39f9b560ceaa3cac1b436d1bf",
+        "parent_pr": 20
+      },
+      "merge_state": "CLEAN",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflow": "Offline test suite",
+          "started_at": "2026-10-09T14:41:22Z",
+          "completed_at": "2026-10-09T15:04:18Z",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37946041859/job/113872423578"
+        }
+      ],
+      "checks_disposition": "LATEST_REPORTED_CHECKS",
+      "changed_files": [
+        {
+          "path": "docs/audits/V39-authorized-model-identity-probe.md",
+          "change_type": "ADDED",
+          "additions": 31,
+          "deletions": 0
+        },
+        {
+          "path": "docs/plans/V38-V42-master-implementation-plan.md",
+          "change_type": "MODIFIED",
+          "additions": 23,
+          "deletions": 5
+        }
+      ]
+    },
+    {
+      "number": 22,
+      "title": "fix: page Gate TestNet candles and support 4h",
+      "state": "OPEN",
+      "draft": false,
+      "head": {
+        "branch": "codex/gate-testnet-4h-bars",
+        "sha": "cb03f8e34cedca18d735187fdab41cda388eaa99"
+      },
+      "base": {
+        "branch": "codex/gate-testnet-credential-entry",
+        "sha": "43eb1835ef76b8c39f9b560ceaa3cac1b436d1bf",
+        "parent_pr": 20
+      },
+      "merge_state": "CLEAN",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflow": "Offline test suite",
+          "started_at": "2026-10-09T16:26:34Z",
+          "completed_at": "2026-10-09T16:49:36Z",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37959069121/job/113917187049"
+        }
+      ],
+      "checks_disposition": "LATEST_REPORTED_CHECKS",
+      "changed_files": [
+        {
+          "path": "core/providers/gateio_provider.py",
+          "change_type": "MODIFIED",
+          "additions": 47,
+          "deletions": 14
+        },
+        {
+          "path": "docs/audits/v38-gate-testnet-run-20261010.md",
+          "change_type": "ADDED",
+          "additions": 34,
+          "deletions": 0
+        },
+        {
+          "path": "tests/test_gate_provider_timeframes.py",
+          "change_type": "ADDED",
+          "additions": 163,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "number": 23,
+      "title": "fix: reconcile Gate TestNet reduce-only evidence",
+      "state": "OPEN",
+      "draft": false,
+      "head": {
+        "branch": "codex/v38-testnet-paper-run",
+        "sha": "5831f9785e5f8b09d6a819c562949beceb6db4b0"
+      },
+      "base": {
+        "branch": "codex/product-contract-v1-supplement",
+        "sha": "ffb2b29397ee388583332e18b3002d2a20f5e30a",
+        "parent_pr": 19
+      },
+      "merge_state": "UNSTABLE",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "workflow": "Offline test suite",
+          "started_at": "2026-10-09T17:00:43Z",
+          "completed_at": "2026-10-09T17:22:32Z",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37963206552/job/113930956243"
+        }
+      ],
+      "checks_disposition": "LATEST_REPORTED_CHECKS",
+      "changed_files": [
+        {
+          "path": "core/trading/gate_testnet_e2e.py",
+          "change_type": "MODIFIED",
+          "additions": 6,
+          "deletions": 2
+        },
+        {
+          "path": "docs/audits/V38-gate-testnet-smoke-20261010.md",
+          "change_type": "ADDED",
+          "additions": 37,
+          "deletions": 0
+        },
+        {
+          "path": "tests/test_gate_testnet_ai_chain.py",
+          "change_type": "MODIFIED",
+          "additions": 26,
+          "deletions": 2
+        }
+      ]
+    },
+    {
+      "number": 24,
+      "title": "fix(v41): make macro calendar tests clock-deterministic",
+      "state": "OPEN",
+      "draft": false,
+      "head": {
+        "branch": "codex/v41-macro-actuals-clock-fixtures",
+        "sha": "5e9ef3781a06cdab1f70353242fdd8124bf2ad11"
+      },
+      "base": {
+        "branch": "codex/v38-testnet-paper-run",
+        "sha": "5831f9785e5f8b09d6a819c562949beceb6db4b0",
+        "parent_pr": 23
+      },
+      "merge_state": "CLEAN",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflow": "Offline test suite",
+          "started_at": "2026-10-09T17:27:36Z",
+          "completed_at": "2026-10-09T17:47:55Z",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37966405672/job/113941735085"
+        }
+      ],
+      "checks_disposition": "LATEST_REPORTED_CHECKS",
+      "changed_files": [
+        {
+          "path": "core/macro_calendar.py",
+          "change_type": "MODIFIED",
+          "additions": 7,
+          "deletions": 6
+        },
+        {
+          "path": "docs/audits/V38-V42-gate-decision-panel.md",
+          "change_type": "MODIFIED",
+          "additions": 8,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V41-macro-calendar-clock-determinism.md",
+          "change_type": "ADDED",
+          "additions": 24,
+          "deletions": 0
+        },
+        {
+          "path": "docs/plans/V38-V42-master-implementation-plan.md",
+          "change_type": "MODIFIED",
+          "additions": 6,
+          "deletions": 0
+        },
+        {
+          "path": "tests/test_macro_actuals.py",
+          "change_type": "MODIFIED",
+          "additions": 6,
+          "deletions": 2
+        }
+      ]
+    },
+    {
+      "number": 25,
+      "title": "feat: authorized V38 Gemini research runner",
+      "state": "OPEN",
+      "draft": false,
+      "head": {
+        "branch": "codex/v38-authorized-gemini-runner",
+        "sha": "fcfc9ec37102d0ec4a09fc777fec0e44d20291cc"
+      },
+      "base": {
+        "branch": "codex/v41-macro-actuals-clock-fixtures",
+        "sha": "5e9ef3781a06cdab1f70353242fdd8124bf2ad11",
+        "parent_pr": 24
+      },
+      "merge_state": "CLEAN",
+      "checks": [
+        {
+          "name": "Offline quick and full suites",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "workflow": "Offline test suite",
+          "started_at": "2026-10-10T09:04:50Z",
+          "completed_at": "2026-10-10T09:26:17Z",
+          "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38040115559/job/114178500642"
+        }
+      ],
+      "checks_disposition": "LATEST_REPORTED_CHECKS",
+      "changed_files": [
+        {
+          "path": "configs/research/authorizations/v38-gemini-json-format-pilot-20261010-v1.json",
+          "change_type": "ADDED",
+          "additions": 46,
+          "deletions": 0
+        },
+        {
+          "path": "configs/research/authorizations/v38-gemini-optimization-run-20261010-v1.json",
+          "change_type": "ADDED",
+          "additions": 50,
+          "deletions": 0
+        },
+        {
+          "path": "configs/research/prompts/v38-market-only-a1-json-format-pilot-v1.json",
+          "change_type": "ADDED",
+          "additions": 31,
+          "deletions": 0
+        },
+        {
+          "path": "core/ai/ollama.py",
+          "change_type": "MODIFIED",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "core/model_client.py",
+          "change_type": "MODIFIED",
+          "additions": 6,
+          "deletions": 1
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v38/format_pilot.py",
+          "change_type": "ADDED",
+          "additions": 625,
+          "deletions": 0
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v38/gemini_runner.py",
+          "change_type": "ADDED",
+          "additions": 1131,
+          "deletions": 0
+        },
+        {
+          "path": "core/replay/pa_decision_quality_v38/json_response.py",
+          "change_type": "ADDED",
+          "additions": 60,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V38-V42-gate-decision-panel.md",
+          "change_type": "MODIFIED",
+          "additions": 39,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V38-V42-unattended-acceptance.md",
+          "change_type": "MODIFIED",
+          "additions": 14,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V38-gemini-json-format-pilot-followup.md",
+          "change_type": "ADDED",
+          "additions": 38,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V38-gemini-runner-readiness.md",
+          "change_type": "ADDED",
+          "additions": 43,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V38-gemini-smoke-followup.md",
+          "change_type": "ADDED",
+          "additions": 85,
+          "deletions": 0
+        },
+        {
+          "path": "docs/audits/V39-transport-reliability.md",
+          "change_type": "MODIFIED",
+          "additions": 8,
+          "deletions": 0
+        },
+        {
+          "path": "docs/plans/V38-V42-master-implementation-plan.md",
+          "change_type": "MODIFIED",
+          "additions": 40,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/run_market_only_gemini_v38.py",
+          "change_type": "ADDED",
+          "additions": 293,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/run_v38_json_format_pilot.py",
+          "change_type": "ADDED",
+          "additions": 158,
+          "deletions": 0
+        },
+        {
+          "path": "tests/test_gate_testnet_ai_chain.py",
+          "change_type": "MODIFIED",
+          "additions": 15,
+          "deletions": 2
+        },
+        {
+          "path": "tests/test_gemini_health_failure_evidence.py",
+          "change_type": "MODIFIED",
+          "additions": 20,
+          "deletions": 0
+        },
+        {
+          "path": "tests/test_gemini_structured_stream.py",
+          "change_type": "MODIFIED",
+          "additions": 48,
+          "deletions": 2
+        },
+        {
+          "path": "tests/v38/test_format_pilot.py",
+          "change_type": "ADDED",
+          "additions": 242,
+          "deletions": 0
+        },
+        {
+          "path": "tests/v38/test_gemini_runner.py",
+          "change_type": "ADDED",
+          "additions": 756,
+          "deletions": 0
+        },
+        {
+          "path": "tests/v38/test_json_response.py",
+          "change_type": "ADDED",
+          "additions": 64,
+          "deletions": 0
+        }
+      ]
+    }
+  ],
+  "branch_topology": [
+    {
+      "anchor_pr": 19,
+      "branches": [
+        {
+          "pr": 20,
+          "children": [
+            21,
+            22
+          ]
+        },
+        {
+          "pr": 23,
+          "descendants": [
+            25
+          ],
+          "children": [
+            24
+          ]
+        }
+      ],
+      "finding": "PRs 20-22 and 23-25 are sibling lines from the PR 19 lineage; PR 25 does not include PRs 20-22."
+    }
+  ],
+  "current_ci_summary": {
+    "latest_run_id": 38040115559,
+    "latest_run_head_sha": "fcfc9ec37102d0ec4a09fc777fec0e44d20291cc",
+    "latest_run_status": "IN_PROGRESS_AT_SNAPSHOT",
+    "latest_run_url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38040115559",
+    "prior_pr23_failed_run_id": 37963206552,
+    "pr24_repair_success_run_id": 37966405672,
+    "previous_pr25_green_run_id": 38035500488,
+    "note": "A run on a prior commit is not evidence for the current head; PRs 1-11 have no reported statusCheckRollup in GitHub at this snapshot."
+  },
+  "recent_workflow_runs": [
+    {
+      "id": 38040115559,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "success",
+      "branch": "codex/v38-authorized-gemini-runner",
+      "sha": "fcfc9ec37102d0ec4a09fc777fec0e44d20291cc",
+      "event": "pull_request",
+      "created_at": "2026-10-10T09:04:46Z",
+      "updated_at": "2026-10-10T09:26:17Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38040115559"
+    },
+    {
+      "id": 38035500488,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "success",
+      "branch": "codex/v38-authorized-gemini-runner",
+      "sha": "fdaa380918bde8afcc68976855824eea323f7405",
+      "event": "pull_request",
+      "created_at": "2026-10-10T07:45:11Z",
+      "updated_at": "2026-10-10T08:03:37Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38035500488"
+    },
+    {
+      "id": 38034198847,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "success",
+      "branch": "codex/v38-authorized-gemini-runner",
+      "sha": "3976b2011571046c5a259b93ad3214c38dca553e",
+      "event": "pull_request",
+      "created_at": "2026-10-10T07:22:23Z",
+      "updated_at": "2026-10-10T07:37:53Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38034198847"
+    },
+    {
+      "id": 38030946343,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "success",
+      "branch": "codex/v38-authorized-gemini-runner",
+      "sha": "86c34af466894003b821eb33af2c02d0c47c6a51",
+      "event": "pull_request",
+      "created_at": "2026-10-10T06:26:38Z",
+      "updated_at": "2026-10-10T07:06:03Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38030946343"
+    },
+    {
+      "id": 38028883504,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "success",
+      "branch": "codex/v38-authorized-gemini-runner",
+      "sha": "63f80cf6100eb3dabf24aa9d45ceb1c759de40e7",
+      "event": "pull_request",
+      "created_at": "2026-10-10T05:50:39Z",
+      "updated_at": "2026-10-10T06:09:06Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38028883504"
+    },
+    {
+      "id": 38022284991,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "success",
+      "branch": "codex/v38-authorized-gemini-runner",
+      "sha": "26366f075a45f2b5a6a893a72c90b175ce1701ef",
+      "event": "pull_request",
+      "created_at": "2026-10-10T03:55:56Z",
+      "updated_at": "2026-10-10T04:17:51Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38022284991"
+    },
+    {
+      "id": 38020986950,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "branch": "codex/v38-authorized-gemini-runner",
+      "sha": "3735f660efd1d579f248112a7f257f6de1ca6383",
+      "event": "pull_request",
+      "created_at": "2026-10-10T03:33:32Z",
+      "updated_at": "2026-10-10T03:56:04Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38020986950"
+    },
+    {
+      "id": 38019164193,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "success",
+      "branch": "codex/v38-authorized-gemini-runner",
+      "sha": "fe06d034c091f6431bdbd093643ed9f5f0732f26",
+      "event": "pull_request",
+      "created_at": "2026-10-10T03:02:41Z",
+      "updated_at": "2026-10-10T03:26:48Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38019164193"
+    },
+    {
+      "id": 38017637786,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "success",
+      "branch": "codex/v38-authorized-gemini-runner",
+      "sha": "1d8ddabeca15d7a3ac6f64ec0a45b5bc7ad07fea",
+      "event": "pull_request",
+      "created_at": "2026-10-10T02:37:24Z",
+      "updated_at": "2026-10-10T02:51:09Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38017637786"
+    },
+    {
+      "id": 38015439803,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "success",
+      "branch": "codex/v38-authorized-gemini-runner",
+      "sha": "130d21271423a9cc4148ecda09823cc072147c01",
+      "event": "pull_request",
+      "created_at": "2026-10-10T02:01:52Z",
+      "updated_at": "2026-10-10T02:24:12Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38015439803"
+    },
+    {
+      "id": 37966405672,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "success",
+      "branch": "codex/v41-macro-actuals-clock-fixtures",
+      "sha": "5e9ef3781a06cdab1f70353242fdd8124bf2ad11",
+      "event": "pull_request",
+      "created_at": "2026-10-09T17:27:32Z",
+      "updated_at": "2026-10-09T17:47:55Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37966405672"
+    },
+    {
+      "id": 37963206552,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "failure",
+      "branch": "codex/v38-testnet-paper-run",
+      "sha": "5831f9785e5f8b09d6a819c562949beceb6db4b0",
+      "event": "pull_request",
+      "created_at": "2026-10-09T17:00:39Z",
+      "updated_at": "2026-10-09T17:22:33Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37963206552"
+    },
+    {
+      "id": 37959069121,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "success",
+      "branch": "codex/gate-testnet-4h-bars",
+      "sha": "cb03f8e34cedca18d735187fdab41cda388eaa99",
+      "event": "pull_request",
+      "created_at": "2026-10-09T16:25:57Z",
+      "updated_at": "2026-10-09T16:49:37Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37959069121"
+    },
+    {
+      "id": 37957281721,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "branch": "codex/gate-testnet-4h-bars",
+      "sha": "d442647e878e0dbdf30602e37305ffd21c0ec902",
+      "event": "pull_request",
+      "created_at": "2026-10-09T16:11:19Z",
+      "updated_at": "2026-10-09T16:26:31Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37957281721"
+    },
+    {
+      "id": 37946041859,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "success",
+      "branch": "codex/v39-model-identity-evidence",
+      "sha": "941e38372a0c0f96d1aaecd4a4ca2faf62dd3070",
+      "event": "pull_request",
+      "created_at": "2026-10-09T14:41:18Z",
+      "updated_at": "2026-10-09T15:04:19Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37946041859"
+    },
+    {
+      "id": 37940625375,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "success",
+      "branch": "codex/gate-testnet-credential-entry",
+      "sha": "43eb1835ef76b8c39f9b560ceaa3cac1b436d1bf",
+      "event": "pull_request",
+      "created_at": "2026-10-09T13:57:41Z",
+      "updated_at": "2026-10-09T14:23:34Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37940625375"
+    },
+    {
+      "id": 37935173943,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "success",
+      "branch": "codex/gate-testnet-credential-entry",
+      "sha": "4f446413bb3759f6a4ece59c91756d5b0cd73f1d",
+      "event": "pull_request",
+      "created_at": "2026-10-09T13:12:14Z",
+      "updated_at": "2026-10-09T13:31:32Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37935173943"
+    },
+    {
+      "id": 37933029233,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "branch": "codex/gate-testnet-credential-entry",
+      "sha": "94df2fd569455238c9e03c02e2155198e733c622",
+      "event": "pull_request",
+      "created_at": "2026-10-09T12:53:29Z",
+      "updated_at": "2026-10-09T13:12:30Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37933029233"
+    },
+    {
+      "id": 37926230007,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "success",
+      "branch": "codex/gate-testnet-credential-entry",
+      "sha": "85a499cbefdae20ee432dabb6e35429a275cf859",
+      "event": "pull_request",
+      "created_at": "2026-10-09T11:50:40Z",
+      "updated_at": "2026-10-09T12:10:33Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37926230007"
+    },
+    {
+      "id": 37909584178,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "success",
+      "branch": "codex/product-contract-v1-supplement",
+      "sha": "ffb2b29397ee388583332e18b3002d2a20f5e30a",
+      "event": "pull_request",
+      "created_at": "2026-10-09T09:10:39Z",
+      "updated_at": "2026-10-09T09:31:25Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37909584178"
+    },
+    {
+      "id": 37906365567,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "success",
+      "branch": "codex/v38-independent-market-input-audit",
+      "sha": "3852be25f9f95a0f693a1fa6f2e31bfbc900b1c2",
+      "event": "pull_request",
+      "created_at": "2026-10-09T08:40:03Z",
+      "updated_at": "2026-10-09T09:00:54Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37906365567"
+    },
+    {
+      "id": 37895756221,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "success",
+      "branch": "codex/v38-source-archive-verification",
+      "sha": "8511e56ed9803671c3d363a766a5896c6049749c",
+      "event": "pull_request",
+      "created_at": "2026-10-09T06:51:36Z",
+      "updated_at": "2026-10-09T07:05:43Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37895756221"
+    },
+    {
+      "id": 37888482628,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "success",
+      "branch": "codex/v38-independent-gate2-audit",
+      "sha": "2931f80e96086dd85a021ab2af6b54119917b14a",
+      "event": "pull_request",
+      "created_at": "2026-10-09T05:25:14Z",
+      "updated_at": "2026-10-09T05:43:30Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37888482628"
+    },
+    {
+      "id": 37883680491,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "success",
+      "branch": "codex/product-roadmap-v38-current-state",
+      "sha": "a08c61c2d828a959553dcab32ee728e80f250923",
+      "event": "pull_request",
+      "created_at": "2026-10-09T04:23:49Z",
+      "updated_at": "2026-10-09T04:46:15Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37883680491"
+    },
+    {
+      "id": 37879468194,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "success",
+      "branch": "codex/v38-label-agreement-metrics",
+      "sha": "3fda7909eeff95ef2e707419824e93105a790fae",
+      "event": "pull_request",
+      "created_at": "2026-10-09T03:28:56Z",
+      "updated_at": "2026-10-09T03:50:41Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37879468194"
+    },
+    {
+      "id": 37877417766,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "success",
+      "branch": "codex/v38-label-agreement-metrics",
+      "sha": "d6ac527edf872d6c24b7bd2b2c1fcf885adaf13d",
+      "event": "pull_request",
+      "created_at": "2026-10-09T03:02:25Z",
+      "updated_at": "2026-10-09T03:21:46Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37877417766"
+    },
+    {
+      "id": 37874867434,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "success",
+      "branch": "codex/v38-blind-annotation-packets",
+      "sha": "42c425fddfdb220cbb7d407083ad65b1fa28d369",
+      "event": "pull_request",
+      "created_at": "2026-10-09T02:30:08Z",
+      "updated_at": "2026-10-09T02:44:18Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37874867434"
+    },
+    {
+      "id": 37869988925,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "success",
+      "branch": "codex/v38-v42-ci-baseline",
+      "sha": "38dfe62cd7c81671eaaab6ea5eaa32e6478e118c",
+      "event": "pull_request",
+      "created_at": "2026-10-09T01:29:05Z",
+      "updated_at": "2026-10-09T01:50:56Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37869988925"
+    },
+    {
+      "id": 37867704428,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "failure",
+      "branch": "codex/v38-v42-ci-baseline",
+      "sha": "573f9b75c276f137e837ae2b2b7d937f5669ba66",
+      "event": "pull_request",
+      "created_at": "2026-10-09T01:01:21Z",
+      "updated_at": "2026-10-09T01:22:34Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37867704428"
+    },
+    {
+      "id": 37867699774,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "failure",
+      "branch": "codex/v38-v42-ci-baseline",
+      "sha": "573f9b75c276f137e837ae2b2b7d937f5669ba66",
+      "event": "push",
+      "created_at": "2026-10-09T01:01:18Z",
+      "updated_at": "2026-10-09T01:21:47Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37867699774"
+    },
+    {
+      "id": 37866948042,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "failure",
+      "branch": "codex/v38-v42-ci-baseline",
+      "sha": "e08566ec7edd6e50be3aa5011e8dda27f38d317f",
+      "event": "pull_request",
+      "created_at": "2026-10-09T00:52:17Z",
+      "updated_at": "2026-10-09T00:53:58Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37866948042"
+    },
+    {
+      "id": 37866940097,
+      "workflow": "Offline test suite",
+      "status": "completed",
+      "conclusion": "failure",
+      "branch": "codex/v38-v42-ci-baseline",
+      "sha": "e08566ec7edd6e50be3aa5011e8dda27f38d317f",
+      "event": "push",
+      "created_at": "2026-10-09T00:52:11Z",
+      "updated_at": "2026-10-09T00:53:57Z",
+      "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37866940097"
+    }
+  ],
+  "changed_file_overlaps_reviewed": [
+    {
+      "pr_a": 20,
+      "pr_b": 23,
+      "shared_paths": [
+        "core/trading/gate_testnet_e2e.py",
+        "tests/test_gate_testnet_ai_chain.py"
+      ]
+    },
+    {
+      "pr_a": 20,
+      "pr_b": 24,
+      "shared_paths": [
+        "core/macro_calendar.py",
+        "tests/test_macro_actuals.py"
+      ]
+    },
+    {
+      "pr_a": 20,
+      "pr_b": 25,
+      "shared_paths": [
+        "tests/test_gate_testnet_ai_chain.py"
+      ]
+    },
+    {
+      "pr_a": 21,
+      "pr_b": 24,
+      "shared_paths": [
+        "docs/plans/V38-V42-master-implementation-plan.md"
+      ]
+    },
+    {
+      "pr_a": 21,
+      "pr_b": 25,
+      "shared_paths": [
+        "docs/plans/V38-V42-master-implementation-plan.md"
+      ]
+    },
+    {
+      "pr_a": 23,
+      "pr_b": 25,
+      "shared_paths": [
+        "tests/test_gate_testnet_ai_chain.py"
+      ]
+    },
+    {
+      "pr_a": 24,
+      "pr_b": 25,
+      "shared_paths": [
+        "docs/audits/V38-V42-gate-decision-panel.md",
+        "docs/plans/V38-V42-master-implementation-plan.md"
+      ]
+    }
+  ],
+  "post_snapshot_ci_followups": [
+    {
+      "observed_at_utc": "2026-10-10T09:30:49Z",
+      "run_id": 38040115559,
+      "head_sha": "fcfc9ec37102d0ec4a09fc777fec0e44d20291cc",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "quick_gate": {
+        "passed": 222,
+        "failed": 0,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38040115559"
+      },
+      "full_suite": {
+        "passed": 2513,
+        "failed": 0,
+        "warnings": 1,
+        "subtests_passed": 25,
+        "duration_seconds": 1156.97
+      },
+      "pr_state": {
+        "state": "OPEN",
+        "merge_state": "CLEAN",
+        "auto_merge_enabled": false
+      },
+      "scope_note": "This verifies PR 25 at this exact head; it does not cover the missing PR 20/21/22 branches in one combined SHA."
+    }
+  ]
+}

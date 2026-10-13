@@ -191,7 +191,7 @@ class Phase4APITests(unittest.TestCase):
             self.assertEqual(model_health.json()["provider"], "mock_llm")
             self.assertFalse(model_health.json()["available"])
             self.assertFalse(model_health.json()["model_available"])
-            self.assertEqual(model_health.json()["error_code"], "BONSAI_PROVIDER_REQUIRED")
+            self.assertEqual(model_health.json()["error_code"], "GEMINI_RELAY_PROVIDER_REQUIRED")
             checked_at = datetime.fromisoformat(model_health.json()["checked_at"])
             self.assertLess(abs((datetime.now(UTC) - checked_at).total_seconds()), 5)
 
@@ -216,7 +216,7 @@ class Phase4APITests(unittest.TestCase):
             self_reported_health = TestClient(self_reporting_app).get("/health/model").json()
             self.assertFalse(self_reported_health["available"])
             self.assertFalse(self_reported_health["consult"]["available"])
-            self.assertEqual(self_reported_health["error_code"], "BONSAI_PROVIDER_REQUIRED")
+            self.assertEqual(self_reported_health["error_code"], "GEMINI_RELAY_PROVIDER_REQUIRED")
 
         with patch.dict(
             os.environ,

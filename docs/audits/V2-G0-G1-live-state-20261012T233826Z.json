@@ -1,0 +1,805 @@
+{
+  "schema": "V2_G0_G1_LIVE_STATE_V1",
+  "observed_at_utc": "2026-10-12T23:38:26Z",
+  "repository": "LJ0930l-beep/AI_Market_Analyst",
+  "worktree": {
+    "branch": "codex/v2-g1-offline-20261010",
+    "head": "86ab6fe124b2541fd7f73482dbabe2dd23f63b48",
+    "clean": false,
+    "source_code_changes": false,
+    "note": "Only additive audit and blocker documentation changes are present in the worktree."
+  },
+  "handbook": {
+    "path": "C:/Users/baicha/Downloads/AI_Market_Analyst_V2_0_%E5%BC%80%E5%8F%91%E6%80%BB%E7%BA%B2_%E9%98%BB%E5%A1%9E%E5%A4%84%E7%BD%AE%E6%89%8B%E5%86%8C.md",
+    "sha256": "A31A70795C02B9F5BE3ED505361AA3133ADFE82DA09DDD18DE8FE5D482841B4D",
+    "historic_baseline": {
+      "main": "8642639a78ca9aa56fbad1e88aea4b82169ea433",
+      "open_prs": 25,
+      "tests": "about 2488 passed, 1 skipped",
+      "v38_intents": 72
+    }
+  },
+  "prior_snapshot": {
+    "path": "docs/audits/V2-G0-G1-live-state-20261012T214604Z.json",
+    "sha256": "82D0E5C910B2B1C36FEF188629460405C9311D8569BC91D83AE139C27FAB1A0D",
+    "observed_at_utc": "2026-10-12T21:46:04Z",
+    "prior_matrix_path": "docs/audits/PR-INTEGRATION-MATRIX-20261012T202915Z.json",
+    "prior_matrix_sha256": "F7694E9609011EB04E86E417548E79A3EDD1EAB51EDC837501E1F1FDB6156E31"
+  },
+  "github": {
+    "main": "8642639a78ca9aa56fbad1e88aea4b82169ea433",
+    "main_unchanged": true,
+    "total": 27,
+    "open": 27,
+    "merged": 0,
+    "closed": 0,
+    "checks": {
+      "pass": 15,
+      "failure": 1,
+      "no_reported_checks": 11,
+      "pending": 0,
+      "other": 0
+    },
+    "current_pr_inventory": [
+      {
+        "number": 27,
+        "title": "V2 G1 offline V38 response contract and negative matrix",
+        "state": "OPEN",
+        "draft": true,
+        "head_branch": "codex/v2-g1-offline-20261010",
+        "head_sha": "86ab6fe124b2541fd7f73482dbabe2dd23f63b48",
+        "base_branch": "codex/v2-g0-integration-20261010",
+        "base_sha": "00d1c4405a513b9e5cdee9f6fa15808b4386d8b1",
+        "updated_at": "2026-10-12T23:06:11Z",
+        "review_decision": "",
+        "check_bucket": "PASS",
+        "checks": [
+          {
+            "name": "Offline quick and full suites",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38320355179/job/115047075790"
+          },
+          {
+            "name": "Web tests, lint, and production build",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38320355179/job/115047113035"
+          }
+        ],
+        "head_changed_since_prior_snapshot": true,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/27"
+      },
+      {
+        "number": 26,
+        "title": "V2 G0 integration candidate for PRs 20–22 and 25",
+        "state": "OPEN",
+        "draft": true,
+        "head_branch": "codex/v2-g0-integration-20261010",
+        "head_sha": "00d1c4405a513b9e5cdee9f6fa15808b4386d8b1",
+        "base_branch": "main",
+        "base_sha": "8642639a78ca9aa56fbad1e88aea4b82169ea433",
+        "updated_at": "2026-10-11T03:15:23Z",
+        "review_decision": "",
+        "check_bucket": "PASS",
+        "checks": [
+          {
+            "name": "Offline quick and full suites",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38107795624/job/114376883698"
+          }
+        ],
+        "head_changed_since_prior_snapshot": false,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/26"
+      },
+      {
+        "number": 25,
+        "title": "feat: authorized V38 Gemini research runner",
+        "state": "OPEN",
+        "draft": false,
+        "head_branch": "codex/v38-authorized-gemini-runner",
+        "head_sha": "97d138fc3f8072668af1bbeada3475d612f55a7d",
+        "base_branch": "codex/v41-macro-actuals-clock-fixtures",
+        "base_sha": "5e9ef3781a06cdab1f70353242fdd8124bf2ad11",
+        "updated_at": "2026-10-10T09:39:17Z",
+        "review_decision": "",
+        "check_bucket": "PASS",
+        "checks": [
+          {
+            "name": "Offline quick and full suites",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38042151994/job/114184367588"
+          }
+        ],
+        "head_changed_since_prior_snapshot": false,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/25"
+      },
+      {
+        "number": 24,
+        "title": "fix(v41): make macro calendar tests clock-deterministic",
+        "state": "OPEN",
+        "draft": false,
+        "head_branch": "codex/v41-macro-actuals-clock-fixtures",
+        "head_sha": "5e9ef3781a06cdab1f70353242fdd8124bf2ad11",
+        "base_branch": "codex/v38-testnet-paper-run",
+        "base_sha": "5831f9785e5f8b09d6a819c562949beceb6db4b0",
+        "updated_at": "2026-10-09T17:27:28Z",
+        "review_decision": "",
+        "check_bucket": "PASS",
+        "checks": [
+          {
+            "name": "Offline quick and full suites",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37966405672/job/113941735085"
+          }
+        ],
+        "head_changed_since_prior_snapshot": false,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/24"
+      },
+      {
+        "number": 23,
+        "title": "fix: reconcile Gate TestNet reduce-only evidence",
+        "state": "OPEN",
+        "draft": false,
+        "head_branch": "codex/v38-testnet-paper-run",
+        "head_sha": "5831f9785e5f8b09d6a819c562949beceb6db4b0",
+        "base_branch": "codex/product-contract-v1-supplement",
+        "base_sha": "ffb2b29397ee388583332e18b3002d2a20f5e30a",
+        "updated_at": "2026-10-09T17:00:36Z",
+        "review_decision": "",
+        "check_bucket": "FAILURE",
+        "checks": [
+          {
+            "name": "Offline quick and full suites",
+            "status": "COMPLETED",
+            "conclusion": "FAILURE",
+            "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37963206552/job/113930956243"
+          }
+        ],
+        "head_changed_since_prior_snapshot": false,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/23"
+      },
+      {
+        "number": 22,
+        "title": "fix: page Gate TestNet candles and support 4h",
+        "state": "OPEN",
+        "draft": false,
+        "head_branch": "codex/gate-testnet-4h-bars",
+        "head_sha": "cb03f8e34cedca18d735187fdab41cda388eaa99",
+        "base_branch": "codex/gate-testnet-credential-entry",
+        "base_sha": "43eb1835ef76b8c39f9b560ceaa3cac1b436d1bf",
+        "updated_at": "2026-10-09T16:25:53Z",
+        "review_decision": "",
+        "check_bucket": "PASS",
+        "checks": [
+          {
+            "name": "Offline quick and full suites",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37959069121/job/113917187049"
+          }
+        ],
+        "head_changed_since_prior_snapshot": false,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/22"
+      },
+      {
+        "number": 21,
+        "title": "V39: verify authorized Gemini response identity",
+        "state": "OPEN",
+        "draft": false,
+        "head_branch": "codex/v39-model-identity-evidence",
+        "head_sha": "941e38372a0c0f96d1aaecd4a4ca2faf62dd3070",
+        "base_branch": "codex/gate-testnet-credential-entry",
+        "base_sha": "43eb1835ef76b8c39f9b560ceaa3cac1b436d1bf",
+        "updated_at": "2026-10-09T14:41:15Z",
+        "review_decision": "",
+        "check_bucket": "PASS",
+        "checks": [
+          {
+            "name": "Offline quick and full suites",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37946041859/job/113872423578"
+          }
+        ],
+        "head_changed_since_prior_snapshot": false,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/21"
+      },
+      {
+        "number": 20,
+        "title": "fix: scope Gate paper credentials to TestNet",
+        "state": "OPEN",
+        "draft": false,
+        "head_branch": "codex/gate-testnet-credential-entry",
+        "head_sha": "43eb1835ef76b8c39f9b560ceaa3cac1b436d1bf",
+        "base_branch": "codex/product-contract-v1-supplement",
+        "base_sha": "ffb2b29397ee388583332e18b3002d2a20f5e30a",
+        "updated_at": "2026-10-09T13:57:36Z",
+        "review_decision": "",
+        "check_bucket": "PASS",
+        "checks": [
+          {
+            "name": "Offline quick and full suites",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37940625375/job/113853767137"
+          }
+        ],
+        "head_changed_since_prior_snapshot": false,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/20"
+      },
+      {
+        "number": 19,
+        "title": "docs: align V1.0 product contract with research gates",
+        "state": "OPEN",
+        "draft": false,
+        "head_branch": "codex/product-contract-v1-supplement",
+        "head_sha": "ffb2b29397ee388583332e18b3002d2a20f5e30a",
+        "base_branch": "codex/v38-independent-market-input-audit",
+        "base_sha": "3852be25f9f95a0f693a1fa6f2e31bfbc900b1c2",
+        "updated_at": "2026-10-09T09:10:35Z",
+        "review_decision": "",
+        "check_bucket": "PASS",
+        "checks": [
+          {
+            "name": "Offline quick and full suites",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37909584178/job/113751236404"
+          }
+        ],
+        "head_changed_since_prior_snapshot": false,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/19"
+      },
+      {
+        "number": 18,
+        "title": "V38: independently reconstruct visible market inputs",
+        "state": "OPEN",
+        "draft": false,
+        "head_branch": "codex/v38-independent-market-input-audit",
+        "head_sha": "3852be25f9f95a0f693a1fa6f2e31bfbc900b1c2",
+        "base_branch": "codex/v38-source-archive-verification",
+        "base_sha": "8511e56ed9803671c3d363a766a5896c6049749c",
+        "updated_at": "2026-10-09T08:39:59Z",
+        "review_decision": "",
+        "check_bucket": "PASS",
+        "checks": [
+          {
+            "name": "Offline quick and full suites",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37906365567/job/113740688697"
+          }
+        ],
+        "head_changed_since_prior_snapshot": false,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/18"
+      },
+      {
+        "number": 17,
+        "title": "V38: independently verify frozen source archive bytes",
+        "state": "OPEN",
+        "draft": false,
+        "head_branch": "codex/v38-source-archive-verification",
+        "head_sha": "8511e56ed9803671c3d363a766a5896c6049749c",
+        "base_branch": "codex/v38-independent-gate2-audit",
+        "base_sha": "2931f80e96086dd85a021ab2af6b54119917b14a",
+        "updated_at": "2026-10-09T06:51:33Z",
+        "review_decision": "",
+        "check_bucket": "PASS",
+        "checks": [
+          {
+            "name": "Offline quick and full suites",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37895756221/job/113706613450"
+          }
+        ],
+        "head_changed_since_prior_snapshot": false,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/17"
+      },
+      {
+        "number": 16,
+        "title": "V38: independently cross-check Gate 2 dataset evidence",
+        "state": "OPEN",
+        "draft": false,
+        "head_branch": "codex/v38-independent-gate2-audit",
+        "head_sha": "2931f80e96086dd85a021ab2af6b54119917b14a",
+        "base_branch": "codex/product-roadmap-v38-current-state",
+        "base_sha": "a08c61c2d828a959553dcab32ee728e80f250923",
+        "updated_at": "2026-10-09T05:25:09Z",
+        "review_decision": "",
+        "check_bucket": "PASS",
+        "checks": [
+          {
+            "name": "Offline quick and full suites",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37888482628/job/113683783727"
+          }
+        ],
+        "head_changed_since_prior_snapshot": false,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/16"
+      },
+      {
+        "number": 15,
+        "title": "Docs: refresh product roadmap gate status",
+        "state": "OPEN",
+        "draft": false,
+        "head_branch": "codex/product-roadmap-v38-current-state",
+        "head_sha": "a08c61c2d828a959553dcab32ee728e80f250923",
+        "base_branch": "codex/v38-label-agreement-metrics",
+        "base_sha": "3fda7909eeff95ef2e707419824e93105a790fae",
+        "updated_at": "2026-10-09T04:23:46Z",
+        "review_decision": "",
+        "check_bucket": "PASS",
+        "checks": [
+          {
+            "name": "Offline quick and full suites",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37883680491/job/113668805399"
+          }
+        ],
+        "head_changed_since_prior_snapshot": false,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/15"
+      },
+      {
+        "number": 14,
+        "title": "V38: add preregistered blind-label agreement metrics",
+        "state": "OPEN",
+        "draft": false,
+        "head_branch": "codex/v38-label-agreement-metrics",
+        "head_sha": "3fda7909eeff95ef2e707419824e93105a790fae",
+        "base_branch": "codex/v38-blind-annotation-packets",
+        "base_sha": "42c425fddfdb220cbb7d407083ad65b1fa28d369",
+        "updated_at": "2026-10-09T03:51:31Z",
+        "review_decision": "",
+        "check_bucket": "PASS",
+        "checks": [
+          {
+            "name": "Offline quick and full suites",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37879468194/job/113655574119"
+          }
+        ],
+        "head_changed_since_prior_snapshot": false,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/14"
+      },
+      {
+        "number": 13,
+        "title": "V38: add offline blind-label handoff tooling",
+        "state": "OPEN",
+        "draft": false,
+        "head_branch": "codex/v38-blind-annotation-packets",
+        "head_sha": "42c425fddfdb220cbb7d407083ad65b1fa28d369",
+        "base_branch": "codex/v38-v42-ci-baseline",
+        "base_sha": "38dfe62cd7c81671eaaab6ea5eaa32e6478e118c",
+        "updated_at": "2026-10-09T02:30:05Z",
+        "review_decision": "",
+        "check_bucket": "PASS",
+        "checks": [
+          {
+            "name": "Offline quick and full suites",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37874867434/job/113641025006"
+          }
+        ],
+        "head_changed_since_prior_snapshot": false,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/13"
+      },
+      {
+        "number": 12,
+        "title": "CI: add offline quick and full test gates",
+        "state": "OPEN",
+        "draft": false,
+        "head_branch": "codex/v38-v42-ci-baseline",
+        "head_sha": "38dfe62cd7c81671eaaab6ea5eaa32e6478e118c",
+        "base_branch": "codex/v38-gate2-recheck",
+        "base_sha": "d02bdabeb163897fe29ce9aa4f4c0f3928e9ec27",
+        "updated_at": "2026-10-09T01:51:47Z",
+        "review_decision": "",
+        "check_bucket": "PASS",
+        "checks": [
+          {
+            "name": "Offline quick and full suites",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/37869988925/job/113625612026"
+          }
+        ],
+        "head_changed_since_prior_snapshot": false,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/12"
+      },
+      {
+        "number": 11,
+        "title": "V38 Gate 2: record fresh data recheck",
+        "state": "OPEN",
+        "draft": false,
+        "head_branch": "codex/v38-gate2-recheck",
+        "head_sha": "d02bdabeb163897fe29ce9aa4f4c0f3928e9ec27",
+        "base_branch": "codex/v40-duplicate-bar-replay",
+        "base_sha": "df97590645889dee44b382f0ce5e8309a1922265",
+        "updated_at": "2026-10-09T00:43:47Z",
+        "review_decision": "",
+        "check_bucket": "NO_REPORTED_CHECKS",
+        "checks": [],
+        "head_changed_since_prior_snapshot": false,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/11"
+      },
+      {
+        "number": 10,
+        "title": "V40: prove duplicate simulated fills stay idempotent after restore",
+        "state": "OPEN",
+        "draft": false,
+        "head_branch": "codex/v40-duplicate-bar-replay",
+        "head_sha": "df97590645889dee44b382f0ce5e8309a1922265",
+        "base_branch": "codex/v39-offline-fault-injection",
+        "base_sha": "1bfb4dc06b1ef1161adb20e4e0d1e40dc3e73779",
+        "updated_at": "2026-10-09T00:35:27Z",
+        "review_decision": "",
+        "check_bucket": "NO_REPORTED_CHECKS",
+        "checks": [],
+        "head_changed_since_prior_snapshot": false,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/10"
+      },
+      {
+        "number": 9,
+        "title": "V39: offline SSE fault injection and trace identity",
+        "state": "OPEN",
+        "draft": false,
+        "head_branch": "codex/v39-offline-fault-injection",
+        "head_sha": "1bfb4dc06b1ef1161adb20e4e0d1e40dc3e73779",
+        "base_branch": "codex/v38-gate2-blind-eval",
+        "base_sha": "3108b9377f822bb1164f6f2054be9b0efc95692c",
+        "updated_at": "2026-10-09T00:21:03Z",
+        "review_decision": "",
+        "check_bucket": "NO_REPORTED_CHECKS",
+        "checks": [],
+        "head_changed_since_prior_snapshot": false,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/9"
+      },
+      {
+        "number": 8,
+        "title": "V38 Gate 2: freeze purged blind-evaluation sample",
+        "state": "OPEN",
+        "draft": false,
+        "head_branch": "codex/v38-gate2-blind-eval",
+        "head_sha": "3108b9377f822bb1164f6f2054be9b0efc95692c",
+        "base_branch": "codex/v41-current-gemini-test-contract",
+        "base_sha": "dfcc777d19f61ccba8ab18aa20627f0f21107eae",
+        "updated_at": "2026-10-08T23:27:41Z",
+        "review_decision": "",
+        "check_bucket": "NO_REPORTED_CHECKS",
+        "checks": [],
+        "head_changed_since_prior_snapshot": false,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/8"
+      },
+      {
+        "number": 7,
+        "title": "V41 Gate 5: audit inherited test failures",
+        "state": "OPEN",
+        "draft": false,
+        "head_branch": "codex/v41-current-gemini-test-contract",
+        "head_sha": "dfcc777d19f61ccba8ab18aa20627f0f21107eae",
+        "base_branch": "codex/v38-research-readiness",
+        "base_sha": "b2bb544daf258461ce653db904de95e185f9449e",
+        "updated_at": "2026-10-08T22:16:30Z",
+        "review_decision": "",
+        "check_bucket": "NO_REPORTED_CHECKS",
+        "checks": [],
+        "head_changed_since_prior_snapshot": false,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/7"
+      },
+      {
+        "number": 6,
+        "title": "V38 research readiness and multi-asset product roadmap",
+        "state": "OPEN",
+        "draft": false,
+        "head_branch": "codex/v38-research-readiness",
+        "head_sha": "b2bb544daf258461ce653db904de95e185f9449e",
+        "base_branch": "codex/v37.1-research-fixes",
+        "base_sha": "64a5c4206a5073e0c44e9d5cc4178705ffa24664",
+        "updated_at": "2026-10-08T18:16:29Z",
+        "review_decision": "",
+        "check_bucket": "NO_REPORTED_CHECKS",
+        "checks": [],
+        "head_changed_since_prior_snapshot": false,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/6"
+      },
+      {
+        "number": 5,
+        "title": "V37.1: fix research partitions and A3 signal freshness",
+        "state": "OPEN",
+        "draft": false,
+        "head_branch": "codex/v37.1-research-fixes",
+        "head_sha": "64a5c4206a5073e0c44e9d5cc4178705ffa24664",
+        "base_branch": "codex/v37-historical-evidence",
+        "base_sha": "608ee0083b9e7912c02fd3bf53d05087378f944f",
+        "updated_at": "2026-10-08T17:26:43Z",
+        "review_decision": "",
+        "check_bucket": "NO_REPORTED_CHECKS",
+        "checks": [],
+        "head_changed_since_prior_snapshot": false,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/5"
+      },
+      {
+        "number": 4,
+        "title": "V37: Reconstruct auditable historical evidence",
+        "state": "OPEN",
+        "draft": false,
+        "head_branch": "codex/v37-historical-evidence",
+        "head_sha": "608ee0083b9e7912c02fd3bf53d05087378f944f",
+        "base_branch": "codex/v36.1-research-integrity",
+        "base_sha": "23ca359082193033d9c40ee282c41a074eee53a2",
+        "updated_at": "2026-10-08T16:12:36Z",
+        "review_decision": "",
+        "check_bucket": "NO_REPORTED_CHECKS",
+        "checks": [],
+        "head_changed_since_prior_snapshot": false,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/4"
+      },
+      {
+        "number": 3,
+        "title": "V36.1: repair offline cache and identity validation",
+        "state": "OPEN",
+        "draft": false,
+        "head_branch": "codex/v36.1-research-integrity",
+        "head_sha": "23ca359082193033d9c40ee282c41a074eee53a2",
+        "base_branch": "codex/v36-pa-decision-quality",
+        "base_sha": "191ae39f0c4ce3a6aab88a95a004056c981a57b8",
+        "updated_at": "2026-10-08T15:18:29Z",
+        "review_decision": "",
+        "check_bucket": "NO_REPORTED_CHECKS",
+        "checks": [],
+        "head_changed_since_prior_snapshot": false,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/3"
+      },
+      {
+        "number": 2,
+        "title": "V36: add isolated price action research and review",
+        "state": "OPEN",
+        "draft": false,
+        "head_branch": "codex/v36-pa-decision-quality",
+        "head_sha": "191ae39f0c4ce3a6aab88a95a004056c981a57b8",
+        "base_branch": "codex/v35-feasibility",
+        "base_sha": "2a5d7b9992a7909a6a597917e409ecb0737f9c89",
+        "updated_at": "2026-10-08T14:48:37Z",
+        "review_decision": "",
+        "check_bucket": "NO_REPORTED_CHECKS",
+        "checks": [],
+        "head_changed_since_prior_snapshot": false,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/2"
+      },
+      {
+        "number": 1,
+        "title": "V35: add trade feasibility diagnostics and counterfactual study",
+        "state": "OPEN",
+        "draft": false,
+        "head_branch": "codex/v35-feasibility",
+        "head_sha": "2a5d7b9992a7909a6a597917e409ecb0737f9c89",
+        "base_branch": "main",
+        "base_sha": "8642639a78ca9aa56fbad1e88aea4b82169ea433",
+        "updated_at": "2026-10-08T07:46:09Z",
+        "review_decision": "",
+        "check_bucket": "NO_REPORTED_CHECKS",
+        "checks": [],
+        "head_changed_since_prior_snapshot": false,
+        "base_changed_since_prior_snapshot": false,
+        "url": "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/1"
+      }
+    ]
+  },
+  "integration": {
+    "pr26": {
+      "head": "00d1c4405a513b9e5cdee9f6fa15808b4386d8b1",
+      "base_branch": "main",
+      "state": "OPEN",
+      "draft": true,
+      "reviews": 0,
+      "review_requests": 0,
+      "auto_merge": false,
+      "latest_ci_run": 38107795624,
+      "latest_ci": "SUCCESS"
+    },
+    "pr27": {
+      "head": "86ab6fe124b2541fd7f73482dbabe2dd23f63b48",
+      "base_branch": "codex/v2-g0-integration-20261010",
+      "state": "OPEN",
+      "draft": true,
+      "reviews": 0,
+      "review_requests": 0,
+      "auto_merge": false,
+      "latest_ci_run": 38320355179,
+      "latest_ci": "SUCCESS",
+      "quick_passed": 289,
+      "full_passed": 2605,
+      "full_failed": 0,
+      "subtests": 25,
+      "warnings": 1,
+      "web_ci": "SUCCESS"
+    },
+    "pr23": {
+      "head": "5831f9785e5f8b09d6a819c562949beceb6db4b0",
+      "latest_ci_run": 37963206552,
+      "latest_ci": "FAILURE",
+      "failures": 3
+    },
+    "pr1_to_pr25_heads_ancestor_of_pr26": {
+      "ancestor_count_at_prior_snapshot": 25,
+      "pr26_is_ancestor_of_pr27_at_prior_snapshot": true,
+      "current_scope": "PR #1-#26 head/base SHAs are unchanged since the prior snapshot; PR #27 added documentation-only commits."
+    },
+    "changed_since_prior_snapshot": [
+      {
+        "number": 27,
+        "head": "86ab6fe124b2541fd7f73482dbabe2dd23f63b48",
+        "head_changed": true,
+        "base": "00d1c4405a513b9e5cdee9f6fa15808b4386d8b1",
+        "base_changed": false
+      }
+    ],
+    "pr27_documentation_commits": [
+      "34f09e717b6303019c873ef274781fcadec079c9",
+      "09884ba4966e763693ccdfe1c67847f67d2b1ce5",
+      "86ab6fe124b2541fd7f73482dbabe2dd23f63b48"
+    ]
+  },
+  "g0": {
+    "status": "NOT_ACCEPTED_FIX_IN_REVIEW",
+    "reasons": [
+      "PR #26/#27 remain OPEN/Draft without independent review or review requests; no G0 acceptance decision is recorded.",
+      "B-20261013-006 sequencing conflict is resolved: G0 verifies fail-closed calibration behavior; the positive remote identity mode is a G4 item after G0-G3.",
+      "PR #1-#11 have no reported individual checks and PR #23 current head remains failed; the integrated PR #26/#27 candidates have their own passing exact-head CI."
+    ],
+    "combination_coverage": {
+      "gate_4h_pagination": {
+        "status": "OFFLINE_TEST_PASS",
+        "test": "test_gate_native_bars_backfills_older_rows_with_testnet_range_query",
+        "intervals": [
+          "15m",
+          "4h"
+        ],
+        "real_gate_api_called": false
+      },
+      "testnet_native_reduce_only": {
+        "status": "OFFLINE_TEST_PASS",
+        "test": "test_gate_testnet_e2e_handles_native_is_reduce_only_field",
+        "live_testnet_called": false
+      },
+      "server_account_isolation": {
+        "status": "OFFLINE_TEST_PASS",
+        "test": "test_gate_testnet_account_does_not_read_local_ledger_or_route_paper_order",
+        "live_server_called": false
+      },
+      "gemini_response_identity": {
+        "status": "OFFLINE_TEST_PASS",
+        "tests": [
+          "test_v2_rejects_missing_actual_response_model_without_using_requested_model_as_identity",
+          "test_payload_model_alone_does_not_verify_missing_adapter_identity",
+          "test_adapter_receipt_alone_does_not_hide_missing_payload_model"
+        ],
+        "provider_called": false
+      },
+      "calibration_remote_mode": {
+        "status": "G0_FAIL_CLOSED_GUARD_PASS_POSITIVE_MODE_DEFERRED_TO_G4",
+        "positive_remote_identity_mode": "G4_DELIVERABLE_AFTER_G0_G3",
+        "negative_guard_test": "test_missing_weight_digest_keeps_calibration_not_ready_without_model_call",
+        "generate_json_calls": 0,
+        "active_profile_created": false,
+        "adjudication": "B-20261013-006; see V2-G0-G1-gate-adjudication-20261012T223231Z.md"
+      }
+    }
+  },
+  "g1": {
+    "status": "OFFLINE_CONTRACT_VERIFIED_REMOTE_CAPABILITY_UNVERIFIED",
+    "legacy_v38": {
+      "intents": 72,
+      "classifications": {
+        "invalid_json": 67,
+        "call_error_no_retry": 4,
+        "ambiguous_no_result_never_retry": 1
+      },
+      "valid_analysis": 0,
+      "old_evidence_changed": false,
+      "ledgers": [
+        {
+          "path": "D:\\RJ\\codex\\ai-market-analyst\\reports\\v38+\\runs\\v38-gemini-call-intent-ledger-v1.jsonl",
+          "bytes": 512044,
+          "sha256": "820212A5699B718C922232C584FCFDCB4F79B675EA8653B1898A0D4025B837A7"
+        },
+        {
+          "path": "D:\\RJ\\codex\\ai-market-analyst\\reports\\v38+\\runs\\v38-gemini-json-format-pilot-ledger-20261010-v1.jsonl",
+          "bytes": 8580,
+          "sha256": "4852F2F893F3F68FCA325D5FF07621958C42336861DC3CED2D59DA423AEBDF19"
+        }
+      ],
+      "root_cause_evidence": {
+        "observed": "All 67 legacy INVALID_JSON contents were complete single JSON Markdown fences; finish_reason=stop and reported model fields matched the request.",
+        "offline_diagnostic": "67/67 fenced responses parse with the offline compatibility parser and pass frozen V38 schema/evidence_refs checks; this is diagnostic-only and promotes 0 historical analyses.",
+        "unknown": [
+          "Original raw HTTP body was not retained; provider response_format behavior is unverified.",
+          "Usage receipts are arithmetically inconsistent; billing and quota settlement are unknown.",
+          "Reported response model fields do not attest immutable model weights."
+        ]
+      }
+    },
+    "offline_v2": {
+      "schema_parser_identity_evidence_refs_truncation_and_choice_tests": "PASS",
+      "current_quick_passed": 289,
+      "current_full_passed": 2605,
+      "remote_dispatch_enabled": false,
+      "call_authorized": false,
+      "maximum_calls": 0
+    },
+    "unknowns": [
+      "Antigravity/Gemini response_format support",
+      "authenticated actual response model identity and immutable weights evidence",
+      "billing and quota settlement"
+    ],
+    "next_gate": "G2 remains NOT_AUTHORIZED; no new provider call."
+  },
+  "local_verification": {
+    "pre_commit_hook_head_09884ba": "2604 passed, 1 skipped, 1 existing Starlette/httpx deprecation warning, 798.70 seconds",
+    "pre_commit_hook_head_86ab6fe": "2604 passed, 1 skipped, 1 existing Starlette/httpx deprecation warning, 815.04 seconds",
+    "hosted_run": {
+      "id": 38320355179,
+      "head": "86ab6fe124b2541fd7f73482dbabe2dd23f63b48",
+      "conclusion": "SUCCESS",
+      "quick_passed": 289,
+      "full_passed": 2605,
+      "full_failed": 0,
+      "subtests": 25,
+      "warnings": 1,
+      "web_lint_typecheck_build": "SUCCESS"
+    },
+    "diff_check": "PASS"
+  },
+  "side_effects": {
+    "gemini_calls": 0,
+    "antigravity_calls": 0,
+    "gate_api_calls": 0,
+    "testnet_orders": 0,
+    "live_orders": 0,
+    "production_settings_changed": false,
+    "historical_ledger_content_read": false,
+    "historical_ledger_hash_only_rechecked": true,
+    "automatic_merge": false
+  },
+  "next_actions": [
+    "Keep PR #26/#27 Draft and unmerged; independent reviewer and recorded G0 acceptance are still absent.",
+    "Keep V2 provider dispatch disabled and G2 NOT_AUTHORIZED until G0/G1 gates and fresh bounded model-call authorization are satisfied.",
+    "Preserve PR #23 failure, PR #1-#11 no-reported-checks labels, original V38 intent classifications, and both immutable ledgers.",
+    "G4 remote calibration identity contract begins only after its upstream gate conditions; no model call or order."
+  ]
+}

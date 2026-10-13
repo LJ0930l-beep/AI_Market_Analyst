@@ -1,0 +1,94 @@
+{
+  "schema_version": "pa-market-only-v38/stratified-purged-sample-plan-1",
+  "plan_id": "V38_BINANCE_BTC_ETH_STRATIFIED_PURGED_CONTEXTS_20261009_V1",
+  "frozen_on_utc_date": "2026-10-09",
+  "base_commit": "dfcc777d19f61ccba8ab18aa20627f0f21107eae",
+  "parent_plans": [
+    {"plan_id": "V38_BINANCE_BTC_ETH_MARKET_CONTEXTS_20261009_V1", "plan_sha256": "e08254d847ccfe6280d3cd209bbc53478efcb8eb60a93e54316b48e70dd4e02a"},
+    {"plan_id": "V38_BINANCE_BTC_ETH_NONOVERLAP_CONTEXTS_20261009_V1", "plan_sha256": "561e2b78bb046468c2d07d6378f913b35aee0f551ab50c8568c8021ca336bf9a"}
+  ],
+  "partition_policy_sha256": "5169daa812c643cb35b40e3c5327bfbadf30b0c6b9c7db78b172de5c561f7ac7",
+  "a3_policy_sha256_for_provenance_only": "6d88b00b8fe6e37bb51efc7aa820542db7cc8c9f753837ebf4416707af8736e1",
+  "source": {
+    "exchange_product": "BINANCE_UM_OFFICIAL_MONTHLY_PUBLIC_ARCHIVES",
+    "source_database_sha256": "c04d69fa13b68efd5e9e64e02442524961589a2d805354017f773f46169ff4d2",
+    "source_manifest_sha256": "2f348e6a190690e173f0237b5f5614102bebeb8e0573a1266014c04f5b25012a",
+    "source_window_start_utc": "2025-10-01T00:00:00Z",
+    "source_window_end_utc_exclusive": "2026-10-01T00:00:00Z"
+  },
+  "data": {
+    "symbols": ["BTCUSDT", "ETHUSDT"],
+    "timeframes": ["15m", "5m", "1h", "4h"],
+    "history_window_days": 8,
+    "availability_evidence_grade": "ASSUMED_PROXY",
+    "availability_basis": "BAR_END_PLUS_60_SECONDS_PROXY",
+    "availability_delay_seconds": 60,
+    "price_evidence_grade": "VERIFIED_ARCHIVE_RECONSTRUCTION",
+    "volume_unit": "BINANCE_BASE_ASSET_VOLUME",
+    "not_gate_data": true,
+    "historical_gate_receive_time_verified": false,
+    "point_in_time_bid_ask_available": false
+  },
+  "partitions": [
+    {
+      "id": "optimization",
+      "start_utc_inclusive": "2025-10-01T00:00:00Z",
+      "end_utc_exclusive": "2026-04-01T00:00:00Z",
+      "expected_anchor_count": 18,
+      "expected_context_count": 36,
+      "expected_visible_context_count": 36,
+      "expected_sealed_hash_count": 0
+    },
+    {
+      "id": "validation",
+      "start_utc_inclusive": "2026-04-01T00:00:00Z",
+      "end_utc_exclusive": "2026-07-01T00:00:00Z",
+      "expected_anchor_count": 9,
+      "expected_context_count": 18,
+      "expected_visible_context_count": 18,
+      "expected_sealed_hash_count": 0
+    },
+    {
+      "id": "untouched_test",
+      "start_utc_inclusive": "2026-07-01T00:00:00Z",
+      "end_utc_exclusive": "2026-10-01T00:00:00Z",
+      "expected_anchor_count": 9,
+      "expected_context_count": 18,
+      "expected_visible_context_count": 0,
+      "expected_sealed_hash_count": 18
+    }
+  ],
+  "selection": {
+    "algorithm": "SEEDED_HASH_CHOICE_WITHIN_MONTHLY_TEMPORAL_STRATA_V1",
+    "seed": "V38-STRATIFIED-PURGED-20261009-V1",
+    "decision_time_utc": "12:00:00",
+    "slots_per_month": [
+      {"slot_id": "S1", "regular_month_day_candidates_inclusive": [7, 8], "first_partition_month_candidates_inclusive": [9, 10]},
+      {"slot_id": "S2", "regular_month_day_candidates_inclusive": [16, 17], "first_partition_month_candidates_inclusive": [18, 19]},
+      {"slot_id": "S3", "regular_month_day_candidates_inclusive": [25, 26], "first_partition_month_candidates_inclusive": [27, 28]}
+    ],
+    "selection_key_version": "sha256(seed|partition|YYYY-MM|slot_id); first 32 bits modulo valid candidate count",
+    "one_anchor_per_slot_per_month": true,
+    "same_anchors_for_all_symbols": true,
+    "minimum_anchor_spacing_days": 8,
+    "input_window_start_inclusive": "decision_time_minus_8_days",
+    "input_window_end_exclusive": "decision_time",
+    "warmup_must_stay_inside_partition": true,
+    "outcome_based_selection": false,
+    "direction_or_volatility_based_selection": false,
+    "a3_trigger_based_selection": false,
+    "model_output_based_selection": false,
+    "runtime_randomness": false,
+    "cross_asset_rows_are_paired_not_independent": true,
+    "iid_or_independent_trade_claim": false
+  },
+  "invariants": {
+    "same_symbol_input_windows_overlap": false,
+    "cross_partition_input_windows_overlap": false,
+    "untouched_test_payloads_persisted": false,
+    "untouched_test_labels_or_results_created": false,
+    "historical_v25_samples_modified": false,
+    "model_outputs_included": false,
+    "orders_created": false
+  }
+}

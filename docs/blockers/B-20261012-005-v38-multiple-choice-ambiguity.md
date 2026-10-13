@@ -1,0 +1,80 @@
+# B-20261012-005 — V38 多响应 choice 静默择一
+
+```yaml
+id: B-20261012-005
+severity: S1
+status: FIX_IN_REVIEW
+component: model
+mode: RESEARCH_OFFLINE
+base_sha: 5f70d186d169261f0f337232c70e246a2e88b4e6
+branch_sha: 5bb0cc34dfe93a1f4b6fa5b312894d5878150503
+trigger_signature: V38_RESPONSE_CHOICES_MULTIPLE_SILENTLY_FIRST
+playbook_codes: B01
+first_seen_at_utc: 2026-10-12T19:15:10Z
+user_authorization: DOCUMENTED_SCOPE_ONLY
+authorization_scope: OFFLINE_REPAIR_ONLY
+external_cost_or_order_attempted: false
+remote_effect_known: false
+risk_to_funds: NONE
+affected_sample_or_order_ids: NONE; immutable V38 ledger and samples unchanged
+immediate_stop_or_isolation: Keep remote provider dispatch disabled; do not retry old intents or accept multi-choice envelopes as valid.
+evidence_files_and_hashes: docs/audits/V2-G0-G1-live-state-20261012T191510Z.json SHA-256 756a4b09584a0d168490464ba863521db6f52f91e8ff93fd9e86f7ccc071ebcc; core/replay/pa_decision_quality_v38/response_contract_v2.py SHA-256 872413fa6420a5a3093f329e809004ac0c5c755db7ad66cf87d8b2032c169cd6; tests/v38/test_response_contract_v2.py SHA-256 a14f5c83c02119b10f7f18e5ec26a02b61445383e9075565bd133c663c7bdedb
+reproduction: On base code 5f70d186, add the failure-first regression test and run python -m pytest -q tests/v38/test_response_contract_v2.py -k multiple_provider_choices; the test fails because two choices are accepted using only the first result.
+root_cause_status: CONFIRMED
+original_evidence: "Failure-first test on base 5f70d186 showed that an envelope with two choices was accepted by reading only choices[0]; the frozen V38 ledger and source samples were unchanged."
+root_cause: "The response evaluator selected the first provider choice without enforcing the single-choice envelope contract, so conflicting later content was ignored."
+temporary_mitigation: "Reject any response with a missing, non-object, or multi-item choices value; keep remote provider dispatch disabled."
+safe_fallback: Reject any response whose choices field is not a one-element list containing an object; keep remote dispatch disabled.
+patch_pr: https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/27 (stacked G1 offline branch; Draft; no auto-merge)
+repair_method: "Require exactly one object in choices before evaluating content and add failure-first regressions for conflicting or truncated extra choices."
+negative_tests: Shared response-contract rejection of missing, non-object, and multiple choices; actual authorized runner and consumed format-pilot paths reject empty, non-object, and multiple choices; conflicting/truncated second content; all existing V2 schema, evidence_refs, finish_reason, identity, empty/truncated-response, and offline-runner tests.
+unblock_criteria: Push the repair to PR #27; require quick, full, and Web/lint/type-check/build hosted checks to pass on the exact updated head; verify both actual V38 response handlers use the shared one-choice guard and confirm immutable V38 ledger/sample hashes remain unchanged. This does not establish remote response_format, model identity, billing, quota, or G0 integration approval.
+needs_human_decision: true
+next_owner_action: "The repair passed exact-head CI on PR #27 head 928b35844d2f03397c611a29aa13fe710aff4d37. Obtain independent review of the actual V38 result paths and record the G0 decision. Keep provider dispatch disabled and G2 unauthorized."
+rollback: If review or CI rejects this implementation shape, replace it only with an equivalent fail-closed check in each actual response path; never restore silent choices[0] selection. Retain this blocker history, prior audit snapshots, V35 risk controls, and immutable research records.
+```
+
+## Finding and repair
+
+The evaluator selected `choices[0]` without validating the count. A response with a valid first choice and conflicting or truncated later choice could therefore be classified as `VALID_LOCAL_CONTRACT`. The regression test first reproduced this on the unmodified base evaluator.
+
+## 2026-10-13T10:36:49Z — actual runner-path follow-up
+
+- **Finding:** The V2 fixture evaluator rejected any response whose `choices` count was not exactly one, but the actual `gemini_runner._result_event()` and `format_pilot._result_event()` still selected `choices[0]` directly. The safety property was therefore not enforced in the two existing V38 result paths.
+- **Failure-first reproduction:** On isolated pre-fix commit `52908047f37d0dc85778915002b51fd2506a3959`, the new fake-response tests produced **4 failures / 36 deselected**. Both actual handlers accepted two choices; empty-choice responses lacked the explicit count error. No provider was called; only fixed local fixtures were used. The temporary detached worktree was removed after the run.
+- **Repair under review:** Add `single_completion_choice()` to the shared JSON-response module and route the V2 contract evaluator, the authorized research runner, and the format pilot through it. Reject missing/multiple choices with `COMPLETION_CHOICE_COUNT_INVALID` and a single non-object choice with `COMPLETION_CHOICE_INVALID` before reading content. Focused post-fix tests and exact-head CI are required before considering this repair verified.
+- **Boundary:** The original V38 ledger, report, response classifications, and source dataset are unchanged. No model, exchange, TestNet, or Live request occurred.
+
+The local repair accepts exactly one object in `choices`; missing, empty, multiple, or malformed choices fail closed as `INVALID_PROVIDER_RESPONSE`. It adds no provider call, retry, trading behavior, or strategy change.
+
+## 2026-10-13T10:43:00Z local verification follow-up
+
+- Regression coverage now exercises both actual V38 result paths with empty choices, a non-object choice, and multiple choices. All six cases fail closed with the explicit choice-count or choice-shape error.
+- `python -m pytest -q tests/v38/test_response_contract_v2.py tests/v38/test_gemini_runner.py tests/v38/test_format_pilot.py tests/test_blocker_register.py`: **108 passed**.
+- Blocker register validator: **10 records conform**; Ruff lint on the changed Python source and tests: **passed**; `git diff --check`: **passed**.
+- This is local evidence on the uncommitted working tree. PR #27 still points at `52908047f37d0dc85778915002b51fd2506a3959`; exact-head CI for the repair and independent review remain outstanding.
+
+## Local verification and remaining checks
+
+Latest local verification: the complete V38 suite passed 212 tests in 28.94s, the repository quick gate passed 289 tests in 31.11s, and the commit hook passed 2,602 tests / 1 skip. PR #27 exact head `f4461a72486b8aba132eb23045e03c9b1ffe0ba3` passed hosted run [38298606199](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38298606199): quick 289; full 2,603 / 25 subtests / 1 warning; Web 29 files / 161 tests; lint, type-check, and build succeeded. This does not replace independent human review or establish remote model/provider capability.
+
+The frozen V38 ledger, historical samples, V35 risk controls, and production configuration were not modified. No Gemini, Gate, TestNet, or Live API was called; no order was submitted. The provider's structured-output capability, authenticated model/weight identity, billing, and quota remain unknown.
+
+## 2026-10-12T19:54:50Z Hosted verification
+
+The repair passed all automated checks on PR #27 exact head `f4461a72486b8aba132eb23045e03c9b1ffe0ba3` in run [38298606199](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38298606199). B005 remains `FIX_IN_REVIEW` because PR #27 is still Draft and independent human review/G0 integration approval have not occurred. No model or exchange call, order, production setting change, or historical evidence rewrite occurred.
+
+## 2026-10-12T21:46:04Z exact-head refresh
+
+The multiple-choice fail-closed repair remains present in PR #27 head 952d38a8e4d6aa800c507f6c54ee9477d744181b; exact-head run 38309564947 passed the 289-test quick gate, 2,605 full tests / 25 subtests, and Web/lint/type-check/build checks. This does not establish real Gemini response-format or identity capability. B005 remains FIX_IN_REVIEW pending independent review and G0 decision. No model call, order, or production setting change occurred.
+
+## Live refresh 2026-10-13T04:13:54Z
+- PR #27 SHA 4abdcdfe8917dbc3527196765369f73b4913f6c9 passed exact-head run 38343135615, including offline Python and Web checks. The ambiguity and attached Gate review repairs are present in the candidate.
+- Keep FIX_IN_REVIEW pending independent review/G0 decision; provider dispatch remains disabled. No model calls or retries occurred.
+
+## Exact-head verification — 2026-10-13T11:14:32Z
+
+- PR #27 exact head `928b35844d2f03397c611a29aa13fe710aff4d37` passed hosted run [38386090835](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38386090835).
+- Python quick gate: **295 passed**. Full offline suite: **2,704 passed, 25 subtests, one existing Starlette/httpx deprecation warning**. Web tests, lint, type-check, and production build passed.
+- The repair paths and all six empty/non-object/multiple-choice cases are in the tested candidate. Historical V38 ledger SHA and classifications remain unchanged.
+- B005 remains `FIX_IN_REVIEW`, not `VERIFIED`, until independent review/G0 disposition. This CI does not establish remote provider capability or authorize G2.

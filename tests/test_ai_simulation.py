@@ -397,6 +397,26 @@ def test_advance_is_idempotent_and_empty_win_rate_is_null():
     assert summary["simulation"] is True
 
 
+def test_filled_bar_replay_is_idempotent_after_checkpoint_restore():
+    sim = account()
+    submitted = sim.apply_decision(
+        decision(order_type="LIMIT", limit_price=99, order_id="entry-idempotent"), T0, MARKET
+    )
+    assert submitted["status"] == "ACCEPTED"
+    sim.advance([bar(T0)], through=T0 + timedelta(minutes=1))
+
+    fill_bar = bar(T0 + timedelta(minutes=1), low=98.5, high=100.5)
+    fills = sim.advance([fill_bar], through=T0 + timedelta(minutes=2))
+    assert len([event for event in fills if event.get("order_id") == "entry-idempotent" and event.get("fill_price") is not None]) == 1
+
+    restored = ReplayAccount.from_dict(sim.to_dict())
+    assert sim.advance([fill_bar], through=T0 + timedelta(minutes=2)) == []
+    assert restored.advance([fill_bar], through=T0 + timedelta(minutes=2)) == []
+    assert sim.to_dict() == restored.to_dict()
+    assert len(sim.positions[submitted["position_id"]]["lots"]) == 1
+    assert sim.summary({})["filled_order_count"] == 1
+
+
 @pytest.mark.parametrize("side,limit,opening,expected", [
     ("LONG", 101, 99, 99.1), ("SHORT", 99, 101, 100.89),
 ])
