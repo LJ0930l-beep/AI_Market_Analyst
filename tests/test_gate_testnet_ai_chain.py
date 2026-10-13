@@ -918,6 +918,35 @@ def test_gate_protection_readback_rejects_conflicting_native_reduce_only_flags()
         trader.fetch_protection_order("9001", "BTCUSDT")
 
 
+def test_gate_protection_readback_rejects_malformed_is_close_even_for_known_close_type():
+    class Exchange:
+        def privateFuturesGetSettlePriceOrdersOrderId(self, _params):
+            return {
+                "id": "9001", "status": "open",
+                "initial": {"contract": "BTC_USDT", "size": -1, "is_close": "nonsense"},
+                "order_type": "close-long-order",
+            }
+
+    trader = GateLiveTrader("key", "secret", testnet=True, exchange=Exchange())
+
+    with pytest.raises(ValueError, match="GATE_PROTECTION_IS_CLOSE_UNVERIFIED"):
+        trader.fetch_protection_order("9001", "BTCUSDT")
+
+
+def test_gate_protection_readback_rejects_conflicting_close_and_reduce_only_flags():
+    class Exchange:
+        def privateFuturesGetSettlePriceOrdersOrderId(self, _params):
+            return {
+                "id": "9001", "status": "open",
+                "initial": {"contract": "BTC_USDT", "size": -1, "reduce_only": False, "is_close": True},
+            }
+
+    trader = GateLiveTrader("key", "secret", testnet=True, exchange=Exchange())
+
+    with pytest.raises(ValueError, match="GATE_PROTECTION_REDUCE_ONLY_CONFLICT"):
+        trader.fetch_protection_order("9001", "BTCUSDT")
+
+
 def test_gate_protection_readback_normalizes_gate_is_reduce_only_without_reduce_only_field():
     class Exchange:
         def privateFuturesGetSettlePriceOrdersOrderId(self, _params):
@@ -1032,6 +1061,10 @@ class _E2EFixtureTrader:
         self.protection_status = "OPEN"
         self.protection_cleanup_mode = "success"
         self.protection_native_is_reduce_only = False
+        self.protection_finish_as = "cancelled"
+        self.account_truth_calls = 0
+        self.final_truth_override = None
+        self.baseline_positions: list[dict[str, Any]] = []
 
     def get_market_metadata(self, symbol):
         return {
@@ -1065,16 +1098,28 @@ class _E2EFixtureTrader:
         }
 
     def get_account_truth(self, *, include_trades=False):
-        return {
+        self.account_truth_calls += 1
+        truth = {
             "status": "AVAILABLE",
+            "api_environment": "TESTNET",
             "observed_at": "2030-01-02T12:00:00+00:00",
             "equity": 1000.0,
             "available_margin": 1000.0 if not self.open else 990.0,
             "used_margin": 0.0 if not self.open else 10.0,
-            "positions": ([{"symbol": "BTCUSDT", "side": "LONG", "contracts": "0.1", "position_id": "remote-pos"}] if self.open else []),
+            "positions": [
+                *self.baseline_positions,
+                *(
+                    [{"symbol": "BTCUSDT", "side": "LONG", "contracts": "0.1", "position_id": "remote-pos"}]
+                    if self.open
+                    else []
+                ),
+            ],
             "pending_orders": [],
             "fills": [],
         }
+        if self.account_truth_calls >= 4 and self.final_truth_override is not None:
+            return self.final_truth_override
+        return truth
 
     def cancel_order(self, order_id, symbol):
         self.canceled.append(order_id)
@@ -1086,7 +1131,7 @@ class _E2EFixtureTrader:
             initial = {"contract": "BTC_USDT", "size": "0.1", "is_reduce_only": True, "text": "t-e2e-sl"}
         return {
             "order_id": str(order_id), "symbol": symbol, "status": self.protection_status,
-            "finish_as": "cancelled" if self.protection_status == "FINISHED" else None,
+            "finish_as": self.protection_finish_as if self.protection_status == "FINISHED" else None,
             "reduce_only": True,
             "initial": initial,
             "observed_at": "2030-01-02T12:00:00+00:00",
@@ -1102,12 +1147,13 @@ class _E2EFixtureTrader:
 
 
 def _assert_gate_testnet_e2e_uses_remote_fill_and_cleans_without_local_fill(
-    tmp_path, *, native_is_reduce_only: bool,
+    tmp_path, *, native_is_reduce_only: bool, baseline_positions: list[dict[str, Any]] | None = None,
 ):
     store = _store(tmp_path)
     provision_default_gate_accounts(store)
     trader = _E2EFixtureTrader()
     trader.protection_native_is_reduce_only = native_is_reduce_only
+    trader.baseline_positions = list(baseline_positions or [])
     request = {
         "account_id": "gate_paper",
         "symbol": "BTCUSDT",
@@ -1127,10 +1173,13 @@ def _assert_gate_testnet_e2e_uses_remote_fill_and_cleans_without_local_fill(
     assert result["orders_sent"] == 2
     assert result["local_fill_created"] is False
     assert len(trader.calls) == 2
+    assert trader.account_truth_calls == 4
     assert trader.calls[1]["reduce_only"] is True
     assert trader.calls[1]["leverage"] is None
     assert trader.canceled == ["9001"]
     assert result["protection_cleanup"][0]["finish_as"] == "cancelled"
+    assert result["post_cleanup_truth"]["api_environment"] == "TESTNET"
+    assert result["post_cleanup_truth"]["pending_orders"] == []
     with store._connect() as db:
         assert db.execute("SELECT COUNT(*) FROM trade_fills").fetchone()[0] == 0
     replay = GateTestnetE2EService(store).run(request, trader)
@@ -1149,6 +1198,14 @@ def test_gate_testnet_e2e_uses_remote_fill_and_cleans_without_local_fill(tmp_pat
 def test_gate_testnet_e2e_handles_native_is_reduce_only_field(tmp_path):
     _assert_gate_testnet_e2e_uses_remote_fill_and_cleans_without_local_fill(
         tmp_path, native_is_reduce_only=True,
+    )
+
+
+def test_gate_testnet_e2e_verifies_cleanup_against_existing_same_side_baseline(tmp_path):
+    _assert_gate_testnet_e2e_uses_remote_fill_and_cleans_without_local_fill(
+        tmp_path,
+        native_is_reduce_only=False,
+        baseline_positions=[{"symbol": "BTCUSDT", "side": "LONG", "contracts": "0.5", "position_id": "existing-pos"}],
     )
 
 
@@ -1176,4 +1233,121 @@ def test_gate_testnet_e2e_never_completes_when_native_protection_cleanup_is_unve
 
     assert result["status"] == "RECONCILIATION_REQUIRED"
     assert result["error_code"] == "PROTECTION_CLEANUP_FAILED"
+    assert not any(stage["stage"] == "CLEANUP" and stage["status"] == "COMPLETED" for stage in result["stages"])
+
+
+@pytest.mark.parametrize(
+    "final_truth,error_code",
+    [
+        (
+            {
+                "status": "AVAILABLE",
+                "api_environment": "TESTNET",
+                "observed_at": "2030-01-02T12:00:00+00:00",
+                "positions": [],
+                "pending_orders": [{"id": "9001", "status": "open"}],
+            },
+            "CLEANUP_OPEN_ORDERS_REMAIN",
+        ),
+        (
+            {
+                "status": "AVAILABLE",
+                "api_environment": "TESTNET",
+                "observed_at": "2030-01-02T12:00:00+00:00",
+                "positions": [{"symbol": "BTCUSDT", "side": "LONG", "contracts": "0.1", "position_id": "leftover"}],
+                "pending_orders": [],
+            },
+            "CLEANUP_NOT_RECONCILED",
+        ),
+        (
+            {
+                "status": "UNAVAILABLE",
+                "api_environment": "TESTNET",
+                "observed_at": "2030-01-02T12:00:00+00:00",
+                "positions": [],
+                "pending_orders": [],
+            },
+            "CLEANUP_TRUTH_UNAVAILABLE",
+        ),
+        (
+            {
+                "status": "AVAILABLE",
+                "api_environment": "LIVE",
+                "observed_at": "2030-01-02T12:00:00+00:00",
+                "positions": [],
+                "pending_orders": [],
+            },
+            "CLEANUP_TRUTH_UNAVAILABLE",
+        ),
+        (
+            {
+                "status": "AVAILABLE",
+                "api_environment": "TESTNET",
+                "observed_at": None,
+                "positions": [],
+                "pending_orders": [],
+            },
+            "CLEANUP_TRUTH_UNAVAILABLE",
+        ),
+    ],
+)
+def test_gate_testnet_e2e_requires_final_account_truth_after_protection_cleanup(tmp_path, final_truth, error_code):
+    store = _store(tmp_path)
+    provision_default_gate_accounts(store)
+    trader = _E2EFixtureTrader()
+    trader.final_truth_override = final_truth
+    request = {
+        "account_id": GATE_TESTNET_ACCOUNT_ID,
+        "symbol": "BTCUSDT",
+        "side": "LONG",
+        "stop_type": "PRICE",
+        "stop_value": 99,
+        "take_profit_type": "PRICE",
+        "take_profit_value": 101,
+        "leverage": 1,
+        "cleanup": True,
+        "confirm_testnet": True,
+        "idempotency_key": f"fixture-e2e-final-truth-{error_code}",
+    }
+
+    result = GateTestnetE2EService(store).run(request, trader)
+
+    assert result["status"] == "RECONCILIATION_REQUIRED"
+    assert result["error_code"] == error_code
+    assert trader.account_truth_calls == 4
+    assert len(trader.calls) == 2
+    assert not any(stage["stage"] == "CLEANUP" and stage["status"] == "COMPLETED" for stage in result["stages"])
+
+
+@pytest.mark.parametrize(
+    "finish_as,error_code",
+    [
+        ("succeeded", "PROTECTION_TRIGGERED_DURING_CLEANUP"),
+        ("mystery-terminal", "PROTECTION_TERMINAL_READBACK_UNVERIFIED"),
+    ],
+)
+def test_gate_testnet_e2e_does_not_classify_trigger_success_or_unknown_as_cancelled(tmp_path, finish_as, error_code):
+    store = _store(tmp_path)
+    provision_default_gate_accounts(store)
+    trader = _E2EFixtureTrader()
+    trader.protection_finish_as = finish_as
+    request = {
+        "account_id": GATE_TESTNET_ACCOUNT_ID,
+        "symbol": "BTCUSDT",
+        "side": "LONG",
+        "stop_type": "PRICE",
+        "stop_value": 99,
+        "take_profit_type": "PRICE",
+        "take_profit_value": 101,
+        "leverage": 1,
+        "cleanup": True,
+        "confirm_testnet": True,
+        "idempotency_key": f"fixture-e2e-finish-{finish_as}",
+    }
+
+    result = GateTestnetE2EService(store).run(request, trader)
+
+    assert result["status"] == "RECONCILIATION_REQUIRED"
+    assert result["error_code"] == error_code
+    assert len(trader.calls) == 2
     assert not any(stage["stage"] == "CLEANUP" and stage["status"] == "COMPLETED" for stage in result["stages"])

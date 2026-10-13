@@ -191,6 +191,72 @@ class GateTestnetE2EService:
             return None
         return _finite(position.get("contracts", position.get("size")), positive=True)
 
+    @staticmethod
+    def _account_truth_complete(truth: Any) -> bool:
+        if (
+            not isinstance(truth, dict)
+            or str(truth.get("status") or "").upper() != "AVAILABLE"
+            or str(truth.get("api_environment") or "").upper() != "TESTNET"
+            or not isinstance(truth.get("positions"), list)
+            or not isinstance(truth.get("pending_orders"), list)
+        ):
+            return False
+        observed_at = truth.get("observed_at")
+        if not isinstance(observed_at, str) or not observed_at.strip():
+            return False
+        try:
+            parsed = datetime.fromisoformat(observed_at.strip().replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        return parsed.tzinfo is not None and parsed.utcoffset() is not None
+
+    @staticmethod
+    def _account_truth_evidence(truth: Any, *, include_fills: bool = False) -> dict[str, Any]:
+        keys = (
+            "status", "api_environment", "observed_at", "equity", "available_margin",
+            "positions", "pending_orders",
+        )
+        if include_fills:
+            keys += ("fills",)
+        return {
+            key: _safe_json(truth.get(key)) if isinstance(truth, dict) else None
+            for key in keys
+        }
+
+    @staticmethod
+    def _position_exposures(positions: Any) -> dict[tuple[str, str], Decimal]:
+        if not isinstance(positions, list):
+            raise GateE2EError("CLEANUP_TRUTH_UNAVAILABLE", "Gate TestNet 账户快照缺少可核验的持仓列表。")
+        exposures: dict[tuple[str, str], Decimal] = {}
+        for position in positions:
+            if not isinstance(position, dict):
+                raise GateE2EError("CLEANUP_TRUTH_UNAVAILABLE", "Gate TestNet 账户快照包含无法核验的持仓。")
+            symbol = _symbol(position.get("symbol"))
+            side = str(position.get("side") or "").upper()
+            side = {"BUY": "LONG", "SELL": "SHORT"}.get(side, side)
+            contracts = _finite(position.get("contracts", position.get("size")), positive=False)
+            if not symbol or side not in {"LONG", "SHORT"} or contracts is None or contracts < 0:
+                raise GateE2EError("CLEANUP_TRUTH_UNAVAILABLE", "Gate TestNet 账户快照包含缺少方向、标的或数量的持仓。")
+            if contracts == 0:
+                continue
+            key = (symbol, side)
+            exposures[key] = exposures.get(key, Decimal("0")) + contracts
+        return exposures
+
+    @staticmethod
+    def _pending_order_ids(orders: Any) -> set[str]:
+        if not isinstance(orders, list):
+            raise GateE2EError("CLEANUP_TRUTH_UNAVAILABLE", "Gate TestNet 账户快照缺少可核验的挂单列表。")
+        order_ids: set[str] = set()
+        for order in orders:
+            if not isinstance(order, dict):
+                raise GateE2EError("CLEANUP_TRUTH_UNAVAILABLE", "Gate TestNet 账户快照包含无法核验的挂单。")
+            order_id = str(order.get("order_id") or order.get("id") or order.get("id_string") or "").strip()
+            if not order_id:
+                raise GateE2EError("CLEANUP_TRUTH_UNAVAILABLE", "Gate TestNet 账户快照中的挂单缺少稳定 ID。")
+            order_ids.add(order_id)
+        return order_ids
+
     @classmethod
     def _new_remote_position(
         cls,
@@ -283,13 +349,22 @@ class GateTestnetE2EService:
                     or _symbol(terminal_initial.get("contract")) != _symbol(symbol)
                     or terminal.get("reduce_only") is not True
                     or str(terminal.get("status") or "").upper() != "FINISHED"
-                    or not finish_as
                 ):
                     raise ValueError("PROTECTION_TERMINAL_READBACK_UNVERIFIED")
+                if finish_as == "succeeded":
+                    raise GateE2EError(
+                        "PROTECTION_TRIGGERED_DURING_CLEANUP",
+                        f"Gate TestNet 原生保护 {order_id} 已触发，不能记作已撤销；必须重新核对账户。",
+                    )
+                if finish_as not in {"cancelled", "canceled"}:
+                    raise GateE2EError(
+                        "PROTECTION_TERMINAL_READBACK_UNVERIFIED",
+                        f"Gate TestNet 原生保护 {order_id} 的结束原因未知，不能记作已撤销。",
+                    )
                 results.append({
                     "leg": str(leg.get("leg") or "").lower(),
                     "order_id": order_id,
-                    "status": "FINISHED",
+                    "status": "CANCELED",
                     "finish_as": finish_as,
                     "observed_at": terminal.get("observed_at"),
                 })
@@ -428,12 +503,11 @@ class GateTestnetE2EService:
             result["stages"].append(self._stage("LEVERAGE", "COMPLETED", message_zh="Gate TestNet 杠杆设置已确认。", evidence={"leverage": leverage}))
 
             pre_entry_truth = trader.get_account_truth(include_trades=True)
-            if not isinstance(pre_entry_truth, dict) or str(pre_entry_truth.get("status") or "").upper() != "AVAILABLE":
+            if not self._account_truth_complete(pre_entry_truth):
                 raise GateE2EError("REMOTE_ACCOUNT_TRUTH_UNAVAILABLE", "下单前无法取得完整 Gate TestNet 账户/持仓事实，已阻止测试订单。")
-            result["pre_entry_truth"] = {
-                key: _safe_json(pre_entry_truth.get(key))
-                for key in ("status", "observed_at", "equity", "available_margin", "positions", "pending_orders")
-            }
+            baseline_exposures = self._position_exposures(pre_entry_truth.get("positions"))
+            baseline_order_ids = self._pending_order_ids(pre_entry_truth.get("pending_orders"))
+            result["pre_entry_truth"] = self._account_truth_evidence(pre_entry_truth)
             baseline_position = self._remote_position(pre_entry_truth, symbol, side)
 
             client_order_id = f"t-e2e-{hashlib.sha256((account_id + idem).encode()).hexdigest()[:20]}"
@@ -477,9 +551,11 @@ class GateTestnetE2EService:
             result["stages"].append(self._stage("FILL_RECONCILED", "COMPLETED", message_zh="Gate TestNet 已返回具体成交数量，成交事实已确认。", evidence={"order_id": order_id, "status": reconciled.get("status"), "filled": reconciled.get("filled", reconciled.get("filled_quantity"))}))
 
             truth = trader.get_account_truth(include_trades=True)
-            if not isinstance(truth, dict) or str(truth.get("status") or "").upper() != "AVAILABLE":
+            if not self._account_truth_complete(truth):
                 raise GateE2EError("REMOTE_ACCOUNT_TRUTH_UNAVAILABLE", "入场后无法取得完整 Gate TestNet 账户/持仓事实，未盲目清理。")
-            result["post_entry_truth"] = {key: _safe_json(truth.get(key)) for key in ("status", "observed_at", "equity", "available_margin", "positions", "pending_orders", "fills")}
+            self._position_exposures(truth.get("positions"))
+            self._pending_order_ids(truth.get("pending_orders"))
+            result["post_entry_truth"] = self._account_truth_evidence(truth, include_fills=True)
             position = self._new_remote_position(pre_entry_truth, truth, symbol, side)
             if position is None:
                 raise GateE2EError("REMOTE_POSITION_NOT_RECONCILED", "Gate TestNet 成交已返回，但远端持仓尚未对账确认。")
@@ -505,12 +581,8 @@ class GateTestnetE2EService:
                 if cleanup_status not in {"FILLED", "PARTIALLY_FILLED", "ACKNOWLEDGED"}:
                     raise GateE2EError("CLEANUP_ORDER_FAILED", "Gate TestNet reduce-only 清理订单未被确认。")
                 post_cleanup = trader.get_account_truth(include_trades=True)
-                result["post_cleanup_truth"] = {key: _safe_json(post_cleanup.get(key)) for key in ("status", "observed_at", "equity", "available_margin", "positions", "pending_orders", "fills")}
-                if (
-                    not isinstance(post_cleanup, dict)
-                    or str(post_cleanup.get("status") or "").upper() != "AVAILABLE"
-                    or not isinstance(post_cleanup.get("positions"), list)
-                ):
+                result["post_reduce_only_truth"] = self._account_truth_evidence(post_cleanup, include_fills=True)
+                if not self._account_truth_complete(post_cleanup):
                     raise GateE2EError("CLEANUP_TRUTH_UNAVAILABLE", "Gate TestNet 清理后账户/持仓复核不可用。")
                 remaining = self._remote_position(post_cleanup, symbol, side) if isinstance(post_cleanup, dict) else None
                 baseline_contracts = self._position_contracts(baseline_position)
@@ -524,7 +596,38 @@ class GateTestnetE2EService:
                 result["protection_cleanup"] = self._cancel_owned_protections(
                     trader, symbol, receipt.get("protection_orders"),
                 )
-                result["stages"].append(self._stage("CLEANUP", "COMPLETED", message_zh="Gate TestNet reduce-only 清理已完成并复核无剩余持仓。", evidence={"cleanup_status": cleanup_status}))
+                final_truth = trader.get_account_truth(include_trades=True)
+                result["post_cleanup_truth"] = self._account_truth_evidence(final_truth, include_fills=True)
+                if not self._account_truth_complete(final_truth):
+                    raise GateE2EError(
+                        "CLEANUP_TRUTH_UNAVAILABLE",
+                        "Gate TestNet 保护单清理后最终账户事实不可用或环境/时间戳无法核验。",
+                    )
+                final_exposures = self._position_exposures(final_truth.get("positions"))
+                added_exposures = {
+                    key: quantity - baseline_exposures.get(key, Decimal("0"))
+                    for key, quantity in final_exposures.items()
+                    if quantity > baseline_exposures.get(key, Decimal("0"))
+                }
+                if added_exposures:
+                    raise GateE2EError("CLEANUP_NOT_RECONCILED", "Gate TestNet 最终账户快照仍有新增或未清理持仓。")
+                final_order_ids = self._pending_order_ids(final_truth.get("pending_orders"))
+                if final_order_ids - baseline_order_ids:
+                    raise GateE2EError(
+                        "CLEANUP_OPEN_ORDERS_REMAIN",
+                        "Gate TestNet 最终账户快照仍有本次验收后新增的挂单或保护单。",
+                    )
+                result["stages"].append(
+                    self._stage(
+                        "CLEANUP",
+                        "COMPLETED",
+                        message_zh="Gate TestNet reduce-only 清理、保护单撤销和最终账户快照均已核验。",
+                        evidence={
+                            "cleanup_status": cleanup_status,
+                            "final_truth_observed_at": final_truth.get("observed_at"),
+                        },
+                    )
+                )
             else:
                 result["stages"].append(self._stage("CLEANUP", "SKIPPED", message_zh="调用方选择保留 TestNet 持仓；请勿把本次验收当作已清仓。", evidence={"cleanup": False}))
 

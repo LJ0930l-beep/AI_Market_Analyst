@@ -1822,11 +1822,18 @@ class GateLiveTrader:
                 native_reduce_values.append(parsed)
         if len(set(native_reduce_values)) > 1:
             raise ValueError("GATE_PROTECTION_REDUCE_ONLY_CONFLICT")
+        is_close = None
+        if "is_close" in initial and initial["is_close"] is not None:
+            is_close = _optional_bool(initial["is_close"])
+            if is_close is None:
+                raise ValueError("GATE_PROTECTION_IS_CLOSE_UNVERIFIED")
+        if is_close is True and native_reduce_values and native_reduce_values[0] is False:
+            raise ValueError("GATE_PROTECTION_REDUCE_ONLY_CONFLICT")
         if native_reduce_values and native_reduce_values[0] is not True:
             raise ValueError("GATE_PROTECTION_NOT_REDUCE_ONLY")
         reduced = bool(
             (native_reduce_values and native_reduce_values[0] is True)
-            or _optional_bool(initial.get("is_close")) is True
+            or is_close is True
             or str(raw.get("order_type") or "").strip().lower() in GATE_PROTECTION_ORDER_TYPES
         )
         if not reduced:
