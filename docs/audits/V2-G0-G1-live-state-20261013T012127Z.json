@@ -1,0 +1,228 @@
+{
+  "schema": "V2_G0_G1_LIVE_STATE_V2",
+  "observed_at_utc": "2026-10-13T01:21:27Z",
+  "repository": "LJ0930l-beep/AI_Market_Analyst",
+  "workspace": {
+    "branch": "codex/v2-g1-offline-20261010",
+    "head_sha": "5bb0cc34dfe93a1f4b6fa5b312894d5878150503",
+    "working_tree_clean_at_observation": true
+  },
+  "handbook": {
+    "path": "C:/Users/baicha/Downloads/AI_Market_Analyst_V2_0_%E5%BC%80%E5%8F%91%E6%80%BB%E7%BA%B2_%E9%98%BB%E5%A1%9E%E5%A4%84%E7%BD%AE%E6%89%8B%E5%86%8C.md",
+    "sha256": "A31A70795C02B9F5BE3ED505361AA3133ADFE82DA09DDD18DE8FE5D482841B4D",
+    "historical_main_sha": "8642639a78ca9aa56fbad1e88aea4b82169ea433",
+    "historical_open_pr_count": 25
+  },
+  "current_github": {
+    "main_sha": "8642639a78ca9aa56fbad1e88aea4b82169ea433",
+    "main_unchanged": true,
+    "pull_requests": 27,
+    "open": 27,
+    "merged": 0,
+    "closed_unmerged": 0,
+    "latest_head_check_buckets": {
+      "pass_prs": 15,
+      "failure_prs": 1,
+      "no_reported_checks_prs": 11,
+      "pending_prs": 0
+    },
+    "failed_pr": {
+      "number": 23,
+      "head_sha": "5831f9785e5f8b09d6a819c562949beceb6db4b0",
+      "run_id": 37963206552,
+      "failed_tests": 3,
+      "historical_failure_preserved": true
+    }
+  },
+  "source_matrix": {
+    "path": "docs/audits/PR-INTEGRATION-MATRIX-LIVE-20261013T011953Z.json",
+    "sha256": "47EA3731D7E294F837CAE3468FA920ED7BDF92161DB96EDAE58D5863013D6F53",
+    "observed_at_utc": "2026-10-13T01:19:53Z",
+    "pull_requests_with_complete_paginated_file_paths": 27,
+    "changed_path_overlap_pairs": 173,
+    "interpretation": "Path intersections do not prove hunk conflicts or semantic review."
+  },
+  "latest_prior_candidate": {
+    "head_sha": "861d0c40ca4e080f157176acabf9147278c6c345",
+    "exact_head_run_id": 38324809873,
+    "current_pr27_head_sha": "5bb0cc34dfe93a1f4b6fa5b312894d5878150503",
+    "current_pr27_run_id": 38328844757,
+    "changes_since_prior_head": [
+      "docs/blockers/B-20261010-001-pr-branch-integration.md",
+      "docs/blockers/B-20261010-002-model-response-capability.md",
+      "docs/blockers/B-20261010-003-calibration-identity-evidence.md",
+      "docs/blockers/B-20261011-004-datetime-local-timezone-ci.md",
+      "docs/blockers/B-20261012-005-v38-multiple-choice-ambiguity.md",
+      "docs/blockers/B-20261013-006-g0-g4-calibration-sequence-conflict.md",
+      "docs/blockers/index.yaml"
+    ]
+  },
+  "g0": {
+    "status": "NOT_ACCEPTED_FIX_IN_REVIEW",
+    "candidate_pr": 26,
+    "candidate_head_sha": "00d1c4405a513b9e5cdee9f6fa15808b4386d8b1",
+    "candidate_base_sha": "8642639a78ca9aa56fbad1e88aea4b82169ea433",
+    "pr26_latest_exact_head_run": {
+      "id": 38107795624,
+      "conclusion": "SUCCESS",
+      "quick_passed": 231,
+      "full_passed": 2538,
+      "full_failed": 0,
+      "subtests_passed": 25
+    },
+    "pr1_to_pr25_heads_are_candidate_ancestors": {
+      "verified": 25,
+      "total": 25
+    },
+    "pr26_is_ancestor_of_pr27": true,
+    "parallel_path_intersections": {
+      "total_pairs": 173,
+      "pr20_pr23": {
+        "count": 2,
+        "paths": [
+          "core/trading/gate_testnet_e2e.py",
+          "tests/test_gate_testnet_ai_chain.py"
+        ]
+      },
+      "pr20_pr24": {
+        "count": 2,
+        "paths": [
+          "core/macro_calendar.py",
+          "tests/test_macro_actuals.py"
+        ]
+      },
+      "pr20_pr25": {
+        "count": 1,
+        "paths": [
+          "tests/test_gate_testnet_ai_chain.py"
+        ]
+      },
+      "pr23_pr25": {
+        "count": 1,
+        "paths": [
+          "tests/test_gate_testnet_ai_chain.py"
+        ]
+      },
+      "pr24_pr25": {
+        "count": 2,
+        "paths": [
+          "docs/audits/V38-V42-gate-decision-panel.md",
+          "docs/plans/V38-V42-master-implementation-plan.md"
+        ]
+      },
+      "pr22_against_pr23_pr24_pr25": {
+        "count": 0,
+        "paths": []
+      }
+    },
+    "offline_combination_tests": [
+      {
+        "name": "test_gate_native_bars_backfills_older_rows_with_testnet_range_query",
+        "status": "PASS_IN_PR27_FULL_RUN",
+        "evidence": "tests/test_gate_provider_timeframes.py"
+      },
+      {
+        "name": "test_gate_testnet_e2e_handles_native_is_reduce_only_field",
+        "status": "PASS_IN_PR27_FULL_RUN",
+        "evidence": "tests/test_gate_testnet_ai_chain.py"
+      },
+      {
+        "name": "test_gate_testnet_account_does_not_read_local_ledger_or_route_paper_order",
+        "status": "PASS_IN_PR27_FULL_RUN",
+        "evidence": "tests/test_gate_account_chain.py"
+      },
+      {
+        "name": "model response identity missing/mismatch negative matrix",
+        "status": "PASS_IN_PR27_FULL_RUN",
+        "evidence": "tests/v38/test_response_contract_v2.py"
+      },
+      {
+        "name": "test_missing_weight_digest_keeps_calibration_not_ready_without_model_call",
+        "status": "PASS_IN_PR27_FULL_RUN",
+        "evidence": "tests/test_ai_calibration_identity_gate.py"
+      }
+    ],
+    "blockers": [
+      "PR26 and PR27 each have zero reviews and zero review requests; both remain Draft; auto-merge is disabled.",
+      "PR #1-#11 have no current reported individual check runs.",
+      "Exact path overlap inventory exists; a limited local semantic spot-check covered the critical Gate and macro-calendar intersections. Remaining overlaps, full semantic/hunk review, and independent human G0 acceptance are still outstanding."
+    ],
+    "no_merge_or_external_execution": true
+  },
+  "g1": {
+    "status": "OFFLINE_CONTRACT_VERIFIED_REMOTE_CAPABILITY_UNKNOWN",
+    "candidate_pr": 27,
+    "head_sha": "5bb0cc34dfe93a1f4b6fa5b312894d5878150503",
+    "latest_exact_head_run": {
+      "id": 38328844757,
+      "conclusion": "SUCCESS",
+      "quick_passed": 289,
+      "full_passed": 2605,
+      "full_failed": 0,
+      "subtests_passed": 25,
+      "existing_warnings": 1,
+      "web_tests_lint_typecheck_build": "SUCCESS"
+    },
+    "legacy_v38": {
+      "intents": 72,
+      "terminal_results": 71,
+      "invalid_json": 67,
+      "call_error_no_retry": 4,
+      "ambiguous_no_result_never_retry": 1,
+      "historical_valid_analyses": 0,
+      "offline_compatibility_diagnostic_parsed_and_validated": 67,
+      "promoted_or_relabelled_historical_results": 0
+    },
+    "immutable_ledgers_rehashed_without_reading_content": [
+      {
+        "path": "reports/v38+/runs/v38-gemini-call-intent-ledger-v1.jsonl",
+        "bytes": 512044,
+        "sha256": "820212A5699B718C922232C584FCFDCB4F79B675EA8653B1898A0D4025B837A7"
+      },
+      {
+        "path": "reports/v38+/runs/v38-gemini-json-format-pilot-ledger-20261010-v1.jsonl",
+        "bytes": 8580,
+        "sha256": "4852F2F893F3F68FCA325D5FF07621958C42336861DC3CED2D59DA423AEBDF19"
+      }
+    ],
+    "prompt_configs": [
+      {
+        "path": "configs/research/prompts/v38-market-only-minimal-v2.json",
+        "sha256": "04886b05617bd2b8882312819fab4db315ff5093fc7345e9c068237c382cb520",
+        "remote_dispatch_enabled": false,
+        "authorized": false,
+        "maximum_calls": 0
+      },
+      {
+        "path": "configs/research/prompts/v38-market-only-full-v2.json",
+        "sha256": "5d897ff0539cdeadd7b88e845c4c916d5fef145e059aa1820d928837fb0d7a2c",
+        "remote_dispatch_enabled": false,
+        "authorized": false,
+        "maximum_calls": 0
+      }
+    ],
+    "unknowns": [
+      "Antigravity/Gemini response_format support",
+      "authenticated model/immutable weight identity",
+      "billing and quota settlement",
+      "original raw HTTP bodies unavailable"
+    ],
+    "g2": "NOT_AUTHORIZED"
+  },
+  "side_effects": {
+    "model_provider_calls": 0,
+    "gate_api_calls": 0,
+    "testnet_orders": 0,
+    "live_orders": 0,
+    "production_settings_changed": false,
+    "git_merge_performed": false,
+    "raw_ledger_content_read": false,
+    "ledger_hash_only_rechecked": true
+  },
+  "next_actions": [
+    "Obtain independent human review of PR #26/#27 and a recorded G0 decision before advancing dependent gates.",
+    "Keep the PR chain Draft/unmerged and preserve PR #23 failure plus #1-#11 no-check states.",
+    "Keep V2 provider dispatch disabled; any future G2 experiment needs fresh explicit scope and authorization.",
+    "If review finds code issues, repair only in an isolated PR and rerun exact-head CI."
+  ]
+}

@@ -15,7 +15,7 @@ remote_effect_known: true
 risk_to_funds: NONE
 affected_sample_or_order_ids: PR-1-through-27; no orders
 immediate_stop_or_isolation: No remote merge, force-push, TestNet request, or Live action. Preserve all source PR refs.
-evidence_files_and_hashes: docs/audits/PR-INTEGRATION-MATRIX-20261010.json Git-blob SHA-256 8318066478e5d767452db920fca4b5eb9d35c37787c610e0f327660445466edc; docs/audits/PR-INTEGRATION-MATRIX-REFRESH-20261010.json SHA-256 B94397AE77DB87C0574C93709D1377103F630F9D76DE358DF8A82BA495BC27E4.
+evidence_files_and_hashes: docs/audits/PR-INTEGRATION-MATRIX-20261010.json Git-blob SHA-256 8318066478e5d767452db920fca4b5eb9d35c37787c610e0f327660445466edc; docs/audits/PR-INTEGRATION-MATRIX-REFRESH-20261010.json SHA-256 B94397AE77DB87C0574C93709D1377103F630F9D76DE358DF8A82BA495BC27E4; docs/audits/PR-INTEGRATION-MATRIX-LIVE-20261013T011953Z.json SHA-256 47EA3731D7E294F837CAE3468FA920ED7BDF92161DB96EDAE58D5863013D6F53.
 reproduction: gh pr list --state all --limit 100 --json number,title,state,isDraft,headRefName,headRefOid,baseRefName,baseRefOid,updatedAt,mergeable,reviewDecision,statusCheckRollup; query check-runs by each exact head SHA
 root_cause_status: CONFIRMED
 safe_fallback: Preserve separate branches and perform only a local isolated integration candidate.
@@ -25,16 +25,16 @@ unblock_criteria: One candidate SHA includes PR-20/21/22 and PR-25 ancestry (inc
 needs_human_decision: true
 candidate_branch: codex/v2-g0-integration-20261010
 candidate_source_heads: origin/main@8642639a78ca9aa56fbad1e88aea4b82169ea433; PR20@43eb1835ef76b8c39f9b560ceaa3cac1b436d1bf; PR21@941e38372a0c0f96d1aaecd4a4ca2faf62dd3070; PR22@cb03f8e34cedca18d735187fdab41cda388eaa99; PR25@97d138fc3f8072668af1bbeada3475d612f55a7d
-candidate_local_verification: targeted 38 passed; quick gate 222 passed; full 2517 passed, 1 skipped, 0 failed; baseline 2113 passed, 103 failed, 1 skipped; node-id comparison 0 new failures, 0 missing baseline nodes.
+candidate_local_verification: "Historical local comparison for PR26: targeted 38 passed; quick 222; full 2517 passed, 1 skipped, 0 failed; baseline 2113 passed, 103 failed, 1 skipped; node-id comparison 0 new failures, 0 missing baseline nodes. See latest exact-head hosted runs below for current counts."
 candidate_junit_sha256: baseline ec187fb87f395a5bb3949d358b13614b73dacfbfa873dc7d8a451ef54374ca9b; candidate dad101a071100b00d9071936e13233f1efcfa8813e82a1acd3d29fbbe9c0a733
-remote_ci_status: "PR26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 run 38107795624 passed; PR27 exact head f4461a72486b8aba132eb23045e03c9b1ffe0ba3 run 38298606199 passed (quick 289; full 2603/25 subtests; web 29 files/161 tests and lint/type-check/build); PR23 current-head failure retained."
-next_owner_action: "As of 2026-10-13T00:29:13Z: PR #26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 remains green; PR #27 exact head 861d0c40ca4e080f157176acabf9147278c6c345 passed run 38324809873 (quick 289, full 2605 / 25 subtests, Web/lint/type-check/build). Both remain OPEN/Draft with no reviews/requests and no auto-merge. Obtain independent human review and record the G0 decision. Preserve #1-#11 NO_REPORTED_CHECKS and #23 failure. Do not merge."
+remote_ci_status: "Current exact-head runs: PR26 head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 run 38107795624 SUCCESS (quick 231; full 2538 passed; 25 subtests); PR27 head 5bb0cc34dfe93a1f4b6fa5b312894d5878150503 run 38328844757 SUCCESS (quick 289; full 2605 passed; 25 subtests; Web tests/lint/type-check/build SUCCESS). PR23 current-head failure and PR1-11 no-check statuses are retained."
+next_owner_action: "As of 2026-10-13T01:21:27Z: PR #26/#27 are OPEN/Draft with zero reviews and requests; auto-merge is disabled. PR26 exact-head run 38107795624 and PR27 exact-head run 38328844757 passed. Current inventory has 27 OPEN PRs; the #1-25 heads are 25/25 ancestors of #26, and #26 is an ancestor of #27. Review the 173 changed-path overlap pairs semantically and obtain an independent human review/recorded G0 decision. Preserve #1-#11 NO_REPORTED_CHECKS and #23's three-test failure. Do not merge."
 rollback: "Abandon or revert only the isolated PR #26/#27 candidate commits; preserve original PR refs, the main baseline, historic failure records, frozen ledgers, V35 risk controls, and all prior snapshots. Never force-push or auto-merge."
 ```
 
 ## 故障原因与原始证据
 
-25 个 PR 全部开放。PR #20 从 #19 分出，#21/#22 建立在 #20；PR #23 也从 #19 分出，#24/#25 建立在 #23。PR #25 当前 head CI 已绿，但 ancestry 不含 #20/#21/#22。PR #20 与 #23/#24/#25 存在 Gate E2E、macro calendar、测试或审计文档重叠。
+在 2026-10-10 首次快照中，25 个 PR 全部开放。PR #20 从 #19 分出，#21/#22 建立在 #20；PR #23 也从 #19 分出，#24/#25 建立在 #23。PR #25 单支绿色不证明包含 #20/#21/#22 的组合正确。当前 27-PR 拓扑和完整 path overlap 见本文件开头记录的新机器快照；其中 PR #20 与 #23/#24/#25 存在 Gate E2E、macro calendar、测试或审计文档重叠。
 
 PR #23 exact-head run `37963206552` 有 3 个 `tests/test_macro_actuals.py` 失败；PR #24 明确修复时钟/可用时间 fixture，run `37966405672` 通过。最新 PR #25 head `fcfc9ec...` 的 run `38040115559` 快速 222 passed、完整 2,513 passed，说明 PR #25 单支是绿色，不证明与 #20/#21/#22 组合后正确。
 

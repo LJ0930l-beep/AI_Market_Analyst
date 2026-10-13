@@ -8,8 +8,8 @@ component: model
 mode: RESEARCH_OFFLINE
 g0_base_sha: 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1
 branch_sha: "f4461a72486b8aba132eb23045e03c9b1ffe0ba3"
-latest_candidate_sha: "861d0c40ca4e080f157176acabf9147278c6c345"
-latest_exact_head_ci: 38324809873
+latest_candidate_sha: "5bb0cc34dfe93a1f4b6fa5b312894d5878150503"
+latest_exact_head_ci: 38328844757
 g1_working_branch: codex/v2-g1-offline-20261010
 trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
 first_seen_at_utc: 2026-10-10T09:27:00Z
@@ -19,7 +19,7 @@ remote_effect_known: false
 risk_to_funds: NONE
 affected_sample_or_order_ids: 67 immutable INVALID_JSON results and 1 separate consumed format pilot
 immediate_stop_or_isolation: No new Gemini call, no retry, no rewriting/relabeling old result; validation and untouched-test remain sealed.
-evidence_files_and_hashes: docs/audits/V38-invalid-json-classification-20261010.json SHA-256 4ba18a5bbb41ad8525e334cf44bcad98ab6d5d98ac76823b49f0f6c871785db7; source ledger SHA-256 820212a5699b718c922232c584fcfdcb4f79b675ea8653b1898a0d4025b837a7; offline V2 report docs/audits/V38-Prompt-Schema-V2-offline-contract-20261010.md; full-suite local JUnit SHA-256 C9359E2863F499657C922810B586CD8F5EC085C1593B2AC44C48B4953226A261 (Git-ignored)
+evidence_files_and_hashes: docs/audits/V38-invalid-json-classification-20261010.json SHA-256 4ba18a5bbb41ad8525e334cf44bcad98ab6d5d98ac76823b49f0f6c871785db7; source ledger SHA-256 820212a5699b718c922232c584fcfdcb4f79b675ea8653b1898a0d4025b837a7; offline V2 report docs/audits/V38-Prompt-Schema-V2-offline-contract-20261010.md; full-suite local JUnit SHA-256 C9359E2863F499657C922810B586CD8F5EC085C1593B2AC44C48B4953226A261 (Git-ignored); latest PR matrix docs/audits/PR-INTEGRATION-MATRIX-LIVE-20261013T011953Z.json SHA-256 47EA3731D7E294F837CAE3468FA920ED7BDF92161DB96EDAE58D5863013D6F53; minimal V2 prompt SHA-256 04886b05617bd2b8882312819fab4db315ff5093fc7345e9c068237c382cb520; full V2 prompt SHA-256 5d897ff0539cdeadd7b88e845c4c916d5fef145e059aa1820d928837fb0d7a2c
 reproduction: Local fixed response envelopes through evaluate_response_v2; targeted V2/parser/format-pilot/runner tests, no network path.
 root_cause_status: HISTORICAL_LOCAL_ENVELOPE_GAP_CONFIRMED; REMOTE_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
 safe_fallback: Strict V2 local JSON/schema/evidence validation; actual route capability remains unknown_unverified; V2 prompt remote dispatch disabled.
@@ -27,7 +27,7 @@ patch_pr: Stacked G1 offline branch codex/v2-g1-offline-20261010 based on G0 can
 negative_tests: Empty/partial/truncated body; finish_reason length/error/missing; missing/mismatched model ID with payload/adapter source separation; malformed/multiple fence; invalid/unknown/future top-level and nested evidence refs; offline fake provider ignores a submitted json_schema request and capability remains unknown; duplicate JSON key; usage mismatch; NaN/infinite/non-positive transport byte counts; duplicate intent in existing pilot tests.
 unblock_criteria: Offline contract PR and same-head full CI pass; any G2 remote capability probe requires separate explicit user authorization, a new frozen scope, request ceiling, budget/stop rule, and provider/route identity evidence.
 needs_human_decision: true
-next_owner_action: "As of 2026-10-13T00:29:13Z: keep provider dispatch disabled. PR #27 latest candidate 861d0c40ca4e080f157176acabf9147278c6c345 passed run 38324809873 (quick 289; full 2605 / 25 subtests; Web/lint/type-check/build). Remote response_format, authenticated model/weight identity, billing and quota remain unknown. G2 requires G0 human review and a fresh bounded authorization."
+next_owner_action: "As of 2026-10-13T01:21:27Z: keep provider dispatch disabled. PR #27 exact head 5bb0cc34dfe93a1f4b6fa5b312894d5878150503 passed run 38328844757 (quick 289; full 2605 / 25 subtests; Web/lint/type-check/build passed). Both V2 prompt configs remain unauthorized with maximum_calls=0. Remote response_format, authenticated model/weight identity, billing, and quota remain unknown. G2 requires G0 independent review and a fresh bounded authorization."
 rollback: "Revert only the V2 parser/schema additions in PR #27 if offline contract or exact-head CI fails; preserve V1 behavior, authorization revocations, historical response ledgers, V35 risk controls, and all prior audit records. Keep remote dispatch disabled."
 ```
 
@@ -247,3 +247,7 @@ Antigravity/Gemini structured response_format support, authenticated actual resp
 ## 2026-10-12T23:38:26Z current exact-head refresh
 
 PR #27 head `86ab6fe124b2541fd7f73482dbabe2dd23f63b48` passed hosted run `38320355179` (quick 289; full 2,605, 25 subtests; Web/lint/type-check/build). This is offline verification only. The V2 prompt files still set `remote_dispatch_enabled=false`, `authorized=false`, and `maximum_calls=0`. No provider request was made; `response_format` support, authenticated response/weight evidence, billing, and quota remain unverified. Keep this S1 blocker open with its existing safe fallback.
+
+## 2026-10-13 exact-head refresh
+
+PR #27 exact head `5bb0cc34dfe93a1f4b6fa5b312894d5878150503` passed hosted run `38328844757`: quick 289, full 2,605, 25 subtests, and Web tests/lint/type-check/build passed. The 72-intent historical classifications remain unchanged; both ledger hashes were rechecked without reading their content. The minimal and full V2 prompts still have dispatch disabled, authorization false, and call ceiling zero. This verifies the offline contract only. Remote native structured output, authenticated model/weight identity, billing, and quota remain unknown. See [the current G0/G1 refresh](../audits/V2-G0-G1-live-refresh-20261013T012127Z.md) and [the complete PR matrix](../audits/PR-INTEGRATION-MATRIX-LIVE-20261013T011953Z.json).
