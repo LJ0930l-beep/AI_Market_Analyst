@@ -45,3 +45,7 @@ Post-fix local evidence:
 - Exact-head hosted verification of this patch is pending; the green run on SHA `14e7325` predates this repair.
 
 No Gemini, Antigravity, Gate, TestNet, or Live request was made; no order, account setting, frozen ledger, or historical report was changed.
+
+## Latest hosted verification — 2026-10-13
+
+The repair is committed as 40f65d7b05675ef2f7df69450af7d20c4418eb6e on PR #27. Exact-head run [38367957079](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38367957079) completed successfully: quick gate 289 passed; full suite 2,683 passed, one warning, 25 subtests passed; Web tests, lint, type-check, and build passed. The local commit hook also passed 2,682 tests with one skip and one warning. B-010 remains FIX_IN_REVIEW pending independent formal review and the human G0 decision; these test results do not accept G0 or authorize G2.
