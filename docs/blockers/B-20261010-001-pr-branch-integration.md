@@ -254,3 +254,10 @@ The latest offline increment adds Gate 4h pagination coverage and a calibration 
 - **Repair/acceptance:** PR #26/#27 remain the review candidate; acceptance still requires an independent review and a recorded G0 decision on the integrated SHA. No direct merge or `main` update is authorized.
 - **Rollback:** If this snapshot is inaccurate, revert only the new audit/blocker documentation and add a correction snapshot; preserve source PRs, prior matrices, code, ledgers, and `main`.
 - **External effects:** No Gemini/Antigravity/Gate request, order, production setting change, or automatic merge occurred. Ledger files were only rehashed; contents were not read or changed.
+
+## Live refresh 2026-10-13T04:13:54Z
+- Machine snapshot: docs/audits/PR-INTEGRATION-MATRIX-LIVE-20261013T041354Z.json SHA-256 F6AEFE5AB90CAE32FA12998410784A6B474634C28ABBD96CF1964BC0243119F4; prose report docs/audits/V2-G0-G1-current-state-20261013T041354Z.md SHA-256 B45C5F84C3ABE25FEEBA0196C820B0DAC775EA0AB0D3ACF6D2DB7B882122987B.
+- Live inventory: 27 OPEN, 0 merged; 15 PASS, #23 FAILURE, #1-#11 NO_REPORTED_CHECKS, 0 pending.
+- PR #26 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 passed run 38107795624. PR #27 4abdcdfe8917dbc3527196765369f73b4913f6c9 passed run 38343135615: quick 289, full 2616, 25 subtests, Web 29 files/161 tests, lint/typecheck/build.
+- PR #27 is main-based and contains all PR #1-#26 heads in its ancestry. The current exact path matrix does not claim a complete semantic review.
+- Both candidates are OPEN/Draft with zero reviews/requests. G0 remains NOT_ACCEPTED pending independent review and a recorded human decision. No merge or external calls occurred.

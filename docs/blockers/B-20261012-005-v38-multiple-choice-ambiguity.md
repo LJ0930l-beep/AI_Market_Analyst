@@ -47,3 +47,7 @@ The repair passed all automated checks on PR #27 exact head `f4461a72486b8aba132
 ## 2026-10-12T21:46:04Z exact-head refresh
 
 The multiple-choice fail-closed repair remains present in PR #27 head 952d38a8e4d6aa800c507f6c54ee9477d744181b; exact-head run 38309564947 passed the 289-test quick gate, 2,605 full tests / 25 subtests, and Web/lint/type-check/build checks. This does not establish real Gemini response-format or identity capability. B005 remains FIX_IN_REVIEW pending independent review and G0 decision. No model call, order, or production setting change occurred.
+
+## Live refresh 2026-10-13T04:13:54Z
+- PR #27 SHA 4abdcdfe8917dbc3527196765369f73b4913f6c9 passed exact-head run 38343135615, including offline Python and Web checks. The ambiguity and attached Gate review repairs are present in the candidate.
+- Keep FIX_IN_REVIEW pending independent review/G0 decision; provider dispatch remains disabled. No model calls or retries occurred.

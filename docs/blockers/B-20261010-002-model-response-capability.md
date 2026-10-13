@@ -251,3 +251,9 @@ PR #27 head `86ab6fe124b2541fd7f73482dbabe2dd23f63b48` passed hosted run `383203
 ## 2026-10-13 exact-head refresh
 
 PR #27 exact head `5bb0cc34dfe93a1f4b6fa5b312894d5878150503` passed hosted run `38328844757`: quick 289, full 2,605, 25 subtests, and Web tests/lint/type-check/build passed. The 72-intent historical classifications remain unchanged; both ledger hashes were rechecked without reading their content. The minimal and full V2 prompts still have dispatch disabled, authorization false, and call ceiling zero. This verifies the offline contract only. Remote native structured output, authenticated model/weight identity, billing, and quota remain unknown. See [the current G0/G1 refresh](../audits/V2-G0-G1-live-refresh-20261013T012127Z.md) and [the complete PR matrix](../audits/PR-INTEGRATION-MATRIX-LIVE-20261013T011953Z.json).
+
+## Live refresh 2026-10-13T04:13:54Z
+- PR #27 SHA 4abdcdfe8917dbc3527196765369f73b4913f6c9 passed offline CI run 38343135615; this verifies offline behavior only.
+- V2 minimal/full prompts remain remote-disabled, unauthorized, and capped at 0 calls. Previous campaign and format-pilot authorizations are consumed/revoked.
+- Frozen campaign outcomes remain 67 INVALID_JSON, 4 CALL_ERROR_NO_RETRY, 1 AMBIGUOUS_NO_RESULT_NEVER_RETRY, and 0 original valid analyses. Historical status and denominators were not edited.
+- Remote response_format, authenticated model/weight identity, billing, quota, and provider deduplication remain UNKNOWN_UNVERIFIED. G2 stays blocked; no new model call was made.
