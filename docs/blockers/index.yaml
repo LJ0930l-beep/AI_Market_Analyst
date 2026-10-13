@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V2
-updated_at_utc: 2026-10-13T12:25:25Z
+updated_at_utc: 2026-10-13T13:38:28Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -8,7 +8,7 @@ blockers:
     file: docs/blockers/B-20261010-001-pr-branch-integration.md
     trigger_signature: PR_COMBINATION_CANDIDATE_AWAITS_HUMAN_REVIEW
     playbook_codes: B21,B22
-    next_owner_action: 'PR #27 remains based on main and Draft. Its current candidate includes the prior integrated PR heads; the exact latest head still needs hosted CI and formal independent review before a G0 decision. Keep PR #26/#27 unmerged and preserve PR #23 failure and PR #1-#11 no-check records.'
+    next_owner_action: 'PR #27 exact head 132ad6b8a11b66fa17ee86f21fa4a3923c07b945 passed hosted run 38403593249. Obtain a complete independent semantic review and record the human G0 decision. Keep PR #26/#27 unmerged; preserve PR #23 failure and PR #1-#11 no-check records.'
   - id: B-20261010-002
     severity: S1
     status: BLOCKED_WITH_EVIDENCE
@@ -40,7 +40,7 @@ blockers:
     file: docs/blockers/B-20261012-005-v38-multiple-choice-ambiguity.md
     trigger_signature: V38_RESPONSE_CHOICES_MULTIPLE_SILENTLY_FIRST
     playbook_codes: B01
-    next_owner_action: 'The actual V38 response-path repair remains in PR #27 and passed hosted CI on code head 928b35844d2f03397c611a29aa13fe710aff4d37. Require CI on the latest exact head and independent review; keep provider dispatch disabled and preserve historical response classifications.'
+    next_owner_action: 'The V38 response-path repair is included in PR #27 exact head 132ad6b8a11b66fa17ee86f21fa4a3923c07b945, which passed hosted run 38403593249. Obtain current-candidate independent review; keep provider dispatch disabled and preserve historical response classifications.'
 
   - id: B-20261013-006
     severity: S1
@@ -89,7 +89,7 @@ blockers:
     file: docs/blockers/B-20261013-011-format-pilot-accepts-fractional-byte-count.md
     trigger_signature: V38_FORMAT_PILOT_ACCEPTS_FRACTIONAL_TRANSPORT_BYTES
     playbook_codes: B03
-    next_owner_action: 'The offline repair shares gemini_runner exact-positive-integer transport validation across format-pilot result creation and review. Focused format-pilot tests pass locally; commit/push, require exact-head CI, and obtain current-candidate independent review. Keep G2 unauthorized.'
+    next_owner_action: 'The shared exact-positive-integer transport repair passed focused local tests and PR #27 exact-head hosted run 38403593249. Obtain current-candidate independent review; keep G2 unauthorized and the pilot ledger immutable.'
   - id: B-20261013-012
     severity: S1
     status: FIX_IN_REVIEW
@@ -97,7 +97,7 @@ blockers:
     file: docs/blockers/B-20261013-012-v2-accepts-oversized-request-byte-count.md
     trigger_signature: V2_RESPONSE_CONTRACT_ACCEPTS_OVERSIZED_TRANSPORT_BYTES
     playbook_codes: B03
-    next_owner_action: 'Publish the bounded shared validator on PR #27, require exact-head hosted CI, and include B-012 in the current-candidate independent review. Keep G2 unauthorized and make no provider or exchange requests.'
+    next_owner_action: 'The bounded shared validator passed PR #27 exact-head hosted run 38403593249. Include B-012 in the current-candidate independent review; keep G2 unauthorized and make no provider or exchange requests.'
   - id: B-20261013-013
     severity: S2
     status: FIX_IN_REVIEW
@@ -105,7 +105,7 @@ blockers:
     file: docs/blockers/B-20261013-013-ci-scheduler-tempfile-lock.md
     trigger_signature: WINDOWS_SCHEDULER_TEST_TEMPFILE_PERMISSIONERROR
     playbook_codes: B21
-    next_owner_action: 'Preserve the hosted failure; rerun full CI on the current exact PR #27 head. If the Windows tempfile lock recurs, identify the handle owner and repair teardown without skipping the test.'
+    next_owner_action: 'Preserve the historical Windows tempfile-lock failure. PR #27 exact-head run 38403593249 passed the complete suite; obtain current-candidate independent review. If the lock recurs, identify the handle owner and repair teardown without skipping the test.'
   - id: B-20261013-014
     severity: S1
     status: FIX_IN_REVIEW
@@ -113,4 +113,4 @@ blockers:
     file: docs/blockers/B-20261013-014-fixed-notional-mismatch-marked-eligible.md
     trigger_signature: FIXED_NOTIONAL_PROPOSAL_MISMATCH_MARKED_ELIGIBLE
     playbook_codes: B14
-    next_owner_action: 'Require exact-head tests and independent review of the shared fixed-notional mismatch rejection. Keep production sizing and all execution permissions unchanged.'
+    next_owner_action: 'The shared fixed-notional mismatch rejection passed PR #27 exact-head run 38403593249, including the full offline suite. Obtain current-candidate independent review; keep production sizing and all execution permissions unchanged.'

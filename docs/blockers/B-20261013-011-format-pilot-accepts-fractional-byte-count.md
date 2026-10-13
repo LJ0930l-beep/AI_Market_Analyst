@@ -39,3 +39,8 @@ rollback: "Never restore float acceptance. If reuse of the shared helper causes 
 - `ruff check core/replay/pa_decision_quality_v38/format_pilot.py tests/v38/test_format_pilot.py`: passed.
 - `git diff --check`: passed.
 - The V38 ledger was read-only rechecked at the SHA recorded in the YAML above; no provider, Gate, TestNet, Live, or order request was made.
+
+## Exact-head hosted verification — 2026-10-13T13:38:28Z
+
+- PR #27 exact head `132ad6b8a11b66fa17ee86f21fa4a3923c07b945` passed run [38403593249](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38403593249): quick gate 306 passed; full Windows/Python 3.12 suite 2,720 passed, 0 failed, 25 subtests passed; Web tests, lint, type-check, and build passed.
+- The exact-head suite includes the format-pilot repair. This does not promote the consumed pilot to provider-capability evidence or authorize G2. Keep `FIX_IN_REVIEW` pending independent review/G0.

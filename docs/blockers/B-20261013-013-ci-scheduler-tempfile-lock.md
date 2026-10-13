@@ -38,3 +38,8 @@ rollback: "There is no source behavior change for this observation. If a later t
 - The source and test node are unchanged relative to `origin/main`; this run failure is not evidence that the current transport fix caused it.
 - Ten isolated local repetitions and the local full suite passed, but they do not erase the hosted failure.
 - No provider, Gate, TestNet, Live, or order request occurred. G0 remains gated on a fresh exact-head CI result and independent review.
+
+## Later exact-head hosted outcome — 2026-10-13T13:38:28Z
+
+- PR #27 exact head `132ad6b8a11b66fa17ee86f21fa4a3923c07b945` completed run [38403593249](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38403593249) successfully: 306 quick tests passed; full Windows/Python 3.12 suite 2,720 passed, 0 failed, 25 subtests passed. Web tests, lint, type-check, and build passed.
+- This later pass does not erase or explain the earlier `WinError 32`; root cause remains a hypothesis. Keep the historical failure and require independent review; if it recurs, identify the handle owner without skipping the test.

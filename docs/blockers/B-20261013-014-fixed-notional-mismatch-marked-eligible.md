@@ -37,3 +37,8 @@ rollback: "If the guard conflicts with a documented fixed-notional contract, rev
 - `python -m pytest tests/test_v35_trade_feasibility.py tests/v36/test_runner.py -q`: **62 passed**.
 - The repository full-suite hosted check on the earlier SHA remains separate and does not include this repair.
 - No model, exchange, TestNet, Live, order, account-configuration, or historical-sample access occurred.
+
+## Exact-head hosted verification — 2026-10-13T13:38:28Z
+
+- PR #27 exact head `132ad6b8a11b66fa17ee86f21fa4a3923c07b945` passed run [38403593249](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38403593249): quick gate 306 passed; complete offline suite 2,720 passed, 0 failed, 25 subtests passed; Web tests, lint, type-check, and build passed.
+- This includes the fixed-notional mismatch rejection and does not authorize production sizing changes or an order. Keep `FIX_IN_REVIEW` pending independent review/G0.

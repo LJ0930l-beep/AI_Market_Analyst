@@ -39,3 +39,8 @@ rollback: "If shared validation causes regressions, replace it with one equivale
 - `python -m pytest tests/v38/test_response_contract_v2.py tests/test_gemini_transport_diagnostics.py tests/v38/test_gemini_runner.py tests/v38/test_format_pilot.py -q`: **128 passed**.
 - `python -m pytest -q`: **2,718 passed, 1 skipped, 1 existing Starlette/httpx deprecation warning** in 367 seconds.
 - `git diff --check`: passed. Baseline lint findings in `tests/test_gemini_transport_diagnostics.py` and import ordering in `core/ai/transport_diagnostics.py` predate this change; no network, model, exchange, or order path was used.
+
+## Exact-head hosted verification — 2026-10-13T13:38:28Z
+
+- PR #27 exact head `132ad6b8a11b66fa17ee86f21fa4a3923c07b945` passed run [38403593249](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38403593249): quick gate 306 passed; full Windows/Python 3.12 suite 2,720 passed, 0 failed, 25 subtests passed; Web tests, lint, type-check, and build passed.
+- The fix is verified offline only. Provider calls remain disabled; preserve the frozen V38 ledger and keep `FIX_IN_REVIEW` pending independent review/G0.
