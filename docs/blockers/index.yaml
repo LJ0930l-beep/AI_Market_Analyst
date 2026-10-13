@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V2
-updated_at_utc: 2026-10-13T10:43:00Z
+updated_at_utc: 2026-10-13T11:16:41Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -8,7 +8,7 @@ blockers:
     file: docs/blockers/B-20261010-001-pr-branch-integration.md
     trigger_signature: PR_COMBINATION_CANDIDATE_AWAITS_HUMAN_REVIEW
     playbook_codes: B21,B22
-    next_owner_action: 'Keep PR #26/#27 Draft and unmerged. Obtain formal independent review of the current PR #27 candidate and record the human G0 decision. Preserve PR #23 failure and PR #1-11 missing check records; continue only offline review until G0 is accepted.'
+    next_owner_action: 'PR #27 exact head 928b35844d2f03397c611a29aa13fe710aff4d37 passes current hosted CI, and PR #1-#26 heads are candidate ancestors. Keep PR #26/#27 Draft and unmerged; obtain formal independent review and record the human G0 decision. Preserve PR #23 failure and PR #1-#11 no-check records.'
   - id: B-20261010-002
     severity: S1
     status: BLOCKED_WITH_EVIDENCE
@@ -40,7 +40,7 @@ blockers:
     file: docs/blockers/B-20261012-005-v38-multiple-choice-ambiguity.md
     trigger_signature: V38_RESPONSE_CHOICES_MULTIPLE_SILENTLY_FIRST
     playbook_codes: B01
-    next_owner_action: 'Commit and push the actual V38 response-path repair to PR #27; require exact-head hosted CI, then obtain independent review and record the G0 decision. Keep provider dispatch disabled and preserve historical response classifications.'
+    next_owner_action: 'The actual V38 response-path repair passes exact-head CI on PR #27 head 928b35844d2f03397c611a29aa13fe710aff4d37. Obtain independent review and record the G0 decision; keep provider dispatch disabled and preserve historical response classifications.'
 
   - id: B-20261013-006
     severity: S1

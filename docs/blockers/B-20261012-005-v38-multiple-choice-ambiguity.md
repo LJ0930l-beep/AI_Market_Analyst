@@ -30,8 +30,8 @@ repair_method: "Require exactly one object in choices before evaluating content 
 negative_tests: Shared response-contract rejection of missing, non-object, and multiple choices; actual authorized runner and consumed format-pilot paths reject empty, non-object, and multiple choices; conflicting/truncated second content; all existing V2 schema, evidence_refs, finish_reason, identity, empty/truncated-response, and offline-runner tests.
 unblock_criteria: Push the repair to PR #27; require quick, full, and Web/lint/type-check/build hosted checks to pass on the exact updated head; verify both actual V38 response handlers use the shared one-choice guard and confirm immutable V38 ledger/sample hashes remain unchanged. This does not establish remote response_format, model identity, billing, quota, or G0 integration approval.
 needs_human_decision: true
-next_owner_action: "The actual V38 response-path repair passes focused offline tests locally; commit and push it to PR #27, require exact-head hosted CI, then obtain independent review and record the G0 decision. Keep provider dispatch disabled and G2 unauthorized."
-rollback: Revert only the multiple-choice evaluator and regression-test change if exact-head review or CI rejects it; retain this blocker history, prior audit snapshots, V35 risk controls, and immutable research records.
+next_owner_action: "The repair passed exact-head CI on PR #27 head 928b35844d2f03397c611a29aa13fe710aff4d37. Obtain independent review of the actual V38 result paths and record the G0 decision. Keep provider dispatch disabled and G2 unauthorized."
+rollback: If review or CI rejects this implementation shape, replace it only with an equivalent fail-closed check in each actual response path; never restore silent choices[0] selection. Retain this blocker history, prior audit snapshots, V35 risk controls, and immutable research records.
 ```
 
 ## Finding and repair
@@ -71,3 +71,10 @@ The multiple-choice fail-closed repair remains present in PR #27 head 952d38a8e4
 ## Live refresh 2026-10-13T04:13:54Z
 - PR #27 SHA 4abdcdfe8917dbc3527196765369f73b4913f6c9 passed exact-head run 38343135615, including offline Python and Web checks. The ambiguity and attached Gate review repairs are present in the candidate.
 - Keep FIX_IN_REVIEW pending independent review/G0 decision; provider dispatch remains disabled. No model calls or retries occurred.
+
+## Exact-head verification — 2026-10-13T11:14:32Z
+
+- PR #27 exact head `928b35844d2f03397c611a29aa13fe710aff4d37` passed hosted run [38386090835](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38386090835).
+- Python quick gate: **295 passed**. Full offline suite: **2,704 passed, 25 subtests, one existing Starlette/httpx deprecation warning**. Web tests, lint, type-check, and production build passed.
+- The repair paths and all six empty/non-object/multiple-choice cases are in the tested candidate. Historical V38 ledger SHA and classifications remain unchanged.
+- B005 remains `FIX_IN_REVIEW`, not `VERIFIED`, until independent review/G0 disposition. This CI does not establish remote provider capability or authorize G2.
