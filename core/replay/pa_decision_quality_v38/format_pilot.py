@@ -21,6 +21,7 @@ from .gemini_runner import (
     _safe_usage,
     _trace_matches_intent,
     _transport_wire_messages_sha256,
+    _valid_request_byte_count,
     canonical_json_bytes,
     canonical_sha256,
 )
@@ -305,8 +306,7 @@ def _result_event(
             or trace.get("phase") != "COMPLETED"
             or trace.get("http_status") != 200
             or trace.get("transport_mode") != "JSON"
-            or type(trace.get("request_bytes_written")) not in (int, float)
-            or trace["request_bytes_written"] <= 0):
+            or not _valid_request_byte_count(trace)):
         event.update(status="FORMAT_PILOT_INVALID_TRANSPORT", error_code="COMPLETED_JSON_TRANSPORT_UNVERIFIED")
         return event
 
@@ -447,8 +447,7 @@ def _validate_result_event(result: dict[str, Any], intent: dict[str, Any], marke
             or trace.get("phase") != "COMPLETED"
             or trace.get("http_status") != 200
             or trace.get("transport_mode") != "JSON"
-            or type(trace.get("request_bytes_written")) not in (int, float)
-            or trace["request_bytes_written"] <= 0):
+            or not _valid_request_byte_count(trace)):
         raise MarketOnlyError("FORMAT_PILOT_VALID_RESULT_PROVENANCE_INVALID")
     parsed = parse_json_completion(raw, parser_version=spec.parser_version)
     analysis = result.get("analysis")

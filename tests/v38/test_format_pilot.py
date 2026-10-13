@@ -13,9 +13,13 @@ from core.replay.pa_decision_quality_v38.format_pilot import (
     build_format_pilot_intent,
     run_format_pilot,
 )
-from core.replay.pa_decision_quality_v38.gemini_runner import ProviderCallResult
+from core.replay.pa_decision_quality_v38.gemini_runner import (
+    ProviderCallResult,
+    canonical_json_bytes,
+    canonical_sha256,
+)
 from core.replay.pa_decision_quality_v38.json_response import RAW_OR_SINGLE_JSON_FENCE_V1
-from core.replay.pa_decision_quality_v38.market_only import build_market_only_input
+from core.replay.pa_decision_quality_v38.market_only import MarketOnlyError, build_market_only_input
 from scripts import run_v38_json_format_pilot as format_pilot_cli
 
 
@@ -200,6 +204,61 @@ def test_format_pilot_rejects_missing_non_object_or_multiple_completion_choices(
 
     assert report["status"] == "FORMAT_PILOT_INVALID_PROVIDER_RESPONSE"
     assert report["result"]["error_code"] == error_code
+
+
+@pytest.mark.parametrize("request_bytes_written", [1.0, 1.5, True])
+def test_format_pilot_rejects_noninteger_transport_byte_counts(
+    market_point_factory, tmp_path, request_bytes_written,
+):
+    market_input, prompt, messages, spec, root = _setup(market_point_factory, tmp_path)
+
+    def malformed_transport(sent_messages, request_id):
+        result = _call_result(sent_messages, request_id, _valid_analysis(market_input["evidence_refs"]))
+        result.transport_trace["request_bytes_written"] = request_bytes_written
+        return result
+
+    report = run_format_pilot(
+        market_input=market_input, prompt=prompt, messages=messages,
+        ledger_path=root / "invalid-transport.jsonl", report_path=root / "invalid-transport.json",
+        repository_root=tmp_path, execute=True, call_model=malformed_transport, spec=spec,
+    )
+
+    assert report["status"] == "FORMAT_PILOT_INVALID_TRANSPORT"
+    assert report["result"]["analysis"] is None
+    assert report["result"]["error_code"] == "COMPLETED_JSON_TRANSPORT_UNVERIFIED"
+
+
+def test_existing_format_pilot_review_rejects_rehashed_noninteger_transport_byte_count(
+    market_point_factory, tmp_path,
+):
+    market_input, prompt, messages, spec, root = _setup(market_point_factory, tmp_path)
+    ledger = root / "pilot.jsonl"
+    calls = []
+
+    def caller(sent_messages, request_id):
+        calls.append(request_id)
+        return _call_result(sent_messages, request_id, _valid_analysis(market_input["evidence_refs"]))
+
+    first = run_format_pilot(
+        market_input=market_input, prompt=prompt, messages=messages,
+        ledger_path=ledger, report_path=root / "first.json", repository_root=tmp_path,
+        execute=True, call_model=caller, spec=spec,
+    )
+    assert first["status"] == "FORMAT_PILOT_ANALYSIS_VALID"
+
+    events = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines()]
+    events[1]["transport_trace"]["request_bytes_written"] = 1.5
+    unsigned = {key: value for key, value in events[1].items() if key != "event_sha256"}
+    events[1]["event_sha256"] = canonical_sha256(unsigned)
+    ledger.write_bytes(b"".join(canonical_json_bytes(event) + b"\n" for event in events))
+
+    with pytest.raises(MarketOnlyError, match="FORMAT_PILOT_VALID_RESULT_PROVENANCE_INVALID"):
+        run_format_pilot(
+            market_input=market_input, prompt=prompt, messages=messages,
+            ledger_path=ledger, report_path=root / "second.json", repository_root=tmp_path,
+            execute=True, call_model=lambda *_: pytest.fail("existing pilot result must not be reissued"), spec=spec,
+        )
+    assert len(calls) == 1
 
 
 def test_existing_terminal_pilot_result_is_reviewed_without_a_second_call(

@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V2
-updated_at_utc: 2026-10-13T11:16:41Z
+updated_at_utc: 2026-10-13T11:36:29Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -8,7 +8,7 @@ blockers:
     file: docs/blockers/B-20261010-001-pr-branch-integration.md
     trigger_signature: PR_COMBINATION_CANDIDATE_AWAITS_HUMAN_REVIEW
     playbook_codes: B21,B22
-    next_owner_action: 'PR #27 exact head 928b35844d2f03397c611a29aa13fe710aff4d37 passes current hosted CI, and PR #1-#26 heads are candidate ancestors. Keep PR #26/#27 Draft and unmerged; obtain formal independent review and record the human G0 decision. Preserve PR #23 failure and PR #1-#11 no-check records.'
+    next_owner_action: 'PR #27 remains based on main and Draft. Its current candidate includes the prior integrated PR heads; the exact latest head still needs hosted CI and formal independent review before a G0 decision. Keep PR #26/#27 unmerged and preserve PR #23 failure and PR #1-#11 no-check records.'
   - id: B-20261010-002
     severity: S1
     status: BLOCKED_WITH_EVIDENCE
@@ -40,7 +40,7 @@ blockers:
     file: docs/blockers/B-20261012-005-v38-multiple-choice-ambiguity.md
     trigger_signature: V38_RESPONSE_CHOICES_MULTIPLE_SILENTLY_FIRST
     playbook_codes: B01
-    next_owner_action: 'The actual V38 response-path repair passes exact-head CI on PR #27 head 928b35844d2f03397c611a29aa13fe710aff4d37. Obtain independent review and record the G0 decision; keep provider dispatch disabled and preserve historical response classifications.'
+    next_owner_action: 'The actual V38 response-path repair remains in PR #27 and passed hosted CI on code head 928b35844d2f03397c611a29aa13fe710aff4d37. Require CI on the latest exact head and independent review; keep provider dispatch disabled and preserve historical response classifications.'
 
   - id: B-20261013-006
     severity: S1
@@ -82,3 +82,11 @@ blockers:
     trigger_signature: V36_TEST_EVIDENCE_ADDED_NODE_PHASES_INCOMPLETE
     playbook_codes: B21
     next_owner_action: 'Obtain independent review of the complete-phase evidence comparator and record the G0 decision. Keep model/exchange dispatch disabled and do not merge.'
+  - id: B-20261013-011
+    severity: S1
+    status: FIX_IN_REVIEW
+    component: model
+    file: docs/blockers/B-20261013-011-format-pilot-accepts-fractional-byte-count.md
+    trigger_signature: V38_FORMAT_PILOT_ACCEPTS_FRACTIONAL_TRANSPORT_BYTES
+    playbook_codes: B03
+    next_owner_action: 'The offline repair shares gemini_runner exact-positive-integer transport validation across format-pilot result creation and review. Focused format-pilot tests pass locally; commit/push, require exact-head CI, and obtain current-candidate independent review. Keep G2 unauthorized.'
