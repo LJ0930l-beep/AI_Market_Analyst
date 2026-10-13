@@ -88,6 +88,16 @@ def test_safe_trace_rejects_unbound_or_malformed_request_and_attempt_ids():
     assert sanitized is not None and 'failure_code' not in sanitized
 
 
+@pytest.mark.parametrize('value', [True, 1.0, 1.5, -1, 1_000_000_000_001])
+def test_safe_trace_drops_invalid_request_byte_counts(value):
+    raw = {**trace().snapshot(), 'request_bytes_written': value}
+
+    result = safe_transport_trace(raw)
+
+    assert result is not None
+    assert 'request_bytes_written' not in result
+
+
 def test_malformed_metadata_cannot_crash_the_bounded_audit_or_smuggle_objects():
     raw={**trace().snapshot(),'phase':[], 'failed_phase':{}, 'error_type':[], 'elapsed_ms':10**1000}
     result=safe_transport_trace(raw)

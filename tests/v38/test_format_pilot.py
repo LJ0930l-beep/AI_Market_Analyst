@@ -206,8 +206,8 @@ def test_format_pilot_rejects_missing_non_object_or_multiple_completion_choices(
     assert report["result"]["error_code"] == error_code
 
 
-@pytest.mark.parametrize("request_bytes_written", [1.0, 1.5, True])
-def test_format_pilot_rejects_noninteger_transport_byte_counts(
+@pytest.mark.parametrize("request_bytes_written", [1.0, 1.5, True, 1_000_000_000_001])
+def test_format_pilot_rejects_invalid_transport_byte_counts(
     market_point_factory, tmp_path, request_bytes_written,
 ):
     market_input, prompt, messages, spec, root = _setup(market_point_factory, tmp_path)
@@ -228,8 +228,9 @@ def test_format_pilot_rejects_noninteger_transport_byte_counts(
     assert report["result"]["error_code"] == "COMPLETED_JSON_TRANSPORT_UNVERIFIED"
 
 
-def test_existing_format_pilot_review_rejects_rehashed_noninteger_transport_byte_count(
-    market_point_factory, tmp_path,
+@pytest.mark.parametrize("request_bytes_written", [1.5, 1_000_000_000_001])
+def test_existing_format_pilot_review_rejects_rehashed_invalid_transport_byte_count(
+    market_point_factory, tmp_path, request_bytes_written,
 ):
     market_input, prompt, messages, spec, root = _setup(market_point_factory, tmp_path)
     ledger = root / "pilot.jsonl"
@@ -247,7 +248,7 @@ def test_existing_format_pilot_review_rejects_rehashed_noninteger_transport_byte
     assert first["status"] == "FORMAT_PILOT_ANALYSIS_VALID"
 
     events = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines()]
-    events[1]["transport_trace"]["request_bytes_written"] = 1.5
+    events[1]["transport_trace"]["request_bytes_written"] = request_bytes_written
     unsigned = {key: value for key, value in events[1].items() if key != "event_sha256"}
     events[1]["event_sha256"] = canonical_sha256(unsigned)
     ledger.write_bytes(b"".join(canonical_json_bytes(event) + b"\n" for event in events))

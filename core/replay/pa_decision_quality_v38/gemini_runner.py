@@ -19,7 +19,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from core.ai.transport_diagnostics import safe_transport_trace
+from core.ai.transport_diagnostics import is_valid_request_byte_count, safe_transport_trace
 from core.model_routing import DEFAULT_MODEL
 from core.replay.pa_decision_quality_v38 import authorization_guard
 from core.replay.pa_decision_quality_v38.json_response import (
@@ -510,7 +510,7 @@ def _safe_usage(raw: Any) -> dict[str, int] | None:
 
 def _valid_request_byte_count(trace: Any) -> bool:
     value = trace.get("request_bytes_written") if isinstance(trace, dict) else None
-    return type(value) is int and 0 < value <= 1_000_000_000_000
+    return is_valid_request_byte_count(value)
 
 
 def _result_event(

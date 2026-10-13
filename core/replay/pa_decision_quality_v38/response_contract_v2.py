@@ -12,6 +12,8 @@ from copy import deepcopy
 from enum import Enum
 from typing import Any
 
+from core.ai.transport_diagnostics import is_valid_request_byte_count
+
 from .json_response import RAW_OR_SINGLE_JSON_FENCE_V2, parse_json_completion, single_completion_choice
 from .market_only import MarketOnlyError
 
@@ -450,7 +452,7 @@ def evaluate_response_v2(
 
     trace = envelope.get("transport_trace")
     request_bytes_written = trace.get("request_bytes_written") if isinstance(trace, dict) else None
-    valid_request_bytes = type(request_bytes_written) is int and request_bytes_written > 0
+    valid_request_bytes = is_valid_request_byte_count(request_bytes_written)
     if (
         not isinstance(expected_request_id, str)
         or not expected_request_id

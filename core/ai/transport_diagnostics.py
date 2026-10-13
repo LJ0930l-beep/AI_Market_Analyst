@@ -17,6 +17,11 @@ PHASES = {'BUILD_REQUEST','AWAITING_RESPONSE_HEADERS','READING_RESPONSE_BODY',
 ERRORS = {'TimeoutError','URLError','HTTPError','JSONDecodeError','UnicodeDecodeError',
           'ModelClientError','ModelSchemaError','OSError','ConnectionError',
           'ConnectionResetError','ConnectionAbortedError','BrokenPipeError','RemoteDisconnected'}
+MAX_REQUEST_BYTES_WRITTEN = 1_000_000_000_000
+
+
+def is_valid_request_byte_count(value):
+    return type(value) is int and 0 < value <= MAX_REQUEST_BYTES_WRITTEN
 
 
 def safe_transport_trace(raw):
@@ -41,10 +46,13 @@ def safe_transport_trace(raw):
             result[key] = raw[key]
     for key in ('attempt','configured_timeout_seconds','elapsed_ms','headers_wait_ms','body_read_ms','response_bytes',
                 'stream_event_count','first_stream_event_ms','first_content_ms',
-                'connect_ms','request_write_ms','request_bytes_written'):
+                'connect_ms','request_write_ms'):
         value = raw.get(key)
         if type(value) in (int,float) and 0 <= value <= 1e12 and math.isfinite(value):
             result[key] = value
+    request_bytes_written = raw.get('request_bytes_written')
+    if type(request_bytes_written) is int and 0 <= request_bytes_written <= MAX_REQUEST_BYTES_WRITTEN:
+        result['request_bytes_written'] = request_bytes_written
     for key in ('connection_detail_available','connection_established','peer_is_loopback'):
         if type(raw.get(key)) is bool:
             result[key] = raw[key]

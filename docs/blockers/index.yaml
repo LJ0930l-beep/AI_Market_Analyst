@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V2
-updated_at_utc: 2026-10-13T11:36:29Z
+updated_at_utc: 2026-10-13T12:09:00Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -90,3 +90,19 @@ blockers:
     trigger_signature: V38_FORMAT_PILOT_ACCEPTS_FRACTIONAL_TRANSPORT_BYTES
     playbook_codes: B03
     next_owner_action: 'The offline repair shares gemini_runner exact-positive-integer transport validation across format-pilot result creation and review. Focused format-pilot tests pass locally; commit/push, require exact-head CI, and obtain current-candidate independent review. Keep G2 unauthorized.'
+  - id: B-20261013-012
+    severity: S1
+    status: FIX_IN_REVIEW
+    component: model
+    file: docs/blockers/B-20261013-012-v2-accepts-oversized-request-byte-count.md
+    trigger_signature: V2_RESPONSE_CONTRACT_ACCEPTS_OVERSIZED_TRANSPORT_BYTES
+    playbook_codes: B03
+    next_owner_action: 'Publish the bounded shared validator on PR #27, require exact-head hosted CI, and include B-012 in the current-candidate independent review. Keep G2 unauthorized and make no provider or exchange requests.'
+  - id: B-20261013-013
+    severity: S2
+    status: FIX_IN_REVIEW
+    component: ci
+    file: docs/blockers/B-20261013-013-ci-scheduler-tempfile-lock.md
+    trigger_signature: WINDOWS_SCHEDULER_TEST_TEMPFILE_PERMISSIONERROR
+    playbook_codes: B21
+    next_owner_action: 'Preserve the hosted failure; rerun full CI on the current exact PR #27 head. If the Windows tempfile lock recurs, identify the handle owner and repair teardown without skipping the test.'

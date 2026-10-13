@@ -276,6 +276,13 @@ def test_v2_accepts_an_immutable_valid_evidence_allowlist():
     assert result["normalized_analysis"] == _minimal()
 
 
+def test_v2_accepts_the_maximum_bounded_exact_transport_byte_count():
+    result = _evaluate(_envelope(_minimal(), request_bytes_written=1_000_000_000_000))
+
+    assert result["status"] == "VALID_LOCAL_CONTRACT"
+    assert result["transport_receipt_status"] == "MATCHED_COMPLETED_JSON_HTTP_200"
+
+
 def test_v2_does_not_accept_blank_ref_even_when_corrupt_allowlist_contains_it():
     analysis = _minimal()
     analysis["evidence_refs"] = [""]
@@ -315,7 +322,18 @@ def test_v2_rejects_request_response_transport_mismatch():
 
 @pytest.mark.parametrize(
     "request_bytes_written",
-    [True, False, 0, -1, 1.0, 1.5, float("nan"), float("inf"), -float("inf")],
+    [
+        True,
+        False,
+        0,
+        -1,
+        1.0,
+        1.5,
+        1_000_000_000_001,
+        float("nan"),
+        float("inf"),
+        -float("inf"),
+    ],
 )
 def test_v2_rejects_invalid_transport_byte_counts(request_bytes_written):
     result = _evaluate(_envelope(_minimal(), request_bytes_written=request_bytes_written))

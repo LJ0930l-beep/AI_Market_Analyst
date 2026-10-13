@@ -338,8 +338,8 @@ def test_analysis_requires_a_completed_bound_json_transport_trace(tmp_path, mark
     assert report["valid_analysis_records"] == 0
 
 
-@pytest.mark.parametrize("request_bytes_written", [1.0, 1.5])
-def test_runner_and_review_reject_noninteger_transport_byte_counts(
+@pytest.mark.parametrize("request_bytes_written", [1.0, 1.5, 1_000_000_000_001])
+def test_runner_and_review_reject_invalid_transport_byte_counts(
     tmp_path,
     market_point_factory,
     request_bytes_written,
@@ -370,9 +370,11 @@ def test_runner_and_review_reject_noninteger_transport_byte_counts(
     assert reviewed["transport_request_bytes_written_count"] == 0
 
 
-def test_ledger_review_rejects_rehashed_valid_analysis_with_fractional_byte_count(
+@pytest.mark.parametrize("request_bytes_written", [1.5, 1_000_000_000_001])
+def test_ledger_review_rejects_rehashed_valid_analysis_with_invalid_byte_count(
     tmp_path,
     market_point_factory,
+    request_bytes_written,
 ):
     root = Path(__file__).resolve().parents[2]
     auth, prompts, market_input = _setup(root, market_point_factory)
@@ -388,7 +390,7 @@ def test_ledger_review_rejects_rehashed_valid_analysis_with_fractional_byte_coun
     events = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines()]
     for event in events:
         if event["event_type"] == "RESULT":
-            event["transport_trace"]["request_bytes_written"] = 1.5
+            event["transport_trace"]["request_bytes_written"] = request_bytes_written
 
     previous_digest = "0" * 64
     for event in events:
@@ -397,7 +399,7 @@ def test_ledger_review_rejects_rehashed_valid_analysis_with_fractional_byte_coun
         event["event_sha256"] = canonical_sha256(unsigned)
         previous_digest = event["event_sha256"]
 
-    with pytest.raises(ValueError, match="GEMINI_RUN_VALID_ANALYSIS_PROVENANCE_INVALID"):
+    with pytest.raises(ValueError, match="GEMINI_RUN_LEDGER_TRANSPORT_TRACE_BINDING_INVALID"):
         review_gemini_ledger([market_input], prompts, events)
 
 
