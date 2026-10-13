@@ -7,6 +7,7 @@ status: RESOLVED
 component: integration
 mode: RESEARCH_OFFLINE
 branch_sha: 952d38a8e4d6aa800c507f6c54ee9477d744181b
+patch_pr: "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/27 (documentation-only adjudication)"
 trigger_signature: G0_G4_CALIBRATION_REMOTE_MODE_SEQUENCE_CONFLICT
 first_seen_at_utc: 2026-10-12T21:46:04Z
 manual_playbook: G0 integration; mapped calibration item B05 / G4

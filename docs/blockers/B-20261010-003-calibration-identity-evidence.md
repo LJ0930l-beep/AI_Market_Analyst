@@ -24,6 +24,7 @@ negative_tests: "Required before any implementation: missing digest; wrong model
 unblock_criteria: Offline calibration contract separates LOCAL_ARTIFACT_SHA256 from REMOTE_RESPONSE_IDENTITY, records model_identity_evidence_level and weights_exposed=false when applicable, passes negative tests, and enforces NOT_READY for stronger immutable-weight requirements and all unauthorized LIVE paths.
 needs_human_decision: true
 next_owner_action: After upstream G0/G1 review and authorized G2/G3 evidence, design the offline identity-mode contract and fake-provider negative matrix; keep this issue OPEN until those gates and review are complete.
+rollback: "Do not remove the current missing-digest NOT_READY guard. If the later G4 identity-mode patch fails review or tests, revert only that patch and preserve all historic model evidence and risk controls."
 ```
 
 ## Evidence classification

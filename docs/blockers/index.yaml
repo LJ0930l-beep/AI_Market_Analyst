@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V1
-updated_at_utc: 2026-10-12T23:38:26Z
+updated_at_utc: 2026-10-13T00:29:13Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -7,14 +7,14 @@ blockers:
     component: integration
     file: docs/blockers/B-20261010-001-pr-branch-integration.md
     trigger_signature: PR_COMBINATION_CANDIDATE_AWAITS_HUMAN_REVIEW
-    next_owner_action: 'At 2026-10-12T23:38:26Z: PR #26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 remains green; PR #27 exact head 86ab6fe124b2541fd7f73482dbabe2dd23f63b48 passed run 38320355179 (quick 289, full 2605 / 25 subtests, Web/lint/type-check/build). Both OPEN/Draft, no reviews or requests, no auto-merge. Keep G0 unaccepted pending independent review and remaining criteria; B-006 sequencing conflict is adjudicated. Do not merge.'
+    next_owner_action: 'As of 2026-10-13T00:29:13Z: PR #26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 remains green; PR #27 exact head 861d0c40ca4e080f157176acabf9147278c6c345 passed run 38324809873 (quick 289, full 2605 / 25 subtests, Web/lint/type-check/build). Both OPEN/Draft, no reviews or requests, no auto-merge. Keep G0 unaccepted pending independent review and remaining criteria; B-006 sequencing conflict is adjudicated. Do not merge.'
   - id: B-20261010-002
     severity: S1
     status: BLOCKED_WITH_EVIDENCE
     component: model
     file: docs/blockers/B-20261010-002-model-response-capability.md
     trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
-    next_owner_action: 'Keep provider dispatch disabled and max_calls=0. PR #27 exact head 86ab6fe124b2541fd7f73482dbabe2dd23f63b48 run 38320355179 passed offline CI only. Remote response_format, authenticated model/weight identity, billing and quota remain unknown. G2 requires G0 review and fresh bounded authorization.'
+    next_owner_action: 'Keep provider dispatch disabled and max_calls=0. PR #27 exact head 861d0c40ca4e080f157176acabf9147278c6c345 run 38324809873 passed offline CI only. Remote response_format, authenticated model/weight identity, billing and quota remain unknown. G2 requires G0 review and fresh bounded authorization.'
   - id: B-20261010-003
     severity: S1
     status: OPEN
@@ -35,7 +35,7 @@ blockers:
     component: model
     file: docs/blockers/B-20261012-005-v38-multiple-choice-ambiguity.md
     trigger_signature: V38_RESPONSE_CHOICES_MULTIPLE_SILENTLY_FIRST
-    next_owner_action: 'PR #27 exact head 86ab6fe124b2541fd7f73482dbabe2dd23f63b48 passed run 38320355179, including full offline and Web checks. Keep FIX_IN_REVIEW pending independent review/G0 decision; no provider dispatch or G2.'
+    next_owner_action: 'PR #27 exact head 861d0c40ca4e080f157176acabf9147278c6c345 passed run 38324809873, including full offline and Web checks. Keep FIX_IN_REVIEW pending independent review/G0 decision; no provider dispatch or G2.'
 
   - id: B-20261013-006
     severity: S1

@@ -7,6 +7,7 @@ status: FIX_IN_REVIEW
 component: model
 mode: RESEARCH_OFFLINE
 base_sha: 5f70d186d169261f0f337232c70e246a2e88b4e6
+branch_sha: 861d0c40ca4e080f157176acabf9147278c6c345
 trigger_signature: V38_RESPONSE_CHOICES_MULTIPLE_SILENTLY_FIRST
 first_seen_at_utc: 2026-10-12T19:15:10Z
 user_authorization: DOCUMENTED_OFFLINE_REPAIR_ONLY
@@ -23,7 +24,7 @@ patch_pr: https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/27 (stacked G1 
 negative_tests: Multiple choices with conflicting/truncated second content; invalid choice count; non-object choice; all existing V2 schema, evidence_refs, finish_reason, identity, empty/truncated-response and offline-runner tests.
 unblock_criteria: Push the repair to PR #27; require quick, full, and Web/lint/type-check/build hosted checks to pass on the exact updated head; confirm immutable V38 ledger/sample hashes remain unchanged. This does not establish remote response_format, model identity, billing, quota, or G0 integration approval.
 needs_human_decision: true
-next_owner_action: "Record independent review and G0 integration decision; keep provider dispatch disabled and G2 unauthorized."
+next_owner_action: "As of 2026-10-13T00:29:13Z, PR #27 candidate 861d0c40ca4e080f157176acabf9147278c6c345 passed exact-head run 38324809873. Obtain independent review and record the G0 decision; keep provider dispatch disabled and G2 unauthorized."
 rollback: Revert only the multiple-choice evaluator and regression-test change if exact-head review or CI rejects it; retain this blocker history, prior audit snapshots, V35 risk controls, and immutable research records.
 ```
 

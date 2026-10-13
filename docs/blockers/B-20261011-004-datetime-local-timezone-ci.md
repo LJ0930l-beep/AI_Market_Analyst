@@ -23,6 +23,7 @@ patch_pr: https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/27
 negative_tests: Failure reproduced under TZ=UTC before the patch; targeted UTC test, complete 161-test web suite, lint, and build pass after the patch.
 unblock_criteria: Exact PR #27 head checks pass for web tests, lint, build, and Python; preserve the original failure record and avoid changing product behavior to satisfy a timezone-specific expectation.
 needs_human_decision: false
+next_owner_action: "Keep the timezone-neutral assertion and preserve the original failing run plus exact-head repair evidence; no further runtime change is required unless datetime semantics change."
 rollback: Revert only the timezone-dependent test expectation if a future product contract intentionally changes; leave runtime date handling and all trading code untouched.
 ```
 

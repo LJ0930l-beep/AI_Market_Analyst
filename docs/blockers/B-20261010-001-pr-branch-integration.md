@@ -28,7 +28,8 @@ candidate_source_heads: origin/main@8642639a78ca9aa56fbad1e88aea4b82169ea433; PR
 candidate_local_verification: targeted 38 passed; quick gate 222 passed; full 2517 passed, 1 skipped, 0 failed; baseline 2113 passed, 103 failed, 1 skipped; node-id comparison 0 new failures, 0 missing baseline nodes.
 candidate_junit_sha256: baseline ec187fb87f395a5bb3949d358b13614b73dacfbfa873dc7d8a451ef54374ca9b; candidate dad101a071100b00d9071936e13233f1efcfa8813e82a1acd3d29fbbe9c0a733
 remote_ci_status: "PR26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 run 38107795624 passed; PR27 exact head f4461a72486b8aba132eb23045e03c9b1ffe0ba3 run 38298606199 passed (quick 289; full 2603/25 subtests; web 29 files/161 tests and lint/type-check/build); PR23 current-head failure retained."
-next_owner_action: "Current 2026-10-12T19:54:50Z: PR #26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 run 38107795624 passed; PR #27 exact head f4461a72486b8aba132eb23045e03c9b1ffe0ba3 run 38298606199 passed. Both remain OPEN/Draft with zero reviews/requests and no auto-merge. Obtain independent human review and record the G0 integration decision. Preserve #1-#11 NO_REPORTED_CHECKS and #23 failure. Do not auto-merge."
+next_owner_action: "As of 2026-10-13T00:29:13Z: PR #26 exact head 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 remains green; PR #27 exact head 861d0c40ca4e080f157176acabf9147278c6c345 passed run 38324809873 (quick 289, full 2605 / 25 subtests, Web/lint/type-check/build). Both remain OPEN/Draft with no reviews/requests and no auto-merge. Obtain independent human review and record the G0 decision. Preserve #1-#11 NO_REPORTED_CHECKS and #23 failure. Do not merge."
+rollback: "Abandon or revert only the isolated PR #26/#27 candidate commits; preserve original PR refs, the main baseline, historic failure records, frozen ledgers, V35 risk controls, and all prior snapshots. Never force-push or auto-merge."
 ```
 
 ## 故障原因与原始证据

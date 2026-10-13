@@ -1,5 +1,6 @@
 # B-20261010-002 — V38 结构化响应能力未验证
 
+```yaml
 id: B-20261010-002
 severity: S1
 status: BLOCKED_WITH_EVIDENCE
@@ -7,6 +8,8 @@ component: model
 mode: RESEARCH_OFFLINE
 g0_base_sha: 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1
 branch_sha: "f4461a72486b8aba132eb23045e03c9b1ffe0ba3"
+latest_candidate_sha: "861d0c40ca4e080f157176acabf9147278c6c345"
+latest_exact_head_ci: 38324809873
 g1_working_branch: codex/v2-g1-offline-20261010
 trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
 first_seen_at_utc: 2026-10-10T09:27:00Z
@@ -24,7 +27,9 @@ patch_pr: Stacked G1 offline branch codex/v2-g1-offline-20261010 based on G0 can
 negative_tests: Empty/partial/truncated body; finish_reason length/error/missing; missing/mismatched model ID with payload/adapter source separation; malformed/multiple fence; invalid/unknown/future top-level and nested evidence refs; offline fake provider ignores a submitted json_schema request and capability remains unknown; duplicate JSON key; usage mismatch; NaN/infinite/non-positive transport byte counts; duplicate intent in existing pilot tests.
 unblock_criteria: Offline contract PR and same-head full CI pass; any G2 remote capability probe requires separate explicit user authorization, a new frozen scope, request ceiling, budget/stop rule, and provider/route identity evidence.
 needs_human_decision: true
-next_owner_action: "Keep provider dispatch disabled. PR #27 exact head f4461a72486b8aba132eb23045e03c9b1ffe0ba3 passed run 38298606199 (quick 289; full 2603 with 25 subtests; Web 161 plus lint/type-check/build). Remote response_format, authenticated model/weight identity, billing and quota remain unknown. G2 requires G0 human review and a fresh bounded authorization."
+next_owner_action: "As of 2026-10-13T00:29:13Z: keep provider dispatch disabled. PR #27 latest candidate 861d0c40ca4e080f157176acabf9147278c6c345 passed run 38324809873 (quick 289; full 2605 / 25 subtests; Web/lint/type-check/build). Remote response_format, authenticated model/weight identity, billing and quota remain unknown. G2 requires G0 human review and a fresh bounded authorization."
+rollback: "Revert only the V2 parser/schema additions in PR #27 if offline contract or exact-head CI fails; preserve V1 behavior, authorization revocations, historical response ledgers, V35 risk controls, and all prior audit records. Keep remote dispatch disabled."
+```
 
 ## 已证实与仍未知
 
