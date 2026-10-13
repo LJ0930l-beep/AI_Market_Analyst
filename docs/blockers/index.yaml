@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V2
-updated_at_utc: 2026-10-13T12:09:00Z
+updated_at_utc: 2026-10-13T12:25:25Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -106,3 +106,11 @@ blockers:
     trigger_signature: WINDOWS_SCHEDULER_TEST_TEMPFILE_PERMISSIONERROR
     playbook_codes: B21
     next_owner_action: 'Preserve the hosted failure; rerun full CI on the current exact PR #27 head. If the Windows tempfile lock recurs, identify the handle owner and repair teardown without skipping the test.'
+  - id: B-20261013-014
+    severity: S1
+    status: FIX_IN_REVIEW
+    component: risk
+    file: docs/blockers/B-20261013-014-fixed-notional-mismatch-marked-eligible.md
+    trigger_signature: FIXED_NOTIONAL_PROPOSAL_MISMATCH_MARKED_ELIGIBLE
+    playbook_codes: B14
+    next_owner_action: 'Require exact-head tests and independent review of the shared fixed-notional mismatch rejection. Keep production sizing and all execution permissions unchanged.'

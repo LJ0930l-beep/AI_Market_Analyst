@@ -148,6 +148,17 @@ def diagnose_trade_proposal(
 
         proposed = _decimal("proposed_notional_usdt", proposed_notional_usdt, positive=True)
         fixed = _decimal("fixed_notional_usdt", fixed_notional_usdt, positive=True)
+        if mode == FIXED_NOTIONAL and proposed != fixed:
+            _unique_append(reasons, "FIXED_NOTIONAL_PROPOSAL_MISMATCH")
+            result.update({
+                "model_proposed_notional_usdt": _str(proposed),
+                "evaluated_notional_target_usdt": None,
+                "fixed_notional_target_usdt": _str(fixed),
+                "fixed_target_differs_from_model_proposal": True,
+                "status": "REJECTED",
+                "feasible": False,
+            })
+            return result
         entry_raw = _decimal("entry_price", entry_price, positive=True)
         stop_raw = _decimal("stop_price", stop_price, positive=True)
         target_raw = _decimal("target_price", target_price, positive=True)

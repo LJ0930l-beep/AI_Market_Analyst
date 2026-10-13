@@ -95,6 +95,19 @@ def test_fixed_mode_reports_risk_budget_minimum_equity():
     assert Decimal(result["minimum_viable_equity_usdt"]) == expected
 
 
+def test_fixed_mode_rejects_model_proposal_that_differs_from_fixed_target():
+    result = proposal(proposed_notional_usdt="1000")
+
+    assert result["status"] == "REJECTED"
+    assert result["feasible"] is False
+    assert "FIXED_NOTIONAL_PROPOSAL_MISMATCH" in result["reason_codes"]
+    assert result["model_proposed_notional_usdt"] == "1000"
+    assert result["fixed_notional_target_usdt"] == "2000"
+    assert result["evaluated_notional_target_usdt"] is None
+    assert result["fixed_target_differs_from_model_proposal"] is True
+    assert result["risk_policy_resized_proposal"] is False
+
+
 def test_higher_fees_slippage_and_wider_stops_raise_risk_and_reduce_net_rr():
     low_cost = proposal(taker_fee_rate="0.0001", slippage_rate="0.0001")
     high_cost = proposal(taker_fee_rate="0.001", slippage_rate="0.002")
