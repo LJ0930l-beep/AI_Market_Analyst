@@ -31,14 +31,23 @@ def _write_new_json(path: Path, value: Any) -> None:
         stream.write(encoded)
 
 
+def _parse_run_flag(value: str) -> bool:
+    normalized = str(value).strip().lower()
+    if normalized in {"true", "1", "yes", "on"}:
+        return True
+    if normalized in {"false", "0", "no", "off"}:
+        return False
+    raise argparse.ArgumentTypeError("--run accepts true or false")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, required=True,
                         help="Frozen JSON object with decision_points and optional cache_rows")
     parser.add_argument("--output", type=Path, required=True,
                         help="New report path; existing files are never overwritten")
-    parser.add_argument("--run", action="store_true",
-                        help="Explicitly enable an injected caller; this CLI has no built-in provider")
+    parser.add_argument("--run", nargs="?", const=True, default=False, type=_parse_run_flag,
+                        help="Use --run or --run=true to enable an injected caller; --run=false stays offline")
     parser.add_argument("--max-decisions", type=int,
                         help="Hard total model-call budget required with --run")
     parser.add_argument("--caller", help="Explicit import path in module:function form")

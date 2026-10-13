@@ -84,7 +84,7 @@ def test_offline_cli_uses_model_id_only_for_a1_a2_exact_cache_matching(
 
     assert run_main([
         "--input", str(source), "--output", str(output),
-        "--model-id", "cache-model-v1",
+        "--run=false", "--model-id", "cache-model-v1",
     ]) == 0
     saved = json.loads(output.read_text(encoding="utf-8"))
     assert saved["run_manifest"]["mode"] == "OFFLINE_DEFAULT"
