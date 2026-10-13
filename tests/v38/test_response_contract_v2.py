@@ -302,6 +302,46 @@ def test_v2_full_contract_rejects_unknown_nested_evidence_references():
     assert result["normalized_analysis"] is None
 
 
+@pytest.mark.parametrize(
+    ("field", "kind", "expected_error"),
+    [
+        ("candidate_setup", "CONDITIONAL", "CANDIDATE_SETUP_EVIDENCE_REQUIRED"),
+        ("target_structure", "PRIOR_SWING", "TARGET_STRUCTURE_EVIDENCE_REQUIRED"),
+        ("target_structure", "RANGE_EXTREME", "TARGET_STRUCTURE_EVIDENCE_REQUIRED"),
+        ("target_structure", "TREND_MEASURED_MOVE", "TARGET_STRUCTURE_EVIDENCE_REQUIRED"),
+    ],
+)
+def test_v2_full_contract_rejects_concrete_nested_claims_without_evidence(
+    field, kind, expected_error,
+):
+    analysis = _full()
+    analysis[field]["kind"] = kind
+    analysis[field]["evidence_refs"] = []
+
+    result = _evaluate(_envelope(analysis), tier=OutputTier.FULL)
+
+    assert result["status"] == "INVALID_EVIDENCE"
+    assert result["validation_errors"] == [expected_error]
+    assert result["normalized_analysis"] is None
+
+
+def test_v2_full_contract_accepts_concrete_nested_claims_with_known_evidence():
+    analysis = _full()
+    analysis["candidate_setup"].update(
+        kind="CONDITIONAL",
+        evidence_refs=["bar:15m:2025-10-10T12:00:00Z"],
+    )
+    analysis["target_structure"].update(
+        kind="PRIOR_SWING",
+        evidence_refs=["bar:1h:2025-10-10T12:00:00Z"],
+    )
+
+    result = _evaluate(_envelope(analysis), tier=OutputTier.FULL)
+
+    assert result["status"] == "VALID_LOCAL_CONTRACT"
+    assert result["normalized_analysis"] == analysis
+
+
 def test_v2_rejects_unknown_enum_and_execution_fields():
     analysis = _minimal()
     analysis["market_regime"] = "PROFIT_GUARANTEED"

@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V2
-updated_at_utc: 2026-10-13T13:38:28Z
+updated_at_utc: 2026-10-13T14:14:44Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -114,3 +114,11 @@ blockers:
     trigger_signature: FIXED_NOTIONAL_PROPOSAL_MISMATCH_MARKED_ELIGIBLE
     playbook_codes: B14
     next_owner_action: 'The shared fixed-notional mismatch rejection passed PR #27 exact-head run 38403593249, including the full offline suite. Obtain current-candidate independent review; keep production sizing and all execution permissions unchanged.'
+  - id: B-20261013-015
+    severity: S1
+    status: FIX_IN_REVIEW
+    component: model
+    file: docs/blockers/B-20261013-015-v2-concrete-claims-require-evidence-refs.md
+    trigger_signature: V2_CONCRETE_NESTED_CLAIM_WITHOUT_EVIDENCE_REFS
+    playbook_codes: B01,B10
+    next_owner_action: 'The V2 validator now rejects concrete nested claims without claim-specific refs; focused response-contract tests pass 58/58. Require exact-head full CI and include B-015 in current-candidate review; keep V2 dispatch disabled.'

@@ -265,6 +265,12 @@ def _validate_v2_analysis(
             or not candidate["description"].strip()
         ):
             return ["CANDIDATE_SETUP_INVALID"], "INVALID_SCHEMA"
+        if (
+            candidate["kind"] == "CONDITIONAL"
+            and isinstance(candidate.get("evidence_refs"), list)
+            and not candidate["evidence_refs"]
+        ):
+            return ["CANDIDATE_SETUP_EVIDENCE_REQUIRED"], "INVALID_EVIDENCE"
         target = analysis.get("target_structure")
         if (
             not isinstance(target, dict)
@@ -283,6 +289,12 @@ def _validate_v2_analysis(
             or not target["rationale"].strip()
         ):
             return ["TARGET_STRUCTURE_INVALID"], "INVALID_SCHEMA"
+        if (
+            target["kind"] in {"PRIOR_SWING", "RANGE_EXTREME", "TREND_MEASURED_MOVE"}
+            and isinstance(target.get("evidence_refs"), list)
+            and not target["evidence_refs"]
+        ):
+            return ["TARGET_STRUCTURE_EVIDENCE_REQUIRED"], "INVALID_EVIDENCE"
         counter_evidence = analysis.get("counter_evidence")
         if (
             not isinstance(counter_evidence, list)
