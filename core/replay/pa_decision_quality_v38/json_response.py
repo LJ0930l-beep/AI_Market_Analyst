@@ -27,6 +27,17 @@ def _reject_non_json_constant(value: str) -> None:
     raise ValueError(f"non-JSON numeric constant: {value}")
 
 
+def single_completion_choice(response: Any) -> dict[str, Any]:
+    """Require exactly one completion choice before any caller reads content."""
+    choices = response.get("choices") if isinstance(response, dict) else None
+    if not isinstance(choices, list) or len(choices) != 1:
+        raise MarketOnlyError("COMPLETION_CHOICE_COUNT_INVALID")
+    choice = choices[0]
+    if not isinstance(choice, dict):
+        raise MarketOnlyError("COMPLETION_CHOICE_INVALID")
+    return choice
+
+
 def parse_json_completion(content: str, *, parser_version: str) -> dict[str, Any]:
     """Parse one object using an explicitly selected envelope policy.
 

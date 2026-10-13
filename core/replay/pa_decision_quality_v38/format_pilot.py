@@ -24,7 +24,7 @@ from .gemini_runner import (
     canonical_json_bytes,
     canonical_sha256,
 )
-from .json_response import RAW_OR_SINGLE_JSON_FENCE_V1, parse_json_completion
+from .json_response import RAW_OR_SINGLE_JSON_FENCE_V1, parse_json_completion, single_completion_choice
 from .market_only import ANALYSIS_SCHEMA_VERSION, INPUT_SCHEMA_VERSION, MarketOnlyError, validate_market_only_analysis
 
 FORMAT_PILOT_SCHEMA_VERSION = "pa-market-only-v38/json-format-pilot-1"
@@ -277,12 +277,15 @@ def _result_event(
         return event
     event["model_identity_status"] = "RESPONSE_MATCHED_REQUESTED_MODEL"
 
-    choices = response.get("choices")
-    first = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else None
-    message = first.get("message") if isinstance(first, dict) else None
-    content = message.get("content") if isinstance(message, dict) else None
-    finish_reason = first.get("finish_reason") if isinstance(first, dict) else None
     event["usage_reported_by_provider"] = _safe_usage(response.get("usage"))
+    try:
+        first = single_completion_choice(response)
+    except MarketOnlyError as exc:
+        event.update(status="FORMAT_PILOT_INVALID_PROVIDER_RESPONSE", error_code=exc.code)
+        return event
+    message = first.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    finish_reason = first.get("finish_reason")
     event["finish_reason"] = finish_reason if isinstance(finish_reason, str) else None
     if not isinstance(content, str):
         event.update(status="FORMAT_PILOT_INVALID_PROVIDER_RESPONSE", error_code="COMPLETION_CONTENT_MISSING")

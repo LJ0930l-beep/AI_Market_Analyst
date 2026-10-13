@@ -168,6 +168,40 @@ def test_valid_fenced_response_is_retained_raw_but_excluded_from_quality_metrics
     assert len(calls) == 1
 
 
+@pytest.mark.parametrize(
+    ("choices", "error_code"),
+    [
+        ([], "COMPLETION_CHOICE_COUNT_INVALID"),
+        ([None], "COMPLETION_CHOICE_INVALID"),
+        ([{"message": {"content": "{}"}}, {"message": {"content": "{}"}}],
+         "COMPLETION_CHOICE_COUNT_INVALID"),
+    ],
+)
+def test_format_pilot_rejects_missing_non_object_or_multiple_completion_choices(
+    market_point_factory, tmp_path, choices, error_code,
+):
+    market_input, prompt, messages, spec, root = _setup(market_point_factory, tmp_path)
+
+    def ambiguous_completion(sent_messages, request_id):
+        result = _call_result(
+            sent_messages, request_id,
+            _valid_analysis(market_input["evidence_refs"]),
+        )
+        result.payload["choices"] = choices
+        return result
+
+    report = run_format_pilot(
+        market_input=market_input, prompt=prompt, messages=messages,
+        ledger_path=root / "ambiguous-pilot.jsonl",
+        report_path=root / "ambiguous-pilot.json",
+        repository_root=tmp_path, execute=True,
+        call_model=ambiguous_completion, spec=spec,
+    )
+
+    assert report["status"] == "FORMAT_PILOT_INVALID_PROVIDER_RESPONSE"
+    assert report["result"]["error_code"] == error_code
+
+
 def test_existing_terminal_pilot_result_is_reviewed_without_a_second_call(
     market_point_factory, tmp_path,
 ):

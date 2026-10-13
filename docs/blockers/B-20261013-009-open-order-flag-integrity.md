@@ -5,7 +5,7 @@ id: B-20261013-009
 severity: S1
 status: FIX_IN_REVIEW
 component: gate
-handbook_mapping: B16
+playbook_codes: B16
 mode: RESEARCH_OFFLINE
 branch_sha: 5bce67239ccf8e608993a901dab020cfa0a8e8f8
 trigger_signature: GATE_OPEN_ORDER_REDUCE_ONLY_FLAG_UNVERIFIED
@@ -21,9 +21,13 @@ immediate_stop_or_isolation: Do not make Gate/TestNet requests. Invalid or confl
 evidence_files_and_hashes: "Historical review attachment C:/Users/baicha/Downloads/AI_Market_Analyst_PR27_G0_%E7%8B%AC%E7%AB%8B%E5%A4%8D%E5%AE%A1_20261013.md, target HEAD f856859cb83517729b28a56e3ed310f920ee643f, SHA-256 A895236DA9E721DAB141E2B723DB61D3F11AF758B08F4C59DAF788249A6F1802; follow-up: docs/audits/V2-G0-G1-pr27-independent-review-followup-20261013T050106Z.md SHA-256 23893BB32896A3B04CE9E4C099B933EE4BF946849A3A1D0B9BC2B7CBC8DDC349; current candidate adapter: core/trading/gate_live_client.py SHA-256 AF3A5899427763CF41E1E08176F73E0C4076CDCFB5A9D17234332105B0F0F509; regression tests: tests/test_gate_account_chain.py SHA-256 39EBB5292F949C90FEFECD06E37AC2A24427BDA37A31F7C94960843E09F74A4D"
 reproduction: py -3 -m pytest -q tests/test_gate_account_chain.py tests/test_gate_testnet_ai_chain.py -k open_order_reduce_only
 root_cause_status: CONFIRMED
+original_evidence: "Fixture review showed that malformed, conflicting, numeric, or string reduce-only aliases on ordinary open orders could be coerced by generic truthiness; the historical PR #27 review and test SHA are recorded above."
+root_cause: "The ordinary open-order normalization path used truthiness instead of strict canonical parsing for each present CCXT and Gate reduce-only field."
+temporary_mitigation: "Do not make Gate/TestNet requests; mark snapshots degraded when any present native flag is malformed or conflicting."
 safe_fallback: Parse CCXT reduceOnly and Gate info.reduce_only/is_reduce_only only as canonical booleans; invalid or conflicting evidence normalizes conservatively and marks the account truth DEGRADED.
 patch_pr: https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/27
 repair_plan: Parse every present CCXT/Gate reduce-only alias strictly; invalid or conflicting values degrade account truth and normalize conservatively. Implemented in commit 14e732546991c55d5a84c96631126dbadfc501bc; the legacy generic boolean parser remains unchanged.
+repair_method: "Parse each present CCXT/Gate reduce-only alias strictly; degrade account truth on invalid or conflicting evidence while leaving unrelated legacy parser behavior unchanged."
 negative_tests: Values 2, -1, 1.5, NaN, infinity, and "2" for each supported field; conflicting normalized/native aliases; canonical true/false/0/1 forms remain accepted.
 unblock_criteria: Same-environment full-suite comparison has no missing baseline nodes, lost passes, new failure phases, unreported nodes, or added nonpassing tests; exact pushed SHA Python/Web CI succeeds; independent review and G0 decision are recorded.
 rollback: Never restore truthy-number coercion. If this patch regresses, keep Gate account truth degraded until an equivalent strict parser is available; do not use an incomplete snapshot for new-risk or cleanup decisions.

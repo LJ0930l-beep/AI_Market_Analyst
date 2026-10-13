@@ -8,6 +8,7 @@ component: model
 mode: RESEARCH_OFFLINE
 branch_sha: 9eb55ac19b7e8739b7500cca03b0c9d2a253c299
 trigger_signature: CALIBRATION_REMOTE_WEIGHT_DIGEST_REQUIRED
+playbook_codes: B05
 first_seen_at_utc: 2026-10-10T19:43:32Z
 user_authorization: DOCUMENTED_SCOPE_ONLY
 external_cost_or_order_attempted: false
@@ -18,8 +19,12 @@ immediate_stop_or_isolation: Keep calibration NOT_READY when no verified digest 
 evidence_files_and_hashes: "core/trading/ai_calibration.py SHA-256 4F1794A79D4AB26A71B7FF9B5A96A5B7DEE968C1DF4D8B1FEF245E6EB0F11AC2; core/evidence.py SHA-256 520AF76610A2748703DE58972DCFA39197002F60E2195FE550C34F1A6F25470F; tests/test_ai_calibration.py SHA-256 089606DE34AA4786A064AB26061089BA96BFA686855DB4A19A1BF022EF9F7322; source/manual: AI_Market_Analyst_V2_0 development blocker handbook §7.2 B05"
 reproduction: "Static inspection: ai_calibration.py calls model_weight_digest before calibration and returns NOT_READY/MODEL_DIGEST_UNAVAILABLE when absent; evidence.py returns UNKNOWN_NOT_PROVIDED without a verified SHA-256 digest. No provider request was used to reproduce this behavior."
 root_cause_status: CONFIRMED
+original_evidence: "Static source inspection and the missing-digest negative path show that calibration has no verified remote weight digest or distinct remote-response-identity mode; no provider call was made."
+root_cause: "The current calibration contract requires a weight digest even when a remote provider may not expose weights, and it does not yet distinguish remote response identity from local artifact hashing."
+temporary_mitigation: "Keep calibration NOT_READY without verified evidence; never substitute model names or local application hashes for remote weight identity."
 safe_fallback: Preserve the current fail-closed NOT_READY behavior; do not treat model names or local application artifact hashes as remote model-weight evidence.
 patch_pr: none; implementation is deferred behind G0/G1/G2/G3 gates
+repair_method: "After G0-G3 acceptance, define a separate remote identity evidence mode and negative tests; retain NOT_READY for missing/forged evidence and all unauthorized LIVE paths."
 negative_tests: "Required before any implementation: missing digest; wrong model receipt; forged digest; model-name hash; local artifact SHA misused as remote weights; RESEARCH/PAPER/TESTNET identity mode cannot grant LIVE permission."
 unblock_criteria: Offline calibration contract separates LOCAL_ARTIFACT_SHA256 from REMOTE_RESPONSE_IDENTITY, records model_identity_evidence_level and weights_exposed=false when applicable, passes negative tests, and enforces NOT_READY for stronger immutable-weight requirements and all unauthorized LIVE paths.
 needs_human_decision: true

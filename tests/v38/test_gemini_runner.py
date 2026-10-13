@@ -447,6 +447,37 @@ def test_model_call_error_discards_arbitrary_exception_message():
     assert "private token" not in json.dumps(result)
 
 
+@pytest.mark.parametrize(
+    ("choices", "error_code"),
+    [
+        ([], "COMPLETION_CHOICE_COUNT_INVALID"),
+        ([None], "COMPLETION_CHOICE_INVALID"),
+        ([{"message": {"content": "{}"}}, {"message": {"content": "{}"}}],
+         "COMPLETION_CHOICE_COUNT_INVALID"),
+    ],
+)
+def test_runner_rejects_missing_non_object_or_multiple_completion_choices(
+    tmp_path, market_point_factory, choices, error_code,
+):
+    root = Path(__file__).resolve().parents[2]
+    auth, prompts, market_input = _setup(root, market_point_factory)
+
+    def ambiguous_completion(messages, request_id):
+        result = _fixture_call(messages, request_id)
+        result.payload["choices"] = choices
+        return result
+
+    report = execute_authorized_optimization(
+        [market_input], prompts, authorization=auth,
+        ledger_path=tmp_path / "ambiguous-completion.jsonl",
+        call_model=ambiguous_completion, max_contexts=1,
+    )
+
+    assert report["valid_analysis_records"] == 0
+    assert report["records"][0]["result"]["status"] == "INVALID_PROVIDER_RESPONSE"
+    assert report["records"][0]["result"]["error_code"] == error_code
+
+
 @pytest.mark.parametrize("trace_request_id", ["a" * 32, "b" * 32])
 def test_cli_model_caller_attaches_transport_trace_only_for_current_request(
     monkeypatch, trace_request_id,

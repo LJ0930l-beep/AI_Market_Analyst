@@ -12,6 +12,7 @@ latest_candidate_sha: "5bb0cc34dfe93a1f4b6fa5b312894d5878150503"
 latest_exact_head_ci: 38328844757
 g1_working_branch: codex/v2-g1-offline-20261010
 trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
+playbook_codes: B01,B02,B03,B04,B06,B07,B08
 first_seen_at_utc: 2026-10-10T09:27:00Z
 user_authorization: DOCUMENTED_SCOPE_ONLY
 external_cost_or_order_attempted: false
@@ -22,9 +23,13 @@ immediate_stop_or_isolation: No new Gemini call, no retry, no rewriting/relabeli
 evidence_files_and_hashes: docs/audits/V38-invalid-json-classification-20261010.json SHA-256 4ba18a5bbb41ad8525e334cf44bcad98ab6d5d98ac76823b49f0f6c871785db7; source ledger SHA-256 820212a5699b718c922232c584fcfdcb4f79b675ea8653b1898a0d4025b837a7; offline V2 report docs/audits/V38-Prompt-Schema-V2-offline-contract-20261010.md; full-suite local JUnit SHA-256 C9359E2863F499657C922810B586CD8F5EC085C1593B2AC44C48B4953226A261 (Git-ignored); latest PR matrix docs/audits/PR-INTEGRATION-MATRIX-LIVE-20261013T011953Z.json SHA-256 47EA3731D7E294F837CAE3468FA920ED7BDF92161DB96EDAE58D5863013D6F53; minimal V2 prompt SHA-256 04886b05617bd2b8882312819fab4db315ff5093fc7345e9c068237c382cb520; full V2 prompt SHA-256 5d897ff0539cdeadd7b88e845c4c916d5fef145e059aa1820d928837fb0d7a2c
 reproduction: Local fixed response envelopes through evaluate_response_v2; targeted V2/parser/format-pilot/runner tests, no network path.
 root_cause_status: CONFIRMED
+original_evidence: "The frozen V38 ledger classifies 67 original responses as INVALID_JSON, 4 as CALL_ERROR_NO_RETRY, and 1 as AMBIGUOUS_NO_RESULT_NEVER_RETRY; its SHA-256 remains 820212A5699B718C922232C584FCFDCB4F79B675EA8653B1898A0D4025B837A7."
+root_cause: "The historical response bodies were not strict JSON under the original parser contract, while the proxy's native structured-output support, authenticated identity, billing, quota, and idempotency have not been verified."
+temporary_mitigation: "Keep remote dispatch disabled and maximum_calls at zero; do not retry or relabel historical intents; validate only local fixtures."
 remote_response_format_capability: UNKNOWN_UNVERIFIED
 safe_fallback: Strict V2 local JSON/schema/evidence validation; actual route capability remains unknown_unverified; V2 prompt remote dispatch disabled.
 patch_pr: Stacked G1 offline branch codex/v2-g1-offline-20261010 based on G0 candidate PR #26; no auto-merge.
+repair_method: "Apply the V2 response-envelope, JSON/schema/evidence, identity, finish-reason, and size checks locally; retain original classifications and require a separately authorized bounded experiment to prove provider capabilities."
 negative_tests: Empty/partial/truncated body; finish_reason length/error/missing; missing/mismatched model ID with payload/adapter source separation; malformed/multiple fence; invalid/unknown/future top-level and nested evidence refs; offline fake provider ignores a submitted json_schema request and capability remains unknown; duplicate JSON key; usage mismatch; NaN/infinite/non-positive transport byte counts; duplicate intent in existing pilot tests.
 unblock_criteria: Offline contract PR and same-head full CI pass; any G2 remote capability probe requires separate explicit user authorization, a new frozen scope, request ceiling, budget/stop rule, and provider/route identity evidence.
 needs_human_decision: true

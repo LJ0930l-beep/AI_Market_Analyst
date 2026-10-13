@@ -8,6 +8,7 @@ component: ci
 mode: RESEARCH_OFFLINE
 branch_sha: 14e732546991c55d5a84c96631126dbadfc501bc
 trigger_signature: V36_TEST_EVIDENCE_ADDED_NODE_PHASES_INCOMPLETE
+playbook_codes: B21
 first_seen_at_utc: 2026-10-13T08:01:05Z
 user_authorization: DOCUMENTED_SCOPE_ONLY
 authorization_scope: OFFLINE_AUDIT_SCOPE
@@ -19,8 +20,12 @@ immediate_stop_or_isolation: Do not rely on PASS from added-node comparisons unt
 evidence_files_and_hashes: "Failure-first comparator source branch SHA 14e732546991c55d5a84c96631126dbadfc501bc; current candidate scripts/v36_test_evidence.py SHA-256 53EF91E342E02B049FA1F756AAFDFE43B716F4857585A80B6C80E2DA10AA1728; failure-first and regression test tests/v36/test_test_evidence.py SHA-256 2F66AC290D16BC215EFCFF149F851A0DD56A6B8B609696B67F4F2D50CCD57335; exact repair commit 40f65d7b05675ef2f7df69450af7d20c4418eb6e"
 reproduction: python -m pytest -q tests/v36/test_test_evidence.py -k complete_phase_record
 root_cause_status: CONFIRMED
+original_evidence: "The failure-first comparator accepted a newly collected test node with setup-only evidence as PASS; the recorded pre-fix reproduction and baseline comparison artifacts identify the affected comparator."
+root_cause: "The comparator treated a new test node as passing without requiring successful setup, call, and teardown phase evidence."
+temporary_mitigation: "Treat any added node with absent or nonpassing phase evidence as BLOCKED/FAIL; do not accept or omit that node."
 safe_fallback: Treat comparison as BLOCKED/FAIL if a new collected node lacks setup, call, or teardown evidence; do not accept or omit the node.
 patch_pr: https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/27
+repair_method: "Require each added test node to provide successful setup, call, and teardown evidence and fail closed on missing or unsuccessful phases."
 negative_tests: New nodes with setup only or setup+call must fail; a complete passing setup/call/teardown node may pass; teardown failures must fail.
 unblock_criteria: Focused regression passes; the frozen same-environment comparison remains PASS with all added nodes having setup/call/teardown and passing outcomes; exact new PR #27 head passes hosted quick/full Python and Web checks; independent review remains required for G0.
 needs_human_decision: true

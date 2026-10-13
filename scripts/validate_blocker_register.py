@@ -1,4 +1,5 @@
 """Validate the blocker register against the V2.0 playbook without extra dependencies."""
+
 from __future__ import annotations
 
 import argparse
@@ -15,14 +16,49 @@ ALLOWED = {
     "risk_to_funds": {"NONE", "UNKNOWN", "POTENTIAL", "CONFIRMED"},
     "root_cause_status": {"CONFIRMED", "HYPOTHESIS", "UNKNOWN"},
 }
+BLOCKER_INDEX_SCHEMA = "V2_BLOCKER_INDEX_V2"
+PLAYBOOK_CODE_RE = re.compile(r"B(?:0[1-9]|1[0-9]|2[0-6])")
 REQUIRED = {
-    "id", "severity", "status", "component", "mode", "branch_sha", "trigger_signature",
-    "first_seen_at_utc", "user_authorization", "external_cost_or_order_attempted", "remote_effect_known",
-    "risk_to_funds", "affected_sample_or_order_ids", "immediate_stop_or_isolation", "evidence_files_and_hashes",
-    "reproduction", "root_cause_status", "safe_fallback", "patch_pr", "negative_tests", "unblock_criteria",
-    "needs_human_decision", "next_owner_action", "rollback",
+    "id",
+    "severity",
+    "status",
+    "component",
+    "mode",
+    "branch_sha",
+    "trigger_signature",
+    "first_seen_at_utc",
+    "user_authorization",
+    "external_cost_or_order_attempted",
+    "remote_effect_known",
+    "risk_to_funds",
+    "affected_sample_or_order_ids",
+    "immediate_stop_or_isolation",
+    "playbook_codes",
+    "original_evidence",
+    "evidence_files_and_hashes",
+    "reproduction",
+    "root_cause_status",
+    "root_cause",
+    "temporary_mitigation",
+    "safe_fallback",
+    "patch_pr",
+    "repair_method",
+    "negative_tests",
+    "unblock_criteria",
+    "needs_human_decision",
+    "next_owner_action",
+    "rollback",
 }
-INDEX_REQUIRED = {"id", "severity", "status", "component", "file", "trigger_signature", "next_owner_action"}
+INDEX_REQUIRED = {
+    "id",
+    "severity",
+    "status",
+    "component",
+    "file",
+    "trigger_signature",
+    "playbook_codes",
+    "next_owner_action",
+}
 BOOLEAN_FIELDS = {"external_cost_or_order_attempted", "remote_effect_known", "needs_human_decision"}
 FIELD_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*):(?:\s+(.*))?$")
 INDEX_ITEM_RE = re.compile(r"^  - id:\s*(\S+)\s*$")
@@ -106,6 +142,21 @@ def validate_register(repo_root: Path) -> list[str]:
     errors: list[str] = []
     index_path = root / "index.yaml"
     records = _parse_index(index_path, errors)
+    schema_line = (
+        next(
+            (
+                line
+                for line in index_path.read_text(encoding="utf-8").splitlines()
+                if line.startswith("schema_version:")
+            ),
+            "",
+        )
+        if index_path.is_file()
+        else ""
+    )
+    schema_version = schema_line.partition(":")[2].strip()
+    if schema_version != BLOCKER_INDEX_SCHEMA:
+        errors.append(f"{index_path}: schema_version must be {BLOCKER_INDEX_SCHEMA}")
     if not records:
         return errors + [f"{index_path}: no blocker records found"]
 
@@ -154,17 +205,22 @@ def validate_register(repo_root: Path) -> list[str]:
         for key in REQUIRED:
             if key in fields and not fields[key].strip():
                 errors.append(f"{blocker_path}: empty required field {key}")
+        codes_value = fields.get("playbook_codes", "")
+        codes = [code.strip() for code in codes_value.split(",") if code.strip()]
+        if not codes or any(PLAYBOOK_CODE_RE.fullmatch(code) is None for code in codes):
+            errors.append(f"{blocker_path}: playbook_codes must contain only B01 through B26")
+        if len(codes) != len(set(codes)):
+            errors.append(f"{blocker_path}: playbook_codes contains duplicates")
         for field, allowed in ALLOWED.items():
             if fields.get(field) not in allowed:
                 errors.append(f"{blocker_path}: invalid {field}={fields.get(field)!r}")
         for field in sorted(BOOLEAN_FIELDS):
             if fields.get(field) not in {"true", "false"}:
                 errors.append(f"{blocker_path}: {field} must be true or false")
-        for field in ("id", "severity", "status", "component", "trigger_signature"):
+        for field in ("id", "severity", "status", "component", "trigger_signature", "playbook_codes"):
             if fields.get(field) != record.get(field):
                 errors.append(
-                    f"{blocker_path}: {field} mismatch with index "
-                    f"({fields.get(field)!r} != {record.get(field)!r})"
+                    f"{blocker_path}: {field} mismatch with index ({fields.get(field)!r} != {record.get(field)!r})"
                 )
 
     for blocker_path in root.glob("B-*.md"):

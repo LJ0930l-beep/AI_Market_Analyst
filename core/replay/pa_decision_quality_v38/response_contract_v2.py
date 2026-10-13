@@ -12,7 +12,7 @@ from copy import deepcopy
 from enum import Enum
 from typing import Any
 
-from .json_response import RAW_OR_SINGLE_JSON_FENCE_V2, parse_json_completion
+from .json_response import RAW_OR_SINGLE_JSON_FENCE_V2, parse_json_completion, single_completion_choice
 from .market_only import MarketOnlyError
 
 RESPONSE_CONTRACT_VERSION = "pa-market-only-v38/response-contract-2"
@@ -398,12 +398,10 @@ def evaluate_response_v2(
     result["usage_reported_by_provider"] = payload.get("usage") if isinstance(payload.get("usage"), dict) else None
     result["usage_receipt_status"] = _usage_status(payload.get("usage"))
 
-    choices = payload.get("choices")
-    if not isinstance(choices, list) or len(choices) != 1:
-        return reject("INVALID_PROVIDER_RESPONSE", "COMPLETION_CHOICE_COUNT_INVALID")
-    first = choices[0]
-    if not isinstance(first, dict):
-        return reject("INVALID_PROVIDER_RESPONSE", "COMPLETION_CHOICE_INVALID")
+    try:
+        first = single_completion_choice(payload)
+    except MarketOnlyError as exc:
+        return reject("INVALID_PROVIDER_RESPONSE", exc.code)
     message = first.get("message")
     content = message.get("content") if isinstance(message, dict) else None
     finish_reason = first.get("finish_reason")

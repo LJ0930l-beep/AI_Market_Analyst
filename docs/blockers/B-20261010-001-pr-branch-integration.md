@@ -8,6 +8,7 @@ component: integration
 mode: RESEARCH_OFFLINE
 branch_sha: 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1
 trigger_signature: PR_COMBINATION_CANDIDATE_AWAITS_HUMAN_REVIEW
+playbook_codes: B21,B22
 first_seen_at_utc: 2026-10-10T09:27:00Z
 user_authorization: DOCUMENTED_SCOPE_ONLY
 external_cost_or_order_attempted: false
@@ -18,8 +19,12 @@ immediate_stop_or_isolation: No remote merge, force-push, TestNet request, or Li
 evidence_files_and_hashes: docs/audits/PR-INTEGRATION-MATRIX-20261010.json Git-blob SHA-256 8318066478e5d767452db920fca4b5eb9d35c37787c610e0f327660445466edc; docs/audits/PR-INTEGRATION-MATRIX-REFRESH-20261010.json SHA-256 B94397AE77DB87C0574C93709D1377103F630F9D76DE358DF8A82BA495BC27E4; docs/audits/PR-INTEGRATION-MATRIX-LIVE-20261013T011953Z.json SHA-256 47EA3731D7E294F837CAE3468FA920ED7BDF92161DB96EDAE58D5863013D6F53.
 reproduction: gh pr list --state all --limit 100 --json number,title,state,isDraft,headRefName,headRefOid,baseRefName,baseRefOid,updatedAt,mergeable,reviewDecision,statusCheckRollup; query check-runs by each exact head SHA
 root_cause_status: CONFIRMED
+original_evidence: "The 2026-10-13T10:27:43Z GitHub snapshot records 27 OPEN PRs, PR #23 with a failing current-head check, PRs #1-#11 with no reported checks, and PR #27 Draft with no formal review or review request."
+root_cause: "The PR set contains forked dependency branches and no accepted, fully reviewed combined candidate; a descendant's green CI does not clear source-head failures or missing checks."
+temporary_mitigation: "Keep source PRs intact and PR #26/#27 Draft; use only the isolated main-based candidate and do not merge or force-push."
 safe_fallback: Preserve separate branches and perform only a local isolated integration candidate.
 patch_pr: https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/26 and https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/27
+repair_method: "Build and refresh one main-based candidate, verify branch ancestry and changed-file overlaps, run baseline and exact-head CI, then obtain independent review and a human G0 decision."
 negative_tests: Candidate must include Gate account isolation, Gate 4h pagination, reduce-only semantics, macro clock behavior, model response identity/parser failures, and full offline CI.
 unblock_criteria: One candidate SHA includes PR-20/21/22 and PR-25 ancestry (including PR-23/24 fix); changed-file overlap reviewed; full quick and full hosted CI pass on that exact SHA; same-environment baseline has zero new failures; rollback point recorded; human review and explicit merge approval are complete.
 needs_human_decision: true
