@@ -1065,6 +1065,7 @@ class _E2EFixtureTrader:
         self.account_truth_calls = 0
         self.final_truth_override = None
         self.baseline_positions: list[dict[str, Any]] = []
+        self.baseline_pending_orders: list[dict[str, Any]] = []
 
     def get_market_metadata(self, symbol):
         return {
@@ -1114,7 +1115,7 @@ class _E2EFixtureTrader:
                     else []
                 ),
             ],
-            "pending_orders": [],
+            "pending_orders": list(self.baseline_pending_orders),
             "fills": [],
         }
         if self.account_truth_calls >= 4 and self.final_truth_override is not None:
@@ -1237,7 +1238,7 @@ def test_gate_testnet_e2e_never_completes_when_native_protection_cleanup_is_unve
 
 
 @pytest.mark.parametrize(
-    "final_truth,error_code",
+    "final_truth,error_code,baseline_positions,baseline_orders",
     [
         (
             {
@@ -1247,7 +1248,7 @@ def test_gate_testnet_e2e_never_completes_when_native_protection_cleanup_is_unve
                 "positions": [],
                 "pending_orders": [{"id": "9001", "status": "open"}],
             },
-            "CLEANUP_OPEN_ORDERS_REMAIN",
+            "CLEANUP_OPEN_ORDERS_REMAIN", [], [],
         ),
         (
             {
@@ -1257,7 +1258,7 @@ def test_gate_testnet_e2e_never_completes_when_native_protection_cleanup_is_unve
                 "positions": [{"symbol": "BTCUSDT", "side": "LONG", "contracts": "0.1", "position_id": "leftover"}],
                 "pending_orders": [],
             },
-            "CLEANUP_NOT_RECONCILED",
+            "CLEANUP_NOT_RECONCILED", [], [],
         ),
         (
             {
@@ -1267,7 +1268,7 @@ def test_gate_testnet_e2e_never_completes_when_native_protection_cleanup_is_unve
                 "positions": [],
                 "pending_orders": [],
             },
-            "CLEANUP_TRUTH_UNAVAILABLE",
+            "CLEANUP_TRUTH_UNAVAILABLE", [], [],
         ),
         (
             {
@@ -1277,7 +1278,7 @@ def test_gate_testnet_e2e_never_completes_when_native_protection_cleanup_is_unve
                 "positions": [],
                 "pending_orders": [],
             },
-            "CLEANUP_TRUTH_UNAVAILABLE",
+            "CLEANUP_TRUTH_UNAVAILABLE", [], [],
         ),
         (
             {
@@ -1287,14 +1288,39 @@ def test_gate_testnet_e2e_never_completes_when_native_protection_cleanup_is_unve
                 "positions": [],
                 "pending_orders": [],
             },
-            "CLEANUP_TRUTH_UNAVAILABLE",
+            "CLEANUP_TRUTH_UNAVAILABLE", [], [],
+        ),
+        (
+            {
+                "status": "AVAILABLE",
+                "api_environment": "TESTNET",
+                "observed_at": "2030-01-02T12:00:00+00:00",
+                "positions": [{"symbol": "BTCUSDT", "side": "LONG", "contracts": "0.4"}],
+                "pending_orders": [],
+            },
+            "CLEANUP_BASELINE_CHANGED",
+            [{"symbol": "BTCUSDT", "side": "LONG", "contracts": "0.5"}], [],
+        ),
+        (
+            {
+                "status": "AVAILABLE",
+                "api_environment": "TESTNET",
+                "observed_at": "2030-01-02T12:00:00+00:00",
+                "positions": [],
+                "pending_orders": [],
+            },
+            "CLEANUP_BASELINE_CHANGED", [], [{"id": "baseline-order-1", "status": "open"}],
         ),
     ],
 )
-def test_gate_testnet_e2e_requires_final_account_truth_after_protection_cleanup(tmp_path, final_truth, error_code):
+def test_gate_testnet_e2e_requires_final_account_truth_after_protection_cleanup(
+    tmp_path, final_truth, error_code, baseline_positions, baseline_orders,
+):
     store = _store(tmp_path)
     provision_default_gate_accounts(store)
     trader = _E2EFixtureTrader()
+    trader.baseline_positions = baseline_positions
+    trader.baseline_pending_orders = baseline_orders
     trader.final_truth_override = final_truth
     request = {
         "account_id": GATE_TESTNET_ACCOUNT_ID,

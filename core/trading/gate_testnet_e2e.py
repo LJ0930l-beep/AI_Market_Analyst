@@ -611,11 +611,21 @@ class GateTestnetE2EService:
                 }
                 if added_exposures:
                     raise GateE2EError("CLEANUP_NOT_RECONCILED", "Gate TestNet 最终账户快照仍有新增或未清理持仓。")
+                if final_exposures != baseline_exposures:
+                    raise GateE2EError(
+                        "CLEANUP_BASELINE_CHANGED",
+                        "Gate TestNet cleanup did not restore the exact pre-entry position exposure baseline.",
+                    )
                 final_order_ids = self._pending_order_ids(final_truth.get("pending_orders"))
                 if final_order_ids - baseline_order_ids:
                     raise GateE2EError(
                         "CLEANUP_OPEN_ORDERS_REMAIN",
                         "Gate TestNet 最终账户快照仍有本次验收后新增的挂单或保护单。",
+                    )
+                if final_order_ids != baseline_order_ids:
+                    raise GateE2EError(
+                        "CLEANUP_BASELINE_CHANGED",
+                        "Gate TestNet cleanup changed the pre-entry pending-order baseline.",
                     )
                 result["stages"].append(
                     self._stage(

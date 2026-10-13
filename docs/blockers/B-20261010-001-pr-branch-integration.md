@@ -261,3 +261,7 @@ The latest offline increment adds Gate 4h pagination coverage and a calibration 
 - PR #26 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 passed run 38107795624. PR #27 4abdcdfe8917dbc3527196765369f73b4913f6c9 passed run 38343135615: quick 289, full 2616, 25 subtests, Web 29 files/161 tests, lint/typecheck/build.
 - PR #27 is main-based and contains all PR #1-#26 heads in its ancestry. The current exact path matrix does not claim a complete semantic review.
 - Both candidates are OPEN/Draft with zero reviews/requests. G0 remains NOT_ACCEPTED pending independent review and a recorded human decision. No merge or external calls occurred.
+
+## Additional S1 finding 2026-10-13T04:41:39Z
+
+B-20261013-007 was detected during independent code review. Exact pre-entry versus final-account equality was not enforced for positions and pending-order IDs, allowing two fixture cases to return COMPLETED after baseline state changed. Failure-first reproduction: 5 passed / 2 failed. The local repair requires exact equality and returns CLEANUP_BASELINE_CHANGED for lost baseline state. See docs/blockers/B-20261013-007-gate-cleanup-baseline-preservation.md and docs/audits/V2-G0-G1-cleanup-baseline-followup-20261013T044139Z.md. The existing PR #27 hosted run on 166b5841 does not verify this uncommitted repair. G0 remains NOT_ACCEPTED; do not merge.

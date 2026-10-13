@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V1
-updated_at_utc: 2026-10-13T04:13:54Z
+updated_at_utc: 2026-10-13T04:41:39Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -7,7 +7,7 @@ blockers:
     component: integration
     file: docs/blockers/B-20261010-001-pr-branch-integration.md
     trigger_signature: PR_COMBINATION_CANDIDATE_AWAITS_HUMAN_REVIEW
-    next_owner_action: 'As of 2026-10-13T04:13:54Z: PR #26 00d1c4405a513b9e5cdee9f6fa15808b4386d8b1 passed 38107795624; PR #27 4abdcdfe8917dbc3527196765369f73b4913f6c9 passed 38343135615 (quick 289; full 2616; Web 29 files/161 tests). All PR #1-#26 heads are ancestors of #27. Inventory: 15 PASS, #23 FAILURE, #1-#11 NO_REPORTED_CHECKS. Both candidates OPEN/Draft with 0 reviews/requests. Obtain independent review and record G0; do not merge.'
+    next_owner_action: 'Verify exact-head full offline and Web CI for the Gate cleanup baseline repair, then obtain independent review. G0 is not accepted; do not merge.'
   - id: B-20261010-002
     severity: S1
     status: BLOCKED_WITH_EVIDENCE
@@ -44,3 +44,10 @@ blockers:
     file: docs/blockers/B-20261013-006-g0-g4-calibration-sequence-conflict.md
     trigger_signature: G0_G4_CALIBRATION_REMOTE_MODE_SEQUENCE_CONFLICT
     next_owner_action: 'Sequencing adjudication recorded: calibration fail-closed behavior is the G0 requirement; the positive remote-mode assertion belongs to G4 after G0-G3. Keep G0 unaccepted pending independent PR review and remaining criteria; keep G2 unauthorized.'
+  - id: B-20261013-007
+    severity: S1
+    status: FIX_IN_REVIEW
+    component: gate_testnet_e2e
+    file: docs/blockers/B-20261013-007-gate-cleanup-baseline-preservation.md
+    trigger_signature: GATE_E2E_CLEANUP_BASELINE_MISMATCH_FALSE_COMPLETION
+    next_owner_action: 'Verify exact-head full offline and Web CI for the baseline equality repair, then obtain independent review. No TestNet call is authorized.'
