@@ -25,3 +25,7 @@ unblock_criteria: Targeted and full offline suites plus Web checks pass on exact
 rollback: Do not restore truthy-number parsing or mark a full unpaginated order page complete. Keep the E2E gate degraded until equivalent completeness proof exists.
 needs_human_decision: true
 ```
+
+## Latest verification — 2026-10-13T05:38:56Z
+
+Strict native-flag parsing and full-page degradation are on PR #27 HEAD `dfcdd5ff5b7a05c6a6305c3566753884bc282f35`; exact-head GitHub run `38350073282` passed Python and Web checks. Independent formal review/G0 decision is still pending. No Gate/TestNet request was made.

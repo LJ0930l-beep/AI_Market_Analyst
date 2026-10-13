@@ -257,3 +257,7 @@ PR #27 exact head `5bb0cc34dfe93a1f4b6fa5b312894d5878150503` passed hosted run `
 - V2 minimal/full prompts remain remote-disabled, unauthorized, and capped at 0 calls. Previous campaign and format-pilot authorizations are consumed/revoked.
 - Frozen campaign outcomes remain 67 INVALID_JSON, 4 CALL_ERROR_NO_RETRY, 1 AMBIGUOUS_NO_RESULT_NEVER_RETRY, and 0 original valid analyses. Historical status and denominators were not edited.
 - Remote response_format, authenticated model/weight identity, billing, quota, and provider deduplication remain UNKNOWN_UNVERIFIED. G2 stays blocked; no new model call was made.
+
+## Live refresh 2026-10-13T05:48Z
+
+PR #27 exact head `dfcdd5ff5b7a05c6a6305c3566753884bc282f35` passed hosted run `38350073282` (offline quick 289, full 2,649 with 25 subtests, and Web/lint/typecheck/build). A source-level cross-check confirms the V2 offline suite covers empty/partial/truncated responses, missing/error finish reasons, model identity absence/mismatch, malformed/unknown/future evidence refs, oversized response handling, and the fake-provider capability boundary. G1 offline contract evidence is present; this does not verify the external route. Keep `BLOCKED_WITH_EVIDENCE` for remote structured-output/model identity/cost/quota claims, keep dispatch disabled and maximum_calls=0, and keep G2 unauthorized. No remote request or order was made.

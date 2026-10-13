@@ -1,0 +1,78 @@
+{
+  "schema": "V38_INVALID_JSON_COMPATIBILITY_DIAGNOSTIC_V1",
+  "observed_at_utc": "2026-10-13T05:38:56Z",
+  "mode": "READ_ONLY_OFFLINE_COMPATIBILITY_DIAGNOSTIC",
+  "source": {
+    "checkout": "D:\\RJ\\codex\\ai-market-analyst",
+    "path": "reports/v38+/runs/v38-gemini-call-intent-ledger-v1.jsonl",
+    "bytes": 512044,
+    "sha256": "820212A5699B718C922232C584FCFDCB4F79B675EA8653B1898A0D4025B837A7"
+  },
+  "ledger_events": {
+    "count": 144,
+    "event_type_counts": {
+      "DISPATCH_INTENT": 72,
+      "PROVIDER_STOP_REARM": 1,
+      "RESULT": 71
+    },
+    "status_counts": {
+      "CALL_ERROR_NO_RETRY": 4,
+      "INVALID_JSON": 67,
+      "NO_STATUS": 73
+    }
+  },
+  "invalid_json_subset": {
+    "immutable_record_count": 67,
+    "historical_status_preserved": "INVALID_JSON",
+    "error_code_counts": {
+      "COMPLETION_CONTENT_NOT_JSON": 67
+    },
+    "finish_reason_counts": {
+      "stop": 67
+    },
+    "research_arm_counts": {
+      "UNKNOWN": 67
+    },
+    "proxy_reported_response_model_id_counts": {
+      "gemini-3.8-flash-high": 67
+    },
+    "raw_body_present_count": 67,
+    "raw_body_hash_present_count": 67,
+    "raw_body_chars": {
+      "minimum": 1645,
+      "median": 2128,
+      "maximum": 2763
+    },
+    "strict_json_parse_success_count": 0,
+    "single_outer_markdown_fence": {
+      "opening_language_counts": {
+        "json": 67
+      },
+      "closing_fence_present_count": 67,
+      "inner_json_parse_success_count": 67
+    }
+  },
+  "root_cause_assessment": {
+    "status": "CONFIRMED_FOR_IMMEDIATE_PARSER_FAILURE",
+    "finding": "All immutable INVALID_JSON raw bodies fail strict JSON parsing as stored; each is a complete single outer Markdown fence labelled json whose inner payload parses as JSON.",
+    "causal_boundary": "This confirms the strict parser/wrapper mismatch as the immediate parse failure. It does not prove whether the provider or proxy honored native response_format.",
+    "diagnostic_only": true,
+    "not_reclassified": true,
+    "schema_validity_asserted": false,
+    "evidence_validity_asserted": false,
+    "decision_quality_or_trading_outcome_asserted": false
+  },
+  "preservation": {
+    "raw_response_text_included": false,
+    "ledger_modified": false,
+    "remote_model_calls": 0,
+    "exchange_calls": 0,
+    "orders": 0
+  },
+  "limitations": [
+    "No provider-side response_format capability receipt was available in this ledger.",
+    "Proxy-reported model identifiers do not authenticate underlying model weights.",
+    "Reported finish_reason stop does not establish billing, token accounting, or backend deduplication.",
+    "Parseability after removing the outer fence is not schema validity, evidence validity, or a valid historical analysis."
+  ]
+}

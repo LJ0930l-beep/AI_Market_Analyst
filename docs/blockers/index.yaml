@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V1
-updated_at_utc: 2026-10-13T05:01:06Z
+updated_at_utc: 2026-10-13T05:48:00Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -7,14 +7,14 @@ blockers:
     component: integration
     file: docs/blockers/B-20261010-001-pr-branch-integration.md
     trigger_signature: PR_COMBINATION_CANDIDATE_AWAITS_HUMAN_REVIEW
-    next_owner_action: 'Verify exact-head full offline and Web CI for the Gate cleanup baseline repair, then obtain independent review. G0 is not accepted; do not merge.'
+    next_owner_action: 'As of 2026-10-13T05:37:20Z, PR #27 exact head dfcdd5ff5b7a05c6a6305c3566753884bc282f35 passed run 38350073282 (quick 289; full 2649; Web/lint/typecheck/build passed). PR #27 remains OPEN/Draft with zero reviews and requests; 179 exact-path overlap pairs still need semantic review. PR #1-11 have no reported current-head checks and #23 failure remains historical. G0 is not accepted; do not merge.'
   - id: B-20261010-002
     severity: S1
     status: BLOCKED_WITH_EVIDENCE
     component: model
     file: docs/blockers/B-20261010-002-model-response-capability.md
     trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
-    next_owner_action: 'PR #27 4abdcdfe8917dbc3527196765369f73b4913f6c9 passed offline CI 38343135615. Keep remote dispatch disabled and maximum_calls=0. Provider response_format, authenticated model/weight identity, billing, quota and deduplication remain UNKNOWN_UNVERIFIED; G2 stays unauthorized.'
+    next_owner_action: 'PR #27 exact head dfcdd5ff5b7a05c6a6305c3566753884bc282f35 passed run 38350073282. Keep both V2 prompt configs remote_dispatch_enabled=false, authorized=false, maximum_calls=0. Provider response_format, authenticated model/weight identity, billing, quota and deduplication remain UNKNOWN_UNVERIFIED; G2 stays unauthorized.'
   - id: B-20261010-003
     severity: S1
     status: OPEN
@@ -35,7 +35,7 @@ blockers:
     component: model
     file: docs/blockers/B-20261012-005-v38-multiple-choice-ambiguity.md
     trigger_signature: V38_RESPONSE_CHOICES_MULTIPLE_SILENTLY_FIRST
-    next_owner_action: 'PR #27 4abdcdfe8917dbc3527196765369f73b4913f6c9 passed run 38343135615, including offline Python and Web checks. Keep FIX_IN_REVIEW pending independent review/G0 decision; provider dispatch remains disabled.'
+    next_owner_action: 'PR #27 exact head dfcdd5ff5b7a05c6a6305c3566753884bc282f35 passed run 38350073282, including offline Python and Web checks. Keep FIX_IN_REVIEW pending independent formal review/G0 decision; provider dispatch remains disabled.'
 
   - id: B-20261013-006
     severity: S1
@@ -50,11 +50,11 @@ blockers:
     component: gate_testnet_e2e
     file: docs/blockers/B-20261013-007-gate-cleanup-baseline-preservation.md
     trigger_signature: GATE_E2E_CLEANUP_BASELINE_MISMATCH_FALSE_COMPLETION
-    next_owner_action: 'Verify exact-head full offline and Web CI for the baseline equality repair, then obtain independent review. No TestNet call is authorized.'
+    next_owner_action: 'Repair is on PR #27 exact head dfcdd5ff5b7a05c6a6305c3566753884bc282f35; run 38350073282 passed offline Python and Web checks. Keep FIX_IN_REVIEW pending independent formal review/G0 decision. No TestNet call is authorized.'
   - id: B-20261013-008
     severity: S1
     status: FIX_IN_REVIEW
     component: gate_account_truth
     file: docs/blockers/B-20261013-008-gate-order-truth-completeness.md
     trigger_signature: GATE_FULL_ORDER_PAGE_MISREPORTED_AVAILABLE
-    next_owner_action: 'Run exact-head offline and Web CI for strict native-flag parsing and full-page degradation; obtain an independent GitHub review. Do not make Gate/TestNet requests or merge.'
+    next_owner_action: 'Strict native-flag parsing and full-page degradation are on PR #27 exact head dfcdd5ff5b7a05c6a6305c3566753884bc282f35; run 38350073282 passed offline Python and Web checks. Keep FIX_IN_REVIEW pending independent formal review/G0 decision. Do not make Gate/TestNet requests or merge.'

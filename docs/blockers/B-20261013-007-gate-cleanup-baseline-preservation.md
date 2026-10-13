@@ -24,3 +24,8 @@ negative_tests: Baseline position reduction; disappearance of a pre-existing pen
 unblock_criteria: Targeted and full offline CI pass on exact new SHA; Web checks pass; independent review approves baseline-preservation logic.
 rollback: Do not restore prior false-completion behavior; keep the E2E gate blocked on mismatch until equivalent fail-closed validation is present.
 needs_human_decision: true
+```
+
+## Latest verification — 2026-10-13T05:38:56Z
+
+Repair commit `dfcdd5ff5b7a05c6a6305c3566753884bc282f35` is current PR #27 HEAD; exact-head GitHub run `38350073282` passed Python and Web checks. Independent formal review/G0 decision is still pending. No TestNet request was made.
