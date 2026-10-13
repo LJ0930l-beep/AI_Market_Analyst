@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V1
-updated_at_utc: 2026-10-13T07:27:59Z
+updated_at_utc: 2026-10-13T08:05:34Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -7,14 +7,14 @@ blockers:
     component: integration
     file: docs/blockers/B-20261010-001-pr-branch-integration.md
     trigger_signature: PR_COMBINATION_CANDIDATE_AWAITS_HUMAN_REVIEW
-    next_owner_action: 'Live refresh 2026-10-13T07:27:59Z: all 27 PRs remain OPEN, 0 merged; base/head SHAs are unchanged from the 06:31Z full path matrix. PR #27 head 5bce67239ccf8e608993a901dab020cfa0a8e8f8 still passes run 38353445036. The local B16 ordinary-order patch has a passing same-environment baseline comparison but is not pushed; commit/push it, require exact-head CI, then obtain independent semantic review of the 179 path-overlap pairs and a recorded G0 decision. PR #1-11 NO_REPORTED_CHECKS and #23 FAILURE remain historical/current blockers. Do not merge.'
+    next_owner_action: 'Live refresh 2026-10-13T08:05:34Z: all 27 PRs remain OPEN, 0 merged. PR #27 targets main, is Draft, and its remote head 14e732546991c55d5a84c96631126dbadfc501bc passed exact-head run 38363964249 (Python quick/full and Web checks). PR #1-11 have no reported checks and #23 retains a failure in the last full check inventory. The local B-20261013-010 patch is not pushed and needs exact-head CI. Recalculate the overlap matrix after publication, obtain a formal independent review, then record the human G0 decision. Do not merge.'
   - id: B-20261010-002
     severity: S1
     status: BLOCKED_WITH_EVIDENCE
     component: model
     file: docs/blockers/B-20261010-002-model-response-capability.md
     trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
-    next_owner_action: 'PR #27 exact head 5bce67239ccf8e608993a901dab020cfa0a8e8f8 passed run 38353445036. Keep both V2 prompt configs remote_dispatch_enabled=false, authorized=false, maximum_calls=0. Provider response_format, authenticated model/weight identity, billing, quota and deduplication remain UNKNOWN_UNVERIFIED; G2 stays unauthorized.'
+    next_owner_action: 'PR #27 remote head 14e732546991c55d5a84c96631126dbadfc501bc passed exact-head run 38363964249. Keep both V2 prompt configs remote_dispatch_enabled=false, authorized=false, maximum_calls=0. Provider response_format, authenticated model/weight identity, billing, quota and deduplication remain UNKNOWN_UNVERIFIED; G2 stays unauthorized.'
   - id: B-20261010-003
     severity: S1
     status: OPEN
@@ -35,7 +35,7 @@ blockers:
     component: model
     file: docs/blockers/B-20261012-005-v38-multiple-choice-ambiguity.md
     trigger_signature: V38_RESPONSE_CHOICES_MULTIPLE_SILENTLY_FIRST
-    next_owner_action: 'PR #27 exact head 5bce67239ccf8e608993a901dab020cfa0a8e8f8 passed run 38353445036, including offline Python and Web checks. Keep FIX_IN_REVIEW pending independent formal review/G0 decision; provider dispatch remains disabled.'
+    next_owner_action: 'PR #27 remote head 14e732546991c55d5a84c96631126dbadfc501bc passed exact-head run 38363964249, including offline Python and Web checks. Keep FIX_IN_REVIEW pending independent formal review/G0 decision; provider dispatch remains disabled.'
 
   - id: B-20261013-006
     severity: S1
@@ -50,18 +50,25 @@ blockers:
     component: gate_testnet_e2e
     file: docs/blockers/B-20261013-007-gate-cleanup-baseline-preservation.md
     trigger_signature: GATE_E2E_CLEANUP_BASELINE_MISMATCH_FALSE_COMPLETION
-    next_owner_action: 'Repair is on PR #27 exact head 5bce67239ccf8e608993a901dab020cfa0a8e8f8; run 38353445036 passed offline Python and Web checks. Keep FIX_IN_REVIEW pending independent formal review/G0 decision. No TestNet call is authorized.'
+    next_owner_action: 'Repair is on PR #27 remote head 14e732546991c55d5a84c96631126dbadfc501bc; exact-head run 38363964249 passed offline Python and Web checks. Keep FIX_IN_REVIEW pending independent formal review/G0 decision. No TestNet call is authorized.'
   - id: B-20261013-008
     severity: S1
     status: FIX_IN_REVIEW
     component: gate_account_truth
     file: docs/blockers/B-20261013-008-gate-order-truth-completeness.md
     trigger_signature: GATE_FULL_ORDER_PAGE_MISREPORTED_AVAILABLE
-    next_owner_action: 'Strict native-flag parsing and full-page degradation are on PR #27 exact head 5bce67239ccf8e608993a901dab020cfa0a8e8f8; run 38353445036 passed offline Python and Web checks. Keep FIX_IN_REVIEW pending independent formal review/G0 decision. Do not make Gate/TestNet requests or merge.'
+    next_owner_action: 'Strict native-flag parsing and full-page degradation are on PR #27 remote head 14e732546991c55d5a84c96631126dbadfc501bc; exact-head run 38363964249 passed offline Python and Web checks. Keep FIX_IN_REVIEW pending independent formal review/G0 decision. Do not make Gate/TestNet requests or merge.'
   - id: B-20261013-009
     severity: S1
     status: FIX_IN_REVIEW
     component: gate_account_truth
     file: docs/blockers/B-20261013-009-open-order-flag-integrity.md
     trigger_signature: GATE_OPEN_ORDER_REDUCE_ONLY_FLAG_UNVERIFIED
-    next_owner_action: 'Local fail-closed parsing and Gate regression tests completed. Full candidate suite is 2678 passed, 1 unchanged baseline failure, 1 skipped; same-environment comparison PASS with 0 missing/lost/new failure phases and 356 added nodes passing. Commit/push this patch, require exact-head GitHub checks and independent formal review/G0 decision. No Gate/TestNet request or merge.'
+    next_owner_action: 'Strict handling of ordinary Gate open-order flags is on PR #27 remote head 14e732546991c55d5a84c96631126dbadfc501bc; exact-head run 38363964249 passed Python quick/full and Web checks. Keep FIX_IN_REVIEW pending formal independent review/G0 decision. No Gate/TestNet request or merge.'
+  - id: B-20261013-010
+    severity: S1
+    status: FIX_IN_REVIEW
+    component: test_evidence_comparison
+    file: docs/blockers/B-20261013-010-test-evidence-incomplete-added-node.md
+    trigger_signature: V36_TEST_EVIDENCE_ADDED_NODE_PHASES_INCOMPLETE
+    next_owner_action: 'Local patch (not in PR remote head 14e732546991c55d5a84c96631126dbadfc501bc) requires setup/call/teardown evidence for every added test and all phases passing. Focused suite 16 passed; frozen same-environment comparison remains PASS with 356 extra nodes and no incomplete/nonpassing additions. Commit/push this patch and require new exact-head CI; G0 still requires formal independent review and a recorded human decision. Do not merge or dispatch model/exchange requests.'

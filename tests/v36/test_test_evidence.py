@@ -65,7 +65,9 @@ def test_compare_accepts_additional_tests_when_every_added_test_passes():
         collected=("test_a", "test_new"),
         phases=(
             _phase("test_a", "call", "passed"),
+            _phase("test_new", "setup", "passed"),
             _phase("test_new", "call", "passed"),
+            _phase("test_new", "teardown", "passed"),
         ),
     )
 
@@ -74,6 +76,25 @@ def test_compare_accepts_additional_tests_when_every_added_test_passes():
     assert result["status"] == "PASS"
     assert result["extra_nodeids"] == ["test_new"]
     assert result["added"]["passed"] == ["test_new"]
+    assert result["incomplete_added_nodeids"] == []
+    assert result["nonpassing_added_nodeids"] == []
+
+
+@pytest.mark.parametrize("new_phases", [("setup",), ("setup", "call")])
+def test_compare_rejects_added_node_without_complete_phase_record(new_phases):
+    baseline = _report(phases=(_phase("test_a", "call", "passed"),))
+    candidate = _report(
+        collected=("test_a", "test_new"),
+        phases=(
+            _phase("test_a", "call", "passed"),
+            *(_phase("test_new", phase, "passed") for phase in new_phases),
+        ),
+    )
+
+    result = compare(baseline, candidate)
+
+    assert result["status"] == "FAIL"
+    assert result["incomplete_added_nodeids"] == ["test_new"]
 
 
 def test_compare_rejects_added_node_without_execution_record():
@@ -84,6 +105,26 @@ def test_compare_rejects_added_node_without_execution_record():
 
     assert result["status"] == "FAIL"
     assert result["unreported_added_nodeids"] == ["test_new"]
+    assert result["incomplete_added_nodeids"] == ["test_new"]
+
+
+def test_compare_rejects_added_node_with_teardown_failure():
+    baseline = _report(phases=(_phase("test_a", "call", "passed"),))
+    candidate = _report(
+        collected=("test_a", "test_new"),
+        phases=(
+            _phase("test_a", "call", "passed"),
+            _phase("test_new", "setup", "passed"),
+            _phase("test_new", "call", "passed"),
+            _phase("test_new", "teardown", "failed"),
+        ),
+        exit_code=1,
+    )
+
+    result = compare(baseline, candidate)
+
+    assert result["status"] == "FAIL"
+    assert result["nonpassing_added_nodeids"] == ["test_new"]
 
 
 @pytest.mark.parametrize(

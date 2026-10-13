@@ -150,6 +150,21 @@ def compare(before, after):
     after_observed_nodes = {row["nodeid"] for row in after["phases"]}
     after_observed_nodes.update(row["nodeid"] for row in after["collection"])
     unreported_added_nodes = sorted(set(extra) - after_observed_nodes)
+    added_node_phases: dict[str, set[str]] = {}
+    nonpassing_added_nodes = set()
+    for row in after["phases"]:
+        nodeid = row["nodeid"]
+        if nodeid not in extra:
+            continue
+        added_node_phases.setdefault(nodeid, set()).add(row["phase"])
+        if row["outcome"] != "passed" or row["wasxfail"]:
+            nonpassing_added_nodes.add(nodeid)
+    required_test_phases = {"setup", "call", "teardown"}
+    incomplete_added_nodes = sorted(
+        nodeid for nodeid in set(extra)
+        if not required_test_phases.issubset(added_node_phases.get(nodeid, set()))
+    )
+    nonpassing_added_nodes = sorted(nonpassing_added_nodes)
     # A teardown error moving to setup on the same node is still a new error.
     left_errors = {(r["nodeid"], r["phase"]) for r in before["phases"] if r["outcome"] == "failed"}
     right_errors = {(r["nodeid"], r["phase"]) for r in after["phases"] if r["outcome"] == "failed"}
@@ -159,6 +174,7 @@ def compare(before, after):
     same_environment = before["environment"] == after["environment"]
     ok = (complete and same_environment and not missing and not lost_passes
           and not missing_phases and not unreported_added_nodes and not new_phase_failures
+          and not incomplete_added_nodes and not nonpassing_added_nodes
           and before["deselected"] == after["deselected"]
           and not any(added[key] for key in ("failed", "errors", "skipped", "xfail", "xpass",
                                             "collection_errors", "collection_skipped")))
@@ -166,6 +182,8 @@ def compare(before, after):
         "status": "PASS" if ok else "FAIL", "complete_runs": complete,
         "same_environment": same_environment, "missing_nodeids": sorted(missing),
         "extra_nodeids": sorted(extra), "unreported_added_nodeids": unreported_added_nodes,
+        "incomplete_added_nodeids": incomplete_added_nodes,
+        "nonpassing_added_nodeids": nonpassing_added_nodes,
         "lost_passes": lost_passes,
         "missing_phases": missing_phases, "new_phase_failures": new_phase_failures,
         "added": added, "removed": removed,
