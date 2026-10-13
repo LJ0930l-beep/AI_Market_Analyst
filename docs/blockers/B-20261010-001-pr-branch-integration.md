@@ -262,6 +262,14 @@ The latest offline increment adds Gate 4h pagination coverage and a calibration 
 - PR #27 is main-based and contains all PR #1-#26 heads in its ancestry. The current exact path matrix does not claim a complete semantic review.
 - Both candidates are OPEN/Draft with zero reviews/requests. G0 remains NOT_ACCEPTED pending independent review and a recorded human decision. No merge or external calls occurred.
 
+## Live inventory and exact-head result — 2026-10-13T09:47:51Z
+
+- Fresh GitHub inventory: 27 OPEN, 0 merged, 0 closed-unmerged. Current-head checks: 15 SUCCESS, PR #23 FAILURE, PR #1–#11 have no reported checks, 0 pending.
+- `main` remains `8642639a78ca9aa56fbad1e88aea4b82169ea433`. PR #26 remains Draft at `00d1c4405a513b9e5cdee9f6fa15808b4386d8b1`; PR #27 remains Draft, directly based on `main`, at `90344019d20a7db1464ddd7e82f3378bd3e791de`.
+- Exact PR #27 run [38374291874](https://github.com/LJ0930l-beep/AI_Market_Analyst/actions/runs/38374291874) succeeded: Python quick 289 passed; full suite 2,683 passed, 25 subtests passed, one existing Starlette/httpx deprecation warning; Web tests, lint, type-check, and build passed.
+- PR #27 has no submitted reviews or review requests. G0 remains NOT_ACCEPTED; this CI pass is not independent approval. No merge, model/provider call, Gate/TestNet request, or order occurred.
+- Frozen V38 intent ledger remains 512,044 bytes with SHA-256 `820212A5699B718C922232C584FCFDCB4F79B675EA8653B1898A0D4025B837A7`. Both V2 prompt configs remain remote-disabled and unauthorized.
+
 ## Additional S1 finding 2026-10-13T04:41:39Z
 
 B-20261013-007 was detected during independent code review. Exact pre-entry versus final-account equality was not enforced for positions and pending-order IDs, allowing two fixture cases to return COMPLETED after baseline state changed. Failure-first reproduction: 5 passed / 2 failed. The local repair requires exact equality and returns CLEANUP_BASELINE_CHANGED for lost baseline state. See docs/blockers/B-20261013-007-gate-cleanup-baseline-preservation.md and docs/audits/V2-G0-G1-cleanup-baseline-followup-20261013T044139Z.md. The existing PR #27 hosted run on 166b5841 does not verify this uncommitted repair. G0 remains NOT_ACCEPTED; do not merge.

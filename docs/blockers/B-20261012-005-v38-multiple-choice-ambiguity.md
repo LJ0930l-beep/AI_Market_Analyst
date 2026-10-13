@@ -10,7 +10,8 @@ base_sha: 5f70d186d169261f0f337232c70e246a2e88b4e6
 branch_sha: 5bb0cc34dfe93a1f4b6fa5b312894d5878150503
 trigger_signature: V38_RESPONSE_CHOICES_MULTIPLE_SILENTLY_FIRST
 first_seen_at_utc: 2026-10-12T19:15:10Z
-user_authorization: DOCUMENTED_OFFLINE_REPAIR_ONLY
+user_authorization: DOCUMENTED_SCOPE_ONLY
+authorization_scope: OFFLINE_REPAIR_ONLY
 external_cost_or_order_attempted: false
 remote_effect_known: false
 risk_to_funds: NONE

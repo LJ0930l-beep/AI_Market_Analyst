@@ -1,5 +1,5 @@
 schema_version: V2_BLOCKER_INDEX_V1
-updated_at_utc: 2026-10-13T08:59:29Z
+updated_at_utc: 2026-10-13T09:47:51Z
 blockers:
   - id: B-20261010-001
     severity: S1
@@ -7,14 +7,14 @@ blockers:
     component: integration
     file: docs/blockers/B-20261010-001-pr-branch-integration.md
     trigger_signature: PR_COMBINATION_CANDIDATE_AWAITS_HUMAN_REVIEW
-    next_owner_action: 'Live refresh 2026-10-13T08:52:31Z: all 27 PRs remain OPEN, 0 merged. PR #27 targets main, is Draft, and remote head 40f65d7b05675ef2f7df69450af7d20c4418eb6e passed exact-head run 38367957079 (289 quick, 2683 full, Web checks). Current matrix records 179 overlap pairs; five independent source pairs have scoped prior review, but the 299-file candidate lacks full hunk review. PR #1-11 have no reported checks and #23 retains its failure. Obtain formal independent review and record the human G0 decision; do not merge.'
+    next_owner_action: 'Keep PR #26/#27 Draft and unmerged. Obtain formal independent review of the current PR #27 candidate and record the human G0 decision. Preserve PR #23 failure and PR #1-11 missing check records; continue only offline review until G0 is accepted.'
   - id: B-20261010-002
     severity: S1
     status: BLOCKED_WITH_EVIDENCE
     component: model
     file: docs/blockers/B-20261010-002-model-response-capability.md
     trigger_signature: FENCED_JSON_RESPONSES_AND_RESPONSE_FORMAT_CAPABILITY_UNKNOWN
-    next_owner_action: 'PR #27 remote head 40f65d7b05675ef2f7df69450af7d20c4418eb6e passed exact-head run 38367957079. Both V2 prompt configs remain remote_dispatch_enabled=false, authorized=false, maximum_calls=0. Provider response_format, authenticated model/weight identity, billing, quota and deduplication remain UNKNOWN_UNVERIFIED; G2 stays unauthorized.'
+    next_owner_action: 'Keep both V2 prompt configs remote_dispatch_enabled=false, authorized=false, maximum_calls=0. Provider response_format, authenticated model/weight identity, billing, quota and deduplication remain UNKNOWN_UNVERIFIED; do not enter G2 without fresh explicit authorization.'
   - id: B-20261010-003
     severity: S1
     status: OPEN
@@ -35,11 +35,11 @@ blockers:
     component: model
     file: docs/blockers/B-20261012-005-v38-multiple-choice-ambiguity.md
     trigger_signature: V38_RESPONSE_CHOICES_MULTIPLE_SILENTLY_FIRST
-    next_owner_action: 'PR #27 remote head 40f65d7b05675ef2f7df69450af7d20c4418eb6e passed exact-head run 38367957079, including offline Python and Web checks. Keep FIX_IN_REVIEW pending independent formal review/G0 decision; provider dispatch remains disabled.'
+    next_owner_action: 'Keep provider dispatch disabled. Obtain independent review of the V38 multi-choice fail-closed change and record the G0 decision; preserve all historical response classifications.'
 
   - id: B-20261013-006
     severity: S1
-    status: RESOLVED
+    status: VERIFIED
     component: integration
     file: docs/blockers/B-20261013-006-g0-g4-calibration-sequence-conflict.md
     trigger_signature: G0_G4_CALIBRATION_REMOTE_MODE_SEQUENCE_CONFLICT
@@ -47,28 +47,28 @@ blockers:
   - id: B-20261013-007
     severity: S1
     status: FIX_IN_REVIEW
-    component: gate_testnet_e2e
+    component: gate
     file: docs/blockers/B-20261013-007-gate-cleanup-baseline-preservation.md
     trigger_signature: GATE_E2E_CLEANUP_BASELINE_MISMATCH_FALSE_COMPLETION
-    next_owner_action: 'Repair is on PR #27 remote head 40f65d7b05675ef2f7df69450af7d20c4418eb6e; exact-head run 38367957079 passed offline Python and Web checks. Keep FIX_IN_REVIEW pending independent formal review/G0 decision. No TestNet call is authorized.'
+    next_owner_action: 'Obtain independent review of baseline-preservation and final reconciliation on PR #27; keep FIX_IN_REVIEW until review and the G0 decision. No TestNet request is authorized.'
   - id: B-20261013-008
     severity: S1
     status: FIX_IN_REVIEW
-    component: gate_account_truth
+    component: gate
     file: docs/blockers/B-20261013-008-gate-order-truth-completeness.md
     trigger_signature: GATE_FULL_ORDER_PAGE_MISREPORTED_AVAILABLE
-    next_owner_action: 'Strict native-flag parsing and full-page degradation are on PR #27 remote head 40f65d7b05675ef2f7df69450af7d20c4418eb6e; exact-head run 38367957079 passed offline Python and Web checks. Keep FIX_IN_REVIEW pending independent formal review/G0 decision. Do not make Gate/TestNet requests or merge.'
+    next_owner_action: 'Obtain independent review of order snapshot completeness and strict protection evidence; keep FIX_IN_REVIEW until review and the G0 decision. Do not make Gate/TestNet requests or merge.'
   - id: B-20261013-009
     severity: S1
     status: FIX_IN_REVIEW
-    component: gate_account_truth
+    component: gate
     file: docs/blockers/B-20261013-009-open-order-flag-integrity.md
     trigger_signature: GATE_OPEN_ORDER_REDUCE_ONLY_FLAG_UNVERIFIED
-    next_owner_action: 'Strict handling of ordinary Gate open-order flags is on PR #27 remote head 40f65d7b05675ef2f7df69450af7d20c4418eb6e; exact-head run 38367957079 passed Python quick/full and Web checks. Keep FIX_IN_REVIEW pending formal independent review/G0 decision. No Gate/TestNet request or merge.'
+    next_owner_action: 'Obtain independent review of ordinary-order flag normalization and record the G0 decision. Do not use incomplete account truth for execution.'
   - id: B-20261013-010
     severity: S1
     status: FIX_IN_REVIEW
-    component: test_evidence_comparison
+    component: ci
     file: docs/blockers/B-20261013-010-test-evidence-incomplete-added-node.md
     trigger_signature: V36_TEST_EVIDENCE_ADDED_NODE_PHASES_INCOMPLETE
-    next_owner_action: 'The complete-phase guard is committed on PR #27 head 40f65d7b05675ef2f7df69450af7d20c4418eb6e; exact-head run 38367957079 passed quick/full Python and Web checks. Focused suite 16 passed; frozen same-environment comparison remains PASS with 356 extra nodes and no incomplete/nonpassing additions. Keep FIX_IN_REVIEW pending formal independent review and a human G0 decision. Do not merge or dispatch model/exchange requests.'
+    next_owner_action: 'Obtain independent review of the complete-phase evidence comparator and record the G0 decision. Keep model/exchange dispatch disabled and do not merge.'

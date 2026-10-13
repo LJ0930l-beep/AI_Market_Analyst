@@ -3,7 +3,7 @@
 ```yaml
 id: B-20261013-006
 severity: S1
-status: RESOLVED
+status: VERIFIED
 component: integration
 mode: RESEARCH_OFFLINE
 branch_sha: 952d38a8e4d6aa800c507f6c54ee9477d744181b
@@ -11,7 +11,8 @@ patch_pr: "https://github.com/LJ0930l-beep/AI_Market_Analyst/pull/27 (documentat
 trigger_signature: G0_G4_CALIBRATION_REMOTE_MODE_SEQUENCE_CONFLICT
 first_seen_at_utc: 2026-10-12T21:46:04Z
 manual_playbook: G0 integration; mapped calibration item B05 / G4
-user_authorization: DOCUMENTED_OFFLINE_AUDIT_ONLY
+user_authorization: DOCUMENTED_SCOPE_ONLY
+authorization_scope: OFFLINE_AUDIT_ONLY
 external_cost_or_order_attempted: false
 remote_effect_known: false
 risk_to_funds: NONE
