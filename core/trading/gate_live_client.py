@@ -112,14 +112,23 @@ def _execute_with_retry(fn, max_retries: int = 2, delay_seconds: float = 0.5):
         raise last_exc
 
 
-def _validation_failure(exc: BaseException, *, environment: str, endpoint: str) -> Dict[str, Any]:
+def _validation_failure(
+    exc: BaseException,
+    *,
+    environment: str,
+    endpoint: str,
+    secrets: tuple[str, ...] = (),
+) -> Dict[str, Any]:
     mapped = _map_gate_error(exc)
+    diagnostic = _error_text(exc)
+    for secret in sorted({value for value in secrets if value}, key=len, reverse=True):
+        diagnostic = diagnostic.replace(secret, "[REDACTED]")
     return {
         "valid": False,
         "status": "VERIFICATION_FAILED",
         "code": mapped["code"],
         "message_zh": mapped["message_zh"],
-        "reason": f"{mapped['code']}: {_error_text(exc)}",
+        "reason": f"{mapped['code']}: {diagnostic}",
         "api_environment": environment,
         "endpoint": endpoint,
     }
@@ -470,7 +479,12 @@ class GateLiveTrader:
                 "endpoint": endpoint,
             }
         except Exception as exc:
-            return _validation_failure(exc, environment=self.api_environment, endpoint=endpoint)
+            return _validation_failure(
+                exc,
+                environment=self.api_environment,
+                endpoint=endpoint,
+                secrets=(self.api_key, self.api_secret),
+            )
 
     def get_account_balance(self) -> Dict[str, Any]:
         """Retrieve real futures USDT balance."""
